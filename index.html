@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daksfirst Limited — Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-900: #0d2240;
+  --navy-800: #1a2e4a;
+  --navy-700: #1e3a5f;
+  --navy-100: #e8eef5;
+  --navy-50:  #f0f4f8;
+  --gold:     #c9a84c;
+  --gold-light:#f0d98a;
+  --cream:    #faf8f3;
+  --white:    #ffffff;
+  --text-dark:#1a1a1a;
+  --text-mid: #444;
+  --text-light:#777;
+  --border:   #dde5ee;
+  --green:    #1b5e20;
+  --green-light:#e8f5e9;
+  --error:    #c62828;
+  --error-bg: #ffebee;
+  --warning:  #e65100;
+  --radius:   8px;
+  --shadow:   0 4px 20px rgba(13,34,64,0.1);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "DM Sans", sans-serif; background: var(--cream); color: var(--text-dark); min-height: 100vh; }
+
+/* ── SCREENS ── */
+.screen { display: none; min-height: 100vh; }
+.screen.active { display: flex; flex-direction: column; }
+
+/* ── NAVBAR ── */
+.navbar {
+  background: var(--navy-900);
+  border-bottom: 2px solid var(--gold);
+  padding: 0 32px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.navbar-logo img { height: 40px; width: auto; }
+.navbar-right { display: flex; align-items: center; gap: 16px; }
+.user-name { color: var(--white); font-size: 14px; font-weight: 500; }
+.logout-btn { background: none; border: 1px solid var(--gold); color: var(--gold); padding: 8px 16px; border-radius: var(--radius); font-size: 14px; cursor: pointer; transition: all 0.2s; }
+.logout-btn:hover { background: var(--gold); color: var(--navy-900); }
+
+/* ── LANDING PAGE ── */
+.landing-header {
+  background: linear-gradient(145deg, var(--navy-900) 0%, var(--navy-700) 100%);
+  text-align: center;
+  padding: 80px 32px;
+  position: relative;
+  overflow: hidden;
+}
+.landing-header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="10" cy="10" r="0.5" fill="%23c9a84c" opacity="0.3"/><circle cx="90" cy="20" r="0.3" fill="%23c9a84c" opacity="0.2"/><circle cx="20" cy="80" r="0.4" fill="%23c9a84c" opacity="0.25"/><circle cx="80" cy="90" r="0.3" fill="%23c9a84c" opacity="0.2"/></svg>') repeat;
+}
+.logo-container { margin: 0 auto 32px; position: relative; z-index: 1; }
+.logo { width: 120px; height: 120px; background: var(--white); border-radius: 16px; margin: 0 auto; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow); }
+.landing-header h1 { font-family: "Playfair Display", serif; font-size: 48px; font-weight: 700; color: var(--white); margin-bottom: 16px; position: relative; z-index: 1; line-height: 1.2; }
+.landing-header p { font-size: 18px; color: var(--navy-100); max-width: 600px; margin: 0 auto; position: relative; z-index: 1; }
+
+.landing-body { padding: 80px 32px; max-width: 1200px; margin: 0 auto; }
+.role-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 800px; margin: 0 auto 40px; }
+
+.role-card {
+  background: var(--white);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  padding: 40px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.role-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(145deg, var(--navy-50), var(--white));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.role-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(13,34,64,0.15);
+}
+.role-card:hover::before { opacity: 1; }
+.role-card-icon { font-size: 48px; margin-bottom: 20px; position: relative; z-index: 1; }
+.role-card h3 { font-family: "Playfair Display", serif; font-size: 24px; font-weight: 600; color: var(--navy-900); margin-bottom: 12px; position: relative; z-index: 1; }
+.role-card p { font-size: 14px; color: var(--text-mid); line-height: 1.5; position: relative; z-index: 1; }
+
+.login-link { text-align: center; margin-top: 40px; }
+.login-link a { color: var(--gold); text-decoration: none; font-weight: 500; font-size: 16px; }
+.login-link a:hover { text-decoration: underline; }
+
+/* ── REGISTRATION ── */
+.reg-container { flex: 1; padding: 32px; max-width: 600px; margin: 0 auto; width: 100%; }
+.reg-card { background: var(--white); border-radius: 16px; padding: 40px; box-shadow: var(--shadow); }
+.reg-header { text-align: center; margin-bottom: 32px; }
+.reg-header h2 { font-family: "Playfair Display", serif; font-size: 28px; font-weight: 600; color: var(--navy-900); margin-bottom: 8px; }
+.reg-header p { color: var(--text-mid); }
+
+.step-indicator { display: flex; justify-content: center; margin-bottom: 32px; }
+.step { display: flex; align-items: center; position: relative; }
+.step:not(:last-child)::after {
+  content: '';
+  width: 40px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 8px;
+}
+.step.active .step-num { background: var(--gold); color: var(--white); }
+.step.done .step-num { background: var(--green); color: var(--white); }
+.step.done:not(:last-child)::after { background: var(--green); }
+.step-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.reg-panel { display: none; }
+.reg-panel.active { display: block; }
+
+.form-group { margin-bottom: 20px; }
+.form-label { display: block; font-weight: 500; margin-bottom: 8px; color: var(--text-dark); }
+.form-input, .form-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  transition: border-color 0.2s;
+  background: var(--white);
+}
+.form-input:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.form-input.error, .form-select.error { border-color: var(--error); }
+
+.password-field { position: relative; }
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.alert { padding: 12px 16px; border-radius: var(--radius); margin-bottom: 20px; font-size: 14px; display: none; }
+.alert.visible { display: block; }
+.alert.error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+.alert.success { background: var(--green-light); color: var(--green); border: 1px solid var(--green); }
+
+.form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; }
+.btn { padding: 12px 24px; border-radius: var(--radius); font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: all 0.2s; border: none; font-size: 14px; }
+.btn-primary { background: var(--gold); color: var(--navy-900); }
+.btn-primary:hover { background: #b8973e; }
+.btn-secondary { background: var(--white); color: var(--text-mid); border: 2px solid var(--border); }
+.btn-secondary:hover { border-color: var(--gold); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.back-link { color: var(--text-mid); text-decoration: none; font-size: 14px; }
+.back-link:hover { color: var(--gold); }
+
+/* ── LOGIN ── */
+.login-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px; }
+.login-card { background: var(--white); border-radius: 16px; padding: 40px; box-shadow: var(--shadow); width: 100%; max-width: 400px; }
+
+/* ── DASHBOARD ── */
+.dashboard { flex: 1; display: flex; flex-direction: column; }
+.dashboard-header { background: var(--white); border-bottom: 1px solid var(--border); padding: 24px 32px; }
+.dashboard-title { font-family: "Playfair Display", serif; font-size: 28px; font-weight: 600; color: var(--navy-900); margin-bottom: 8px; }
+.dashboard-subtitle { color: var(--text-mid); }
+
+.dashboard-content { flex: 1; padding: 32px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 32px; }
+.stat-card { background: var(--white); border-radius: var(--radius); padding: 24px; border: 1px solid var(--border); }
+.stat-label { font-size: 14px; color: var(--text-mid); margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--navy-900); }
+
+.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+.tab { padding: 16px 24px; background: none; border: none; cursor: pointer; font-weight: 500; color: var(--text-mid); border-bottom: 3px solid transparent; transition: all 0.2s; }
+.tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+.tab:hover { color: var(--navy-900); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.section-header { display: flex; justify-content: between; align-items: center; margin-bottom: 24px; }
+.section-title { font-size: 20px; font-weight: 600; color: var(--navy-900); }
+
+.empty-state { text-align: center; padding: 60px 32px; color: var(--text-mid); }
+.empty-state-icon { font-size: 48px; margin-bottom: 16px; display: block; }
+
+/* ── DEAL FORM ── */
+.deal-form { background: var(--white); border-radius: var(--radius); padding: 32px; border: 1px solid var(--border); }
+.form-section { margin-bottom: 32px; }
+.form-section:last-child { margin-bottom: 0; }
+.form-section h3 { font-size: 18px; font-weight: 600; color: var(--navy-900); margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+
+.ltv-calculator { background: var(--navy-50); border-radius: var(--radius); padding: 20px; margin-top: 16px; }
+.ltv-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--white); border: 2px solid var(--border); border-radius: 20px; padding: 8px 16px; }
+.ltv-pill-label { font-size: 14px; color: var(--text-mid); }
+.ltv-pill-value { font-weight: 700; color: var(--green); }
+.ltv-pill-value.warn { color: var(--warning); }
+.ltv-pill-value.over { color: var(--error); }
+
+.credit-policy { background: var(--navy-50); border-radius: var(--radius); padding: 20px; margin-top: 20px; }
+.credit-policy h4 { font-size: 14px; font-weight: 600; color: var(--navy-900); margin-bottom: 8px; }
+.credit-policy p { font-size: 14px; color: var(--text-mid); line-height: 1.5; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .landing-header { padding: 60px 20px; }
+  .landing-header h1 { font-size: 36px; }
+  .landing-body { padding: 60px 20px; }
+  .role-cards { grid-template-columns: 1fr; gap: 20px; }
+  .reg-container, .login-container { padding: 20px; }
+  .reg-card, .login-card { padding: 24px; }
+  .dashboard-content { padding: 20px; }
+  .form-row { grid-template-columns: 1fr; }
+  .navbar { padding: 0 20px; }
+  .stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ── SPINNER ── */
+.spinner { width: 16px; height: 16px; border: 2px solid transparent; border-top: 2px solid currentColor; border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── HIDDEN FIELDS ── */
+.hidden-field { display: none; }
+
+/* ── BADGE ── */
+.badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.badge-received { background: var(--navy-100); color: var(--navy-800); }
+.badge-review { background: #fff3cd; color: #856404; }
+.badge-dip { background: #d4edda; color: #155724; }
+.badge-approved { background: var(--green-light); color: var(--green); }
+.badge-declined { background: var(--error-bg); color: var(--error); }
+.badge-info { background: #cce7ff; color: #0066cc; }
+.badge-withdrawn { background: #f0f0f0; color: #666; }
+
+/* ── TABLE ── */
+table { width: 100%; border-collapse: collapse; background: var(--white); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: var(--navy-50); font-weight: 600; color: var(--navy-900); font-size: 14px; }
+td { font-size: 14px; }
+tr:hover { background: var(--navy-50); }
+</style>
+</head>
+<body>
+
+<!-- ── LANDING SCREEN ── -->
+<div id="screen-landing" class="screen active">
+  <div class="landing-header">
+    <div class="logo-container">
+      <div class="logo">
+        <svg width="80" height="80" viewBox="0 0 200 200" style="fill: #0d2240;">
+          <rect x="20" y="60" width="160" height="40" rx="8"/>
+          <rect x="40" y="40" width="120" height="40" rx="8"/>
+          <rect x="60" y="20" width="80" height="40" rx="8"/>
+          <circle cx="50" cy="140" r="20"/>
+          <circle cx="100" cy="140" r="20"/>
+          <circle cx="150" cy="140" r="20"/>
+          <rect x="80" y="160" width="40" height="20" rx="4"/>
+        </svg>
+      </div>
+    </div>
+    <h1>Bridging Finance,<br>Built for Professionals</h1>
+    <p>Submit deals, track progress and manage your pipeline — all in one place.</p>
+  </div>
+  
+  <div class="landing-body">
+    <div class="role-cards">
+      <div class="role-card" onclick="window.showRegister('broker')">
+        <div class="role-card-icon">🏢</div>
+        <h3>I'm a Broker</h3>
+        <p>Register to submit deals and track your pipeline with Daksfirst</p>
+      </div>
+      
+      <div class="role-card" onclick="window.showRegister('borrower')">
+        <div class="role-card-icon">👤</div>
+        <h3>I'm a Borrower</h3>
+        <p>Submit your loan enquiry directly and track its progress</p>
+      </div>
+    </div>
+    
+    <div class="login-link">
+      <a href="#" onclick="window.showScreen('screen-login')">Already have an account? Sign in here</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── BROKER REGISTRATION ── -->
+<div id="screen-register-broker" class="screen">
+  <div class="navbar">
+    <div class="navbar-logo">
+      <svg width="40" height="40" viewBox="0 0 200 200" style="fill: white;">
+        <rect x="20" y="60" width="160" height="40" rx="8"/>
+        <rect x="40" y="40" width="120" height="40" rx="8"/>
+        <rect x="60" y="20" width="80" height="40" rx="8"/>
+        <circle cx="50" cy="140" r="20"/>
+        <circle cx="100" cy="140" r="20"/>
+        <circle cx="150" cy="140" r="20"/>
+        <rect x="80" y="160" width="40" height="20" rx="4"/>
+      </svg>
+    </div>
+  </div>
+  
+  <div class="reg-container">
+    <div class="reg-card">
+      <div class="reg-header">
+        <h2>Create Broker Account</h2>
+        <p>Register to start submitting deals</p>
+      </div>
+      
+      <div class="step-indicator">
+        <div class="step active" id="bstep-1">
+          <div class="step-num">1</div>
+        </div>
+        <div class="step" id="bstep-2">
+          <div class="step-num">2</div>
+        </div>
+        <div class="step" id="bstep-3">
+          <div class="step-num">3</div>
+        </div>
+      </div>
+      
+      <div id="broker-alert" class="alert"></div>
+      
+      <!-- Step 1: Personal -->
+      <div id="broker-panel-1" class="reg-panel active">
+        <h3>🏢 Broker / Introducer</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">First Name *</label>
+            <input type="text" id="b-first-name" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name *</label>
+            <input type="text" id="b-last-name" class="form-input">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email Address *</label>
+            <input type="email" id="b-email" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone Number *</label>
+            <input type="tel" id="b-phone" class="form-input">
+          </div>
+        </div>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.showScreen('screen-landing')">← Back</a>
+          <button type="button" class="btn btn-primary" onclick="window.brokerNext(1)">Continue →</button>
+        </div>
+      </div>
+      
+      <!-- Step 2: Company -->
+      <div id="broker-panel-2" class="reg-panel">
+        <h3>Company</h3>
+        <div class="form-group">
+          <label class="form-label">Company / Firm Name *</label>
+          <input type="text" id="b-company" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">FCA / Introducer Number (if applicable)</label>
+          <input type="text" id="b-fca" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">How did you hear about Daksfirst?</label>
+          <select id="b-source" class="form-select">
+            <option value="">— Select —</option>
+            <option value="referral">Referral from another broker</option>
+            <option value="google">Google / online search</option>
+            <option value="event">Industry event</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="direct">Direct approach by Daksfirst</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.brokerPrev(2)">← Back</a>
+          <button type="button" class="btn btn-primary" onclick="window.brokerNext(2)">Continue →</button>
+        </div>
+      </div>
+      
+      <!-- Step 3: Security -->
+      <div id="broker-panel-3" class="reg-panel">
+        <h3>Security</h3>
+        <div class="form-group">
+          <label class="form-label">Create Password *</label>
+          <div class="password-field">
+            <input type="password" id="b-password" class="form-input">
+            <button type="button" class="password-toggle" onclick="window.togglePw('b-password', this)">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password *</label>
+          <div class="password-field">
+            <input type="password" id="b-password-confirm" class="form-input">
+            <button type="button" class="password-toggle" onclick="window.togglePw('b-password-confirm', this)">👁</button>
+          </div>
+        </div>
+        
+        <p style="font-size: 14px; color: var(--text-mid); margin: 16px 0;">
+          By registering you confirm you have read and agree to Daksfirst's terms of business. All deals submitted are subject to Daksfirst credit policy.
+        </p>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.brokerPrev(3)">← Back</a>
+          <button type="button" id="b-submit-btn" class="btn btn-primary" onclick="window.registerBroker(">Create Account</button>
+        </div>
+        
+        <p style="text-align: center; margin-top: 20px; font-size: 14px;">
+          Already registered? <a href="#" onclick="window.showScreen('screen-login')" style="color: var(--gold);">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── BORROWER REGISTRATION ── -->
+<div id="screen-register-borrower" class="screen">
+  <div class="navbar">
+    <div class="navbar-logo">
+      <svg width="40" height="40" viewBox="0 0 200 200" style="fill: white;">
+        <rect x="20" y="60" width="160" height="40" rx="8"/>
+        <rect x="40" y="40" width="120" height="40" rx="8"/>
+        <rect x="60" y="20" width="80" height="40" rx="8"/>
+        <circle cx="50" cy="140" r="20"/>
+        <circle cx="100" cy="140" r="20"/>
+        <circle cx="150" cy="140" r="20"/>
+        <rect x="80" y="160" width="40" height="20" rx="4"/>
+      </svg>
+    </div>
+  </div>
+  
+  <div class="reg-container">
+    <div class="reg-card">
+      <div class="reg-header">
+        <h2>Create Borrower Account</h2>
+        <p>Submit your loan enquiry directly</p>
+      </div>
+      
+      <div class="step-indicator">
+        <div class="step active" id="bwstep-1">
+          <div class="step-num">1</div>
+        </div>
+        <div class="step" id="bwstep-2">
+          <div class="step-num">2</div>
+        </div>
+        <div class="step" id="bwstep-3">
+          <div class="step-num">3</div>
+        </div>
+      </div>
+      
+      <div id="borrower-alert" class="alert"></div>
+      
+      <!-- Step 1: Personal -->
+      <div id="borrower-panel-1" class="reg-panel active">
+        <h3>👤 Borrower</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">First Name *</label>
+            <input type="text" id="bw-first-name" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name *</label>
+            <input type="text" id="bw-last-name" class="form-input">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email Address *</label>
+            <input type="email" id="bw-email" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone Number *</label>
+            <input type="tel" id="bw-phone" class="form-input">
+          </div>
+        </div>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.showScreen('screen-landing')">← Back</a>
+          <button type="button" class="btn btn-primary" onclick="window.borrowerNext(1)">Continue →</button>
+        </div>
+      </div>
+      
+      <!-- Step 2: Introduction -->
+      <div id="borrower-panel-2" class="reg-panel">
+        <h3>Introduction</h3>
+        <p style="background: var(--navy-50); padding: 16px; border-radius: var(--radius); margin-bottom: 20px; font-size: 14px;">
+          <strong>Important:</strong> Were you introduced to Daksfirst by a broker or introducer? If so, please tell us — this protects their relationship and ensures they receive their fee.
+        </p>
+        
+        <div class="form-group">
+          <label class="form-label">Were you introduced by a broker? *</label>
+          <select id="bw-has-broker" class="form-select" onchange="toggleBrokerFields()">
+            <option value="">— Select —</option>
+            <option value="yes">Yes — I was introduced by a broker</option>
+            <option value="no">No — I found Daksfirst independently</option>
+          </select>
+        </div>
+        
+        <div id="bw-broker-fields" class="hidden-field">
+          <div class="form-group">
+            <label class="form-label">Broker / Introducer Name *</label>
+            <input type="text" id="bw-broker-name" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Broker Company (if known)</label>
+            <input type="text" id="bw-broker-company" class="form-input">
+          </div>
+        </div>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.borrowerPrev(2)">← Back</a>
+          <button type="button" class="btn btn-primary" onclick="window.borrowerNext(2)">Continue →</button>
+        </div>
+      </div>
+      
+      <!-- Step 3: Security -->
+      <div id="borrower-panel-3" class="reg-panel">
+        <h3>Security</h3>
+        <div class="form-group">
+          <label class="form-label">Create Password *</label>
+          <div class="password-field">
+            <input type="password" id="bw-password" class="form-input">
+            <button type="button" class="password-toggle" onclick="window.togglePw('bw-password', this)">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password *</label>
+          <div class="password-field">
+            <input type="password" id="bw-password-confirm" class="form-input">
+            <button type="button" class="password-toggle" onclick="window.togglePw('bw-password-confirm', this)">👁</button>
+          </div>
+        </div>
+        
+        <div class="form-footer">
+          <a href="#" class="back-link" onclick="window.borrowerPrev(3)">← Back</a>
+          <button type="button" id="bw-submit-btn" class="btn btn-primary" onclick="window.registerBorrower(">Create Account</button>
+        </div>
+        
+        <p style="text-align: center; margin-top: 20px; font-size: 14px;">
+          Already registered? <a href="#" onclick="window.showScreen('screen-login')" style="color: var(--gold);">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── LOGIN SCREEN ── -->
+<div id="screen-login" class="screen">
+  <div class="login-container">
+    <div class="login-card">
+      <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; text-align: center; margin-bottom: 24px; color: var(--navy-900);">Sign In</h2>
+      <p style="text-align: center; color: var(--text-mid); margin-bottom: 24px;">Access your Daksfirst portal</p>
+      
+      <div id="login-alert" class="alert"></div>
+      
+      <form onsubmit="return false;">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="login-email" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div class="password-field">
+            <input type="password" id="login-password" class="form-input" required>
+            <button type="button" class="password-toggle" onclick="window.togglePw('login-password', this)">👁</button>
+          </div>
+        </div>
+        <button type="button" id="login-btn" class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="window.doLogin(">Sign In</button>
+      </form>
+      
+      <p style="text-align: center; margin-top: 20px; font-size: 14px;">
+        Don't have an account? <a href="#" onclick="window.showScreen('screen-landing')" style="color: var(--gold);">Register here</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── EMAIL VERIFICATION PENDING ── -->
+<div id="screen-verify-pending" class="screen">
+  <div class="login-container">
+    <div class="login-card" style="text-align: center;">
+      <div style="font-size: 48px; margin-bottom: 20px;">📧</div>
+      <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 16px; color: var(--navy-900);">Check Your Email</h2>
+      <p style="margin-bottom: 24px;">We've sent a verification link to <strong id="pending-email"></strong>. Click the link in the email to activate your account. It expires in 24 hours.</p>
+      <button type="button" class="btn btn-secondary" style="width: 100%; justify-content: center;" onclick="window.showScreen('screen-login')">Back to Sign In</button>
+      <p style="margin-top: 16px; font-size: 14px; color: var(--text-mid);">
+        Didn't receive it? Check your spam folder or try again.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── BROKER DASHBOARD ── -->
+<div id="screen-dashboard-broker" class="screen">
+  <div class="navbar">
+    <div class="navbar-logo">
+      <svg width="40" height="40" viewBox="0 0 200 200" style="fill: white;">
+        <rect x="20" y="60" width="160" height="40" rx="8"/>
+        <rect x="40" y="40" width="120" height="40" rx="8"/>
+        <rect x="60" y="20" width="80" height="40" rx="8"/>
+        <circle cx="50" cy="140" r="20"/>
+        <circle cx="100" cy="140" r="20"/>
+        <circle cx="150" cy="140" r="20"/>
+        <rect x="80" y="160" width="40" height="20" rx="4"/>
+      </svg>
+    </div>
+    <div class="navbar-right">
+      <span class="user-name">Welcome, <span id="dash-broker-name"></span></span>
+      <button class="logout-btn" onclick="window.doLogout(">Sign Out</button>
+    </div>
+  </div>
+  
+  <div class="dashboard">
+    <div class="dashboard-header">
+      <h1 class="dashboard-title" id="broker-page-title">Broker Dashboard</h1>
+      <p class="dashboard-subtitle">Manage your deal submissions and track progress</p>
+    </div>
+    
+    <div class="dashboard-content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Deals</div>
+          <div class="stat-value" id="bs-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Under Review</div>
+          <div class="stat-value" id="bs-review">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">DIP Issued</div>
+          <div class="stat-value" id="bs-dip">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Loan Value</div>
+          <div class="stat-value" id="bs-value">—</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <button class="tab active" onclick="window.switchTab('broker', 'deals', this)">My Deals</button>
+        <button class="tab" onclick="window.switchTab('broker', 'submit', this)">+ Submit New Deal</button>
+      </div>
+      
+      <div id="broker-tab-deals" class="tab-panel active">
+        <div class="section-header">
+          <h3 class="section-title">Deal Pipeline</h3>
+        </div>
+        <div id="broker-deals-table">
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            No deals submitted yet. Click "Submit New Deal" to get started.
+          </div>
+        </div>
+      </div>
+      
+      <div id="broker-tab-submit" class="tab-panel">
+        <div class="deal-form">
+          <div id="broker-deal-success" style="display: none; padding: 20px; background: var(--green-light); border-radius: var(--radius); margin-bottom: 20px; color: var(--green);"></div>
+          
+          <div id="broker-deal-form-content">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; color: var(--navy-900); margin-bottom: 8px;">Submit New Deal</h2>
+              <p style="color: var(--text-mid);">All fields marked * are required. DIP response within 4 business hours.</p>
+            </div>
+            
+            <div id="broker-deal-alert" class="alert"></div>
+            
+            <div class="form-section">
+              <h3>🏢 Security Property</h3>
+              <div class="form-group">
+                <label class="form-label">Full Property Address *</label>
+                <input type="text" id="bd-address" class="form-input">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Town / City *</label>
+                  <input type="text" id="bd-town" class="form-input">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Postcode *</label>
+                  <input type="text" id="bd-postcode" class="form-input">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Asset Type *</label>
+                  <select id="bd-asset-type" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Residential - House">Residential — House</option>
+                    <option value="Residential - Flat">Residential — Flat / Apartment</option>
+                    <option value="Residential - HMO">Residential — HMO</option>
+                    <option value="Residential - Multi-unit">Residential — Multi-unit</option>
+                    <option value="Commercial - Office">Commercial — Office</option>
+                    <option value="Commercial - Retail">Commercial — Retail</option>
+                    <option value="Commercial - Industrial">Commercial — Industrial / Warehouse</option>
+                    <option value="Commercial - Mixed Use">Commercial — Mixed Use</option>
+                    <option value="Commercial - Hotel">Commercial — Hotel / Hospitality</option>
+                    <option value="Development - Residential">Development — Residential (GDV basis)</option>
+                    <option value="Development - Commercial">Development — Commercial (GDV basis)</option>
+                    <option value="Development - Land with planning">Development — Land with planning</option>
+                    <option value="Development - Land without planning">Development — Land without planning</option>
+                    <option value="Semi-commercial">Semi-commercial</option>
+                    <option value="Student Accommodation">Student Accommodation</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Tenure *</label>
+                  <select id="bd-tenure" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Freehold">Freehold</option>
+                    <option value="Leasehold">Leasehold</option>
+                    <option value="Share of Freehold">Share of Freehold</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Property Value (£) *</label>
+                  <input type="number" id="bd-value" class="form-input" oninput="calcDashLTV()" placeholder="£">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">GDV (£) <span style="font-size: 12px; color: var(--text-mid);">dev only</span></label>
+                  <input type="number" id="bd-gdv" class="form-input" placeholder="£">
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <h3>💷 Loan Details</h3>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Loan Amount (£) *</label>
+                  <input type="number" id="bd-loan" class="form-input" oninput="calcDashLTV()" placeholder="£">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Term (months) *</label>
+                  <select id="bd-term" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="3">3</option>
+                    <option value="6">6</option>
+                    <option value="9">9</option>
+                    <option value="12">12</option>
+                    <option value="18">18</option>
+                    <option value="24">24</option>
+                    <option value="36">36</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div class="ltv-calculator">
+                <div class="ltv-pill">
+                  <span class="ltv-pill-label">Day 1 LTV</span>
+                  <span class="ltv-pill-value" id="bd-ltv">Calculated LTV:—</span>
+                </div>
+              </div>
+              
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Loan Type *</label>
+                  <select id="bd-loan-type" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="First charge bridging">First charge bridging</option>
+                    <option value="Second charge bridging">Second charge bridging</option>
+                    <option value="Development finance">Development finance</option>
+                    <option value="Light refurbishment">Light refurbishment</option>
+                    <option value="Heavy refurbishment">Heavy refurbishment</option>
+                    <option value="Auction finance">Auction finance</option>
+                    <option value="Refinance / capital raise">Refinance / capital raise</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Exit Strategy *</label>
+                  <select id="bd-exit" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Sale of property">Sale of property</option>
+                    <option value="Refinance to BTL mortgage">Refinance to BTL mortgage</option>
+                    <option value="Refinance to commercial mortgage">Refinance to commercial mortgage</option>
+                    <option value="Sale of completed development">Sale of completed development</option>
+                    <option value="Business cash flow">Business cash flow</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Senior / Junior *</label>
+                  <select id="bd-senior" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Senior (1st charge)">Senior (1st charge)</option>
+                    <option value="Junior / Mezzanine (2nd charge)">Junior / Mezzanine (2nd charge)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Loan Purpose *</label>
+                  <select id="bd-purpose" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Property purchase">Property purchase</option>
+                    <option value="Refinance / capital raise">Refinance / capital raise</option>
+                    <option value="Auction purchase">Auction purchase</option>
+                    <option value="Development / refurbishment">Development / refurbishment</option>
+                    <option value="Chain break">Chain break</option>
+                    <option value="Business working capital">Business working capital</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Broker Fee (%) <span style="font-size: 12px; color: var(--text-mid);">optional</span></label>
+                  <input type="number" id="bd-broker-fee" class="form-input" step="0.1" placeholder="%">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Rate Expectation (% p/m) <span style="font-size: 12px; color: var(--text-mid);">optional</span></label>
+                  <input type="number" id="bd-rate" class="form-input" step="0.01" placeholder="%">
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <h3>🏛️ Borrower</h3>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Client Type *</label>
+                  <select id="bd-client-type" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="UK Limited Company (SPV)">UK Limited Company (SPV)</option>
+                    <option value="UK Limited Company (Trading)">UK Limited Company (Trading)</option>
+                    <option value="LLP">LLP</option>
+                    <option value="Individual / Personal">Individual / Personal</option>
+                    <option value="Offshore Company">Offshore Company</option>
+                    <option value="Trust">Trust</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Borrower Name / Entity *</label>
+                  <input type="text" id="bd-borrower" class="form-input">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Director / Guarantor *</label>
+                  <input type="text" id="bd-director" class="form-input">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Companies House No <span style="font-size: 12px; color: var(--text-mid);">if Ltd Co</span></label>
+                  <input type="text" id="bd-co-no" class="form-input">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Equity Available (£) *</label>
+                  <input type="number" id="bd-equity" class="form-input" placeholder="£">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Source of Equity *</label>
+                  <select id="bd-equity-source" class="form-select">
+                    <option value="">— Select —</option>
+                    <option value="Own savings / cash">Own savings / cash</option>
+                    <option value="Proceeds from property sale">Proceeds from property sale</option>
+                    <option value="Director loan">Director loan</option>
+                    <option value="Gift">Gift</option>
+                    <option value="Business profits">Business profits</option>
+                    <option value="Inheritance">Inheritance</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Adverse Credit History *</label>
+                <select id="bd-adverse" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="No adverse credit history">No adverse credit history</option>
+                  <option value="Minor - satisfied CCJs only">Minor — satisfied CCJs only</option>
+                  <option value="Defaults - settled">Defaults — settled</option>
+                  <option value="Bankruptcy / IVA - discharged">Bankruptcy / IVA — discharged</option>
+                  <option value="Current adverse credit">Current adverse credit</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Additional Notes <span style="font-size: 12px; color: var(--text-mid);">optional</span></label>
+                <textarea id="bd-notes" class="form-input" rows="3" style="resize: vertical;"></textarea>
+              </div>
+            </div>
+            
+            <div class="credit-policy">
+              <h4>Credit Policy Reminder</h4>
+              <p>Loan range £100k–£20m · Max LTV 75% · Max term 36 months · Unregulated only · No owner-occupier residential</p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 32px;">
+              <button type="button" class="btn btn-primary" onclick="submitDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Deal to Daksfirst</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── BORROWER DASHBOARD ── -->
+<div id="screen-dashboard-borrower" class="screen">
+  <div class="navbar">
+    <div class="navbar-logo">
+      <svg width="40" height="40" viewBox="0 0 200 200" style="fill: white;">
+        <rect x="20" y="60" width="160" height="40" rx="8"/>
+        <rect x="40" y="40" width="120" height="40" rx="8"/>
+        <rect x="60" y="20" width="80" height="40" rx="8"/>
+        <circle cx="50" cy="140" r="20"/>
+        <circle cx="100" cy="140" r="20"/>
+        <circle cx="150" cy="140" r="20"/>
+        <rect x="80" y="160" width="40" height="20" rx="4"/>
+      </svg>
+    </div>
+    <div class="navbar-right">
+      <span class="user-name">Welcome, <span id="dash-borrower-name"></span></span>
+      <button class="logout-btn" onclick="window.doLogout(">Sign Out</button>
+    </div>
+  </div>
+  
+  <div class="dashboard">
+    <div class="dashboard-header">
+      <h1 class="dashboard-title">My Loan Enquiries</h1>
+      <p class="dashboard-subtitle">Track the status of your bridging loan applications</p>
+    </div>
+    
+    <div class="dashboard-content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Enquiries</div>
+          <div class="stat-value" id="bws-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active</div>
+          <div class="stat-value" id="bws-active">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Approved</div>
+          <div class="stat-value" id="bws-approved">—</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <button class="tab active" onclick="window.switchTab('borrower', 'deals', this)">My Enquiries</button>
+        <button class="tab" onclick="window.switchTab('borrower', 'submit', this)">+ New Enquiry</button>
+      </div>
+      
+      <div id="borrower-tab-deals" class="tab-panel active">
+        <div class="section-header">
+          <h3 class="section-title">Loan Enquiries</h3>
+        </div>
+        <div id="borrower-deals-table">
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            No enquiries yet. Click "New Enquiry" to submit your first deal.
+          </div>
+        </div>
+      </div>
+      
+      <div id="borrower-tab-submit" class="tab-panel">
+        <div class="deal-form">
+          <div style="text-align: center; margin-bottom: 32px;">
+            <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; color: var(--navy-900); margin-bottom: 8px;">New Loan Enquiry</h2>
+            <p style="color: var(--text-mid);">Tell us about the property and loan you need. We respond within 4 business hours.</p>
+          </div>
+          
+          <div id="borrower-deal-alert" class="alert"></div>
+          
+          <div class="form-section">
+            <h3>🏢 Security Property</h3>
+            <div class="form-group">
+              <label class="form-label">Full Property Address *</label>
+              <input type="text" id="bwd-address" class="form-input">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Town / City *</label>
+                <input type="text" id="bwd-town" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Postcode *</label>
+                <input type="text" id="bwd-postcode" class="form-input">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Asset Type *</label>
+                <select id="bwd-asset-type" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="Residential - House">Residential — House</option>
+                  <option value="Residential - Flat">Residential — Flat / Apartment</option>
+                  <option value="Residential - HMO">Residential — HMO</option>
+                  <option value="Commercial - Office">Commercial — Office</option>
+                  <option value="Commercial - Retail">Commercial — Retail</option>
+                  <option value="Commercial - Mixed Use">Commercial — Mixed Use</option>
+                  <option value="Development - Residential">Development — Residential (GDV basis)</option>
+                  <option value="Development - Land with planning">Development — Land with planning</option>
+                  <option value="Semi-commercial">Semi-commercial</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tenure *</label>
+                <select id="bwd-tenure" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="Freehold">Freehold</option>
+                  <option value="Leasehold">Leasehold</option>
+                  <option value="Share of Freehold">Share of Freehold</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Property Value (£) *</label>
+                <input type="number" id="bwd-value" class="form-input" oninput="calcBwLTV()" placeholder="£">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Loan Amount (£) *</label>
+                <input type="number" id="bwd-loan" class="form-input" oninput="calcBwLTV()" placeholder="£">
+              </div>
+            </div>
+            
+            <div class="ltv-calculator">
+              <div class="ltv-pill">
+                <span class="ltv-pill-label">Day 1 LTV</span>
+                <span class="ltv-pill-value" id="bwd-ltv">Calculated LTV:—</span>
+              </div>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Term (months) *</label>
+                <select id="bwd-term" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="3">3</option>
+                  <option value="6">6</option>
+                  <option value="9">9</option>
+                  <option value="12">12</option>
+                  <option value="18">18</option>
+                  <option value="24">24</option>
+                  <option value="36">36</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Exit Strategy *</label>
+                <select id="bwd-exit" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="Sale of property">Sale of property</option>
+                  <option value="Refinance to mortgage">Refinance to mortgage</option>
+                  <option value="Sale of completed development">Sale of completed development</option>
+                  <option value="Business cash flow">Business cash flow</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-section">
+            <h3>🏛️ About You</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Your Name / Entity *</label>
+                <input type="text" id="bwd-borrower" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Client Type *</label>
+                <select id="bwd-client-type" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="UK Limited Company (SPV)">UK Limited Company (SPV)</option>
+                  <option value="UK Limited Company (Trading)">UK Limited Company (Trading)</option>
+                  <option value="Individual / Personal">Individual / Personal</option>
+                  <option value="LLP">LLP</option>
+                  <option value="Offshore Company">Offshore Company</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Equity / Deposit (£) *</label>
+                <input type="number" id="bwd-equity" class="form-input" placeholder="£">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Source of Equity *</label>
+                <select id="bwd-equity-source" class="form-select">
+                  <option value="">— Select —</option>
+                  <option value="Own savings / cash">Own savings / cash</option>
+                  <option value="Proceeds from property sale">Proceeds from property sale</option>
+                  <option value="Director loan">Director loan</option>
+                  <option value="Gift">Gift</option>
+                  <option value="Business profits">Business profits</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Any adverse credit, CCJs or insolvency? *</label>
+              <select id="bwd-adverse" class="form-select">
+                <option value="">— Select —</option>
+                <option value="No adverse credit history">No adverse credit history</option>
+                <option value="Minor - satisfied CCJs only">Minor — satisfied CCJs only</option>
+                <option value="Defaults - settled">Defaults — settled</option>
+                <option value="Bankruptcy / IVA - discharged">Bankruptcy / IVA — discharged</option>
+                <option value="Current adverse credit">Current adverse credit</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tell us about your background & this deal <span style="font-size: 12px; color: var(--text-mid);">optional</span></label>
+              <textarea id="bwd-notes" class="form-input" rows="3" style="resize: vertical;"></textarea>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin-top: 32px;">
+            <button type="button" class="btn btn-primary" onclick="submitBorrowerDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Enquiry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Make sure all variables and functions are in the global scope
+window.API = 'https://daksfirst-auth.onrender.com/api';
+window.currentUser = null;
+window.authToken = null;
+
+// ── Screen management ────────────────────────────────────────────────────────
+window.showScreen = function(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const targetScreen = document.getElementById(id);
+  if (targetScreen) {
+    targetScreen.classList.add('active');
+    window.scrollTo(0, 0);
+  }
+}
+
+window.showRegister = function(role) {
+  window.showScreen(role === 'broker' ? 'screen-register-broker' : 'screen-register-borrower');
+}
+
+// ── Check for verify token in URL ────────────────────────────────────────────
+async function checkVerifyToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) return;
+  try {
+    const res = await fetch(`${window.API}/auth/verify?token=${token}`);
+    const data = await res.json();
+    if (res.ok) {
+      window.showScreen('screen-login');
+      showAlert('login-alert', 'success', '✅ Email verified! You can now sign in.');
+    } else {
+      window.showScreen('screen-login');
+      showAlert('login-alert', 'error', data.error || 'Verification failed. The link may have expired.');
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// ── Alert helper ─────────────────────────────────────────────────────────────
+window.showAlert = function(id, type, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `alert ${type} visible`;
+  el.textContent = msg;
+}
+
+window.hideAlert = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('visible');
+}
+
+// ── Password toggle ──────────────────────────────────────────────────────────
+window.togglePw = function(inputId, btn) {
+  const input = document.getElementById(inputId);
+  input.type = input.type === 'password' ? 'text' : 'password';
+  btn.textContent = input.type === 'password' ? '👁' : '🙈';
+}
+
+// ── Broker registration steps ────────────────────────────────────────────────
+let brokerStep = 1;
+window.brokerNext = function(from) {
+  if (from === 1) {
+    const fn = document.getElementById('b-first-name').value.trim();
+    const ln = document.getElementById('b-last-name').value.trim();
+    const em = document.getElementById('b-email').value.trim();
+    const ph = document.getElementById('b-phone').value.trim();
+    if (!fn || !ln || !em || !ph) return showAlert('broker-alert', 'error', 'Please fill in all required fields.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return showAlert('broker-alert', 'error', 'Please enter a valid email address.');
+  }
+  if (from === 2) {
+    const co = document.getElementById('b-company').value.trim();
+    if (!co) return showAlert('broker-alert', 'error', 'Please enter your company name.');
+  }
+  hideAlert('broker-alert');
+  document.getElementById(`broker-panel-${from}`).classList.remove('active');
+  document.getElementById(`broker-panel-${from + 1}`).classList.add('active');
+  document.getElementById(`bstep-${from}`).classList.remove('active');
+  document.getElementById(`bstep-${from}`).classList.add('done');
+  document.getElementById(`bstep-${from + 1}`).classList.add('active');
+  brokerStep = from + 1;
+}
+
+window.brokerPrev = function(from) {
+  document.getElementById(`broker-panel-${from}`).classList.remove('active');
+  document.getElementById(`broker-panel-${from - 1}`).classList.add('active');
+  document.getElementById(`bstep-${from}`).classList.remove('active');
+  document.getElementById(`bstep-${from - 1}`).classList.remove('done');
+  document.getElementById(`bstep-${from - 1}`).classList.add('active');
+  brokerStep = from - 1;
+}
+
+window.registerBroker = async function() {
+  const pw = document.getElementById('b-password').value;
+  const pwc = document.getElementById('b-password-confirm').value;
+  if (pw.length < 8) return showAlert('broker-alert', 'error', 'Password must be at least 8 characters.');
+  if (pw !== pwc) return showAlert('broker-alert', 'error', 'Passwords do not match.');
+  const btn = document.getElementById('b-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating account...';
+  try {
+    const res = await fetch(`${window.API}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: 'broker',
+        first_name: document.getElementById('b-first-name').value.trim(),
+        last_name: document.getElementById('b-last-name').value.trim(),
+        email: document.getElementById('b-email').value.trim(),
+        phone: document.getElementById('b-phone').value.trim(),
+        company_name: document.getElementById('b-company').value.trim(),
+        fca_number: document.getElementById('b-fca').value.trim(),
+        password: pw
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('pending-email').textContent = document.getElementById('b-email').value.trim();
+    window.showScreen('screen-verify-pending');
+  } catch(e) {
+    showAlert('broker-alert', 'error', e.message || 'Registration failed. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+  }
+}
+
+// ── Borrower registration steps ──────────────────────────────────────────────
+window.borrowerNext = function(from) {
+  if (from === 1) {
+    const fn = document.getElementById('bw-first-name').value.trim();
+    const ln = document.getElementById('bw-last-name').value.trim();
+    const em = document.getElementById('bw-email').value.trim();
+    const ph = document.getElementById('bw-phone').value.trim();
+    if (!fn || !ln || !em || !ph) return showAlert('borrower-alert', 'error', 'Please fill in all required fields.');
+  }
+  if (from === 2) {
+    const hasBroker = document.getElementById('bw-has-broker').value;
+    if (!hasBroker) return showAlert('borrower-alert', 'error', 'Please indicate if you were introduced by a broker.');
+    if (hasBroker === 'yes' && !document.getElementById('bw-broker-name').value.trim()) {
+      return showAlert('borrower-alert', 'error', 'Please enter the broker's name.');
+    }
+  }
+  hideAlert('borrower-alert');
+  document.getElementById(`borrower-panel-${from}`).classList.remove('active');
+  document.getElementById(`borrower-panel-${from + 1}`).classList.add('active');
+  document.getElementById(`bwstep-${from}`).classList.remove('active');
+  document.getElementById(`bwstep-${from}`).classList.add('done');
+  document.getElementById(`bwstep-${from + 1}`).classList.add('active');
+}
+
+window.borrowerPrev = function(from) {
+  document.getElementById(`borrower-panel-${from}`).classList.remove('active');
+  document.getElementById(`borrower-panel-${from - 1}`).classList.add('active');
+  document.getElementById(`bwstep-${from}`).classList.remove('active');
+  document.getElementById(`bwstep-${from - 1}`).classList.remove('done');
+  document.getElementById(`bwstep-${from - 1}`).classList.add('active');
+}
+
+window.toggleBrokerFields = function() {
+  const val = document.getElementById('bw-has-broker').value;
+  const fields = document.getElementById('bw-broker-fields');
+  fields.style.display = val === 'yes' ? 'block' : 'none';
+  if (val === 'yes') {
+    fields.classList.remove('hidden-field');
+  } else {
+    fields.classList.add('hidden-field');
+  }
+}
+
+window.registerBorrower = async function() {
+  const pw = document.getElementById('bw-password').value;
+  const pwc = document.getElementById('bw-password-confirm').value;
+  if (pw.length < 8) return showAlert('borrower-alert', 'error', 'Password must be at least 8 characters.');
+  if (pw !== pwc) return showAlert('borrower-alert', 'error', 'Passwords do not match.');
+  const btn = document.getElementById('bw-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating account...';
+  const hasBroker = document.getElementById('bw-has-broker').value === 'yes';
+  try {
+    const res = await fetch(`${window.API}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: 'borrower',
+        first_name: document.getElementById('bw-first-name').value.trim(),
+        last_name: document.getElementById('bw-last-name').value.trim(),
+        email: document.getElementById('bw-email').value.trim(),
+        phone: document.getElementById('bw-phone').value.trim(),
+        introduced_by_broker: hasBroker ? document.getElementById('bw-broker-name').value.trim() : null,
+        broker_company: hasBroker ? document.getElementById('bw-broker-company').value.trim() : null,
+        password: pw
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('pending-email').textContent = document.getElementById('bw-email').value.trim();
+    window.showScreen('screen-verify-pending');
+  } catch(e) {
+    showAlert('borrower-alert', 'error', e.message || 'Registration failed. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+  }
+}
+
+// ── Login ────────────────────────────────────────────────────────────────────
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-password').value;
+  if (!email || !pw) return showAlert('login-alert', 'error', 'Please enter your email and password.');
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Signing in...';
+  try {
+    const res = await fetch(`${window.API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pw })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    window.authToken = data.token;
+    window.currentUser = data.user;
+    localStorage.setItem('dfs_token', window.authToken);
+    localStorage.setItem('dfs_user', JSON.stringify(window.currentUser));
+    loadDashboard();
+  } catch(e) {
+    showAlert('login-alert', 'error', e.message || 'Login failed.');
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  if (!window.currentUser) return;
+  if (window.currentUser.role === 'broker') {
+    document.getElementById('dash-broker-name').textContent = window.currentUser.first_name;
+    document.getElementById('broker-page-title').textContent = `Welcome back, ${window.currentUser.first_name}`;
+    window.showScreen('screen-dashboard-broker');
+    await loadBrokerData();
+  } else if (window.currentUser.role === 'borrower') {
+    document.getElementById('dash-borrower-name').textContent = window.currentUser.first_name;
+    window.showScreen('screen-dashboard-borrower');
+    await loadBorrowerData();
+  }
+}
+
+async function loadBrokerData() {
+  try {
+    const [statsRes, dealsRes] = await Promise.all([
+      fetch(`${window.API}/stats`, { headers: { Authorization: `Bearer ${window.authToken}` } }),
+      fetch(`${window.API}/deals`, { headers: { Authorization: `Bearer ${window.authToken}` } })
+    ]);
+    const stats = await statsRes.json();
+    const deals = await dealsRes.json();
+    document.getElementById('bs-total').textContent = stats.total || 0;
+    document.getElementById('bs-review').textContent = stats.under_review || 0;
+    document.getElementById('bs-dip').textContent = stats.dip_issued || 0;
+    const val = parseFloat(stats.total_loan_value) || 0;
+    document.getElementById('bs-value').textContent = val > 1000000 ? '£' + (val/1000000).toFixed(1) + 'm' : val > 0 ? '£' + (val/1000).toFixed(0) + 'k' : '£0';
+    renderDealsTable('broker-deals-table', deals);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function loadBorrowerData() {
+  try {
+    const [statsRes, dealsRes] = await Promise.all([
+      fetch(`${window.API}/stats`, { headers: { Authorization: `Bearer ${window.authToken}` } }),
+      fetch(`${window.API}/deals`, { headers: { Authorization: `Bearer ${window.authToken}` } })
+    ]);
+    const stats = await statsRes.json();
+    const deals = await dealsRes.json();
+    document.getElementById('bws-total').textContent = stats.total || 0;
+    document.getElementById('bws-active').textContent = (parseInt(stats.received||0) + parseInt(stats.under_review||0) + parseInt(stats.dip_issued||0));
+    document.getElementById('bws-approved').textContent = stats.approved || 0;
+    renderDealsTable('borrower-deals-table', deals);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderDealsTable(containerId, deals) {
+  const container = document.getElementById(containerId);
+  if (!deals || deals.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div>No deals yet.</div>';
+    return;
+  }
+  const statusBadge = (s) => {
+    const map = {
+      'Received': 'badge-received',
+      'Under Review': 'badge-review',
+      'DIP Issued': 'badge-dip',
+      'Credit Approved': 'badge-approved',
+      'Declined': 'badge-declined',
+      'Further Info Required': 'badge-info',
+      'Withdrawn': 'badge-withdrawn'
+    };
+    return `<span class="badge ${map[s]||'badge-received'}">${s}</span>`;
+  };
+  container.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Deal Ref</th><th>Property</th><th>Asset Type</th>
+        <th>Loan Amount</th><th>LTV</th><th>Status</th><th>Submitted</th>
+      </tr></thead>
+      <tbody>
+        ${deals.map(d => `
+          <tr>
+            <td><strong style="font-family:'DM Mono',monospace;font-size:12px;color:var(--navy-800)">${d.deal_ref}</strong></td>
+            <td>${d.property_address ? d.property_address.substring(0, 30) + (d.property_address.length > 30 ? '…' : '') : '—'}</td>
+            <td>${d.asset_type || '—'}</td>
+            <td>${d.loan_amount ? '£' + Number(d.loan_amount).toLocaleString() : '—'}</td>
+            <td>${d.ltv_day1 || '—'}</td>
+            <td>${statusBadge(d.status)}</td>
+            <td>${new Date(d.created_at).toLocaleDateString('en-GB')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+window.switchTab = function(portal, tab, el) {
+  document.querySelectorAll(`#screen-dashboard-${portal} .tab`).forEach(t => t.classList.remove('active'));
+  document.querySelectorAll(`#screen-dashboard-${portal} .tab-panel`).forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`${portal}-tab-${tab}`).classList.add('active');
+}
+
+// ── LTV calculators ──────────────────────────────────────────────────────────
+window.calcDashLTV = function() {
+  const loan = parseFloat(document.getElementById('bd-loan').value) || 0;
+  const val = parseFloat(document.getElementById('bd-value').value) || 0;
+  const el = document.getElementById('bd-ltv');
+  if (!loan || !val) {
+    el.textContent = '—';
+    el.className = 'ltv-pill-value';
+    return;
+  }
+  const ltv = (loan/val*100).toFixed(1);
+  el.textContent = ltv + '%';
+  el.className = 'ltv-pill-value' + (ltv > 75 ? ' over' : ltv > 70 ? ' warn' : '');
+}
+
+window.calcBwLTV = function() {
+  const loan = parseFloat(document.getElementById('bwd-loan').value) || 0;
+  const val = parseFloat(document.getElementById('bwd-value').value) || 0;
+  const el = document.getElementById('bwd-ltv');
+  if (!loan || !val) {
+    el.textContent = '—';
+    el.className = 'ltv-pill-value';
+    return;
+  }
+  const ltv = (loan/val*100).toFixed(1);
+  el.textContent = ltv + '%';
+  el.className = 'ltv-pill-value' + (ltv > 75 ? ' over' : ltv > 70 ? ' warn' : '');
+}
+
+// ── Deal submission (broker) ─────────────────────────────────────────────────
+window.submitDeal = async function() {
+  const required = ['bd-address','bd-town','bd-postcode','bd-asset-type','bd-tenure',
+                    'bd-value','bd-loan','bd-term','bd-loan-type','bd-exit','bd-senior',
+                    'bd-purpose','bd-borrower','bd-director','bd-client-type','bd-equity',
+                    'bd-equity-source','bd-adverse'];
+  let valid = true;
+  required.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !el.value.trim()) {
+      if(el) el.classList.add('error');
+      valid = false;
+    } else el.classList.remove('error');
+  });
+  if (!valid) return showAlert('broker-deal-alert', 'error', 'Please fill in all required fields.');
+  hideAlert('broker-deal-alert');
+  const ltvEl = document.getElementById('bd-ltv');
+  const payload = {
+    property_address: document.getElementById('bd-address').value,
+    town: document.getElementById('bd-town').value,
+    postcode: document.getElementById('bd-postcode').value,
+    asset_type: document.getElementById('bd-asset-type').value,
+    tenure: document.getElementById('bd-tenure').value,
+    property_value: document.getElementById('bd-value').value,
+    gdv: document.getElementById('bd-gdv').value,
+    loan_amount: document.getElementById('bd-loan').value,
+    term_months: document.getElementById('bd-term').value,
+    loan_type: document.getElementById('bd-loan-type').value,
+    exit_strategy: document.getElementById('bd-exit').value,
+    senior_junior: document.getElementById('bd-senior').value,
+    loan_purpose: document.getElementById('bd-purpose').value,
+    broker_fee_pct: document.getElementById('bd-broker-fee').value,
+    rate_ask: document.getElementById('bd-rate').value,
+    client_type: document.getElementById('bd-client-type').value,
+    borrower_name: document.getElementById('bd-borrower').value,
+    director_name: document.getElementById('bd-director').value,
+    company_number: document.getElementById('bd-co-no').value,
+    equity_amount: document.getElementById('bd-equity').value,
+    equity_source: document.getElementById('bd-equity-source').value,
+    adverse_credit: document.getElementById('bd-adverse').value,
+    other_info: document.getElementById('bd-notes').value,
+    ltv_day1: ltvEl.textContent,
+    broker_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
+    broker_email: window.currentUser.email,
+    broker_company: window.currentUser.company_name,
+    source: 'portal'
+  };
+  try {
+    const res = await fetch(`${window.API}/deals`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${window.authToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('broker-deal-form-content').style.display = 'none';
+    const suc = document.getElementById('broker-deal-success');
+    suc.style.display = 'block';
+    suc.innerHTML = `✅ Deal submitted successfully! Reference: <strong style="font-family:'DM Mono',monospace">${data.deal_ref}</strong>. Our credit team will respond within 4 business hours.`;
+    await loadBrokerData();
+    setTimeout(() => {
+      document.getElementById('broker-deal-form-content').style.display = 'block';
+      suc.style.display = 'none';
+      document.querySelectorAll('#broker-tab-submit input, #broker-tab-submit select, #broker-tab-submit textarea').forEach(el => el.value = '');
+      document.getElementById('bd-ltv').textContent = '—';
+      switchTab('broker', 'deals', document.querySelector('#screen-dashboard-broker .tabs .tab'));
+    }, 4000);
+  } catch(e) {
+    showAlert('broker-deal-alert', 'error', e.message || 'Submission failed. Please try again.');
+  }
+}
+
+// ── Deal submission (borrower) ───────────────────────────────────────────────
+window.submitBorrowerDeal = async function() {
+  const required = ['bwd-address','bwd-town','bwd-postcode','bwd-asset-type','bwd-tenure',
+                    'bwd-value','bwd-loan','bwd-term','bwd-exit','bwd-borrower','bwd-client-type',
+                    'bwd-equity','bwd-equity-source','bwd-adverse'];
+  let valid = true;
+  required.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !el.value.trim()) {
+      if(el) el.classList.add('error');
+      valid = false;
+    } else el.classList.remove('error');
+  });
+  if (!valid) return showAlert('borrower-deal-alert', 'error', 'Please fill in all required fields.');
+  hideAlert('borrower-deal-alert');
+  const payload = {
+    property_address: document.getElementById('bwd-address').value,
+    town: document.getElementById('bwd-town').value,
+    postcode: document.getElementById('bwd-postcode').value,
+    asset_type: document.getElementById('bwd-asset-type').value,
+    tenure: document.getElementById('bwd-tenure').value,
+    property_value: document.getElementById('bwd-value').value,
+    loan_amount: document.getElementById('bwd-loan').value,
+    term_months: document.getElementById('bwd-term').value,
+    exit_strategy: document.getElementById('bwd-exit').value,
+    borrower_name: document.getElementById('bwd-borrower').value,
+    client_type: document.getElementById('bwd-client-type').value,
+    equity_amount: document.getElementById('bwd-equity').value,
+    equity_source: document.getElementById('bwd-equity-source').value,
+    adverse_credit: document.getElementById('bwd-adverse').value,
+    other_info: document.getElementById('bwd-notes').value,
+    ltv_day1: document.getElementById('bwd-ltv').textContent,
+    director_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
+    source: 'portal-borrower'
+  };
+  try {
+    const res = await fetch(`${window.API}/deals`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${window.authToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showAlert('borrower-deal-alert', 'success', `✅ Enquiry submitted! Ref: ${data.deal_ref}. We will respond within 4 business hours.`);
+    await loadBorrowerData();
+    switchTab('borrower', 'deals', document.querySelector('#screen-dashboard-borrower .tabs .tab'));
+  } catch(e) {
+    showAlert('borrower-deal-alert', 'error', e.message || 'Submission failed.');
+  }
+}
+
+// ── Logout ───────────────────────────────────────────────────────────────────
+window.doLogout = function() {
+  window.authToken = null;
+  window.currentUser = null;
+  localStorage.removeItem('dfs_token');
+  localStorage.removeItem('dfs_user');
+  window.showScreen('screen-landing');
+}
+
+// ── Auto-login from localStorage ─────────────────────────────────────────────
+async function tryAutoLogin() {
+  const token = localStorage.getItem('dfs_token');
+  const user = localStorage.getItem('dfs_user');
+  if (!token || !user) return;
+  try {
+    const res = await fetch(`${window.API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { localStorage.clear(); return; }
+    window.authToken = token;
+    window.currentUser = JSON.parse(user);
+    loadDashboard();
+  } catch(e) { localStorage.clear(); }
+}
+
+// ── DOM Ready and Initialization ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize the application
+  checkVerifyToken();
+  tryAutoLogin();
+  
+  // Test console log
+  console.log('Daksfirst Portal Initialized Successfully');
+  console.log('API endpoint:', window.API);
+});
+
+// For immediate execution if DOM is already loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    checkVerifyToken();
+    tryAutoLogin();
+  });
+} else {
+  // DOM is already loaded
+  checkVerifyToken();
+  tryAutoLogin();
+}
+</script>
+</body>
+</html>
