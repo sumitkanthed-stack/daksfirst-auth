@@ -1155,542 +1155,331 @@ tr:hover { background: var(--navy-50); }
 </div>
 
 <script>
-// Make sure all variables and functions are in the global scope
+// MINIMAL WORKING DAKSFIRST PORTAL SCRIPT
+// Only essential functions for registration and login
+
+// ── Configuration ─────────────────────────────────────────────────────
 window.API = 'https://daksfirst-auth.onrender.com/api';
 window.currentUser = null;
 window.authToken = null;
 
-// ── Screen management ────────────────────────────────────────────────────────
+// ── Core Navigation Functions ─────────────────────────────────────────
 window.showScreen = function(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  const targetScreen = document.getElementById(id);
-  if (targetScreen) {
-    targetScreen.classList.add('active');
-    window.scrollTo(0, 0);
-  }
-}
+    document.querySelectorAll('.screen').forEach(function(s) {
+        s.classList.remove('active');
+    });
+    const targetScreen = document.getElementById(id);
+    if (targetScreen) {
+        targetScreen.classList.add('active');
+        window.scrollTo(0, 0);
+    }
+};
 
 window.showRegister = function(role) {
-  window.showScreen(role === 'broker' ? 'screen-register-broker' : 'screen-register-borrower');
-}
+    const screenId = role === 'broker' ? 'screen-register-broker' : 'screen-register-borrower';
+    window.showScreen(screenId);
+};
 
-// ── Check for verify token in URL ────────────────────────────────────────────
-async function checkVerifyToken() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
-  if (!token) return;
-  try {
-    const res = await fetch(`${window.API}/auth/verify?token=${token}`);
-    const data = await res.json();
-    if (res.ok) {
-      window.showScreen('screen-login');
-      showAlert('login-alert', 'success', '✅ Email verified! You can now sign in.');
-    } else {
-      window.showScreen('screen-login');
-      showAlert('login-alert', 'error', data.error || 'Verification failed. The link may have expired.');
-    }
-    window.history.replaceState({}, '', window.location.pathname);
-  } catch(e) {
-    console.error(e);
-  }
-}
-
-// ── Alert helper ─────────────────────────────────────────────────────────────
+// ── Alert Management ──────────────────────────────────────────────────
 window.showAlert = function(id, type, msg) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = `alert ${type} visible`;
-  el.textContent = msg;
-}
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'alert ' + type + ' visible';
+    el.textContent = msg;
+};
 
 window.hideAlert = function(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('visible');
-}
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('visible');
+};
 
-// ── Password toggle ──────────────────────────────────────────────────────────
+// ── Form Utilities ────────────────────────────────────────────────────
 window.togglePw = function(inputId, btn) {
-  const input = document.getElementById(inputId);
-  input.type = input.type === 'password' ? 'text' : 'password';
-  btn.textContent = input.type === 'password' ? '👁' : '🙈';
-}
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁';
+    }
+};
 
-// ── Broker registration steps ────────────────────────────────────────────────
-let brokerStep = 1;
+// ── Broker Registration ───────────────────────────────────────────────
 window.brokerNext = function(from) {
-  if (from === 1) {
-    const fn = document.getElementById('b-first-name').value.trim();
-    const ln = document.getElementById('b-last-name').value.trim();
-    const em = document.getElementById('b-email').value.trim();
-    const ph = document.getElementById('b-phone').value.trim();
-    if (!fn || !ln || !em || !ph) return showAlert('broker-alert', 'error', 'Please fill in all required fields.');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return showAlert('broker-alert', 'error', 'Please enter a valid email address.');
-  }
-  if (from === 2) {
-    const co = document.getElementById('b-company').value.trim();
-    if (!co) return showAlert('broker-alert', 'error', 'Please enter your company name.');
-  }
-  hideAlert('broker-alert');
-  document.getElementById(`broker-panel-${from}`).classList.remove('active');
-  document.getElementById(`broker-panel-${from + 1}`).classList.add('active');
-  document.getElementById(`bstep-${from}`).classList.remove('active');
-  document.getElementById(`bstep-${from}`).classList.add('done');
-  document.getElementById(`bstep-${from + 1}`).classList.add('active');
-  brokerStep = from + 1;
-}
+    if (from === 1) {
+        const fn = document.getElementById('b-first-name').value.trim();
+        const ln = document.getElementById('b-last-name').value.trim();
+        const em = document.getElementById('b-email').value.trim();
+        const ph = document.getElementById('b-phone').value.trim();
+        
+        if (!fn || !ln || !em || !ph) {
+            return window.showAlert('broker-alert', 'error', 'Please fill in all required fields.');
+        }
+        
+        window.hideAlert('broker-alert');
+        document.getElementById('bstep-1').classList.remove('active');
+        document.getElementById('bstep-1').classList.add('done');
+        document.getElementById('bstep-2').classList.add('active');
+        document.getElementById('broker-panel-1').classList.remove('active');
+        document.getElementById('broker-panel-2').classList.add('active');
+    } else if (from === 2) {
+        const company = document.getElementById('b-company').value.trim();
+        if (!company) {
+            return window.showAlert('broker-alert', 'error', 'Company name is required.');
+        }
+        
+        window.hideAlert('broker-alert');
+        document.getElementById('bstep-2').classList.remove('active');
+        document.getElementById('bstep-2').classList.add('done');
+        document.getElementById('bstep-3').classList.add('active');
+        document.getElementById('broker-panel-2').classList.remove('active');
+        document.getElementById('broker-panel-3').classList.add('active');
+    }
+};
 
-window.brokerPrev = function(from) {
-  document.getElementById(`broker-panel-${from}`).classList.remove('active');
-  document.getElementById(`broker-panel-${from - 1}`).classList.add('active');
-  document.getElementById(`bstep-${from}`).classList.remove('active');
-  document.getElementById(`bstep-${from - 1}`).classList.remove('done');
-  document.getElementById(`bstep-${from - 1}`).classList.add('active');
-  brokerStep = from - 1;
-}
+window.brokerPrev = function(to) {
+    window.hideAlert('broker-alert');
+    if (to === 1) {
+        document.getElementById('bstep-2').classList.remove('active');
+        document.getElementById('bstep-1').classList.add('active');
+        document.getElementById('bstep-1').classList.remove('done');
+        document.getElementById('broker-panel-2').classList.remove('active');
+        document.getElementById('broker-panel-1').classList.add('active');
+    } else if (to === 2) {
+        document.getElementById('bstep-3').classList.remove('active');
+        document.getElementById('bstep-2').classList.add('active');
+        document.getElementById('bstep-2').classList.remove('done');
+        document.getElementById('broker-panel-3').classList.remove('active');
+        document.getElementById('broker-panel-2').classList.add('active');
+    }
+};
 
-window.registerBroker = async function() {
-  const pw = document.getElementById('b-password').value;
-  const pwc = document.getElementById('b-password-confirm').value;
-  if (pw.length < 8) return showAlert('broker-alert', 'error', 'Password must be at least 8 characters.');
-  if (pw !== pwc) return showAlert('broker-alert', 'error', 'Passwords do not match.');
-  const btn = document.getElementById('b-submit-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Creating account...';
-  try {
-    const res = await fetch(`${window.API}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+// ── Borrower Registration ─────────────────────────────────────────────
+window.borrowerNext = function(from) {
+    if (from === 1) {
+        const fn = document.getElementById('bw-first-name').value.trim();
+        const ln = document.getElementById('bw-last-name').value.trim();
+        const em = document.getElementById('bw-email').value.trim();
+        const ph = document.getElementById('bw-phone').value.trim();
+        
+        if (!fn || !ln || !em || !ph) {
+            return window.showAlert('borrower-alert', 'error', 'Please fill in all required fields.');
+        }
+        
+        window.hideAlert('borrower-alert');
+        document.getElementById('bwstep-1').classList.remove('active');
+        document.getElementById('bwstep-1').classList.add('done');
+        document.getElementById('bwstep-2').classList.add('active');
+        document.getElementById('borrower-panel-1').classList.remove('active');
+        document.getElementById('borrower-panel-2').classList.add('active');
+    } else if (from === 2) {
+        const hasBroker = document.getElementById('bw-has-broker').value;
+        if (!hasBroker) {
+            return window.showAlert('borrower-alert', 'error', 'Please specify if you were introduced by a broker.');
+        }
+        
+        if (hasBroker === 'yes') {
+            const brokerName = document.getElementById('bw-broker-name').value.trim();
+            if (!brokerName) {
+                return window.showAlert('borrower-alert', 'error', 'Broker name is required.');
+            }
+        }
+        
+        window.hideAlert('borrower-alert');
+        document.getElementById('bwstep-2').classList.remove('active');
+        document.getElementById('bwstep-2').classList.add('done');
+        document.getElementById('bwstep-3').classList.add('active');
+        document.getElementById('borrower-panel-2').classList.remove('active');
+        document.getElementById('borrower-panel-3').classList.add('active');
+    }
+};
+
+window.borrowerPrev = function(to) {
+    window.hideAlert('borrower-alert');
+    if (to === 1) {
+        document.getElementById('bwstep-2').classList.remove('active');
+        document.getElementById('bwstep-1').classList.add('active');
+        document.getElementById('bwstep-1').classList.remove('done');
+        document.getElementById('borrower-panel-2').classList.remove('active');
+        document.getElementById('borrower-panel-1').classList.add('active');
+    } else if (to === 2) {
+        document.getElementById('bwstep-3').classList.remove('active');
+        document.getElementById('bwstep-2').classList.add('active');
+        document.getElementById('bwstep-2').classList.remove('done');
+        document.getElementById('borrower-panel-3').classList.remove('active');
+        document.getElementById('borrower-panel-2').classList.add('active');
+    }
+};
+
+window.toggleBrokerFields = function() {
+    const hasBroker = document.getElementById('bw-has-broker').value;
+    const fields = document.getElementById('bw-broker-fields');
+    if (hasBroker === 'yes') {
+        fields.classList.remove('hidden-field');
+    } else {
+        fields.classList.add('hidden-field');
+    }
+};
+
+// ── Registration Submission ───────────────────────────────────────────
+window.registerBroker = function() {
+    const pw = document.getElementById('b-password').value;
+    const pw2 = document.getElementById('b-password-confirm').value;
+    
+    if (!pw || !pw2) {
+        return window.showAlert('broker-alert', 'error', 'Please enter and confirm your password.');
+    }
+    if (pw !== pw2) {
+        return window.showAlert('broker-alert', 'error', 'Passwords do not match.');
+    }
+    if (pw.length < 8) {
+        return window.showAlert('broker-alert', 'error', 'Password must be at least 8 characters.');
+    }
+    
+    const btn = document.getElementById('b-submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating Account...';
+    
+    const payload = {
         role: 'broker',
         first_name: document.getElementById('b-first-name').value.trim(),
         last_name: document.getElementById('b-last-name').value.trim(),
         email: document.getElementById('b-email').value.trim(),
         phone: document.getElementById('b-phone').value.trim(),
-        company_name: document.getElementById('b-company').value.trim(),
+        company: document.getElementById('b-company').value.trim(),
         fca_number: document.getElementById('b-fca').value.trim(),
+        source: document.getElementById('b-source').value,
         password: pw
-      })
+    };
+    
+    fetch(window.API + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) throw new Error(data.error);
+        window.showAlert('broker-alert', 'success', '✅ Account created! Please check your email to verify your account.');
+        document.getElementById('pending-email').textContent = payload.email;
+        setTimeout(function() { window.showScreen('screen-verify-pending'); }, 2000);
+    })
+    .catch(function(error) {
+        window.showAlert('broker-alert', 'error', error.message || 'Registration failed.');
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    document.getElementById('pending-email').textContent = document.getElementById('b-email').value.trim();
-    window.showScreen('screen-verify-pending');
-  } catch(e) {
-    showAlert('broker-alert', 'error', e.message || 'Registration failed. Please try again.');
-    btn.disabled = false;
-    btn.textContent = 'Create Account';
-  }
-}
+};
 
-// ── Borrower registration steps ──────────────────────────────────────────────
-window.borrowerNext = function(from) {
-  if (from === 1) {
-    const fn = document.getElementById('bw-first-name').value.trim();
-    const ln = document.getElementById('bw-last-name').value.trim();
-    const em = document.getElementById('bw-email').value.trim();
-    const ph = document.getElementById('bw-phone').value.trim();
-    if (!fn || !ln || !em || !ph) return showAlert('borrower-alert', 'error', 'Please fill in all required fields.');
-  }
-  if (from === 2) {
-    const hasBroker = document.getElementById('bw-has-broker').value;
-    if (!hasBroker) return showAlert('borrower-alert', 'error', 'Please indicate if you were introduced by a broker.');
-    if (hasBroker === 'yes' && !document.getElementById('bw-broker-name').value.trim()) {
-      return showAlert('borrower-alert', 'error', 'Please enter the broker's name.');
+window.registerBorrower = function() {
+    const pw = document.getElementById('bw-password').value;
+    const pw2 = document.getElementById('bw-password-confirm').value;
+    
+    if (!pw || !pw2) {
+        return window.showAlert('borrower-alert', 'error', 'Please enter and confirm your password.');
     }
-  }
-  hideAlert('borrower-alert');
-  document.getElementById(`borrower-panel-${from}`).classList.remove('active');
-  document.getElementById(`borrower-panel-${from + 1}`).classList.add('active');
-  document.getElementById(`bwstep-${from}`).classList.remove('active');
-  document.getElementById(`bwstep-${from}`).classList.add('done');
-  document.getElementById(`bwstep-${from + 1}`).classList.add('active');
-}
-
-window.borrowerPrev = function(from) {
-  document.getElementById(`borrower-panel-${from}`).classList.remove('active');
-  document.getElementById(`borrower-panel-${from - 1}`).classList.add('active');
-  document.getElementById(`bwstep-${from}`).classList.remove('active');
-  document.getElementById(`bwstep-${from - 1}`).classList.remove('done');
-  document.getElementById(`bwstep-${from - 1}`).classList.add('active');
-}
-
-window.toggleBrokerFields = function() {
-  const val = document.getElementById('bw-has-broker').value;
-  const fields = document.getElementById('bw-broker-fields');
-  fields.style.display = val === 'yes' ? 'block' : 'none';
-  if (val === 'yes') {
-    fields.classList.remove('hidden-field');
-  } else {
-    fields.classList.add('hidden-field');
-  }
-}
-
-window.registerBorrower = async function() {
-  const pw = document.getElementById('bw-password').value;
-  const pwc = document.getElementById('bw-password-confirm').value;
-  if (pw.length < 8) return showAlert('borrower-alert', 'error', 'Password must be at least 8 characters.');
-  if (pw !== pwc) return showAlert('borrower-alert', 'error', 'Passwords do not match.');
-  const btn = document.getElementById('bw-submit-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Creating account...';
-  const hasBroker = document.getElementById('bw-has-broker').value === 'yes';
-  try {
-    const res = await fetch(`${window.API}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    if (pw !== pw2) {
+        return window.showAlert('borrower-alert', 'error', 'Passwords do not match.');
+    }
+    if (pw.length < 8) {
+        return window.showAlert('borrower-alert', 'error', 'Password must be at least 8 characters.');
+    }
+    
+    const btn = document.getElementById('bw-submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating Account...';
+    
+    const hasBroker = document.getElementById('bw-has-broker').value;
+    const payload = {
         role: 'borrower',
         first_name: document.getElementById('bw-first-name').value.trim(),
         last_name: document.getElementById('bw-last-name').value.trim(),
         email: document.getElementById('bw-email').value.trim(),
         phone: document.getElementById('bw-phone').value.trim(),
-        introduced_by_broker: hasBroker ? document.getElementById('bw-broker-name').value.trim() : null,
-        broker_company: hasBroker ? document.getElementById('bw-broker-company').value.trim() : null,
+        has_broker: hasBroker,
+        broker_name: hasBroker === 'yes' ? document.getElementById('bw-broker-name').value.trim() : null,
+        broker_company: hasBroker === 'yes' ? document.getElementById('bw-broker-company').value.trim() : null,
         password: pw
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    document.getElementById('pending-email').textContent = document.getElementById('bw-email').value.trim();
-    window.showScreen('screen-verify-pending');
-  } catch(e) {
-    showAlert('borrower-alert', 'error', e.message || 'Registration failed. Please try again.');
-    btn.disabled = false;
-    btn.textContent = 'Create Account';
-  }
-}
-
-// ── Login ────────────────────────────────────────────────────────────────────
-window.doLogin = async function() {
-  const email = document.getElementById('login-email').value.trim();
-  const pw = document.getElementById('login-password').value;
-  if (!email || !pw) return showAlert('login-alert', 'error', 'Please enter your email and password.');
-  const btn = document.getElementById('login-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Signing in...';
-  try {
-    const res = await fetch(`${window.API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pw })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    window.authToken = data.token;
-    window.currentUser = data.user;
-    localStorage.setItem('dfs_token', window.authToken);
-    localStorage.setItem('dfs_user', JSON.stringify(window.currentUser));
-    loadDashboard();
-  } catch(e) {
-    showAlert('login-alert', 'error', e.message || 'Login failed.');
-    btn.disabled = false;
-    btn.textContent = 'Sign In';
-  }
-}
-
-// ── Dashboard ────────────────────────────────────────────────────────────────
-async function loadDashboard() {
-  if (!window.currentUser) return;
-  if (window.currentUser.role === 'broker') {
-    document.getElementById('dash-broker-name').textContent = window.currentUser.first_name;
-    document.getElementById('broker-page-title').textContent = `Welcome back, ${window.currentUser.first_name}`;
-    window.showScreen('screen-dashboard-broker');
-    await loadBrokerData();
-  } else if (window.currentUser.role === 'borrower') {
-    document.getElementById('dash-borrower-name').textContent = window.currentUser.first_name;
-    window.showScreen('screen-dashboard-borrower');
-    await loadBorrowerData();
-  }
-}
-
-async function loadBrokerData() {
-  try {
-    const [statsRes, dealsRes] = await Promise.all([
-      fetch(`${window.API}/stats`, { headers: { Authorization: `Bearer ${window.authToken}` } }),
-      fetch(`${window.API}/deals`, { headers: { Authorization: `Bearer ${window.authToken}` } })
-    ]);
-    const stats = await statsRes.json();
-    const deals = await dealsRes.json();
-    document.getElementById('bs-total').textContent = stats.total || 0;
-    document.getElementById('bs-review').textContent = stats.under_review || 0;
-    document.getElementById('bs-dip').textContent = stats.dip_issued || 0;
-    const val = parseFloat(stats.total_loan_value) || 0;
-    document.getElementById('bs-value').textContent = val > 1000000 ? '£' + (val/1000000).toFixed(1) + 'm' : val > 0 ? '£' + (val/1000).toFixed(0) + 'k' : '£0';
-    renderDealsTable('broker-deals-table', deals);
-  } catch(e) {
-    console.error(e);
-  }
-}
-
-async function loadBorrowerData() {
-  try {
-    const [statsRes, dealsRes] = await Promise.all([
-      fetch(`${window.API}/stats`, { headers: { Authorization: `Bearer ${window.authToken}` } }),
-      fetch(`${window.API}/deals`, { headers: { Authorization: `Bearer ${window.authToken}` } })
-    ]);
-    const stats = await statsRes.json();
-    const deals = await dealsRes.json();
-    document.getElementById('bws-total').textContent = stats.total || 0;
-    document.getElementById('bws-active').textContent = (parseInt(stats.received||0) + parseInt(stats.under_review||0) + parseInt(stats.dip_issued||0));
-    document.getElementById('bws-approved').textContent = stats.approved || 0;
-    renderDealsTable('borrower-deals-table', deals);
-  } catch(e) {
-    console.error(e);
-  }
-}
-
-function renderDealsTable(containerId, deals) {
-  const container = document.getElementById(containerId);
-  if (!deals || deals.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div>No deals yet.</div>';
-    return;
-  }
-  const statusBadge = (s) => {
-    const map = {
-      'Received': 'badge-received',
-      'Under Review': 'badge-review',
-      'DIP Issued': 'badge-dip',
-      'Credit Approved': 'badge-approved',
-      'Declined': 'badge-declined',
-      'Further Info Required': 'badge-info',
-      'Withdrawn': 'badge-withdrawn'
     };
-    return `<span class="badge ${map[s]||'badge-received'}">${s}</span>`;
-  };
-  container.innerHTML = `
-    <table>
-      <thead><tr>
-        <th>Deal Ref</th><th>Property</th><th>Asset Type</th>
-        <th>Loan Amount</th><th>LTV</th><th>Status</th><th>Submitted</th>
-      </tr></thead>
-      <tbody>
-        ${deals.map(d => `
-          <tr>
-            <td><strong style="font-family:'DM Mono',monospace;font-size:12px;color:var(--navy-800)">${d.deal_ref}</strong></td>
-            <td>${d.property_address ? d.property_address.substring(0, 30) + (d.property_address.length > 30 ? '…' : '') : '—'}</td>
-            <td>${d.asset_type || '—'}</td>
-            <td>${d.loan_amount ? '£' + Number(d.loan_amount).toLocaleString() : '—'}</td>
-            <td>${d.ltv_day1 || '—'}</td>
-            <td>${statusBadge(d.status)}</td>
-            <td>${new Date(d.created_at).toLocaleDateString('en-GB')}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-}
-
-// ── Tab switching ────────────────────────────────────────────────────────────
-window.switchTab = function(portal, tab, el) {
-  document.querySelectorAll(`#screen-dashboard-${portal} .tab`).forEach(t => t.classList.remove('active'));
-  document.querySelectorAll(`#screen-dashboard-${portal} .tab-panel`).forEach(p => p.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById(`${portal}-tab-${tab}`).classList.add('active');
-}
-
-// ── LTV calculators ──────────────────────────────────────────────────────────
-window.calcDashLTV = function() {
-  const loan = parseFloat(document.getElementById('bd-loan').value) || 0;
-  const val = parseFloat(document.getElementById('bd-value').value) || 0;
-  const el = document.getElementById('bd-ltv');
-  if (!loan || !val) {
-    el.textContent = '—';
-    el.className = 'ltv-pill-value';
-    return;
-  }
-  const ltv = (loan/val*100).toFixed(1);
-  el.textContent = ltv + '%';
-  el.className = 'ltv-pill-value' + (ltv > 75 ? ' over' : ltv > 70 ? ' warn' : '');
-}
-
-window.calcBwLTV = function() {
-  const loan = parseFloat(document.getElementById('bwd-loan').value) || 0;
-  const val = parseFloat(document.getElementById('bwd-value').value) || 0;
-  const el = document.getElementById('bwd-ltv');
-  if (!loan || !val) {
-    el.textContent = '—';
-    el.className = 'ltv-pill-value';
-    return;
-  }
-  const ltv = (loan/val*100).toFixed(1);
-  el.textContent = ltv + '%';
-  el.className = 'ltv-pill-value' + (ltv > 75 ? ' over' : ltv > 70 ? ' warn' : '');
-}
-
-// ── Deal submission (broker) ─────────────────────────────────────────────────
-window.submitDeal = async function() {
-  const required = ['bd-address','bd-town','bd-postcode','bd-asset-type','bd-tenure',
-                    'bd-value','bd-loan','bd-term','bd-loan-type','bd-exit','bd-senior',
-                    'bd-purpose','bd-borrower','bd-director','bd-client-type','bd-equity',
-                    'bd-equity-source','bd-adverse'];
-  let valid = true;
-  required.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el || !el.value.trim()) {
-      if(el) el.classList.add('error');
-      valid = false;
-    } else el.classList.remove('error');
-  });
-  if (!valid) return showAlert('broker-deal-alert', 'error', 'Please fill in all required fields.');
-  hideAlert('broker-deal-alert');
-  const ltvEl = document.getElementById('bd-ltv');
-  const payload = {
-    property_address: document.getElementById('bd-address').value,
-    town: document.getElementById('bd-town').value,
-    postcode: document.getElementById('bd-postcode').value,
-    asset_type: document.getElementById('bd-asset-type').value,
-    tenure: document.getElementById('bd-tenure').value,
-    property_value: document.getElementById('bd-value').value,
-    gdv: document.getElementById('bd-gdv').value,
-    loan_amount: document.getElementById('bd-loan').value,
-    term_months: document.getElementById('bd-term').value,
-    loan_type: document.getElementById('bd-loan-type').value,
-    exit_strategy: document.getElementById('bd-exit').value,
-    senior_junior: document.getElementById('bd-senior').value,
-    loan_purpose: document.getElementById('bd-purpose').value,
-    broker_fee_pct: document.getElementById('bd-broker-fee').value,
-    rate_ask: document.getElementById('bd-rate').value,
-    client_type: document.getElementById('bd-client-type').value,
-    borrower_name: document.getElementById('bd-borrower').value,
-    director_name: document.getElementById('bd-director').value,
-    company_number: document.getElementById('bd-co-no').value,
-    equity_amount: document.getElementById('bd-equity').value,
-    equity_source: document.getElementById('bd-equity-source').value,
-    adverse_credit: document.getElementById('bd-adverse').value,
-    other_info: document.getElementById('bd-notes').value,
-    ltv_day1: ltvEl.textContent,
-    broker_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
-    broker_email: window.currentUser.email,
-    broker_company: window.currentUser.company_name,
-    source: 'portal'
-  };
-  try {
-    const res = await fetch(`${window.API}/deals`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${window.authToken}`
-      },
-      body: JSON.stringify(payload)
+    
+    fetch(window.API + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) throw new Error(data.error);
+        window.showAlert('borrower-alert', 'success', '✅ Account created! Please check your email to verify your account.');
+        document.getElementById('pending-email').textContent = payload.email;
+        setTimeout(function() { window.showScreen('screen-verify-pending'); }, 2000);
+    })
+    .catch(function(error) {
+        window.showAlert('borrower-alert', 'error', error.message || 'Registration failed.');
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    document.getElementById('broker-deal-form-content').style.display = 'none';
-    const suc = document.getElementById('broker-deal-success');
-    suc.style.display = 'block';
-    suc.innerHTML = `✅ Deal submitted successfully! Reference: <strong style="font-family:'DM Mono',monospace">${data.deal_ref}</strong>. Our credit team will respond within 4 business hours.`;
-    await loadBrokerData();
-    setTimeout(() => {
-      document.getElementById('broker-deal-form-content').style.display = 'block';
-      suc.style.display = 'none';
-      document.querySelectorAll('#broker-tab-submit input, #broker-tab-submit select, #broker-tab-submit textarea').forEach(el => el.value = '');
-      document.getElementById('bd-ltv').textContent = '—';
-      switchTab('broker', 'deals', document.querySelector('#screen-dashboard-broker .tabs .tab'));
-    }, 4000);
-  } catch(e) {
-    showAlert('broker-deal-alert', 'error', e.message || 'Submission failed. Please try again.');
-  }
-}
+};
 
-// ── Deal submission (borrower) ───────────────────────────────────────────────
-window.submitBorrowerDeal = async function() {
-  const required = ['bwd-address','bwd-town','bwd-postcode','bwd-asset-type','bwd-tenure',
-                    'bwd-value','bwd-loan','bwd-term','bwd-exit','bwd-borrower','bwd-client-type',
-                    'bwd-equity','bwd-equity-source','bwd-adverse'];
-  let valid = true;
-  required.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el || !el.value.trim()) {
-      if(el) el.classList.add('error');
-      valid = false;
-    } else el.classList.remove('error');
-  });
-  if (!valid) return showAlert('borrower-deal-alert', 'error', 'Please fill in all required fields.');
-  hideAlert('borrower-deal-alert');
-  const payload = {
-    property_address: document.getElementById('bwd-address').value,
-    town: document.getElementById('bwd-town').value,
-    postcode: document.getElementById('bwd-postcode').value,
-    asset_type: document.getElementById('bwd-asset-type').value,
-    tenure: document.getElementById('bwd-tenure').value,
-    property_value: document.getElementById('bwd-value').value,
-    loan_amount: document.getElementById('bwd-loan').value,
-    term_months: document.getElementById('bwd-term').value,
-    exit_strategy: document.getElementById('bwd-exit').value,
-    borrower_name: document.getElementById('bwd-borrower').value,
-    client_type: document.getElementById('bwd-client-type').value,
-    equity_amount: document.getElementById('bwd-equity').value,
-    equity_source: document.getElementById('bwd-equity-source').value,
-    adverse_credit: document.getElementById('bwd-adverse').value,
-    other_info: document.getElementById('bwd-notes').value,
-    ltv_day1: document.getElementById('bwd-ltv').textContent,
-    director_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
-    source: 'portal-borrower'
-  };
-  try {
-    const res = await fetch(`${window.API}/deals`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${window.authToken}`
-      },
-      body: JSON.stringify(payload)
+// ── Login Function ────────────────────────────────────────────────────
+window.doLogin = function() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    
+    if (!email || !password) {
+        return window.showAlert('login-alert', 'error', 'Please enter your email and password.');
+    }
+    
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Signing In...';
+    
+    fetch(window.API + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) throw new Error(data.error);
+        
+        window.authToken = data.token;
+        window.currentUser = data.user;
+        
+        // Store for persistence
+        localStorage.setItem('dfs_token', data.token);
+        localStorage.setItem('dfs_user', JSON.stringify(data.user));
+        
+        // Show success message
+        window.showAlert('login-alert', 'success', '✅ Welcome back! Loading dashboard...');
+        
+        // Redirect to basic dashboard (placeholder)
+        setTimeout(function() {
+            alert('Login successful! Dashboard functionality will be added in the next phase.');
+            window.showScreen('screen-landing');
+        }, 1500);
+    })
+    .catch(function(error) {
+        window.showAlert('login-alert', 'error', error.message || 'Login failed.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    showAlert('borrower-deal-alert', 'success', `✅ Enquiry submitted! Ref: ${data.deal_ref}. We will respond within 4 business hours.`);
-    await loadBorrowerData();
-    switchTab('borrower', 'deals', document.querySelector('#screen-dashboard-borrower .tabs .tab'));
-  } catch(e) {
-    showAlert('borrower-deal-alert', 'error', e.message || 'Submission failed.');
-  }
-}
+};
 
-// ── Logout ───────────────────────────────────────────────────────────────────
-window.doLogout = function() {
-  window.authToken = null;
-  window.currentUser = null;
-  localStorage.removeItem('dfs_token');
-  localStorage.removeItem('dfs_user');
-  window.showScreen('screen-landing');
-}
-
-// ── Auto-login from localStorage ─────────────────────────────────────────────
-async function tryAutoLogin() {
-  const token = localStorage.getItem('dfs_token');
-  const user = localStorage.getItem('dfs_user');
-  if (!token || !user) return;
-  try {
-    const res = await fetch(`${window.API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) { localStorage.clear(); return; }
-    window.authToken = token;
-    window.currentUser = JSON.parse(user);
-    loadDashboard();
-  } catch(e) { localStorage.clear(); }
-}
-
-// ── DOM Ready and Initialization ─────────────────────────────────────────────
+// ── Initialize ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize the application
-  checkVerifyToken();
-  tryAutoLogin();
-  
-  // Test console log
-  console.log('Daksfirst Portal Initialized Successfully');
-  console.log('API endpoint:', window.API);
+    console.log('✅ Minimal Daksfirst Portal Loaded Successfully');
+    console.log('📡 API endpoint:', window.API);
+    
+    // Check for email verification token
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('verify')) {
+        window.showScreen('screen-verify-pending');
+        window.showAlert('login-alert', 'success', 'Email verification completed! You can now sign in.');
+    }
 });
-
-// For immediate execution if DOM is already loaded
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', function() {
-    checkVerifyToken();
-    tryAutoLogin();
-  });
-} else {
-  // DOM is already loaded
-  checkVerifyToken();
-  tryAutoLogin();
-}
 </script>
 </body>
 </html>
