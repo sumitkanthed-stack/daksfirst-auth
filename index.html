@@ -527,7 +527,7 @@ tr:hover { background: var(--navy-50); }
         
         <div class="form-group">
           <label class="form-label">Were you introduced by a broker? *</label>
-          <select id="bw-has-broker" class="form-select" onchange="toggleBrokerFields()">
+          <select id="bw-has-broker" class="form-select" onchange="window.toggleBrokerFields()">
             <option value="">— Select —</option>
             <option value="yes">Yes — I was introduced by a broker</option>
             <option value="no">No — I found Daksfirst independently</option>
@@ -926,7 +926,7 @@ tr:hover { background: var(--navy-50); }
             </div>
             
             <div style="text-align: center; margin-top: 32px;">
-              <button type="button" class="btn btn-primary" onclick="submitDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Deal to Daksfirst</button>
+              <button type="button" class="btn btn-primary" onclick="window.submitBrokerDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Deal to Daksfirst</button>
             </div>
           </div>
         </div>
@@ -1146,7 +1146,7 @@ tr:hover { background: var(--navy-50); }
           </div>
           
           <div style="text-align: center; margin-top: 32px;">
-            <button type="button" class="btn btn-primary" onclick="submitBorrowerDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Enquiry</button>
+            <button type="button" class="btn btn-primary" onclick="window.submitBorrowerDeal()" style="font-size: 16px; padding: 16px 32px;">🚀 Submit Enquiry</button>
           </div>
         </div>
       </div>
@@ -1468,17 +1468,453 @@ window.doLogin = function() {
     });
 };
 
+// ── Dashboard Functions ──────────────────────────────────────────────
+window.switchTab = function(userType, tab, button) {
+    // Update tab buttons
+    const tabContainer = button.parentNode;
+    tabContainer.querySelectorAll('.tab').forEach(function(t) {
+        t.classList.remove('active');
+    });
+    button.classList.add('active');
+    
+    // Update tab panels
+    const screenId = 'screen-dashboard-' + userType;
+    const screen = document.getElementById(screenId);
+    screen.querySelectorAll('.tab-panel').forEach(function(panel) {
+        panel.classList.remove('active');
+    });
+    
+    const targetPanel = screen.querySelector('#' + userType + '-' + tab + '-panel');
+    if (targetPanel) {
+        targetPanel.classList.add('active');
+    }
+};
+
+// ── LTV Calculators ──────────────────────────────────────────────────
+window.calcDashLTV = function() {
+    const value = parseFloat(document.getElementById('bd-value').value) || 0;
+    const loan = parseFloat(document.getElementById('bd-loan').value) || 0;
+    const ltv = value > 0 ? ((loan / value) * 100) : 0;
+    
+    const ltvEl = document.getElementById('bd-ltv');
+    ltvEl.textContent = ltv.toFixed(1) + '%';
+    
+    if (ltv <= 70) {
+        ltvEl.className = 'ltv-pill-value';
+    } else if (ltv <= 80) {
+        ltvEl.className = 'ltv-pill-value warn';
+    } else {
+        ltvEl.className = 'ltv-pill-value over';
+    }
+};
+
+window.calcBwLTV = function() {
+    const value = parseFloat(document.getElementById('bwd-value').value) || 0;
+    const loan = parseFloat(document.getElementById('bwd-loan').value) || 0;
+    const ltv = value > 0 ? ((loan / value) * 100) : 0;
+    
+    const ltvEl = document.getElementById('bwd-ltv');
+    ltvEl.textContent = ltv.toFixed(1) + '%';
+    
+    if (ltv <= 70) {
+        ltvEl.className = 'ltv-pill-value';
+    } else if (ltv <= 80) {
+        ltvEl.className = 'ltv-pill-value warn';
+    } else {
+        ltvEl.className = 'ltv-pill-value over';
+    }
+};
+
+// ── Dashboard Data Loading ───────────────────────────────────────────
+async function loadDashboard() {
+    if (!window.currentUser) return;
+    
+    if (window.currentUser.role === 'broker') {
+        await loadBrokerData();
+        window.showScreen('screen-dashboard-broker');
+    } else {
+        await loadBorrowerData();
+        window.showScreen('screen-dashboard-borrower');
+    }
+}
+
+async function loadBrokerData() {
+    try {
+        const response = await fetch(window.API + '/broker/dashboard', {
+            headers: { Authorization: 'Bearer ' + window.authToken }
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.error);
+        
+        // Update broker stats
+        document.getElementById('bs-total').textContent = data.stats.total_deals || '0';
+        document.getElementById('bs-review').textContent = data.stats.under_review || '0';
+        document.getElementById('bs-dip').textContent = data.stats.dip_issued || '0';
+        
+        const pipelineEl = document.getElementById('bs-value');
+        if (pipelineEl) {
+            pipelineEl.textContent = '£' + ((data.stats.pipeline_value || 0) / 1000000).toFixed(1) + 'M';
+        }
+        
+        // Update broker name
+        const brokerName = window.currentUser.first_name + ' ' + window.currentUser.last_name;
+        document.querySelectorAll('.broker-name').forEach(function(el) {
+            el.textContent = brokerName;
+        });
+        
+        // Load deals table
+        renderDealsTable(data.deals || [], 'broker-deals-table');
+        
+    } catch (error) {
+        console.error('Error loading broker data:', error);
+        window.showAlert('broker-dashboard-alert', 'error', 'Failed to load dashboard data.');
+    }
+}
+
+async function loadBorrowerData() {
+    try {
+        const response = await fetch(window.API + '/borrower/dashboard', {
+            headers: { Authorization: 'Bearer ' + window.authToken }
+        });
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.error);
+        
+        // Update borrower stats
+        document.getElementById('bws-total').textContent = data.stats.total_enquiries || '0';
+        document.getElementById('bws-active').textContent = data.stats.active_enquiries || '0';
+        document.getElementById('bws-approved').textContent = data.stats.approved_enquiries || '0';
+        
+        // Update borrower name
+        const borrowerName = window.currentUser.first_name + ' ' + window.currentUser.last_name;
+        document.querySelectorAll('.borrower-name').forEach(function(el) {
+            el.textContent = borrowerName;
+        });
+        
+        // Load enquiries table
+        renderDealsTable(data.enquiries || [], 'borrower-enquiries-table');
+        
+    } catch (error) {
+        console.error('Error loading borrower data:', error);
+        window.showAlert('borrower-dashboard-alert', 'error', 'Failed to load dashboard data.');
+    }
+}
+
+function renderDealsTable(deals, tableId) {
+    const tbody = document.getElementById(tableId);
+    if (!tbody) return;
+    
+    if (deals.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No deals submitted yet</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = deals.map(function(deal) {
+        const statusBadge = getStatusBadge(deal.status);
+        const submittedDate = new Date(deal.created_at).toLocaleDateString();
+        const amount = '£' + (deal.loan_amount / 1000).toFixed(0) + 'k';
+        
+        return `
+            <tr>
+                <td><strong>${deal.deal_ref}</strong></td>
+                <td>${deal.property_address || 'N/A'}</td>
+                <td>${amount}</td>
+                <td>${deal.ltv_day1 || 'N/A'}</td>
+                <td><span class="badge ${statusBadge.class}">${statusBadge.text}</span></td>
+                <td>${submittedDate}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function getStatusBadge(status) {
+    const badges = {
+        'received': { class: 'badge-received', text: 'Received' },
+        'review': { class: 'badge-review', text: 'Under Review' },
+        'dip': { class: 'badge-dip', text: 'DIP Issued' },
+        'approved': { class: 'badge-approved', text: 'Approved' },
+        'declined': { class: 'badge-declined', text: 'Declined' },
+        'info': { class: 'badge-info', text: 'Info Required' },
+        'withdrawn': { class: 'badge-withdrawn', text: 'Withdrawn' }
+    };
+    return badges[status] || { class: 'badge-received', text: 'Unknown' };
+}
+
+// ── Deal Submission Functions ────────────────────────────────────────
+window.submitBrokerDeal = async function() {
+    const required = ['bd-address', 'bd-town', 'bd-postcode', 'bd-asset-type', 'bd-tenure', 'bd-value', 'bd-loan', 'bd-term', 'bd-exit', 'bd-borrower', 'bd-client-type'];
+    let valid = true;
+    
+    required.forEach(function(id) {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) {
+            if (el) el.classList.add('error');
+            valid = false;
+        } else {
+            el.classList.remove('error');
+        }
+    });
+    
+    if (!valid) {
+        return window.showAlert('broker-deal-alert', 'error', 'Please fill in all required fields.');
+    }
+    
+    window.hideAlert('broker-deal-alert');
+    
+    const btn = document.getElementById('bd-submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Submitting Deal...';
+    
+    const payload = {
+        property_address: document.getElementById('bd-address').value,
+        town: document.getElementById('bd-town').value,
+        postcode: document.getElementById('bd-postcode').value,
+        asset_type: document.getElementById('bd-asset-type').value,
+        tenure: document.getElementById('bd-tenure').value,
+        property_value: document.getElementById('bd-value').value,
+        loan_amount: document.getElementById('bd-loan').value,
+        term_months: document.getElementById('bd-term').value,
+        exit_strategy: document.getElementById('bd-exit').value,
+        borrower_name: document.getElementById('bd-borrower').value,
+        client_type: document.getElementById('bd-client-type').value,
+        equity_amount: document.getElementById('bd-equity').value,
+        equity_source: document.getElementById('bd-equity-source').value,
+        adverse_credit: document.getElementById('bd-adverse').value,
+        other_info: document.getElementById('bd-notes').value,
+        ltv_day1: document.getElementById('bd-ltv').textContent,
+        broker_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
+        broker_company: window.currentUser.company,
+        source: 'portal-broker'
+    };
+    
+    try {
+        const response = await fetch(window.API + '/deals', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + window.authToken
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        
+        window.showAlert('broker-deal-alert', 'success', '✅ Deal submitted successfully! Reference: ' + data.deal_ref);
+        
+        // Reset form
+        document.getElementById('broker-deal-form').reset();
+        
+        // Refresh dashboard
+        await loadBrokerData();
+        window.switchTab('broker', 'deals', document.querySelector('#screen-dashboard-broker .tabs .tab'));
+        
+    } catch (error) {
+        window.showAlert('broker-deal-alert', 'error', error.message || 'Deal submission failed.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit Deal';
+    }
+};
+
+window.submitBorrowerDeal = async function() {
+    const required = ['bwd-address', 'bwd-town', 'bwd-postcode', 'bwd-asset-type', 'bwd-tenure', 'bwd-value', 'bwd-loan', 'bwd-term', 'bwd-exit', 'bwd-borrower', 'bwd-client-type'];
+    let valid = true;
+    
+    required.forEach(function(id) {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) {
+            if (el) el.classList.add('error');
+            valid = false;
+        } else {
+            el.classList.remove('error');
+        }
+    });
+    
+    if (!valid) {
+        return window.showAlert('borrower-deal-alert', 'error', 'Please fill in all required fields.');
+    }
+    
+    window.hideAlert('borrower-deal-alert');
+    
+    const payload = {
+        property_address: document.getElementById('bwd-address').value,
+        town: document.getElementById('bwd-town').value,
+        postcode: document.getElementById('bwd-postcode').value,
+        asset_type: document.getElementById('bwd-asset-type').value,
+        tenure: document.getElementById('bwd-tenure').value,
+        property_value: document.getElementById('bwd-value').value,
+        loan_amount: document.getElementById('bwd-loan').value,
+        term_months: document.getElementById('bwd-term').value,
+        exit_strategy: document.getElementById('bwd-exit').value,
+        borrower_name: document.getElementById('bwd-borrower').value,
+        client_type: document.getElementById('bwd-client-type').value,
+        equity_amount: document.getElementById('bwd-equity').value,
+        equity_source: document.getElementById('bwd-equity-source').value,
+        adverse_credit: document.getElementById('bwd-adverse').value,
+        other_info: document.getElementById('bwd-notes').value,
+        ltv_day1: document.getElementById('bwd-ltv').textContent,
+        director_name: window.currentUser.first_name + ' ' + window.currentUser.last_name,
+        source: 'portal-borrower'
+    };
+    
+    try {
+        const response = await fetch(window.API + '/deals', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + window.authToken
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        
+        window.showAlert('borrower-deal-alert', 'success', '✅ Enquiry submitted! Ref: ' + data.deal_ref + '. We will respond within 4 business hours.');
+        
+        // Refresh dashboard
+        await loadBorrowerData();
+        window.switchTab('borrower', 'deals', document.querySelector('#screen-dashboard-borrower .tabs .tab'));
+        
+    } catch (error) {
+        window.showAlert('borrower-deal-alert', 'error', error.message || 'Submission failed.');
+    }
+};
+
+// ── Email Verification Handler ───────────────────────────────────────
+async function checkVerifyToken() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token) {
+        try {
+            const response = await fetch(window.API + '/auth/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: token })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                window.showScreen('screen-login');
+                window.showAlert('login-alert', 'success', '✅ Email verified successfully! You can now sign in.');
+            } else {
+                window.showScreen('screen-login');
+                window.showAlert('login-alert', 'error', data.error || 'Verification failed.');
+            }
+            
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+        } catch (error) {
+            window.showScreen('screen-login');
+            window.showAlert('login-alert', 'error', 'Verification failed.');
+        }
+    }
+}
+
+// ── Auto-login from localStorage ────────────────────────────────────
+async function tryAutoLogin() {
+    const token = localStorage.getItem('dfs_token');
+    const user = localStorage.getItem('dfs_user');
+    
+    if (!token || !user) return;
+    
+    try {
+        const response = await fetch(window.API + '/auth/me', {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        
+        if (!response.ok) {
+            localStorage.clear();
+            return;
+        }
+        
+        const data = await response.json();
+        window.authToken = token;
+        window.currentUser = data.user || JSON.parse(user);
+        
+        await loadDashboard();
+        
+    } catch (error) {
+        localStorage.clear();
+    }
+}
+
+// ── Logout Function ──────────────────────────────────────────────────
+window.doLogout = function() {
+    window.authToken = null;
+    window.currentUser = null;
+    localStorage.removeItem('dfs_token');
+    localStorage.removeItem('dfs_user');
+    window.showScreen('screen-landing');
+};
+
+// ── Enhanced Login Function ──────────────────────────────────────────
+window.doLogin = function() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    
+    if (!email || !password) {
+        return window.showAlert('login-alert', 'error', 'Please enter your email and password.');
+    }
+    
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Signing In...';
+    
+    fetch(window.API + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) throw new Error(data.error);
+        
+        window.authToken = data.token;
+        window.currentUser = data.user;
+        
+        // Store for persistence
+        localStorage.setItem('dfs_token', data.token);
+        localStorage.setItem('dfs_user', JSON.stringify(data.user));
+        
+        // Load dashboard
+        loadDashboard();
+    })
+    .catch(function(error) {
+        window.showAlert('login-alert', 'error', error.message || 'Login failed.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+    });
+};
+
 // ── Initialize ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('✅ Minimal Daksfirst Portal Loaded Successfully');
+    console.log('✅ Complete Daksfirst Portal Loaded Successfully');
     console.log('📡 API endpoint:', window.API);
     
-    // Check for email verification token
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('verify')) {
-        window.showScreen('screen-verify-pending');
-        window.showAlert('login-alert', 'success', 'Email verification completed! You can now sign in.');
-    }
+    // Initialize the application with advanced features
+    checkVerifyToken();
+    tryAutoLogin();
+    
+    // Auto-calculate LTV when values change
+    ['bd-value', 'bd-loan'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', window.calcDashLTV);
+        }
+    });
+    
+    ['bwd-value', 'bwd-loan'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', window.calcBwLTV);
+        }
+    });
 });
 </script>
 </body>
