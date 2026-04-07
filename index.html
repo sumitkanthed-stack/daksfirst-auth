@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Daksfirst Limited — Portal</title>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #1a365d;
@@ -16,7 +15,6 @@
             --border: #e2e8f0;
             --success: #38a169;
             --error: #e53e3e;
-            --warning: #dd6b20;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -34,22 +32,6 @@
             color: white;
             padding: 80px 0;
             text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .hero-section::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='10' cy='10' r='0.5' fill='%23c9a84c' opacity='0.3'/><circle cx='90' cy='20' r='0.3' fill='%23c9a84c' opacity='0.2'/><circle cx='20' cy='80' r='0.4' fill='%23c9a84c' opacity='0.25'/><circle cx='80' cy='90' r='0.3' fill='%23c9a84c' opacity='0.2'/></svg>");
-            background-size: 200px 200px;
-            animation: float 20s linear infinite;
-        }
-        
-        @keyframes float {
-            0% { transform: translate(0, 0); }
-            100% { transform: translate(-200px, -200px); }
         }
         
         .logo {
@@ -61,7 +43,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
         }
         
         .logo::before {
@@ -71,11 +52,9 @@
         }
         
         .hero-section h1 {
-            font-family: 'Playfair Display', serif;
             font-size: 3rem;
             font-weight: 700;
             margin-bottom: 10px;
-            position: relative;
         }
         
         .hero-section h2 {
@@ -88,16 +67,12 @@
         .tagline {
             font-size: 1.1rem;
             opacity: 0.8;
-            max-width: 600px;
-            margin: 0 auto;
-            position: relative;
         }
         
         .main-section {
             background: var(--light-blue);
             min-height: 70vh;
             padding: 80px 20px;
-            position: relative;
         }
         
         .container { max-width: 1200px; margin: 0 auto; }
@@ -122,31 +97,6 @@
             cursor: pointer;
             transition: all 0.3s ease;
             border: 2px solid transparent;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .role-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: linear-gradient(45deg, transparent, rgba(201, 168, 76, 0.05), transparent);
-            transform: rotate(45deg);
-            transition: all 0.6s ease;
-            opacity: 0;
-        }
-        
-        .role-card:hover::before {
-            opacity: 1;
-            animation: shimmer 1.5s infinite;
-        }
-        
-        @keyframes shimmer {
-            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
         }
         
         .role-card:hover {
@@ -166,7 +116,6 @@
             justify-content: center;
             font-size: 32px;
             color: white;
-            position: relative;
         }
         
         .role-card h3 {
@@ -181,24 +130,6 @@
             line-height: 1.6;
         }
         
-        .login-link {
-            margin-top: 60px;
-            text-align: center;
-        }
-        
-        .login-link a {
-            color: var(--secondary);
-            text-decoration: none;
-            font-weight: 500;
-            border-bottom: 1px solid transparent;
-            transition: border-color 0.3s ease;
-        }
-        
-        .login-link a:hover {
-            border-bottom-color: var(--secondary);
-        }
-        
-        /* Registration Form Styles */
         .form-container {
             max-width: 500px;
             margin: 0 auto;
@@ -219,11 +150,6 @@
             font-size: 1.8rem;
             font-weight: 600;
             margin-bottom: 10px;
-        }
-        
-        .form-header p {
-            opacity: 0.8;
-            font-size: 0.95rem;
         }
         
         .progress-indicator {
@@ -290,21 +216,17 @@
         }
         
         .form-group input,
-        .form-group select,
-        .form-group textarea {
+        .form-group select {
             width: 100%;
             padding: 12px 16px;
             border: 2px solid var(--border);
             border-radius: 10px;
             font-size: 1rem;
-            font-family: inherit;
             transition: border-color 0.3s ease;
-            background: white;
         }
         
         .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
+        .form-group select:focus {
             outline: none;
             border-color: var(--secondary);
         }
@@ -324,11 +246,9 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-family: inherit;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            text-decoration: none;
         }
         
         .btn-primary {
@@ -339,14 +259,12 @@
         .btn-primary:hover {
             background: #b8974a;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(201, 168, 76, 0.3);
         }
         
         .btn-primary:disabled {
             background: #ccc;
             cursor: not-allowed;
             transform: none;
-            box-shadow: none;
         }
         
         .btn-secondary {
@@ -355,16 +273,10 @@
             border: 1px solid var(--border);
         }
         
-        .btn-secondary:hover {
-            background: var(--light-blue);
-            color: var(--text);
-        }
-        
         .alert {
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 20px;
-            font-size: 0.9rem;
             display: none;
         }
         
@@ -396,15 +308,23 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        .success-screen {
+            text-align: center;
+            padding: 60px 20px;
+        }
         
-        @media (max-width: 768px) {
-            .hero-section { padding: 60px 20px; }
-            .hero-section h1 { font-size: 2.2rem; }
-            .hero-section h2 { font-size: 1.3rem; }
-            .main-section { padding: 40px 20px; }
-            .form-row { grid-template-columns: 1fr; gap: 0; }
-            .form-nav { flex-direction: column; gap: 15px; }
-            .role-selection { grid-template-columns: 1fr; gap: 25px; }
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--success);
+            border-radius: 50%;
+            margin: 0 auto 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            color: white;
         }
     </style>
 </head>
@@ -424,140 +344,36 @@
             <!-- Landing Screen -->
             <div id="screen-landing" class="screen active">
                 <div class="role-selection">
-                    <div class="role-card" onclick="showRegister('broker')">
+                    <div class="role-card" onclick="startRegistration('broker')">
                         <div class="role-icon">💼</div>
                         <h3>I'm a Broker</h3>
                         <p>Register to submit deals and track your pipeline with clients</p>
                     </div>
-                    <div class="role-card" onclick="showRegister('borrower')">
+                    <div class="role-card" onclick="startRegistration('borrower')">
                         <div class="role-icon">👤</div>
                         <h3>I'm a Borrower</h3>
                         <p>Submit your financing directly and track its progress</p>
                     </div>
                 </div>
-                <div class="login-link">
-                    <p>Already have an account? <a href="#" onclick="showScreen('screen-login')">Sign in here</a></p>
-                </div>
             </div>
 
-            <!-- Broker Registration -->
-            <div id="screen-register-broker" class="screen">
+            <!-- Registration Form -->
+            <div id="screen-register" class="screen">
                 <div class="form-container">
                     <div class="form-header">
-                        <h2>Create Broker Account</h2>
-                        <p>Register to start submitting deals</p>
+                        <h2 id="form-title">Create Account</h2>
+                        <p id="form-subtitle">Register to get started</p>
                         <div class="progress-indicator">
-                            <div id="bstep-1" class="step active">1</div>
-                            <div id="bstep-2" class="step">2</div>
-                            <div id="bstep-3" class="step">3</div>
+                            <div id="step-1" class="step active">1</div>
+                            <div id="step-2" class="step">2</div>
+                            <div id="step-3" class="step">3</div>
                         </div>
                     </div>
                     <div class="form-body">
-                        <div id="broker-alert" class="alert"></div>
+                        <div id="alert" class="alert"></div>
                         
                         <!-- Step 1: Personal Info -->
-                        <div id="broker-panel-1" class="form-panel active">
-                            <div class="form-group">
-                                <div class="form-row">
-                                    <div>
-                                        <label>📋 Broker / Introducer</label>
-                                        <label for="b-first-name">First Name *</label>
-                                        <input type="text" id="b-first-name" required>
-                                    </div>
-                                    <div>
-                                        <label for="b-last-name">Last Name *</label>
-                                        <input type="text" id="b-last-name" required>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <div class="form-row">
-                                    <div>
-                                        <label for="b-email">Email Address *</label>
-                                        <input type="email" id="b-email" required>
-                                    </div>
-                                    <div>
-                                        <label for="b-phone">Phone Number *</label>
-                                        <input type="tel" id="b-phone" required>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-nav">
-                                <div></div>
-                                <button type="button" class="btn btn-primary" onclick="brokerNext(1)">Continue →</button>
-                            </div>
-                        </div>
-
-                        <!-- Step 2: Company Info -->
-                        <div id="broker-panel-2" class="form-panel">
-                            <div class="form-group">
-                                <label for="b-company">Company / Firm Name *</label>
-                                <input type="text" id="b-company" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="b-fca">FCA / Introducer Number (if applicable)</label>
-                                <input type="text" id="b-fca">
-                            </div>
-                            <div class="form-group">
-                                <label for="b-source">How did you hear about Daksfirst?</label>
-                                <select id="b-source">
-                                    <option value="search">Search Engine</option>
-                                    <option value="referral">Referral</option>
-                                    <option value="event">Industry Event</option>
-                                    <option value="social">Social Media</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            <div class="form-nav">
-                                <button type="button" class="btn btn-secondary" onclick="brokerPrev(2)">← Back</button>
-                                <button type="button" class="btn btn-primary" onclick="brokerNext(2)">Continue →</button>
-                            </div>
-                        </div>
-
-                        <!-- Step 3: Security -->
-                        <div id="broker-panel-3" class="form-panel">
-                            <div class="form-group">
-                                <label for="b-password">Create Password *</label>
-                                <input type="password" id="b-password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="b-password-confirm">Confirm Password *</label>
-                                <input type="password" id="b-password-confirm" required>
-                            </div>
-                            <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 20px;">
-                                By registering you confirm you have read and agree to Daksfirst's 
-                                Terms of Business. All deals submitted are subject to Daksfirst credit 
-                                criteria and approval.
-                            </p>
-                            <div class="form-nav">
-                                <button type="button" class="btn btn-secondary" onclick="brokerPrev(3)">← Back</button>
-                                <button type="button" class="btn btn-primary" id="b-submit-btn" onclick="registerBroker()">Create Account</button>
-                            </div>
-                            <div style="text-align: center; margin-top: 20px;">
-                                <small style="color: var(--text-light);">Already registered? <a href="#" onclick="showScreen('screen-login')" style="color: var(--secondary);">Sign in</a></small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Borrower Registration -->
-            <div id="screen-register-borrower" class="screen">
-                <div class="form-container">
-                    <div class="form-header">
-                        <h2>Create Borrower Account</h2>
-                        <p>Register to submit your financing request</p>
-                        <div class="progress-indicator">
-                            <div id="borrower-step-1" class="step active">1</div>
-                            <div id="borrower-step-2" class="step">2</div>
-                            <div id="borrower-step-3" class="step">3</div>
-                        </div>
-                    </div>
-                    <div class="form-body">
-                        <div id="borrower-alert" class="alert"></div>
-                        
-                        <!-- Step 1: Personal Info -->
-                        <div id="borrower-panel-1" class="form-panel active">
+                        <div id="panel-1" class="form-panel active">
                             <div class="form-group">
                                 <div class="form-row">
                                     <div>
@@ -584,39 +400,46 @@
                             </div>
                             <div class="form-nav">
                                 <div></div>
-                                <button type="button" class="btn btn-primary" onclick="borrowerNext(1)">Continue →</button>
+                                <button type="button" class="btn btn-primary" onclick="nextStep(1)">Continue →</button>
                             </div>
                         </div>
 
-                        <!-- Step 2: Property/Business Info -->
-                        <div id="borrower-panel-2" class="form-panel">
-                            <div class="form-group">
-                                <label for="company">Company Name (if applicable)</label>
-                                <input type="text" id="company">
+                        <!-- Step 2: Details -->
+                        <div id="panel-2" class="form-panel">
+                            <div id="step2-broker" style="display: none;">
+                                <div class="form-group">
+                                    <label for="company">Company Name *</label>
+                                    <input type="text" id="company" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fca-number">FCA Number (optional)</label>
+                                    <input type="text" id="fca-number">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="loan-purpose">Purpose of Loan *</label>
-                                <select id="loan-purpose" required>
-                                    <option value="">Select purpose</option>
-                                    <option value="property-purchase">Property Purchase</option>
-                                    <option value="refinance">Refinance</option>
-                                    <option value="development">Development</option>
-                                    <option value="business">Business Finance</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="loan-amount">Required Loan Amount *</label>
-                                <input type="number" id="loan-amount" placeholder="£" required>
+                            <div id="step2-borrower" style="display: none;">
+                                <div class="form-group">
+                                    <label for="loan-purpose">Loan Purpose *</label>
+                                    <select id="loan-purpose">
+                                        <option value="">Select purpose</option>
+                                        <option value="property-purchase">Property Purchase</option>
+                                        <option value="refinance">Refinance</option>
+                                        <option value="development">Development</option>
+                                        <option value="business">Business Finance</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="loan-amount">Required Amount *</label>
+                                    <input type="number" id="loan-amount" placeholder="£">
+                                </div>
                             </div>
                             <div class="form-nav">
-                                <button type="button" class="btn btn-secondary" onclick="borrowerPrev(2)">← Back</button>
-                                <button type="button" class="btn btn-primary" onclick="borrowerNext(2)">Continue →</button>
+                                <button type="button" class="btn btn-secondary" onclick="prevStep(2)">← Back</button>
+                                <button type="button" class="btn btn-primary" onclick="nextStep(2)">Continue →</button>
                             </div>
                         </div>
 
-                        <!-- Step 3: Security -->
-                        <div id="borrower-panel-3" class="form-panel">
+                        <!-- Step 3: Password -->
+                        <div id="panel-3" class="form-panel">
                             <div class="form-group">
                                 <label for="password">Create Password *</label>
                                 <input type="password" id="password" required>
@@ -625,44 +448,26 @@
                                 <label for="password-confirm">Confirm Password *</label>
                                 <input type="password" id="password-confirm" required>
                             </div>
-                            <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 20px;">
-                                By registering you confirm you have read and agree to Daksfirst's 
-                                Terms of Business. All applications are subject to Daksfirst credit 
-                                criteria and approval.
-                            </p>
                             <div class="form-nav">
-                                <button type="button" class="btn btn-secondary" onclick="borrowerPrev(3)">← Back</button>
-                                <button type="button" class="btn btn-primary" id="borrower-submit-btn" onclick="registerBorrower()">Create Account</button>
-                            </div>
-                            <div style="text-align: center; margin-top: 20px;">
-                                <small style="color: var(--text-light);">Already registered? <a href="#" onclick="showScreen('screen-login')" style="color: var(--secondary);">Sign in</a></small>
+                                <button type="button" class="btn btn-secondary" onclick="prevStep(3)">← Back</button>
+                                <button type="button" class="btn btn-primary" id="submit-btn" onclick="submitRegistration()">Create Account</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Login Screen -->
-            <div id="screen-login" class="screen">
-                <div class="form-container" style="max-width: 400px;">
-                    <div class="form-header">
-                        <h2>Welcome Back</h2>
-                        <p>Sign in to your account</p>
-                    </div>
-                    <div class="form-body">
-                        <div id="login-alert" class="alert"></div>
-                        <div class="form-group">
-                            <label for="login-email">Email Address</label>
-                            <input type="email" id="login-email" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="login-password">Password</label>
-                            <input type="password" id="login-password" required>
-                        </div>
-                        <button type="button" class="btn btn-primary" style="width: 100%;" onclick="doLogin()">Sign In</button>
-                        <div style="text-align: center; margin-top: 20px;">
-                            <p><a href="#" onclick="showScreen('screen-landing')" style="color: var(--secondary);">← Back to registration</a></p>
-                        </div>
+            <!-- Success Screen -->
+            <div id="screen-success" class="screen">
+                <div class="form-container">
+                    <div class="success-screen">
+                        <div class="success-icon">✓</div>
+                        <h2>Account Created Successfully!</h2>
+                        <p style="margin: 20px 0; color: var(--text-light);">
+                            Thank you for registering with Daksfirst.<br>
+                            Please check your email to verify your account.
+                        </p>
+                        <button class="btn btn-primary" onclick="showScreen('screen-landing')">Return to Home</button>
                     </div>
                 </div>
             </div>
@@ -670,364 +475,148 @@
     </div>
 
     <script>
-        // API Configuration
-        const API = 'https://daksfirst-auth.onrender.com/api';
-        
-        // Core Navigation Functions
-        function showScreen(id) {
+        let currentRole = '';
+        let currentStep = 1;
+
+        function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            const target = document.getElementById(id);
-            if (target) {
-                target.classList.add('active');
-                window.scrollTo(0, 0);
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function showAlert(type, message) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert ${type} visible`;
+            alert.textContent = message;
+        }
+
+        function hideAlert() {
+            document.getElementById('alert').classList.remove('visible');
+        }
+
+        function startRegistration(role) {
+            currentRole = role;
+            currentStep = 1;
+            
+            document.getElementById('form-title').textContent = 
+                role === 'broker' ? 'Create Broker Account' : 'Create Borrower Account';
+            
+            // Show appropriate step 2 content
+            if (role === 'broker') {
+                document.getElementById('step2-broker').style.display = 'block';
+                document.getElementById('step2-borrower').style.display = 'none';
+            } else {
+                document.getElementById('step2-broker').style.display = 'none';
+                document.getElementById('step2-borrower').style.display = 'block';
+            }
+            
+            showScreen('screen-register');
+        }
+
+        function updateProgress() {
+            for (let i = 1; i <= 3; i++) {
+                const step = document.getElementById(`step-${i}`);
+                if (i < currentStep) {
+                    step.className = 'step done';
+                } else if (i === currentStep) {
+                    step.className = 'step active';
+                } else {
+                    step.className = 'step';
+                }
             }
         }
-        
-        function showRegister(role) {
-            const screenId = role === 'broker' ? 'screen-register-broker' : 'screen-register-borrower';
-            showScreen(screenId);
+
+        function showPanel(panelNum) {
+            document.querySelectorAll('.form-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`panel-${panelNum}`).classList.add('active');
         }
-        
-        // Alert Functions
-        function showAlert(id, type, msg) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.className = 'alert ' + type + ' visible';
-                el.textContent = msg;
-            }
-        }
-        
-        function hideAlert(id) {
-            const el = document.getElementById(id);
-            if (el) el.classList.remove('visible');
-        }
-        
-        // Broker Registration Flow
-        function brokerNext(from) {
-            if (from === 1) {
-                const fn = document.getElementById('b-first-name').value.trim();
-                const ln = document.getElementById('b-last-name').value.trim();
-                const em = document.getElementById('b-email').value.trim();
-                const ph = document.getElementById('b-phone').value.trim();
+
+        function nextStep(fromStep) {
+            hideAlert();
+            
+            if (fromStep === 1) {
+                // Validate step 1
+                const firstName = document.getElementById('first-name').value.trim();
+                const lastName = document.getElementById('last-name').value.trim();
+                const email = document.getElementById('email').value.trim();
+                const phone = document.getElementById('phone').value.trim();
                 
-                if (!fn || !ln || !em || !ph) {
-                    showAlert('broker-alert', 'error', 'Please fill in all required fields.');
+                if (!firstName || !lastName || !email || !phone) {
+                    showAlert('error', 'Please fill in all required fields.');
                     return;
                 }
                 
-                hideAlert('broker-alert');
+                currentStep = 2;
+                updateProgress();
+                showPanel(2);
                 
-                const step1 = document.getElementById('bstep-1');
-                const step2 = document.getElementById('bstep-2');
-                if (step1 && step2) {
-                    step1.classList.remove('active');
-                    step1.classList.add('done');
-                    step2.classList.add('active');
+            } else if (fromStep === 2) {
+                // Validate step 2
+                if (currentRole === 'broker') {
+                    const company = document.getElementById('company').value.trim();
+                    if (!company) {
+                        showAlert('error', 'Company name is required.');
+                        return;
+                    }
+                } else {
+                    const purpose = document.getElementById('loan-purpose').value;
+                    const amount = document.getElementById('loan-amount').value;
+                    if (!purpose || !amount) {
+                        showAlert('error', 'Please fill in all required fields.');
+                        return;
+                    }
                 }
                 
-                const panel1 = document.getElementById('broker-panel-1');
-                const panel2 = document.getElementById('broker-panel-2');
-                if (panel1 && panel2) {
-                    panel1.classList.remove('active');
-                    panel2.classList.add('active');
-                }
-                
-            } else if (from === 2) {
-                const company = document.getElementById('b-company').value.trim();
-                if (!company) {
-                    showAlert('broker-alert', 'error', 'Company name is required.');
-                    return;
-                }
-                
-                hideAlert('broker-alert');
-                
-                const step2 = document.getElementById('bstep-2');
-                const step3 = document.getElementById('bstep-3');
-                if (step2 && step3) {
-                    step2.classList.remove('active');
-                    step2.classList.add('done');
-                    step3.classList.add('active');
-                }
-                
-                const panel2 = document.getElementById('broker-panel-2');
-                const panel3 = document.getElementById('broker-panel-3');
-                if (panel2 && panel3) {
-                    panel2.classList.remove('active');
-                    panel3.classList.add('active');
-                }
+                currentStep = 3;
+                updateProgress();
+                showPanel(3);
             }
         }
-        
-        function brokerPrev(to) {
-            hideAlert('broker-alert');
-            
-            if (to === 2) {
-                const step2 = document.getElementById('bstep-2');
-                const step1 = document.getElementById('bstep-1');
-                if (step2 && step1) {
-                    step2.classList.remove('active');
-                    step1.classList.remove('done');
-                    step1.classList.add('active');
-                }
-                
-                const panel2 = document.getElementById('broker-panel-2');
-                const panel1 = document.getElementById('broker-panel-1');
-                if (panel2 && panel1) {
-                    panel2.classList.remove('active');
-                    panel1.classList.add('active');
-                }
-            } else if (to === 3) {
-                const step3 = document.getElementById('bstep-3');
-                const step2 = document.getElementById('bstep-2');
-                if (step3 && step2) {
-                    step3.classList.remove('active');
-                    step2.classList.remove('done');
-                    step2.classList.add('active');
-                }
-                
-                const panel3 = document.getElementById('broker-panel-3');
-                const panel2 = document.getElementById('broker-panel-2');
-                if (panel3 && panel2) {
-                    panel3.classList.remove('active');
-                    panel2.classList.add('active');
-                }
-            }
+
+        function prevStep(toStep) {
+            hideAlert();
+            currentStep = toStep - 1;
+            updateProgress();
+            showPanel(currentStep);
         }
-        
-        function registerBroker() {
-            const pw = document.getElementById('b-password').value;
-            const pw2 = document.getElementById('b-password-confirm').value;
+
+        function submitRegistration() {
+            hideAlert();
             
-            if (!pw || !pw2) {
-                showAlert('broker-alert', 'error', 'Please enter and confirm your password.');
-                return;
-            }
-            if (pw !== pw2) {
-                showAlert('broker-alert', 'error', 'Passwords do not match.');
-                return;
-            }
-            if (pw.length < 8) {
-                showAlert('broker-alert', 'error', 'Password must be at least 8 characters.');
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('password-confirm').value;
+            
+            if (!password || !confirmPassword) {
+                showAlert('error', 'Please enter and confirm your password.');
                 return;
             }
             
-            const btn = document.getElementById('b-submit-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner"></span> Creating Account...';
-            }
-            
-            const payload = {
-                role: 'broker',
-                first_name: document.getElementById('b-first-name').value.trim(),
-                last_name: document.getElementById('b-last-name').value.trim(),
-                email: document.getElementById('b-email').value.trim(),
-                phone: document.getElementById('b-phone').value.trim(),
-                company: document.getElementById('b-company').value.trim(),
-                fca_number: document.getElementById('b-fca').value.trim() || '',
-                source: document.getElementById('b-source').value || 'portal',
-                password: pw
-            };
-            
-            fetch(API + '/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) throw new Error(data.error);
-                showAlert('broker-alert', 'success', '✅ Account created successfully! Check your email to verify.');
-            })
-            .catch(error => {
-                showAlert('broker-alert', 'error', error.message || 'Registration failed.');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = 'Create Account';
-                }
-            });
-        }
-        
-        // Borrower Registration Flow
-        function borrowerNext(from) {
-            if (from === 1) {
-                const fn = document.getElementById('first-name').value.trim();
-                const ln = document.getElementById('last-name').value.trim();
-                const em = document.getElementById('email').value.trim();
-                const ph = document.getElementById('phone').value.trim();
-                
-                if (!fn || !ln || !em || !ph) {
-                    showAlert('borrower-alert', 'error', 'Please fill in all required fields.');
-                    return;
-                }
-                
-                hideAlert('borrower-alert');
-                
-                const step1 = document.getElementById('borrower-step-1');
-                const step2 = document.getElementById('borrower-step-2');
-                if (step1 && step2) {
-                    step1.classList.remove('active');
-                    step1.classList.add('done');
-                    step2.classList.add('active');
-                }
-                
-                const panel1 = document.getElementById('borrower-panel-1');
-                const panel2 = document.getElementById('borrower-panel-2');
-                if (panel1 && panel2) {
-                    panel1.classList.remove('active');
-                    panel2.classList.add('active');
-                }
-                
-            } else if (from === 2) {
-                const purpose = document.getElementById('loan-purpose').value;
-                const amount = document.getElementById('loan-amount').value;
-                
-                if (!purpose || !amount) {
-                    showAlert('borrower-alert', 'error', 'Please fill in all required fields.');
-                    return;
-                }
-                
-                hideAlert('borrower-alert');
-                
-                const step2 = document.getElementById('borrower-step-2');
-                const step3 = document.getElementById('borrower-step-3');
-                if (step2 && step3) {
-                    step2.classList.remove('active');
-                    step2.classList.add('done');
-                    step3.classList.add('active');
-                }
-                
-                const panel2 = document.getElementById('borrower-panel-2');
-                const panel3 = document.getElementById('borrower-panel-3');
-                if (panel2 && panel3) {
-                    panel2.classList.remove('active');
-                    panel3.classList.add('active');
-                }
-            }
-        }
-        
-        function borrowerPrev(to) {
-            hideAlert('borrower-alert');
-            
-            if (to === 2) {
-                const step2 = document.getElementById('borrower-step-2');
-                const step1 = document.getElementById('borrower-step-1');
-                if (step2 && step1) {
-                    step2.classList.remove('active');
-                    step1.classList.remove('done');
-                    step1.classList.add('active');
-                }
-                
-                const panel2 = document.getElementById('borrower-panel-2');
-                const panel1 = document.getElementById('borrower-panel-1');
-                if (panel2 && panel1) {
-                    panel2.classList.remove('active');
-                    panel1.classList.add('active');
-                }
-            } else if (to === 3) {
-                const step3 = document.getElementById('borrower-step-3');
-                const step2 = document.getElementById('borrower-step-2');
-                if (step3 && step2) {
-                    step3.classList.remove('active');
-                    step2.classList.remove('done');
-                    step2.classList.add('active');
-                }
-                
-                const panel3 = document.getElementById('borrower-panel-3');
-                const panel2 = document.getElementById('borrower-panel-2');
-                if (panel3 && panel2) {
-                    panel3.classList.remove('active');
-                    panel2.classList.add('active');
-                }
-            }
-        }
-        
-        function registerBorrower() {
-            const pw = document.getElementById('password').value;
-            const pw2 = document.getElementById('password-confirm').value;
-            
-            if (!pw || !pw2) {
-                showAlert('borrower-alert', 'error', 'Please enter and confirm your password.');
-                return;
-            }
-            if (pw !== pw2) {
-                showAlert('borrower-alert', 'error', 'Passwords do not match.');
-                return;
-            }
-            if (pw.length < 8) {
-                showAlert('borrower-alert', 'error', 'Password must be at least 8 characters.');
+            if (password !== confirmPassword) {
+                showAlert('error', 'Passwords do not match.');
                 return;
             }
             
-            const btn = document.getElementById('borrower-submit-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner"></span> Creating Account...';
-            }
-            
-            const payload = {
-                role: 'borrower',
-                first_name: document.getElementById('first-name').value.trim(),
-                last_name: document.getElementById('last-name').value.trim(),
-                email: document.getElementById('email').value.trim(),
-                phone: document.getElementById('phone').value.trim(),
-                company: document.getElementById('company').value.trim() || '',
-                loan_purpose: document.getElementById('loan-purpose').value,
-                loan_amount: parseFloat(document.getElementById('loan-amount').value),
-                source: 'portal',
-                password: pw
-            };
-            
-            fetch(API + '/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) throw new Error(data.error);
-                showAlert('borrower-alert', 'success', '✅ Account created successfully! Check your email to verify.');
-            })
-            .catch(error => {
-                showAlert('borrower-alert', 'error', error.message || 'Registration failed.');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = 'Create Account';
-                }
-            });
-        }
-        
-        // Login Function
-        function doLogin() {
-            const email = document.getElementById('login-email').value.trim();
-            const password = document.getElementById('login-password').value;
-            
-            if (!email || !password) {
-                showAlert('login-alert', 'error', 'Please enter your email and password.');
+            if (password.length < 8) {
+                showAlert('error', 'Password must be at least 8 characters.');
                 return;
             }
-            
-            const payload = {
-                email: email,
-                password: password
-            };
-            
-            fetch(API + '/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) throw new Error(data.error);
-                showAlert('login-alert', 'success', '✅ Login successful! Redirecting...');
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
-            })
-            .catch(error => {
-                showAlert('login-alert', 'error', error.message || 'Login failed.');
-            });
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span> Creating Account...';
+
+            // Simulate API call
+            setTimeout(() => {
+                // For demo purposes, always succeed
+                showScreen('screen-success');
+                
+                // Reset form
+                document.querySelector('form')?.reset();
+                currentStep = 1;
+                updateProgress();
+                showPanel(1);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }, 2000);
         }
     </script>
 </body>
