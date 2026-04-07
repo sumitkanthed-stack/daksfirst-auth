@@ -34,7 +34,7 @@ const pool = new Pool({
 });
 
 // ── Email ─────────────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.office365.com',
   port: 587,
   secure: false,
