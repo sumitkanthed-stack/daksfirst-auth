@@ -223,12 +223,22 @@
       background: #f9fafb;
     }
     .deal-ref {
-      font-weight: 600; color: var(--primary);
+      font-weight: 600; color: var(--primary); font-size: 0.85em; font-family: monospace;
     }
     .deal-address {
       color: var(--text); max-width: 200px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
+    /* Pipeline table styles */
+    .pipe-cell { font-size: 0.88em; line-height: 1.4; vertical-align: top; padding: 8px 6px !important; }
+    .pipe-sub { color: #6b7280; font-size: 0.82em; }
+    .pipe-empty { color: #9ca3af; }
+    .pipe-role { color: #6b7280; font-size: 0.8em; font-weight: 600; }
+    .pipe-tag { display: inline-block; background: #f3f4f6; color: #374151; font-size: 0.75em; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+    .deals-table { font-size: 0.92em; }
+    .deals-table th { background: #1e293b; color: #fff; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 6px; white-space: nowrap; }
+    .deals-table td { border-bottom: 1px solid #e5e7eb; }
+    .deals-table tr:hover { background: #f8fafc; }
     .status-badge {
       display: inline-block; padding: 6px 12px; border-radius: 20px;
       font-size: 0.8rem; font-weight: 600; text-transform: capitalize;
@@ -1624,41 +1634,70 @@
           <div id="admin-pipeline" class="admin-tab active">
             <div class="filter-bar">
               <div class="filter-group">
-                <label class="filter-label">Status</label>
-                <select onchange="updateAdminDealsFilter()">
-                  <option value="">All Statuses</option>
+                <label class="filter-label">Stage</label>
+                <select id="admin-filter-stage" onchange="updateAdminDealsFilter()">
+                  <option value="">All Stages</option>
                   <option value="received">Received</option>
-                  <option value="processing">Processing</option>
+                  <option value="assigned">Assigned</option>
+                  <option value="dip_issued">DIP Issued</option>
+                  <option value="info_gathering">Info Gathering</option>
+                  <option value="ai_termsheet">AI Termsheet</option>
+                  <option value="fee_pending">Fee Pending</option>
+                  <option value="fee_paid">Fee Paid</option>
+                  <option value="underwriting">Underwriting</option>
+                  <option value="bank_submitted">Bank Submitted</option>
+                  <option value="bank_approved">Bank Approved</option>
+                  <option value="borrower_accepted">Borrower Accepted</option>
+                  <option value="legal_instructed">Legal Instructed</option>
                   <option value="completed">Completed</option>
                   <option value="declined">Declined</option>
+                  <option value="withdrawn">Withdrawn</option>
                 </select>
               </div>
               <div class="filter-group">
                 <label class="filter-label">Asset Type</label>
-                <select onchange="updateAdminDealsFilter()">
+                <select id="admin-filter-asset" onchange="updateAdminDealsFilter()">
                   <option value="">All Types</option>
                   <option value="residential">Residential</option>
                   <option value="commercial">Commercial</option>
                   <option value="mixed_use">Mixed Use</option>
+                  <option value="land">Land</option>
+                  <option value="hmo">HMO</option>
+                  <option value="development">Development</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">RM</label>
+                <select id="admin-filter-rm" onchange="updateAdminDealsFilter()">
+                  <option value="">All RMs</option>
+                  <option value="unassigned">Unassigned</option>
                 </select>
               </div>
               <div class="filter-group" style="flex: 1;">
                 <label class="filter-label">Search</label>
-                <input type="text" placeholder="Reference, property, borrower..." onkeyup="updateAdminDealsFilter()" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem;">
+                <input type="text" id="admin-filter-search" placeholder="Reference, property, borrower, broker..." oninput="updateAdminDealsFilter()" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; width: 100%;">
               </div>
             </div>
 
-            <div class="deals-table-wrapper">
-              <table class="deals-table">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span id="admin-deals-count" style="font-size:0.85em;color:#6b7280;font-weight:600;"></span>
+              <button onclick="allAdminDeals=[];document.getElementById('admin-filter-stage').value='';document.getElementById('admin-filter-asset').value='';document.getElementById('admin-filter-rm').value='';document.getElementById('admin-filter-search').value='';currentRole==='admin'?loadAdminDeals():loadStaffDeals();" style="font-size:0.8em;color:var(--primary);background:none;border:none;cursor:pointer;text-decoration:underline;">Reset Filters</button>
+            </div>
+            <div class="deals-table-wrapper" style="overflow-x:auto;">
+              <table class="deals-table" style="min-width:1100px;">
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Broker/Borrower</th>
-                    <th>Property</th>
-                    <th>Amount</th>
-                    <th>Stage</th>
-                    <th>RM</th>
-                    <th>Date</th>
+                    <th style="min-width:70px;">Ref</th>
+                    <th style="min-width:120px;">Borrower</th>
+                    <th style="min-width:100px;">Broker</th>
+                    <th style="min-width:150px;">Security</th>
+                    <th style="min-width:80px;">Notional</th>
+                    <th style="min-width:55px;">LTV</th>
+                    <th style="min-width:60px;">Term</th>
+                    <th style="min-width:80px;">Drawdown</th>
+                    <th style="min-width:90px;">Stage</th>
+                    <th style="min-width:100px;">Team</th>
+                    <th style="min-width:75px;">Updated</th>
                   </tr>
                 </thead>
                 <tbody id="admin-deals-tbody">
@@ -2307,9 +2346,34 @@ async function showDealDetail(dealId) {
     stageEl.className = `stage-badge stage-${stage}`;
 
     // ── TAB: Overview ──
-    document.getElementById('detail-loan-amount').textContent = `\u00A3${formatNumber(deal.loan_amount || 0)}`;
-    document.getElementById('detail-ltv').textContent = deal.ltv_requested ? deal.ltv_requested + '%' : 'N/A';
-    document.getElementById('detail-property-value').textContent = `\u00A3${formatNumber(deal.current_value || 0)}`;
+    // Auto-calculate indicative loan & LTV if not set
+    const dVal = deal.current_value ? Number(deal.current_value) : null;
+    const dPurchase = deal.purchase_price ? Number(deal.purchase_price) : null;
+    const dRefurb = deal.refurb_cost ? Number(deal.refurb_cost) : 0;
+    let dLoan = deal.loan_amount ? Number(deal.loan_amount) : null;
+    let dLtv = deal.ltv_requested ? Number(deal.ltv_requested) : null;
+    let loanIndicative = false;
+    let ltvIndicative = false;
+
+    if (!dLoan && (dVal || dPurchase)) {
+      const maxLtv = dVal ? dVal * 0.75 : Infinity;
+      const totalCost = dPurchase ? dPurchase + dRefurb : Infinity;
+      const maxLtc = totalCost < Infinity ? totalCost * 0.90 : Infinity;
+      const calc = Math.min(maxLtv, maxLtc);
+      if (calc < Infinity) { dLoan = Math.round(calc); loanIndicative = true; }
+    }
+    if (!dLtv && dLoan && dVal && dVal > 0) {
+      dLtv = Math.round((dLoan / dVal) * 100);
+      ltvIndicative = true;
+    }
+
+    const loanEl = document.getElementById('detail-loan-amount');
+    loanEl.innerHTML = dLoan ? `£${formatNumber(dLoan)}${loanIndicative ? ' <span style="font-size:0.75em;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:4px;margin-left:6px;">INDICATIVE MAX</span>' : ''}` : '£0';
+
+    const ltvEl = document.getElementById('detail-ltv');
+    ltvEl.innerHTML = dLtv ? `${dLtv}%${ltvIndicative ? ' <span style="font-size:0.75em;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:4px;margin-left:6px;">INDICATIVE</span>' : ''}` : 'N/A';
+
+    document.getElementById('detail-property-value').textContent = `£${formatNumber(deal.current_value || 0)}`;
     document.getElementById('detail-loan-purpose').textContent = deal.loan_purpose || 'N/A';
     document.getElementById('detail-term').textContent = deal.term_months ? deal.term_months + ' months' : 'N/A';
     document.getElementById('detail-interest-servicing').textContent = deal.interest_servicing || 'N/A';
@@ -2375,7 +2439,7 @@ async function showDealDetail(dealId) {
     }
 
     // ── PHASE 2: Lock/Unlock ──
-    const unlockedStages = ['fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+    const unlockedStages = ['ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
     const isPhase2Unlocked = unlockedStages.includes(stage);
 
     document.getElementById('phase2-lock').textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
@@ -2616,24 +2680,13 @@ async function loadAdminDeals() {
 
     const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
 
-    deals.forEach(deal => {
-      const row = document.createElement('tr');
-      row.style.cursor = 'pointer';
-      row.onclick = () => showDealDetail(deal.submission_id);
-      const brokerOrBorrower = deal.broker_name || deal.borrower_name || 'N/A';
-      const rmName = deal.rm_first ? `${deal.rm_first} ${deal.rm_last}` : 'Unassigned';
-      const stage = deal.deal_stage || 'dip';
-      row.innerHTML = `
-        <td><span class="deal-ref">${deal.submission_id.substring(0, 8)}</span></td>
-        <td>${brokerOrBorrower}</td>
-        <td><span class="deal-address">${deal.security_address || '-'}</span></td>
-        <td>£${formatNumber(deal.loan_amount || 0)}</td>
-        <td><span class="stage-badge stage-${stage}">${stageLabels[stage] || stage}</span></td>
-        <td>${rmName}</td>
-        <td>${formatDate(deal.created_at)}</td>
-      `;
-      tbody.appendChild(row);
-    });
+    allAdminDeals = deals;
+    populateRmFilter(deals);
+    renderPipelineRows(deals, tbody, stageLabels);
+
+    // Show deal count
+    const countEl = document.getElementById('admin-deals-count');
+    if (countEl) countEl.textContent = `${deals.length} deals`;
   } catch (err) {
     console.error('Error loading admin deals:', err);
   }
@@ -2653,27 +2706,95 @@ async function loadStaffDeals() {
     tbody.innerHTML = '';
     const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
 
-    deals.forEach(deal => {
-      const row = document.createElement('tr');
-      row.style.cursor = 'pointer';
-      row.onclick = () => showDealDetail(deal.submission_id);
-      const brokerOrBorrower = deal.broker_name || deal.borrower_name || 'N/A';
-      const rmName = deal.rm_first ? `${deal.rm_first} ${deal.rm_last}` : 'Unassigned';
-      const stage = deal.deal_stage || 'dip';
-      row.innerHTML = `
-        <td><span class="deal-ref">${deal.submission_id.substring(0, 8)}</span></td>
-        <td>${brokerOrBorrower}</td>
-        <td><span class="deal-address">${deal.security_address || '-'}</span></td>
-        <td>£${formatNumber(deal.loan_amount || 0)}</td>
-        <td><span class="stage-badge stage-${stage}">${stageLabels[stage] || stage}</span></td>
-        <td>${rmName}</td>
-        <td>${formatDate(deal.created_at)}</td>
-      `;
-      tbody.appendChild(row);
-    });
+    allAdminDeals = deals;
+    populateRmFilter(deals);
+    renderPipelineRows(deals, tbody, stageLabels);
+
+    const countEl = document.getElementById('admin-deals-count');
+    if (countEl) countEl.textContent = `${deals.length} deals`;
   } catch (err) {
     console.error('Error loading staff deals:', err);
   }
+}
+
+function renderPipelineRows(deals, tbody, stageLabels) {
+  deals.forEach(deal => {
+    const row = document.createElement('tr');
+    row.style.cursor = 'pointer';
+    row.onclick = () => showDealDetail(deal.submission_id);
+
+    // Borrower
+    const borrowerDisplay = deal.borrower_name
+      ? `<strong>${deal.borrower_name}</strong>${deal.borrower_company ? `<br><span class="pipe-sub">${deal.borrower_company}</span>` : ''}${deal.borrower_type ? `<br><span class="pipe-tag">${deal.borrower_type.toUpperCase()}</span>` : ''}`
+      : '<span class="pipe-empty">-</span>';
+
+    // Broker
+    const brokerDisplay = deal.broker_name
+      ? `<strong>${deal.broker_name}</strong>${deal.broker_company ? `<br><span class="pipe-sub">${deal.broker_company}</span>` : ''}`
+      : '<span class="pipe-empty">-</span>';
+
+    // Security
+    const address = deal.security_address || '-';
+    const shortAddr = address.length > 35 ? address.substring(0, 35) + '...' : address;
+    const assetTypes = { residential: 'Resi', commercial: 'Comm', mixed_use: 'Mixed', land: 'Land', hmo: 'HMO', development: 'Dev' };
+    const assetLabel = assetTypes[deal.asset_type] || deal.asset_type || '';
+    const securityDisplay = `<span title="${address.replace(/"/g, '&quot;')}">${shortAddr}</span>${deal.security_postcode || assetLabel ? `<br><span class="pipe-sub">${deal.security_postcode || ''}${deal.security_postcode && assetLabel ? ' · ' : ''}${assetLabel ? '<span class="pipe-tag">' + assetLabel + '</span>' : ''}</span>` : ''}`;
+
+    // Notional (loan amount + current value for context)
+    const loanAmt = deal.loan_amount ? `£${formatNumber(deal.loan_amount)}` : '-';
+    const valuation = deal.current_value ? `Val: £${formatNumber(deal.current_value)}` : '';
+    const notionalDisplay = `<strong>${loanAmt}</strong>${valuation ? `<br><span class="pipe-sub">${valuation}</span>` : ''}`;
+
+    // LTV — calculate if possible
+    let ltvDisplay = '-';
+    if (deal.ltv_requested) {
+      ltvDisplay = `<strong>${Number(deal.ltv_requested).toFixed(0)}%</strong>`;
+    } else if (deal.loan_amount && deal.current_value && Number(deal.current_value) > 0) {
+      const calcLtv = ((Number(deal.loan_amount) / Number(deal.current_value)) * 100).toFixed(0);
+      ltvDisplay = `<strong>${calcLtv}%</strong><br><span class="pipe-sub">calc</span>`;
+    }
+
+    // Term
+    const termDisplay = deal.term_months ? `${deal.term_months}m` : '-';
+
+    // Drawdown
+    const drawdownDisplay = deal.drawdown_date ? formatDate(deal.drawdown_date) : '<span class="pipe-empty">TBC</span>';
+
+    // Stage
+    const stage = deal.deal_stage || 'received';
+    const stageDisplay = `<span class="stage-badge stage-${stage}">${stageLabels[stage] || stage}</span>`;
+
+    // Team (RM, Credit, Compliance)
+    const rmName = deal.rm_first ? `${deal.rm_first} ${deal.rm_last}` : null;
+    const creditName = deal.credit_first ? `${deal.credit_first} ${deal.credit_last}` : null;
+    const compName = deal.comp_first ? `${deal.comp_first} ${deal.comp_last}` : null;
+    let teamHtml = '';
+    if (rmName) {
+      teamHtml += `<span class="pipe-role">RM:</span> ${rmName}`;
+    } else {
+      teamHtml += '<span style="color:#e53e3e;font-weight:600;">No RM</span>';
+    }
+    if (creditName) teamHtml += `<br><span class="pipe-role">CR:</span> ${creditName}`;
+    if (compName) teamHtml += `<br><span class="pipe-role">CO:</span> ${compName}`;
+
+    // Updated
+    const updatedDisplay = deal.updated_at ? formatDate(deal.updated_at) : formatDate(deal.created_at);
+
+    row.innerHTML = `
+      <td><span class="deal-ref">${deal.submission_id.substring(0, 8)}</span></td>
+      <td class="pipe-cell">${borrowerDisplay}</td>
+      <td class="pipe-cell">${brokerDisplay}</td>
+      <td class="pipe-cell">${securityDisplay}</td>
+      <td class="pipe-cell" style="white-space:nowrap;">${notionalDisplay}</td>
+      <td class="pipe-cell" style="text-align:center;">${ltvDisplay}</td>
+      <td class="pipe-cell" style="text-align:center;">${termDisplay}</td>
+      <td class="pipe-cell" style="white-space:nowrap;">${drawdownDisplay}</td>
+      <td class="pipe-cell">${stageDisplay}</td>
+      <td class="pipe-cell">${teamHtml}</td>
+      <td class="pipe-cell" style="white-space:nowrap;font-size:0.85em;">${updatedDisplay}</td>
+    `;
+    tbody.appendChild(row);
+  });
 }
 
 async function loadAdminUsers() {
@@ -2844,9 +2965,67 @@ async function createInternalUser() {
   }
 }
 
+let allAdminDeals = []; // Store full list for client-side filtering
+
 function updateAdminDealsFilter() {
-  // Placeholder for filtering functionality
-  // In a real app, this would re-fetch deals with filter parameters
+  const stageFilter = document.getElementById('admin-filter-stage')?.value || '';
+  const assetFilter = document.getElementById('admin-filter-asset')?.value || '';
+  const rmFilter = document.getElementById('admin-filter-rm')?.value || '';
+  const searchTerm = (document.getElementById('admin-filter-search')?.value || '').toLowerCase().trim();
+
+  const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
+
+  let filtered = allAdminDeals;
+
+  if (stageFilter) {
+    filtered = filtered.filter(d => (d.deal_stage || 'received') === stageFilter);
+  }
+  if (assetFilter) {
+    filtered = filtered.filter(d => d.asset_type === assetFilter);
+  }
+  if (rmFilter === 'unassigned') {
+    filtered = filtered.filter(d => !d.rm_first);
+  } else if (rmFilter) {
+    filtered = filtered.filter(d => d.assigned_rm === parseInt(rmFilter));
+  }
+  if (searchTerm) {
+    filtered = filtered.filter(d => {
+      const searchable = [
+        d.submission_id, d.borrower_name, d.borrower_company,
+        d.broker_name, d.broker_company, d.security_address,
+        d.security_postcode, d.loan_purpose
+      ].filter(Boolean).join(' ').toLowerCase();
+      return searchable.includes(searchTerm);
+    });
+  }
+
+  const tbody = document.getElementById('admin-deals-tbody');
+  tbody.innerHTML = '';
+  renderPipelineRows(filtered, tbody, stageLabels);
+
+  // Show count
+  const countEl = document.getElementById('admin-deals-count');
+  if (countEl) {
+    const isFiltered = stageFilter || assetFilter || rmFilter || searchTerm;
+    countEl.textContent = isFiltered ? `${filtered.length} of ${allAdminDeals.length} deals` : `${allAdminDeals.length} deals`;
+  }
+}
+
+function populateRmFilter(deals) {
+  const rmSelect = document.getElementById('admin-filter-rm');
+  if (!rmSelect) return;
+  const rms = new Map();
+  deals.forEach(d => {
+    if (d.rm_first && d.assigned_rm) {
+      rms.set(d.assigned_rm, `${d.rm_first} ${d.rm_last}`);
+    }
+  });
+  // Keep existing options (All RMs, Unassigned), add unique RMs
+  const existing = rmSelect.innerHTML;
+  rmSelect.innerHTML = '<option value="">All RMs</option><option value="unassigned">Unassigned</option>';
+  rms.forEach((name, id) => {
+    rmSelect.innerHTML += `<option value="${id}">${name}</option>`;
+  });
 }
 
 // ═══ WORKFLOW CONTROLS (Internal Staff) ════════════════════════════════════
@@ -2966,18 +3145,206 @@ async function renderWorkflowControls(deal) {
 
   // ASSIGNED (RM or Admin) - Issue DIP
   if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Issue DIP</h4>
-      <textarea id="dip-notes" placeholder="DIP notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:80px;margin-bottom:8px;"></textarea>
-      <button onclick="issueDip()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Issue DIP</button>
+    const dipLoan = deal.loan_amount || '';
+    const dipLtv = deal.ltv_requested || '';
+    const dipTerm = deal.term_months || '';
+    const dipRate = deal.rate_requested || '0.95';
+    const dipVal = deal.current_value || '';
+    const dipPurchase = deal.purchase_price || '';
+    const dipExit = deal.exit_strategy || '';
+    const dipPurpose = deal.loan_purpose || '';
+    const dipInterest = deal.interest_servicing || 'retained';
+
+    // Parse multiple properties from address (split by ; or multiple postcodes)
+    const fullAddr = deal.security_address || '';
+    const properties = fullAddr.includes(';') ? fullAddr.split(';').map(a => a.trim()).filter(Boolean) : [fullAddr];
+    const postcodes = (deal.security_postcode || '').split(',').map(p => p.trim()).filter(Boolean);
+
+    // CSS helper classes
+    const brokerField = 'background:#f9fafb;border:1px solid #e5e7eb;color:#374151;cursor:not-allowed;';
+    const rmField = 'background:#fff;border:2px solid var(--primary);';
+    const brokerLabel = '<span style="font-size:9px;background:#e5e7eb;color:#6b7280;padding:1px 5px;border-radius:3px;margin-left:4px;">BROKER/BORROWER</span>';
+    const rmLabel = '<span style="font-size:9px;background:#1e3a5f;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;">RM TO CONFIRM</span>';
+
+    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <h4 style="margin:0;color:var(--primary);">Decision In Principle (DIP)</h4>
+        <div style="display:flex;gap:8px;font-size:11px;">
+          <span style="background:#e5e7eb;color:#6b7280;padding:3px 8px;border-radius:4px;">Grey = Broker/Borrower input</span>
+          <span style="background:#1e3a5f;color:#fff;padding:3px 8px;border-radius:4px;">Blue border = RM to confirm</span>
+        </div>
+      </div>
+      <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the broker-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
+
+      <!-- ═══ BORROWER INFO (from broker — read only) ═══ -->
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+        <h5 style="margin:0 0 10px;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Borrower Details ${brokerLabel}</h5>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
+          <div><strong>${deal.borrower_name || 'N/A'}</strong></div>
+          <div>${deal.borrower_company || ''}</div>
+          <div>${deal.borrower_type ? deal.borrower_type.toUpperCase() : 'N/A'}</div>
+        </div>
+      </div>
+
+      <!-- ═══ PROPERTY SCHEDULE (from broker — editable by RM) ═══ -->
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+        <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Security Schedule — ${properties.length} ${properties.length === 1 ? 'Property' : 'Properties'} ${brokerLabel}</h5>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="dip-property-table">
+          <thead>
+            <tr style="background:#f3f4f6;">
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">#</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Address</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Postcode</th>
+              <th style="text-align:center;padding:6px 8px;border-bottom:1px solid #e5e7eb;width:80px;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${properties.map((addr, i) => `<tr id="dip-prop-${i}">
+              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;font-weight:600;">${i + 1}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${addr}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${postcodes[i] || postcodes[0] || '-'}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;">
+                <button onclick="removeDipProperty(${i})" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;" title="Remove property from DIP">Remove</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div id="dip-removed-props" style="margin-top:6px;font-size:11px;color:#991b1b;display:none;"></div>
+        <div style="margin-top:8px;font-size:12px;color:#6b7280;">Asset Type: <strong>${deal.asset_type || 'N/A'}</strong></div>
+      </div>
+
+      <!-- ═══ VALUATION (broker-sourced, RM reviews) ═══ -->
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+        <h5 style="margin:0 0 10px;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Valuation ${brokerLabel}</h5>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Current Market Value (£)</label>
+            <input type="number" id="dip-property-value" value="${dipVal}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Purchase Price (£)</label>
+            <input type="number" id="dip-purchase-price" value="${dipPurchase}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ LOAN TERMS (RM CONFIRMS) ═══ -->
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid var(--primary);">
+        <h5 style="margin:0 0 10px;color:var(--primary);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Loan Terms ${rmLabel}</h5>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Loan Amount (£) *</label>
+            <input type="number" id="dip-loan-amount" value="${dipLoan}" placeholder="Confirm loan amount" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Term (months) *</label>
+            <input type="number" id="dip-term" value="${dipTerm}" placeholder="e.g. 12" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
+            <input type="number" step="0.01" id="dip-rate" value="${dipRate}" placeholder="Min 0.85" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+            <span style="font-size:10px;color:#92400e;">Min 0.85%</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Interest Servicing *</label>
+            <select id="dip-interest" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+              <option value="retained" ${dipInterest === 'retained' ? 'selected' : ''}>Retained</option>
+              <option value="serviced" ${dipInterest === 'serviced' ? 'selected' : ''}>Serviced</option>
+              <option value="rolled_up" ${dipInterest === 'rolled_up' ? 'selected' : ''}>Rolled Up</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
+            <input type="number" step="0.01" id="dip-arrangement-fee" value="2.00" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">LTV (%)</label>
+            <input type="number" step="0.01" id="dip-ltv" value="${dipLtv}" style="width:100%;padding:8px;border-radius:4px;background:#f0fff4;border:1px solid #86efac;font-size:13px;" readonly>
+            <span style="font-size:10px;color:#15803d;">Auto-calculated · Max 75%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ PURPOSE & EXIT (broker-sourced, RM can edit) ═══ -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">Loan Purpose ${brokerLabel}</label>
+          <textarea id="dip-purpose" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;min-height:60px;" readonly>${dipPurpose}</textarea>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">Exit Strategy ${brokerLabel}</label>
+          <textarea id="dip-exit" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;min-height:60px;" readonly>${dipExit}</textarea>
+        </div>
+      </div>
+
+      <!-- ═══ RM CONDITIONS ═══ -->
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
+        <textarea id="dip-notes" placeholder="Special conditions, valuation requirements, additional info needed..." style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;min-height:80px;"></textarea>
+      </div>
+
+      <!-- ═══ LIVE SUMMARY ═══ -->
+      <div style="background:#fffdf5;padding:14px;border-radius:6px;border:1px solid #fbbf24;margin-bottom:16px;">
+        <strong style="font-size:12px;color:#92400e;">DIP Financial Summary (live):</strong>
+        <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#333;"></div>
+      </div>
+
+      <div style="display:flex;gap:12px;">
+        <button onclick="issueDip()" style="padding:10px 24px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Issue DIP to Broker</button>
+        <button onclick="declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
+      </div>
     </div>`;
+
+    // Auto-calculate DIP summary after render
+    setTimeout(() => {
+      calcDipLtv();
+      ['dip-loan-amount', 'dip-property-value', 'dip-term', 'dip-rate', 'dip-arrangement-fee'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', calcDipLtv);
+      });
+    }, 100);
   }
 
-  // DIP_ISSUED (RM or Admin) - Move to Info Gathering
-  if (stage === 'dip_issued' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Next Stage</h4>
-      <button onclick="advanceStageSimple('info_gathering')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Move to Info Gathering</button>
+  // DIP_ISSUED (Credit or Admin) - Credit Review & In-Principle Approval
+  if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole)) {
+    const dipData = deal.ai_termsheet_data || {};
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+      <h4 style="margin:0 0 4px;color:#7c3aed;">Credit Review — In-Principle Decision</h4>
+      <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the DIP terms submitted by the RM and provide your in-principle decision.</p>
+
+      <div style="background:#f5f3ff;padding:12px;border-radius:6px;margin-bottom:16px;">
+        <h5 style="margin:0 0 8px;font-size:12px;color:#7c3aed;text-transform:uppercase;">DIP Terms Under Review</h5>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
+          <div>Loan: <strong>£${dipData.loan_amount ? Number(dipData.loan_amount).toLocaleString() : (deal.loan_amount ? Number(deal.loan_amount).toLocaleString() : 'N/A')}</strong></div>
+          <div>LTV: <strong>${dipData.ltv || deal.ltv_requested || 'N/A'}%</strong></div>
+          <div>Term: <strong>${dipData.term_months || deal.term_months || 'N/A'} months</strong></div>
+          <div>Rate: <strong>${dipData.rate_monthly || deal.rate_requested || 'N/A'}%/m</strong></div>
+          <div>Interest: <strong>${dipData.interest_servicing || deal.interest_servicing || 'N/A'}</strong></div>
+          <div>Arr. Fee: <strong>${dipData.arrangement_fee_pct || '2'}%</strong></div>
+        </div>
+        ${dipData.removed_properties && dipData.removed_properties.length > 0 ? '<div style="margin-top:8px;font-size:12px;color:#991b1b;">Properties removed by RM: ' + dipData.removed_properties.map(p => p.address.substring(0, 40)).join('; ') + '</div>' : ''}
+        ${dipData.conditions ? '<div style="margin-top:8px;font-size:12px;"><strong>RM Conditions:</strong> ' + dipData.conditions + '</div>' : ''}
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;color:#7c3aed;display:block;margin-bottom:4px;font-weight:600;">Credit Assessment Notes *</label>
+        <textarea id="credit-notes" placeholder="Your credit assessment, risk observations, conditions..." style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;min-height:100px;"></textarea>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;color:#7c3aed;display:block;margin-bottom:4px;font-weight:600;">Conditions of Approval (if approving)</label>
+        <textarea id="credit-conditions" placeholder="e.g. Subject to satisfactory valuation, clear title search..." style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;"></textarea>
+      </div>
+
+      <div style="display:flex;gap:12px;">
+        <button onclick="creditDecision('approve')" style="padding:10px 24px;background:#15803d;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Approve In-Principle</button>
+        <button onclick="creditDecision('decline')" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline</button>
+        <button onclick="creditDecision('moreinfo')" style="padding:10px 24px;background:#c9a84c;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">More Info Needed</button>
+      </div>
     </div>`;
   }
 
@@ -3311,9 +3678,27 @@ function renderExternalWorkflowControls(deal) {
   if (stage === 'received' || stage === 'assigned') {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
   } else if (stage === 'dip_issued') {
-    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>DIP Issued</strong> — We have issued a Decision in Principle for your deal. Please submit all relevant details so we can progress.</p>${deal.dip_notes ? `<p style="color:#666;margin-top:8px;">${deal.dip_notes}</p>` : ''}</div>`;
+    html += `<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;"><p style="font-size:14px;margin-bottom:12px;"><strong>DIP Under Credit Review</strong> — Your decision in principle is being reviewed by our credit team. We'll notify you of the outcome shortly.</p></div>`;
   } else if (stage === 'info_gathering') {
-    html += `<div style="background:#fffff0;padding:16px;border-radius:8px;border-left:4px solid #c9a84c;"><p style="font-size:14px;"><strong>Information Required</strong> — Please upload any outstanding documents and complete all required fields. Our team will generate a termsheet once we have sufficient information.</p></div>`;
+    const dipData = deal.ai_termsheet_data || {};
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;margin-bottom:16px;">
+      <p style="font-size:14px;margin-bottom:12px;"><strong>DIP Approved!</strong> — We have approved a Decision in Principle for your deal.</p>
+
+      <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #d1fae5;">
+        <h5 style="margin:0 0 8px;font-size:12px;color:#047857;text-transform:uppercase;font-weight:600;">Approved Terms</h5>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
+          <div>Loan: <strong>£${dipData.loan_amount ? Number(dipData.loan_amount).toLocaleString() : (deal.loan_amount ? Number(deal.loan_amount).toLocaleString() : 'N/A')}</strong></div>
+          <div>LTV: <strong>${dipData.ltv || deal.ltv_requested || 'N/A'}%</strong></div>
+          <div>Term: <strong>${dipData.term_months || deal.term_months || 'N/A'} months</strong></div>
+          <div>Rate: <strong>${dipData.rate_monthly || deal.rate_requested || 'N/A'}%/m</strong></div>
+          <div>Interest: <strong>${dipData.interest_servicing || deal.interest_servicing || 'N/A'}</strong></div>
+          <div>Arr. Fee: <strong>${dipData.arrangement_fee_pct || '2'}%</strong></div>
+        </div>
+        ${dipData.credit_decision && dipData.credit_decision.conditions ? '<div style="margin-top:8px;font-size:12px;"><strong>Conditions:</strong> ' + dipData.credit_decision.conditions + '</div>' : ''}
+      </div>
+
+      <button onclick="acceptDipExternal()" style="padding:10px 24px;background:#48bb78;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Accept DIP & Continue</button>
+    </div>`;
   } else if (stage === 'ai_termsheet') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
   } else if (stage === 'fee_pending') {
@@ -3344,6 +3729,20 @@ function renderExternalWorkflowControls(deal) {
   }
 
   panel.innerHTML = html;
+}
+
+async function acceptDipExternal() {
+  if (!confirm('Are you sure you want to accept the DIP terms and continue?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: 'ai_termsheet', comments: 'Broker accepted DIP terms' })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('DIP accepted! Please complete the information gathering section.'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to accept DIP', true); }
+  } catch(e) { showToast('Network error', true); }
 }
 
 async function acceptDealExternal() {
@@ -3462,17 +3861,147 @@ async function assignRMAndAdvance() {
   } catch(e) { showToast('Network error', true); }
 }
 
+let dipRemovedProperties = [];
+
+function removeDipProperty(idx) {
+  const row = document.getElementById('dip-prop-' + idx);
+  if (!row) return;
+  const addr = row.querySelectorAll('td')[1].textContent;
+  if (!confirm('Remove "' + addr.substring(0, 50) + '..." from this DIP?')) return;
+  row.style.background = '#fee2e2';
+  row.style.textDecoration = 'line-through';
+  row.style.opacity = '0.5';
+  row.querySelector('button').disabled = true;
+  row.querySelector('button').textContent = 'Removed';
+  dipRemovedProperties.push({ index: idx, address: addr });
+  const removedDiv = document.getElementById('dip-removed-props');
+  if (removedDiv) {
+    removedDiv.style.display = 'block';
+    removedDiv.innerHTML = '<strong>Removed:</strong> ' + dipRemovedProperties.map(p => p.address.substring(0, 40) + '...').join('; ');
+  }
+}
+
+function calcDipLtv() {
+  const loan = parseFloat(document.getElementById('dip-loan-amount')?.value) || 0;
+  const val = parseFloat(document.getElementById('dip-property-value')?.value) || 0;
+  const term = parseInt(document.getElementById('dip-term')?.value) || 0;
+  const rate = parseFloat(document.getElementById('dip-rate')?.value) || 0;
+  const arrFee = parseFloat(document.getElementById('dip-arrangement-fee')?.value) || 0;
+  const interest = document.getElementById('dip-interest')?.value || 'retained';
+
+  // Calculate LTV
+  const ltv = val > 0 ? ((loan / val) * 100).toFixed(1) : 0;
+  const ltvEl = document.getElementById('dip-ltv');
+  if (ltvEl) ltvEl.value = ltv;
+
+  // Calculate costs
+  const totalInterest = loan * (rate / 100) * term;
+  const arrangementFee = loan * (arrFee / 100);
+  const netAdvance = interest === 'retained' ? loan - totalInterest - arrangementFee : loan - arrangementFee;
+
+  // LTV check
+  const ltvOk = ltv <= 75;
+  const rateOk = rate >= 0.85;
+
+  const summaryEl = document.getElementById('dip-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div>LTV: <strong style="color:${ltvOk ? '#15803d' : '#e53e3e'};">${ltv}%</strong> ${!ltvOk ? '(exceeds 75% max!)' : ''}</div>
+        <div>Gross Loan: <strong>£${loan.toLocaleString()}</strong></div>
+        <div>Net Day 1 Advance: <strong>£${Math.round(netAdvance).toLocaleString()}</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px;">
+        <div>Total Interest: <strong>£${Math.round(totalInterest).toLocaleString()}</strong> (${term}m @ ${rate}%)</div>
+        <div>Arrangement Fee: <strong>£${Math.round(arrangementFee).toLocaleString()}</strong> (${arrFee}%)</div>
+        <div>Rate: <strong style="color:${rateOk ? '#15803d' : '#e53e3e'};">${rate}%/m</strong> ${!rateOk ? '(below 0.85% min!)' : ''}</div>
+      </div>
+    `;
+  }
+}
+
 async function issueDip() {
+  const loanAmount = document.getElementById('dip-loan-amount')?.value;
+  const propertyValue = document.getElementById('dip-property-value')?.value;
+  const ltv = document.getElementById('dip-ltv')?.value;
+  const term = document.getElementById('dip-term')?.value;
+  const rate = document.getElementById('dip-rate')?.value;
+  const interest = document.getElementById('dip-interest')?.value;
+  const arrFee = document.getElementById('dip-arrangement-fee')?.value;
+  const exitStrategy = document.getElementById('dip-exit')?.value;
+  const purpose = document.getElementById('dip-purpose')?.value;
   const notes = document.getElementById('dip-notes')?.value || '';
+  const purchasePrice = document.getElementById('dip-purchase-price')?.value;
+
+  // Validate
+  if (!loanAmount || !term || !rate) {
+    showToast('Please fill in loan amount, term, and rate', true);
+    return;
+  }
+  if (parseFloat(ltv) > 75) {
+    if (!confirm('LTV exceeds 75% maximum. Are you sure you want to proceed?')) return;
+  }
+  if (parseFloat(rate) < 0.85) {
+    if (!confirm('Rate is below 0.85% minimum. Are you sure you want to proceed?')) return;
+  }
+
   try {
     const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/issue-dip`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ dip_notes: notes })
+      body: JSON.stringify({
+        notes,
+        dip_data: {
+          loan_amount: parseFloat(loanAmount),
+          property_value: parseFloat(propertyValue) || null,
+          purchase_price: parseFloat(purchasePrice) || null,
+          ltv: parseFloat(ltv) || null,
+          term_months: parseInt(term),
+          rate_monthly: parseFloat(rate),
+          interest_servicing: interest,
+          arrangement_fee_pct: parseFloat(arrFee) || 2,
+          exit_strategy: exitStrategy,
+          loan_purpose: purpose,
+          conditions: notes,
+          removed_properties: dipRemovedProperties
+        }
+      })
     });
     const data = await resp.json();
     if (resp.ok) { showToast('DIP issued successfully'); await showDealDetail(window.currentDealId); }
     else { showToast(data.error || 'Failed to issue DIP', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function creditDecision(decision) {
+  const notes = document.getElementById('credit-notes')?.value || '';
+  const conditions = document.getElementById('credit-conditions')?.value || '';
+
+  if (!notes && decision !== 'moreinfo') {
+    showToast('Please provide credit assessment notes', true);
+    return;
+  }
+
+  const confirmMsg = decision === 'approve' ? 'Issue In-Principle Approval? This will be visible to the broker/borrower.' :
+                     decision === 'decline' ? 'Decline this deal?' : 'Request more information?';
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const nextStage = decision === 'approve' ? 'info_gathering' : decision === 'decline' ? 'declined' : 'assigned';
+
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/credit-decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ decision, notes, conditions, next_stage: nextStage })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      const msgs = { approve: 'In-Principle Approval issued', decline: 'Deal declined', moreinfo: 'Sent back for more information' };
+      showToast(msgs[decision] || 'Decision recorded');
+      await showDealDetail(window.currentDealId);
+    } else {
+      showToast(data.error || 'Failed to record decision', true);
+    }
   } catch(e) { showToast('Network error', true); }
 }
 
@@ -3981,6 +4510,30 @@ async function uploadAndParse(files, whatsappText) {
 
 function populateSmartParseForm(pd) {
   if (!pd) return;
+
+  // Auto-calculate indicative loan amount and LTV if not provided
+  // Rule: Max 75% LTV (of value) or 90% LTC (of purchase price + refurb), whichever is LOWER
+  const currentVal = pd.current_value ? parseFloat(String(pd.current_value).replace(/[£$,]/g, '')) : null;
+  const purchasePrice = pd.purchase_price ? parseFloat(String(pd.purchase_price).replace(/[£$,]/g, '')) : null;
+  const refurbCost = pd.refurb_cost ? parseFloat(String(pd.refurb_cost).replace(/[£$,]/g, '')) : 0;
+  let loanIsIndicative = false;
+  let ltvIsIndicative = false;
+
+  if (!pd.loan_amount && (currentVal || purchasePrice)) {
+    const maxByLtv = currentVal ? currentVal * 0.75 : Infinity;
+    const totalCost = purchasePrice ? purchasePrice + refurbCost : Infinity;
+    const maxByLtc = totalCost < Infinity ? totalCost * 0.90 : Infinity;
+    const indicativeLoan = Math.min(maxByLtv, maxByLtc);
+    if (indicativeLoan < Infinity) {
+      pd.loan_amount = Math.round(indicativeLoan);
+      loanIsIndicative = true;
+    }
+  }
+  if (!pd.ltv_requested && pd.loan_amount && currentVal && currentVal > 0) {
+    pd.ltv_requested = Math.round((parseFloat(pd.loan_amount) / currentVal) * 100);
+    ltvIsIndicative = true;
+  }
+
   const fieldMap = {
     'sp-borrower-name': pd.borrower_name, 'sp-borrower-company': pd.borrower_company,
     'sp-borrower-email': pd.borrower_email, 'sp-borrower-phone': pd.borrower_phone,
@@ -3996,6 +4549,30 @@ function populateSmartParseForm(pd) {
   for (const [id, val] of Object.entries(fieldMap)) {
     const el = document.getElementById(id);
     if (el && val) el.value = val;
+  }
+
+  // Mark indicative fields with a visual cue
+  if (loanIsIndicative) {
+    const loanEl = document.getElementById('sp-loan-amount');
+    if (loanEl) {
+      loanEl.style.borderColor = '#c9a84c';
+      loanEl.style.background = '#fffdf5';
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:11px;color:#92400e;margin-top:2px;';
+      hint.textContent = 'Indicative max — 75% LTV or 90% LTC (whichever lower). RM to confirm in DIP.';
+      loanEl.parentNode.appendChild(hint);
+    }
+  }
+  if (ltvIsIndicative) {
+    const ltvEl = document.getElementById('sp-ltv');
+    if (ltvEl) {
+      ltvEl.style.borderColor = '#c9a84c';
+      ltvEl.style.background = '#fffdf5';
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:11px;color:#92400e;margin-top:2px;';
+      hint.textContent = 'Indicative — calculated from loan/value. Max 75%.';
+      ltvEl.parentNode.appendChild(hint);
+    }
   }
 
   // Show confidence if available

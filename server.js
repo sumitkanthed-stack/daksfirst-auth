@@ -172,6 +172,11 @@ async function runMigrations() {
 
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_deal ON deal_documents(deal_id);`);
 
+    try {
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS parse_session_id UUID;`);
+      console.log('[migrate] Added parse_session_id to deal_documents');
+    } catch(e) { console.log('[migrate] deal_documents parse_session_id note:', e.message.substring(0, 60)); }
+
     // Analysis results table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS analysis_results (
@@ -386,7 +391,7 @@ async function runMigrations() {
       // Phase 2 onboarding (stored as JSONB for flexibility)
       { col: 'onboarding_data', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS onboarding_data JSONB DEFAULT \'{}\'::jsonb;' },
       // Deal stage tracking
-      { col: 'deal_stage', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deal_stage VARCHAR(30) DEFAULT \'dip\';' },
+      { col: 'deal_stage', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deal_stage VARCHAR(30) DEFAULT \'received\';' },
       { col: 'termsheet_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_signed_at TIMESTAMPTZ;' },
       { col: 'commitment_fee_received', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_received BOOLEAN DEFAULT FALSE;' },
       // RM & approval chain fields
@@ -453,6 +458,15 @@ async function runMigrations() {
       console.log('[migrate] Ensured broker_onboarding.default_rm exists');
     } catch (err) {
       console.log('[migrate] Note on broker_onboarding.default_rm:', err.message.substring(0, 60));
+    }
+
+    // Fix deal_stage default and migrate old 'dip' stage to 'received'
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN deal_stage SET DEFAULT 'received';`);
+      await pool.query(`UPDATE deal_submissions SET deal_stage = 'received' WHERE deal_stage = 'dip' OR deal_stage IS NULL;`);
+      console.log('[migrate] Fixed deal_stage default to received and migrated old dip stages');
+    } catch (err) {
+      console.log('[migrate] Note on deal_stage fix:', err.message.substring(0, 60));
     }
 
     // Widen columns that may be too short for AI-extracted data
@@ -1388,14 +1402,28 @@ app.get('/api/admin/deals', authenticateToken, authenticateAdmin, async (req, re
     const { status, asset_type, broker, page = 1, limit = 20 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    let query = `SELECT ds.id, ds.submission_id, ds.status, ds.deal_stage, ds.borrower_name, ds.broker_name,
-                        ds.loan_amount, ds.ltv_requested, ds.security_address,
-                        ds.asset_type, ds.created_at, ds.assigned_rm, ds.internal_status,
-                        ds.dip_fee_confirmed, ds.commitment_fee_received,
+    let query = `SELECT ds.id, ds.submission_id, ds.status, ds.deal_stage,
+                        ds.borrower_name, ds.borrower_company, ds.borrower_type,
+                        ds.broker_name, ds.broker_company,
+                        ds.loan_amount, ds.current_value, ds.purchase_price, ds.ltv_requested,
+                        ds.security_address, ds.security_postcode,
+                        ds.asset_type, ds.term_months, ds.rate_requested, ds.exit_strategy,
+                        ds.interest_servicing, ds.loan_purpose,
+                        ds.drawdown_date, ds.created_at, ds.updated_at,
+                        ds.assigned_rm, ds.assigned_credit, ds.assigned_compliance,
+                        ds.internal_status, ds.dip_fee_confirmed, ds.commitment_fee_received,
+                        ds.fee_requested_amount, ds.fee_requested_at,
+                        ds.dip_issued_at, ds.bank_submitted_at, ds.bank_approved_at,
                         ds.rm_recommendation, ds.credit_recommendation, ds.compliance_recommendation, ds.final_decision,
-                        rm.first_name as rm_first, rm.last_name as rm_last
+                        rm.first_name as rm_first, rm.last_name as rm_last,
+                        cr.first_name as credit_first, cr.last_name as credit_last,
+                        co.first_name as comp_first, co.last_name as comp_last,
+                        u.first_name as submitter_first, u.last_name as submitter_last
                  FROM deal_submissions ds
                  LEFT JOIN users rm ON ds.assigned_rm = rm.id
+                 LEFT JOIN users cr ON ds.assigned_credit = cr.id
+                 LEFT JOIN users co ON ds.assigned_compliance = co.id
+                 LEFT JOIN users u ON ds.user_id = u.id
                  WHERE 1=1`;
     const params = [];
     let paramCount = 1;
@@ -1853,7 +1881,7 @@ app.put('/api/admin/deals/:submissionId/assign', authenticateToken, authenticate
     const rm = rmCheck.rows[0];
 
     await pool.query(
-      `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = CASE WHEN deal_stage = 'dip' THEN 'dip' ELSE deal_stage END, updated_at = NOW() WHERE id = $2`,
+      `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = CASE WHEN deal_stage IN ('received', 'dip') THEN 'assigned' ELSE deal_stage END, updated_at = NOW() WHERE id = $2`,
       [rm_id, deal.id]
     );
 
@@ -2369,28 +2397,79 @@ app.delete('/api/law-firms/:id', authenticateToken, authenticateInternal, async 
 // Issue DIP (Detailed Information Package)
 app.post('/api/deals/:submissionId/issue-dip', authenticateToken, authenticateInternal, async (req, res) => {
   try {
-    const { dip_notes } = req.body;
+    const { notes, dip_data } = req.body;
 
     const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const dealId = dealResult.rows[0].id;
 
+    // Build update: store DIP data in ai_termsheet_data, update key deal fields, and dip_notes
+    const updateFields = [];
+    const updateValues = [req.user.userId, notes || null, dealId];
+    let paramIdx = 4;
+
+    // Store structured DIP data
+    if (dip_data) {
+      updateFields.push(`ai_termsheet_data = $${paramIdx}`);
+      updateValues.splice(2, 0, JSON.stringify(dip_data));
+      paramIdx++;
+
+      // Also update core deal fields from DIP data
+      if (dip_data.loan_amount !== undefined) {
+        updateFields.push(`loan_amount = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.loan_amount);
+        paramIdx++;
+      }
+      if (dip_data.ltv !== undefined) {
+        updateFields.push(`ltv_requested = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.ltv);
+        paramIdx++;
+      }
+      if (dip_data.term_months !== undefined) {
+        updateFields.push(`term_months = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.term_months);
+        paramIdx++;
+      }
+      if (dip_data.rate_monthly !== undefined) {
+        updateFields.push(`rate_requested = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.rate_monthly);
+        paramIdx++;
+      }
+      if (dip_data.property_value !== undefined) {
+        updateFields.push(`current_value = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.property_value);
+        paramIdx++;
+      }
+      if (dip_data.exit_strategy !== undefined) {
+        updateFields.push(`exit_strategy = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.exit_strategy);
+        paramIdx++;
+      }
+      if (dip_data.interest_servicing !== undefined) {
+        updateFields.push(`interest_servicing = $${paramIdx}`);
+        updateValues.splice(2, 0, dip_data.interest_servicing);
+        paramIdx++;
+      }
+    }
+
+    updateFields.push(`status = 'dip_issued'`);
+    updateFields.push(`deal_stage = 'dip_issued'`);
+    updateFields.push(`dip_issued_at = NOW()`);
+    updateFields.push(`dip_issued_by = $1`);
+    updateFields.push(`dip_notes = $2`);
+    updateFields.push(`updated_at = NOW()`);
+
     const result = await pool.query(
-      `UPDATE deal_submissions SET
-        status = 'dip_issued',
-        dip_issued_at = NOW(),
-        dip_issued_by = $1,
-        dip_notes = $2,
-        updated_at = NOW()
-       WHERE id = $3 RETURNING submission_id, status, dip_issued_at`,
-      [req.user.userId, dip_notes || null, dealId]
+      `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx} RETURNING submission_id, status, dip_issued_at`,
+      updateValues
     );
 
     await logAudit(dealId, 'dip_issued', dealResult.rows[0].status, 'dip_issued',
-      { issued_by: req.user.userId }, req.user.userId);
+      { issued_by: req.user.userId, dip_data_stored: !!dip_data }, req.user.userId);
 
     res.json({ success: true, deal: result.rows[0] });
   } catch (error) {
+    console.error('[issue-dip] Error:', error);
     res.status(500).json({ error: 'Failed to issue DIP' });
   }
 });
@@ -2420,6 +2499,68 @@ app.post('/api/deals/:submissionId/generate-ai-termsheet', authenticateToken, au
     res.json({ success: true, deal: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate termsheet' });
+  }
+});
+
+// Credit analyst decision on DIP
+app.post('/api/deals/:submissionId/credit-decision', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { decision, notes, conditions, next_stage } = req.body;
+    if (!decision) return res.status(400).json({ error: 'Decision is required' });
+
+    const dealResult = await pool.query(
+      `SELECT id, status, ai_termsheet_data FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Store credit decision in ai_termsheet_data
+    const existingData = deal.ai_termsheet_data || {};
+    existingData.credit_decision = {
+      decision,
+      notes,
+      conditions,
+      decided_by: req.user.userId,
+      decided_at: new Date().toISOString()
+    };
+
+    const updates = [
+      'ai_termsheet_data = $1',
+      'credit_recommendation = $2',
+      'updated_at = NOW()'
+    ];
+    const values = [JSON.stringify(existingData), decision];
+    let paramIdx = 3;
+
+    // Set the next stage based on decision
+    if (decision === 'approve') {
+      updates.push(`status = $${paramIdx}`);
+      values.push('info_gathering');
+      paramIdx++;
+    } else if (decision === 'decline') {
+      updates.push(`status = $${paramIdx}`);
+      values.push('declined');
+      paramIdx++;
+    } else if (decision === 'moreinfo') {
+      updates.push(`status = $${paramIdx}`);
+      values.push('assigned');
+      paramIdx++;
+    }
+
+    values.push(req.params.submissionId);
+    await pool.query(
+      `UPDATE deal_submissions SET ${updates.join(', ')} WHERE submission_id = $${paramIdx}`,
+      values
+    );
+
+    await logAudit(deal.id, 'credit_decision', deal.status, decision === 'approve' ? 'info_gathering' : decision === 'decline' ? 'declined' : 'assigned',
+      { decision, notes: notes.substring(0, 200), conditions: conditions.substring(0, 200) }, req.user.userId);
+
+    res.json({ success: true, message: `Credit decision: ${decision}` });
+  } catch (error) {
+    console.error('[credit-decision] Error:', error);
+    res.status(500).json({ error: 'Failed to record credit decision' });
   }
 });
 
@@ -2976,15 +3117,26 @@ app.post('/api/smart-parse/upload', authenticateToken, upload.any(), async (req,
       }
     }
 
-    // If deal exists, store the uploaded docs
-    if (existingDeal && uploadedFiles.length > 0) {
-      for (const uf of uploadedFiles) {
+    // Save file records to deal_documents — always, even without OneDrive
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const matchingUpload = uploadedFiles.find(u => u.filename === file.originalname);
         await pool.query(
-          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [existingDeal.id, uf.filename, uf.file_type, uf.file_size, uf.onedrive_item_id, uf.onedrive_path, uf.onedrive_download_url]
+          `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            existingDeal ? existingDeal.id : null,
+            parseSessionId,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            matchingUpload ? matchingUpload.onedrive_item_id : null,
+            matchingUpload ? matchingUpload.onedrive_path : null,
+            matchingUpload ? matchingUpload.onedrive_download_url : null
+          ]
         );
       }
+      console.log(`[smart-parse] Saved ${req.files.length} file records to deal_documents (parse_session_id: ${parseSessionId})`);
     }
 
     // Send to n8n parse webhook for AI extraction
@@ -3096,6 +3248,28 @@ app.post('/api/smart-parse/confirm', authenticateToken, async (req, res) => {
     // Remove confidence field (not a DB column)
     delete pd.confidence;
 
+    // Auto-calculate indicative loan amount and LTV if not provided
+    // Rule: Max 75% LTV (of current value) or 90% LTC (of purchase price), whichever is LOWER
+    const currentVal = pd.current_value ? Number(pd.current_value) : null;
+    const purchasePrice = pd.purchase_price ? Number(pd.purchase_price) : null;
+    const refurbCost = pd.refurb_cost ? Number(pd.refurb_cost) : 0;
+
+    if (!pd.loan_amount && (currentVal || purchasePrice)) {
+      const maxByLtv = currentVal ? currentVal * 0.75 : Infinity;  // 75% of value
+      const totalCost = purchasePrice ? purchasePrice + refurbCost : Infinity;
+      const maxByLtc = totalCost < Infinity ? totalCost * 0.90 : Infinity; // 90% of total cost
+      const indicativeLoan = Math.min(maxByLtv, maxByLtc);
+      if (indicativeLoan < Infinity) {
+        pd.loan_amount = Math.round(indicativeLoan); // Round to nearest pound
+        console.log(`[smart-parse] Auto-calculated indicative loan: £${pd.loan_amount} (75% LTV = £${maxByLtv < Infinity ? Math.round(maxByLtv) : 'N/A'}, 90% LTC = £${maxByLtc < Infinity ? Math.round(maxByLtc) : 'N/A'})`);
+      }
+    }
+
+    if (!pd.ltv_requested && pd.loan_amount && currentVal && currentVal > 0) {
+      pd.ltv_requested = Math.round((Number(pd.loan_amount) / currentVal) * 100 * 100) / 100; // 2 decimal places
+      console.log(`[smart-parse] Auto-calculated LTV: ${pd.ltv_requested}%`);
+    }
+
     if (deal_id) {
       // UPDATE existing deal with parsed fields
       const dealCheck = await pool.query(
@@ -3190,6 +3364,15 @@ app.post('/api/smart-parse/confirm', authenticateToken, async (req, res) => {
           await pool.query('UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = \'assigned\' WHERE id = $2',
             [brokerOnb.rows[0].default_rm, newDeal.id]);
         }
+      }
+
+      // Link any documents from the parse session to the new deal
+      if (parse_session_id) {
+        const linked = await pool.query(
+          `UPDATE deal_documents SET deal_id = $1 WHERE parse_session_id = $2 AND deal_id IS NULL`,
+          [newDeal.id, parse_session_id]
+        );
+        console.log(`[smart-parse-confirm] Linked ${linked.rowCount} documents to new deal ${newDeal.submission_id}`);
       }
 
       await logAudit(newDeal.id, 'deal_submitted_smart_parse', null, 'received',
