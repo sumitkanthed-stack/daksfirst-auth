@@ -1031,6 +1031,58 @@
             </div>
           </div>
 
+          <!-- Broker Onboarding Banner -->
+          <div id="broker-onboarding-banner" style="display:none;background:linear-gradient(135deg,#1a365d 0%,#2a4365 100%);color:white;padding:20px 24px;border-radius:12px;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:700;font-size:1.1rem;margin-bottom:4px;">Complete Your Broker Onboarding</div>
+                <div style="font-size:0.9rem;opacity:0.85;" id="broker-onb-status-text">We need your KYC documents and bank details before we can pay your commission fees.</div>
+              </div>
+              <button onclick="showBrokerOnboarding()" style="padding:10px 20px;background:#c9a84c;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;">Complete Now</button>
+            </div>
+          </div>
+
+          <!-- Broker Onboarding Form (hidden by default) -->
+          <div id="broker-onboarding-form" style="display:none;margin-bottom:20px;">
+            <div class="detail-panel" style="padding:24px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                <h3 style="margin:0;color:var(--primary);">Broker Onboarding — KYC & Bank Details</h3>
+                <button onclick="hideBrokerOnboarding()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#666;">✕</button>
+              </div>
+              <p style="color:#666;margin-bottom:16px;font-size:0.9rem;">Please complete all sections. We cannot process commission payments until your onboarding is approved.</p>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group"><label style="font-weight:600;">Full Legal Name *</label><input type="text" id="bonb-name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                <div class="form-group"><label style="font-weight:600;">Date of Birth *</label><input type="date" id="bonb-dob" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+              </div>
+
+              <div class="form-group" style="margin-top:12px;">
+                <label style="font-weight:600;"><input type="checkbox" id="bonb-is-company" onchange="toggleBrokerCompanyFields()"> I operate through a company</label>
+              </div>
+
+              <div id="broker-company-fields" style="display:none;margin-top:12px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                  <div class="form-group"><label style="font-weight:600;">Company Name</label><input type="text" id="bonb-company-name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                  <div class="form-group"><label style="font-weight:600;">Company Number</label><input type="text" id="bonb-company-number" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                </div>
+                <p style="color:#666;font-size:0.85rem;margin-top:4px;">Upload incorporation documents in the Documents tab of any deal, or email to portal@daksfirst.com</p>
+              </div>
+
+              <h4 style="margin:20px 0 12px;color:var(--primary);border-top:1px solid var(--border);padding-top:16px;">Bank Details (for commission payments)</h4>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group"><label style="font-weight:600;">Bank Name *</label><input type="text" id="bonb-bank-name" placeholder="e.g. Barclays" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                <div class="form-group"><label style="font-weight:600;">Account Name *</label><input type="text" id="bonb-account-name" placeholder="Account holder name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                <div class="form-group"><label style="font-weight:600;">Sort Code *</label><input type="text" id="bonb-sort-code" placeholder="00-00-00" maxlength="8" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+                <div class="form-group"><label style="font-weight:600;">Account Number *</label><input type="text" id="bonb-account-no" placeholder="12345678" maxlength="8" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+              </div>
+
+              <p style="color:#666;font-size:0.85rem;margin-top:8px;">Please email your passport and proof of address (utility bill dated within 3 months) to <strong>portal@daksfirst.com</strong>.</p>
+
+              <button onclick="saveBrokerOnboarding()" id="bonb-submit-btn" class="btn btn-primary" style="width:100%;margin-top:16px;padding:12px;font-size:1rem;">Save & Submit for Review</button>
+              <div id="bonb-success" style="display:none;margin-top:12px;padding:12px;background:#f0fff4;border-radius:8px;border:1px solid #c6f6d5;color:#22543d;font-weight:600;">Onboarding submitted for review. We'll notify you once approved.</div>
+            </div>
+          </div>
+
           <!-- Deals Section -->
           <div class="deals-section-header">
             <h2>My Deals</h2>
@@ -2040,6 +2092,7 @@ async function showDashboard() {
 
   showScreen('screen-dashboard');
   await loadUserDeals();
+  if (currentRole === 'broker') checkBrokerOnboardingStatus();
 }
 
 async function loadUserDeals() {
@@ -2686,6 +2739,7 @@ async function renderWorkflowControls(deal) {
   const panel = document.getElementById('workflow-controls');
   if (!panel) return;
 
+  const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(currentRole);
   const stage = deal.deal_stage || 'dip';
   const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'Termsheet Sent', termsheet_signed: 'Termsheet Signed', underwriting: 'Underwriting', credit_review: 'Credit Review', compliance_review: 'Compliance Review', approved: 'Approved', legal: 'Legal Instructed', funds_released: 'Funds Released', declined: 'Declined', withdrawn: 'Withdrawn' };
 
@@ -2867,6 +2921,77 @@ async function renderWorkflowControls(deal) {
     </div>`;
   }
 
+  // ── Borrowers ──
+  if (isInternal) {
+    const borrowers = deal.borrowers || [];
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Borrowers (${borrowers.length})</h4>`;
+
+    if (borrowers.length > 0) {
+      html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
+        <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Role</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Email</th><th style="text-align:left;padding:6px;">KYC</th><th style="padding:6px;"></th></tr>
+        ${borrowers.map(b => `<tr style="border-bottom:1px solid #f0f0f0;">
+          <td style="padding:6px;">${b.full_name}</td>
+          <td style="padding:6px;"><span style="padding:2px 8px;border-radius:10px;font-size:11px;background:${b.role === 'primary' ? '#bee3f8' : '#fefcbf'};color:${b.role === 'primary' ? '#2a4365' : '#744210'}">${b.role}</span></td>
+          <td style="padding:6px;">${b.borrower_type}${b.company_name ? ` (${b.company_name})` : ''}</td>
+          <td style="padding:6px;">${b.email || '-'}</td>
+          <td style="padding:6px;"><span style="color:${b.kyc_status === 'verified' ? '#48bb78' : b.kyc_status === 'submitted' ? '#c9a84c' : '#e53e3e'}">${b.kyc_status}</span></td>
+          <td style="padding:6px;"><button onclick="removeBorrower(${b.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">✕</button></td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Borrower</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div><label style="font-size:11px;color:#666;">Full Name *</label><input type="text" id="bw-name" placeholder="Full name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Role</label><select id="bw-role" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="primary">Primary</option><option value="joint">Joint & Several</option><option value="guarantor">Guarantor</option><option value="director">Director</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Type</label><select id="bw-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="individual">Individual</option><option value="corporate">Corporate</option><option value="spv">SPV</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Email</label><input type="email" id="bw-email" placeholder="Email" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <button onclick="addBorrower()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
+      </div>
+    </div></div>`;
+  }
+
+  // ── Properties (Portfolio) ──
+  if (isInternal) {
+    const properties = deal.properties || [];
+    const summary = deal.portfolio_summary || {};
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Properties / Portfolio (${properties.length})</h4>`;
+
+    if (properties.length > 0) {
+      html += `<div style="display:flex;gap:16px;margin-bottom:12px;font-size:13px;">
+        <span>Total Value: <strong>£${formatNumber(summary.total_market_value || 0)}</strong></span>
+        <span>Total GDV: <strong>£${formatNumber(summary.total_gdv || 0)}</strong></span>
+      </div>`;
+      html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
+        <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Address</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Value</th><th style="text-align:left;padding:6px;">GDV</th><th style="text-align:left;padding:6px;">Day 1 LTV</th><th style="text-align:left;padding:6px;">Tenure</th><th style="padding:6px;"></th></tr>
+        ${properties.map(p => `<tr style="border-bottom:1px solid #f0f0f0;">
+          <td style="padding:6px;">${p.address}${p.postcode ? `, ${p.postcode}` : ''}</td>
+          <td style="padding:6px;">${p.property_type || '-'}</td>
+          <td style="padding:6px;">${p.market_value ? '£' + formatNumber(p.market_value) : '-'}</td>
+          <td style="padding:6px;">${p.gdv ? '£' + formatNumber(p.gdv) : '-'}</td>
+          <td style="padding:6px;">${p.day1_ltv ? p.day1_ltv + '%' : '-'}</td>
+          <td style="padding:6px;">${p.tenure || '-'}</td>
+          <td style="padding:6px;"><button onclick="removeProperty(${p.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">✕</button></td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Property</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div><label style="font-size:11px;color:#666;">Address *</label><input type="text" id="pp-address" placeholder="Full address" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Type</label><select id="pp-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="mixed_use">Mixed Use</option><option value="land">Land</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Market Value (£)</label><input type="number" id="pp-value" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">GDV (£)</label><input type="number" id="pp-gdv" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Tenure</label><select id="pp-tenure" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="freehold">Freehold</option><option value="leasehold">Leasehold</option></select></div>
+        <button onclick="addProperty()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
+      </div>
+    </div></div>`;
+  }
+
   // ── Audit Trail ──
   if (deal.audit && deal.audit.length > 0) {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
@@ -2972,6 +3097,186 @@ async function submitRecommendation(decision) {
     const data = await resp.json();
     if (resp.ok) { showToast(data.message); await showDealDetail(window.currentDealId); }
     else { showToast(data.error || 'Failed to submit recommendation', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+// ── Broker Onboarding ──
+function showBrokerOnboarding() {
+  document.getElementById('broker-onboarding-form').style.display = 'block';
+  document.getElementById('broker-onboarding-banner').style.display = 'none';
+  loadBrokerOnboarding();
+}
+function hideBrokerOnboarding() {
+  document.getElementById('broker-onboarding-form').style.display = 'none';
+  checkBrokerOnboardingStatus();
+}
+function toggleBrokerCompanyFields() {
+  document.getElementById('broker-company-fields').style.display =
+    document.getElementById('bonb-is-company').checked ? 'block' : 'none';
+}
+
+async function loadBrokerOnboarding() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/broker/onboarding`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    if (resp.ok && data.onboarding) {
+      const o = data.onboarding;
+      if (o.individual_name) document.getElementById('bonb-name').value = o.individual_name;
+      if (o.date_of_birth) document.getElementById('bonb-dob').value = o.date_of_birth.substring(0, 10);
+      if (o.is_company) {
+        document.getElementById('bonb-is-company').checked = true;
+        document.getElementById('broker-company-fields').style.display = 'block';
+        if (o.company_name) document.getElementById('bonb-company-name').value = o.company_name;
+        if (o.company_number) document.getElementById('bonb-company-number').value = o.company_number;
+      }
+      if (o.bank_name) document.getElementById('bonb-bank-name').value = o.bank_name;
+      if (o.bank_account_name) document.getElementById('bonb-account-name').value = o.bank_account_name;
+      if (o.bank_sort_code) document.getElementById('bonb-sort-code').value = o.bank_sort_code;
+      if (o.bank_account_no) document.getElementById('bonb-account-no').value = o.bank_account_no;
+    }
+  } catch(e) { console.error('Failed to load broker onboarding:', e); }
+}
+
+async function saveBrokerOnboarding() {
+  const name = document.getElementById('bonb-name').value.trim();
+  const bankName = document.getElementById('bonb-bank-name').value.trim();
+  const accountName = document.getElementById('bonb-account-name').value.trim();
+  const sortCode = document.getElementById('bonb-sort-code').value.trim();
+  const accountNo = document.getElementById('bonb-account-no').value.trim();
+
+  if (!name || !bankName || !accountName || !sortCode || !accountNo) {
+    showToast('Please fill in all required fields (name, bank details)', true); return;
+  }
+
+  const btn = document.getElementById('bonb-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/broker/onboarding`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        individual_name: name,
+        date_of_birth: document.getElementById('bonb-dob').value || null,
+        is_company: document.getElementById('bonb-is-company').checked,
+        company_name: document.getElementById('bonb-company-name')?.value.trim() || null,
+        company_number: document.getElementById('bonb-company-number')?.value.trim() || null,
+        bank_name: bankName,
+        bank_sort_code: sortCode,
+        bank_account_no: accountNo,
+        bank_account_name: accountName
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      document.getElementById('bonb-success').style.display = 'block';
+      showToast('Broker onboarding submitted for review');
+    } else {
+      showToast(data.error || 'Failed to save', true);
+    }
+  } catch(e) { showToast('Network error', true); }
+
+  btn.disabled = false;
+  btn.textContent = 'Save & Submit for Review';
+}
+
+async function checkBrokerOnboardingStatus() {
+  if (currentRole !== 'broker') return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/broker/onboarding`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    const banner = document.getElementById('broker-onboarding-banner');
+    const statusText = document.getElementById('broker-onb-status-text');
+
+    if (resp.ok && data.onboarding) {
+      const status = data.onboarding.status;
+      if (status === 'approved') {
+        banner.style.display = 'none';
+      } else if (status === 'submitted' || status === 'under_review') {
+        banner.style.display = 'block';
+        banner.style.background = 'linear-gradient(135deg,#744210 0%,#975a16 100%)';
+        statusText.textContent = 'Your onboarding is under review. We\u2019ll notify you once approved.';
+        banner.querySelector('button').textContent = 'View Details';
+      } else {
+        banner.style.display = 'block';
+      }
+    } else {
+      banner.style.display = 'block';
+    }
+  } catch(e) { /* silently fail */ }
+}
+
+// ── Borrower Actions ──
+async function addBorrower() {
+  const fullName = document.getElementById('bw-name')?.value.trim();
+  if (!fullName) { showToast('Borrower name is required', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/borrowers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        full_name: fullName,
+        role: document.getElementById('bw-role')?.value || 'primary',
+        borrower_type: document.getElementById('bw-type')?.value || 'individual',
+        email: document.getElementById('bw-email')?.value.trim() || null
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast(`Borrower ${fullName} added`); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to add borrower', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function removeBorrower(borrowerId) {
+  if (!confirm('Remove this borrower?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/borrowers/${borrowerId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast(data.message); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to remove', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+// ── Property Actions ──
+async function addProperty() {
+  const address = document.getElementById('pp-address')?.value.trim();
+  if (!address) { showToast('Property address is required', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        address: address,
+        property_type: document.getElementById('pp-type')?.value || 'residential',
+        market_value: document.getElementById('pp-value')?.value || null,
+        gdv: document.getElementById('pp-gdv')?.value || null,
+        tenure: document.getElementById('pp-tenure')?.value || 'freehold'
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Property added'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to add property', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function removeProperty(propertyId) {
+  if (!confirm('Remove this property from the portfolio?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/properties/${propertyId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast(data.message); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to remove', true); }
   } catch(e) { showToast('Network error', true); }
 }
 

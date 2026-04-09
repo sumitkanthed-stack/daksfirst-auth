@@ -249,6 +249,89 @@ async function runMigrations() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_approvals_deal ON deal_approvals(deal_id);`);
 
+    // Broker onboarding table (KYC for fee payments)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS broker_onboarding (
+        id              SERIAL PRIMARY KEY,
+        user_id         INT           REFERENCES users(id) UNIQUE,
+        status          VARCHAR(30)   DEFAULT 'pending' CHECK (status IN ('pending','submitted','under_review','approved','rejected')),
+        individual_name VARCHAR(200),
+        date_of_birth   DATE,
+        passport_doc_id INT,
+        proof_of_address_doc_id INT,
+        is_company      BOOLEAN       DEFAULT FALSE,
+        company_name    VARCHAR(200),
+        company_number  VARCHAR(50),
+        incorporation_doc_id INT,
+        bank_name       VARCHAR(200),
+        bank_sort_code  VARCHAR(10),
+        bank_account_no VARCHAR(20),
+        bank_account_name VARCHAR(200),
+        notes           TEXT,
+        reviewed_by     INT           REFERENCES users(id),
+        reviewed_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_user ON broker_onboarding(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_status ON broker_onboarding(status);`);
+
+    // Deal borrowers table (supports multiple borrowers per deal)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_borrowers (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        role            VARCHAR(30)   DEFAULT 'primary' CHECK (role IN ('primary','joint','guarantor','director')),
+        full_name       VARCHAR(200)  NOT NULL,
+        date_of_birth   DATE,
+        nationality     VARCHAR(100),
+        jurisdiction    VARCHAR(100),
+        email           VARCHAR(255),
+        phone           VARCHAR(30),
+        address         TEXT,
+        borrower_type   VARCHAR(30)   DEFAULT 'individual',
+        company_name    VARCHAR(200),
+        company_number  VARCHAR(50),
+        kyc_status      VARCHAR(30)   DEFAULT 'pending' CHECK (kyc_status IN ('pending','submitted','verified','rejected')),
+        kyc_data        JSONB         DEFAULT '{}'::jsonb,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_borrowers_deal ON deal_borrowers(deal_id);`);
+
+    // Deal properties table (portfolio support — multiple properties per deal)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_properties (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        address         TEXT          NOT NULL,
+        postcode        VARCHAR(15),
+        property_type   VARCHAR(50),
+        tenure          VARCHAR(30),
+        occupancy       VARCHAR(30),
+        current_use     VARCHAR(50),
+        market_value    NUMERIC(15,2),
+        purchase_price  NUMERIC(15,2),
+        gdv             NUMERIC(15,2),
+        reinstatement   NUMERIC(15,2),
+        day1_ltv        NUMERIC(5,2),
+        title_number    VARCHAR(50),
+        title_doc_id    INT,
+        valuation_doc_id INT,
+        valuation_date  DATE,
+        insurance_doc_id INT,
+        insurance_sum   NUMERIC(15,2),
+        solicitor_firm  VARCHAR(200),
+        solicitor_ref   VARCHAR(100),
+        notes           TEXT,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_deal ON deal_properties(deal_id);`);
+
     // Migrate existing users table: update role constraint to include internal staff roles
     try {
       await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`);
@@ -1271,6 +1354,21 @@ app.get('/api/admin/deals/:submissionId', authenticateToken, authenticateInterna
       [dealId]
     );
 
+    // Get borrowers
+    const borrowersResult = await pool.query(
+      `SELECT * FROM deal_borrowers WHERE deal_id = $1 ORDER BY role = 'primary' DESC, created_at`, [dealId]
+    );
+
+    // Get properties
+    const propertiesResult = await pool.query(
+      `SELECT * FROM deal_properties WHERE deal_id = $1 ORDER BY created_at`, [dealId]
+    );
+    const portfolioSummary = {
+      total_properties: propertiesResult.rows.length,
+      total_market_value: propertiesResult.rows.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0),
+      total_gdv: propertiesResult.rows.reduce((sum, p) => sum + (parseFloat(p.gdv) || 0), 0)
+    };
+
     res.json({
       success: true,
       deal: {
@@ -1280,7 +1378,10 @@ app.get('/api/admin/deals/:submissionId', authenticateToken, authenticateInterna
         notes: notesResult.rows,
         audit: auditResult.rows,
         fees: feesResult.rows,
-        approvals: approvalsResult.rows
+        approvals: approvalsResult.rows,
+        borrowers: borrowersResult.rows,
+        properties: propertiesResult.rows,
+        portfolio_summary: portfolioSummary
       }
     });
   } catch (error) {
@@ -1899,6 +2000,290 @@ app.get('/api/staff/deals', authenticateToken, authenticateInternal, async (req,
   } catch (error) {
     console.error('[staff-deals] Error:', error);
     res.status(500).json({ error: 'Failed to fetch deals' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BROKER ONBOARDING
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Broker: get/create their onboarding record
+app.get('/api/broker/onboarding', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'broker') return res.status(403).json({ error: 'Broker access only' });
+    let result = await pool.query(`SELECT * FROM broker_onboarding WHERE user_id = $1`, [req.user.userId]);
+    if (result.rows.length === 0) {
+      result = await pool.query(
+        `INSERT INTO broker_onboarding (user_id) VALUES ($1) RETURNING *`, [req.user.userId]
+      );
+    }
+    // Get associated documents
+    const docs = await pool.query(
+      `SELECT id, filename, file_type, file_size, onedrive_download_url, uploaded_at FROM deal_documents
+       WHERE deal_id IS NULL AND id IN (
+         SELECT unnest(ARRAY[passport_doc_id, proof_of_address_doc_id, incorporation_doc_id])
+         FROM broker_onboarding WHERE user_id = $1
+       )`, [req.user.userId]
+    );
+    res.json({ success: true, onboarding: result.rows[0], documents: docs.rows });
+  } catch (error) {
+    console.error('[broker-onb] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch onboarding data' });
+  }
+});
+
+// Broker: update their onboarding data
+app.put('/api/broker/onboarding', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'broker') return res.status(403).json({ error: 'Broker access only' });
+    const {
+      individual_name, date_of_birth, is_company, company_name, company_number,
+      bank_name, bank_sort_code, bank_account_no, bank_account_name, notes
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE broker_onboarding SET
+        individual_name = COALESCE($1, individual_name),
+        date_of_birth = COALESCE($2, date_of_birth),
+        is_company = COALESCE($3, is_company),
+        company_name = COALESCE($4, company_name),
+        company_number = COALESCE($5, company_number),
+        bank_name = COALESCE($6, bank_name),
+        bank_sort_code = COALESCE($7, bank_sort_code),
+        bank_account_no = COALESCE($8, bank_account_no),
+        bank_account_name = COALESCE($9, bank_account_name),
+        notes = COALESCE($10, notes),
+        status = CASE WHEN status = 'pending' THEN 'submitted' ELSE status END,
+        updated_at = NOW()
+       WHERE user_id = $11 RETURNING *`,
+      [individual_name, date_of_birth, is_company, company_name, company_number,
+       bank_name, bank_sort_code, bank_account_no, bank_account_name, notes, req.user.userId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Onboarding record not found' });
+    res.json({ success: true, onboarding: result.rows[0] });
+  } catch (error) {
+    console.error('[broker-onb] Update error:', error);
+    res.status(500).json({ error: 'Failed to update onboarding data' });
+  }
+});
+
+// Admin: review broker onboarding
+app.put('/api/admin/broker/:userId/onboarding', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    if (!['approved', 'rejected', 'under_review'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const result = await pool.query(
+      `UPDATE broker_onboarding SET status = $1, notes = COALESCE($2, notes),
+       reviewed_by = $3, reviewed_at = NOW(), updated_at = NOW()
+       WHERE user_id = $4 RETURNING *`,
+      [status, notes, req.user.userId, req.params.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Broker onboarding not found' });
+    res.json({ success: true, onboarding: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update broker onboarding' });
+  }
+});
+
+// Admin: get broker onboarding status
+app.get('/api/admin/broker/:userId/onboarding', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT * FROM broker_onboarding WHERE user_id = $1`, [req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No onboarding record' });
+    res.json({ success: true, onboarding: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch broker onboarding' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEAL BORROWERS (multiple borrowers per deal)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Add borrower to deal
+app.post('/api/deals/:submissionId/borrowers', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number } = req.body;
+    if (!full_name) return res.status(400).json({ error: 'Full name is required' });
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const result = await pool.query(
+      `INSERT INTO deal_borrowers (deal_id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [dealResult.rows[0].id, role || 'primary', full_name, date_of_birth || null, nationality || null,
+       jurisdiction || null, email || null, phone || null, address || null, borrower_type || 'individual',
+       company_name || null, company_number || null]
+    );
+
+    await logAudit(dealResult.rows[0].id, 'borrower_added', null, full_name,
+      { role: role || 'primary', borrower_type: borrower_type || 'individual' }, req.user.userId);
+
+    res.status(201).json({ success: true, borrower: result.rows[0] });
+  } catch (error) {
+    console.error('[borrower] Error:', error);
+    res.status(500).json({ error: 'Failed to add borrower' });
+  }
+});
+
+// Get borrowers for a deal
+app.get('/api/deals/:submissionId/borrowers', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const result = await pool.query(
+      `SELECT * FROM deal_borrowers WHERE deal_id = $1 ORDER BY role = 'primary' DESC, created_at`,
+      [dealResult.rows[0].id]
+    );
+    res.json({ success: true, borrowers: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch borrowers' });
+  }
+});
+
+// Update borrower
+app.put('/api/deals/:submissionId/borrowers/:borrowerId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data } = req.body;
+
+    const result = await pool.query(
+      `UPDATE deal_borrowers SET
+        role = COALESCE($1, role), full_name = COALESCE($2, full_name),
+        date_of_birth = COALESCE($3, date_of_birth), nationality = COALESCE($4, nationality),
+        jurisdiction = COALESCE($5, jurisdiction), email = COALESCE($6, email),
+        phone = COALESCE($7, phone), address = COALESCE($8, address),
+        borrower_type = COALESCE($9, borrower_type), company_name = COALESCE($10, company_name),
+        company_number = COALESCE($11, company_number), kyc_status = COALESCE($12, kyc_status),
+        kyc_data = COALESCE($13, kyc_data), updated_at = NOW()
+       WHERE id = $14 RETURNING *`,
+      [role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
+       borrower_type, company_name, company_number, kyc_status, kyc_data ? JSON.stringify(kyc_data) : null,
+       req.params.borrowerId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Borrower not found' });
+    res.json({ success: true, borrower: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update borrower' });
+  }
+});
+
+// Delete borrower
+app.delete('/api/deals/:submissionId/borrowers/:borrowerId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM deal_borrowers WHERE id = $1 RETURNING full_name`, [req.params.borrowerId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Borrower not found' });
+    res.json({ success: true, message: `Borrower ${result.rows[0].full_name} removed` });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to remove borrower' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEAL PROPERTIES (portfolio — multiple properties per deal)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Add property to deal
+app.post('/api/deals/:submissionId/properties', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
+            gdv, reinstatement, title_number, solicitor_firm, solicitor_ref, notes } = req.body;
+    if (!address) return res.status(400).json({ error: 'Property address is required' });
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    // Calculate day 1 LTV if we have market_value and loan_amount
+    let day1Ltv = null;
+    if (market_value) {
+      const loanResult = await pool.query(`SELECT loan_amount FROM deal_submissions WHERE id = $1`, [dealResult.rows[0].id]);
+      if (loanResult.rows[0]?.loan_amount) {
+        day1Ltv = ((loanResult.rows[0].loan_amount / market_value) * 100).toFixed(2);
+      }
+    }
+
+    const result = await pool.query(
+      `INSERT INTO deal_properties (deal_id, address, postcode, property_type, tenure, occupancy, current_use,
+        market_value, purchase_price, gdv, reinstatement, day1_ltv, title_number, solicitor_firm, solicitor_ref, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [dealResult.rows[0].id, address, postcode || null, property_type || null, tenure || null,
+       occupancy || null, current_use || null, market_value || null, purchase_price || null,
+       gdv || null, reinstatement || null, day1Ltv, title_number || null,
+       solicitor_firm || null, solicitor_ref || null, notes || null]
+    );
+
+    await logAudit(dealResult.rows[0].id, 'property_added', null, address, { property_type, market_value }, req.user.userId);
+    res.status(201).json({ success: true, property: result.rows[0] });
+  } catch (error) {
+    console.error('[property] Error:', error);
+    res.status(500).json({ error: 'Failed to add property' });
+  }
+});
+
+// Get properties for a deal
+app.get('/api/deals/:submissionId/properties', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const result = await pool.query(`SELECT * FROM deal_properties WHERE deal_id = $1 ORDER BY created_at`, [dealResult.rows[0].id]);
+
+    // Portfolio summary
+    const summary = {
+      total_properties: result.rows.length,
+      total_market_value: result.rows.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0),
+      total_gdv: result.rows.reduce((sum, p) => sum + (parseFloat(p.gdv) || 0), 0),
+      total_purchase_price: result.rows.reduce((sum, p) => sum + (parseFloat(p.purchase_price) || 0), 0)
+    };
+
+    res.json({ success: true, properties: result.rows, summary });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch properties' });
+  }
+});
+
+// Update property
+app.put('/api/deals/:submissionId/properties/:propertyId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
+            gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes } = req.body;
+
+    const result = await pool.query(
+      `UPDATE deal_properties SET
+        address = COALESCE($1, address), postcode = COALESCE($2, postcode),
+        property_type = COALESCE($3, property_type), tenure = COALESCE($4, tenure),
+        occupancy = COALESCE($5, occupancy), current_use = COALESCE($6, current_use),
+        market_value = COALESCE($7, market_value), purchase_price = COALESCE($8, purchase_price),
+        gdv = COALESCE($9, gdv), reinstatement = COALESCE($10, reinstatement),
+        title_number = COALESCE($11, title_number), valuation_date = COALESCE($12, valuation_date),
+        insurance_sum = COALESCE($13, insurance_sum), solicitor_firm = COALESCE($14, solicitor_firm),
+        solicitor_ref = COALESCE($15, solicitor_ref), notes = COALESCE($16, notes), updated_at = NOW()
+       WHERE id = $17 RETURNING *`,
+      [address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
+       gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes,
+       req.params.propertyId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+    res.json({ success: true, property: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update property' });
+  }
+});
+
+// Delete property
+app.delete('/api/deals/:submissionId/properties/:propertyId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM deal_properties WHERE id = $1 RETURNING address`, [req.params.propertyId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+    res.json({ success: true, message: `Property removed` });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to remove property' });
   }
 });
 
