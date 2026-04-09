@@ -2033,7 +2033,8 @@ async function showDealDetail(dealId) {
   if (!authToken) return;
 
   try {
-    const resp = await fetch(`${API_BASE}/api/deals/${dealId}`, {
+    const endpoint = currentRole === 'admin' ? `/api/admin/deals/${dealId}` : `/api/deals/${dealId}`;
+    const resp = await fetch(`${API_BASE}${endpoint}`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
