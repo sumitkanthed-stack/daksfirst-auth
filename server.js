@@ -8,6 +8,7 @@ const cors       = require('cors');
 const rateLimit  = require('express-rate-limit');
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render's proxy for rate limiting
 app.use(express.json({ limit: '10mb' }));
 
 // ── CORS ───────────────────────────────────────────────────────────────────
@@ -57,12 +58,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'daksfirst_default_secret';
 async function runMigrations() {
   try {
     console.log('[migrate] Running database migrations...');
-
-    // Drop old tables if they have wrong schema (safe — no production data yet)
-    await pool.query(`DROP TABLE IF EXISTS webhook_log CASCADE;`);
-    await pool.query(`DROP TABLE IF EXISTS deal_submissions CASCADE;`);
-    await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
-    console.log('[migrate] Dropped old tables');
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
