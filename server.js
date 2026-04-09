@@ -58,6 +58,12 @@ async function runMigrations() {
   try {
     console.log('[migrate] Running database migrations...');
 
+    // Drop old tables if they have wrong schema (safe — no production data yet)
+    await pool.query(`DROP TABLE IF EXISTS webhook_log CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS deal_submissions CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
+    console.log('[migrate] Dropped old tables');
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id              SERIAL PRIMARY KEY,
