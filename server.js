@@ -423,6 +423,24 @@ app.post('/api/seed-admin', async (req, res) => {
   }
 });
 
+// Reset admin password (one-time use — remove after use)
+app.post('/api/reset-admin', async (req, res) => {
+  try {
+    const { secret } = req.body;
+    if (secret !== 'daksfirst-seed-2026') return res.status(403).json({ error: 'Invalid secret' });
+    const hashedPassword = await bcrypt.hash('Dax@2026', 12);
+    const result = await pool.query(
+      `UPDATE users SET password_hash = $1, role = 'admin', email_verified = true
+       WHERE email = 'sk@daksfirst.com' RETURNING id, email, role`,
+      [hashedPassword]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Admin not found' });
+    res.json({ success: true, message: 'Admin password reset', user: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reset admin' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  HEALTH CHECK
 // ═══════════════════════════════════════════════════════════════════════════
