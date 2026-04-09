@@ -136,12 +136,11 @@ async function runMigrations() {
       );
     `);
 
+    // Basic indexes (columns that exist in original CREATE TABLE)
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_status      ON deal_submissions(status);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_user        ON deal_submissions(user_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_submission   ON deal_submissions(submission_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_webhook      ON deal_submissions(webhook_status);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_internal     ON deal_submissions(internal_status);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_assigned     ON deal_submissions(assigned_to);`);
 
     // Webhook log table
     await pool.query(`
@@ -230,6 +229,14 @@ async function runMigrations() {
         // Column may already exist or migration already ran
         console.log(`[migrate] Note on ${check.col}:`, err.message.substring(0, 60));
       }
+    }
+
+    // Indexes for columns added via ALTER TABLE (must run AFTER column additions)
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_internal ON deal_submissions(internal_status);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_assigned ON deal_submissions(assigned_to);`);
+    } catch (err) {
+      console.log('[migrate] Index creation note:', err.message.substring(0, 80));
     }
 
     console.log('[migrate] All tables and indexes created/updated successfully');
