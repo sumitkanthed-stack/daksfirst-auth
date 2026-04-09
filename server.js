@@ -3011,8 +3011,14 @@ app.post('/api/smart-parse/upload', authenticateToken, upload.any(), async (req,
         });
 
         if (parseResp.ok) {
-          parsedData = await parseResp.json();
-          console.log('[smart-parse] AI parsing returned successfully');
+          const n8nResult = await parseResp.json();
+          console.log('[smart-parse] AI parsing returned:', JSON.stringify(n8nResult).substring(0, 500));
+          // n8n returns { parse_session_id, parsed_data, error, file_count, file_names }
+          // We need just the parsed_data object
+          parsedData = n8nResult.parsed_data || n8nResult || null;
+          if (n8nResult.error) {
+            console.error('[smart-parse] AI extraction error:', n8nResult.error);
+          }
         } else {
           const errText = await parseResp.text();
           console.error('[smart-parse] n8n returned error:', parseResp.status, errText.substring(0, 200));
