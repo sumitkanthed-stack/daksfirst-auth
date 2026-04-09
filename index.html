@@ -1095,6 +1095,101 @@
             </div>
           </div>
 
+          <!-- Smart Document Drop Zone -->
+          <div id="smart-drop-zone" style="margin-bottom:24px;">
+            <div id="smart-drop-area" style="border:2px dashed #c9a84c;border-radius:16px;padding:40px 20px;text-align:center;background:#fffdf5;cursor:pointer;transition:all 0.3s ease;"
+              ondragover="event.preventDefault();this.style.borderColor='#1a365d';this.style.background='#f7fafc';"
+              ondragleave="this.style.borderColor='#c9a84c';this.style.background='#fffdf5';"
+              ondrop="handleSmartDrop(event)"
+              onclick="document.getElementById('smart-file-input').click()">
+              <div style="font-size:48px;margin-bottom:12px;">📁</div>
+              <div style="font-size:1.2rem;font-weight:700;color:var(--primary);margin-bottom:8px;">Drop Your Deal Pack Here</div>
+              <div style="color:var(--text-light);font-size:0.95rem;max-width:500px;margin:0 auto;">Drop PDFs, Word docs, Excel files, images, or paste WhatsApp text. Our AI will extract the deal details and pre-fill the form for you.</div>
+              <div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">PDF</span>
+                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Word</span>
+                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Excel</span>
+                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Images</span>
+                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">WhatsApp</span>
+              </div>
+              <input type="file" id="smart-file-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.txt" style="display:none;" onchange="handleSmartFileSelect(event)">
+            </div>
+
+            <!-- WhatsApp text paste area (toggled) -->
+            <div style="text-align:center;margin-top:8px;">
+              <a href="#" onclick="toggleWhatsappPaste(); return false;" style="color:var(--secondary);font-size:0.85rem;text-decoration:none;">Or paste WhatsApp / email text</a>
+            </div>
+            <div id="whatsapp-paste-area" style="display:none;margin-top:8px;">
+              <textarea id="whatsapp-text-input" placeholder="Paste broker pack text, WhatsApp message, email content, or any deal description here..." style="width:100%;min-height:100px;padding:12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:0.9rem;resize:vertical;"></textarea>
+              <button onclick="handleWhatsappSubmit()" class="btn btn-primary" style="margin-top:8px;">Parse Text</button>
+            </div>
+
+            <!-- Upload progress / file list -->
+            <div id="smart-upload-progress" style="display:none;margin-top:12px;">
+              <div id="smart-file-list" style="background:white;border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+              <div id="smart-upload-status" style="text-align:center;padding:12px;color:var(--text-light);"></div>
+            </div>
+          </div>
+
+          <!-- Smart Parse Review Modal -->
+          <div id="smart-parse-review" style="display:none;margin-bottom:24px;">
+            <div class="detail-panel" style="padding:24px;border:2px solid var(--secondary);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="margin:0;color:var(--primary);">Review Extracted Deal Data</h3>
+                <button onclick="cancelSmartParse()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#666;">✕</button>
+              </div>
+              <p style="color:#666;margin-bottom:16px;font-size:0.9rem;">Our AI extracted the following details from your documents. Please review and correct anything before submitting.</p>
+
+              <!-- Mode selector: New deal or Update existing -->
+              <div id="smart-parse-mode" style="margin-bottom:16px;padding:12px;background:var(--light-blue);border-radius:8px;">
+                <label style="font-weight:600;font-size:0.9rem;display:block;margin-bottom:8px;">What would you like to do?</label>
+                <div style="display:flex;gap:12px;">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem;"><input type="radio" name="smart-mode" value="new" checked> Create New Deal</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem;"><input type="radio" name="smart-mode" value="existing" onchange="toggleExistingDealSelect()"> Update Existing Deal</label>
+                </div>
+                <select id="smart-existing-deal" style="display:none;margin-top:8px;width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;">
+                  <option value="">-- Select a deal to update --</option>
+                </select>
+              </div>
+
+              <!-- Parsed data fields -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Borrower Name</label><input type="text" id="sp-borrower-name" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Borrower Company</label><input type="text" id="sp-borrower-company" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Borrower Email</label><input type="email" id="sp-borrower-email" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Borrower Phone</label><input type="text" id="sp-borrower-phone" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Broker Name</label><input type="text" id="sp-broker-name" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Broker Company</label><input type="text" id="sp-broker-company" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+              </div>
+
+              <h4 style="margin:16px 0 8px;color:var(--primary);font-size:0.95rem;">Property & Loan</h4>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group" style="grid-column:1/-1;"><label style="font-weight:600;font-size:0.85rem;">Security Address *</label><input type="text" id="sp-security-address" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Postcode</label><input type="text" id="sp-postcode" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Asset Type</label><select id="sp-asset-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"><option value="">Select</option><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="mixed_use">Mixed Use</option><option value="land">Land with Planning</option><option value="hmo">HMO</option><option value="development">Development</option></select></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Current Value (£)</label><input type="number" id="sp-current-value" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Purchase Price (£)</label><input type="number" id="sp-purchase-price" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Loan Amount (£) *</label><input type="number" id="sp-loan-amount" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">LTV Requested (%)</label><input type="number" step="0.01" id="sp-ltv" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Loan Purpose *</label><input type="text" id="sp-loan-purpose" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Term (months)</label><input type="number" id="sp-term" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+                <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Rate Requested (%/month)</label><input type="number" step="0.01" id="sp-rate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></div>
+              </div>
+
+              <div class="form-group" style="margin-top:12px;"><label style="font-weight:600;font-size:0.85rem;">Exit Strategy</label><textarea id="sp-exit-strategy" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></textarea></div>
+              <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Use of Funds</label><textarea id="sp-use-of-funds" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></textarea></div>
+              <div class="form-group"><label style="font-weight:600;font-size:0.85rem;">Additional Notes</label><textarea id="sp-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;"></textarea></div>
+
+              <!-- AI Confidence indicator -->
+              <div id="sp-confidence" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:0.85rem;"></div>
+
+              <div style="display:flex;gap:12px;margin-top:20px;">
+                <button onclick="confirmSmartParse()" class="btn btn-primary" id="sp-confirm-btn" style="flex:1;padding:12px;font-size:1rem;">Confirm & Submit Deal</button>
+                <button onclick="cancelSmartParse()" class="btn btn-secondary" style="padding:12px 24px;">Cancel</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Deals Section -->
           <div class="deals-section-header">
             <h2>My Deals</h2>
@@ -3761,6 +3856,267 @@ async function removeProperty(propertyId) {
     if (resp.ok) { showToast(data.message); await showDealDetail(window.currentDealId); }
     else { showToast(data.error || 'Failed to remove', true); }
   } catch(e) { showToast('Network error', true); }
+}
+
+// ═══ SMART DOCUMENT DROP SYSTEM ═══════════════════════════════════════════
+
+let smartParseSessionId = null;
+let smartParsedData = null;
+
+function handleSmartDrop(event) {
+  event.preventDefault();
+  event.currentTarget.style.borderColor = '#c9a84c';
+  event.currentTarget.style.background = '#fffdf5';
+  const files = event.dataTransfer.files;
+  if (files.length > 0) processSmartFiles(files);
+}
+
+function handleSmartFileSelect(event) {
+  const files = event.target.files;
+  if (files.length > 0) processSmartFiles(files);
+  event.target.value = ''; // Reset so same file can be selected again
+}
+
+function toggleWhatsappPaste() {
+  const area = document.getElementById('whatsapp-paste-area');
+  area.style.display = area.style.display === 'none' ? 'block' : 'none';
+}
+
+async function handleWhatsappSubmit() {
+  const text = document.getElementById('whatsapp-text-input')?.value.trim();
+  if (!text) { showToast('Please paste some text first', true); return; }
+  await uploadAndParse(null, text);
+}
+
+async function processSmartFiles(fileList) {
+  const files = Array.from(fileList);
+  const maxSize = 25 * 1024 * 1024; // 25MB per file
+
+  // Show file list
+  const progressDiv = document.getElementById('smart-upload-progress');
+  const fileListDiv = document.getElementById('smart-file-list');
+  const statusDiv = document.getElementById('smart-upload-status');
+  progressDiv.style.display = 'block';
+
+  fileListDiv.innerHTML = files.map(f => {
+    const icon = f.type.includes('pdf') ? '📄' : f.type.includes('word') || f.name.endsWith('.docx') ? '📝' : f.type.includes('sheet') || f.name.endsWith('.xlsx') || f.name.endsWith('.csv') ? '📊' : f.type.includes('image') ? '🖼️' : '📎';
+    const sizeStr = (f.size / 1024 / 1024).toFixed(2);
+    const tooLarge = f.size > maxSize;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f0f0;">
+      <span style="font-size:20px;">${icon}</span>
+      <div style="flex:1;"><div style="font-weight:500;font-size:0.9rem;">${f.name}</div><div style="font-size:0.8rem;color:#999;">${sizeStr} MB</div></div>
+      ${tooLarge ? '<span style="color:#e53e3e;font-size:0.8rem;">Too large (max 25MB)</span>' : '<span style="color:#48bb78;font-size:0.8rem;">Ready</span>'}
+    </div>`;
+  }).join('');
+
+  const validFiles = files.filter(f => f.size <= maxSize);
+  if (validFiles.length === 0) {
+    statusDiv.innerHTML = '<span style="color:#e53e3e;">All files exceed the 25MB limit.</span>';
+    return;
+  }
+
+  // Also grab WhatsApp text if any
+  const whatsappText = document.getElementById('whatsapp-text-input')?.value.trim() || null;
+  await uploadAndParse(validFiles, whatsappText);
+}
+
+async function uploadAndParse(files, whatsappText) {
+  const progressDiv = document.getElementById('smart-upload-progress');
+  const statusDiv = document.getElementById('smart-upload-status');
+  progressDiv.style.display = 'block';
+
+  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(26,54,93,0.2);border-top-color:var(--primary);width:20px;height:20px;"></span> Uploading & parsing with AI... This may take up to 2 minutes.</div>';
+
+  try {
+    const formData = new FormData();
+    if (files) {
+      for (const file of files) {
+        formData.append('files', file);
+      }
+    }
+    if (whatsappText) {
+      formData.append('whatsapp_text', whatsappText);
+    }
+
+    const resp = await fetch(`${API_BASE}/api/smart-parse/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      body: formData
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      statusDiv.innerHTML = `<span style="color:#e53e3e;">${data.error || 'Upload failed'}</span>`;
+      return;
+    }
+
+    smartParseSessionId = data.parse_session_id;
+
+    if (data.parsed_data) {
+      // AI returned parsed data — show review form
+      smartParsedData = data.parsed_data;
+      populateSmartParseForm(data.parsed_data);
+      statusDiv.innerHTML = '<span style="color:#48bb78;font-weight:600;">AI parsing complete! Review the extracted data below.</span>';
+    } else {
+      // No AI parsing configured — show empty review form for manual entry
+      smartParsedData = {};
+      statusDiv.innerHTML = '<span style="color:#c9a84c;">Files uploaded. AI parsing not configured — please fill in details manually.</span>';
+    }
+
+    // Show the review form
+    document.getElementById('smart-parse-review').style.display = 'block';
+
+    // Populate existing deals dropdown
+    populateExistingDealsDropdown();
+
+    // Scroll to review
+    document.getElementById('smart-parse-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (err) {
+    console.error('Smart parse error:', err);
+    statusDiv.innerHTML = '<span style="color:#e53e3e;">Network error. Please try again.</span>';
+  }
+}
+
+function populateSmartParseForm(pd) {
+  if (!pd) return;
+  const fieldMap = {
+    'sp-borrower-name': pd.borrower_name, 'sp-borrower-company': pd.borrower_company,
+    'sp-borrower-email': pd.borrower_email, 'sp-borrower-phone': pd.borrower_phone,
+    'sp-broker-name': pd.broker_name, 'sp-broker-company': pd.broker_company,
+    'sp-security-address': pd.security_address, 'sp-postcode': pd.security_postcode,
+    'sp-asset-type': pd.asset_type, 'sp-current-value': pd.current_value,
+    'sp-purchase-price': pd.purchase_price, 'sp-loan-amount': pd.loan_amount,
+    'sp-ltv': pd.ltv_requested, 'sp-loan-purpose': pd.loan_purpose,
+    'sp-term': pd.term_months, 'sp-rate': pd.rate_requested,
+    'sp-exit-strategy': pd.exit_strategy, 'sp-use-of-funds': pd.use_of_funds,
+    'sp-notes': pd.additional_notes
+  };
+  for (const [id, val] of Object.entries(fieldMap)) {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  }
+
+  // Show confidence if available
+  if (pd.confidence) {
+    const confDiv = document.getElementById('sp-confidence');
+    const pct = Math.round(pd.confidence * 100);
+    const color = pct >= 80 ? '#48bb78' : pct >= 50 ? '#c9a84c' : '#e53e3e';
+    confDiv.style.display = 'block';
+    confDiv.style.background = pct >= 80 ? '#f0fff4' : pct >= 50 ? '#fffdf5' : '#fef2f2';
+    confDiv.style.borderLeft = `4px solid ${color}`;
+    confDiv.innerHTML = `AI Confidence: <strong style="color:${color};">${pct}%</strong> — ${pct >= 80 ? 'High confidence extraction.' : pct >= 50 ? 'Some fields may need manual correction.' : 'Low confidence — please verify all fields carefully.'}`;
+  }
+}
+
+async function populateExistingDealsDropdown() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    if (data.deals && data.deals.length > 0) {
+      const sel = document.getElementById('smart-existing-deal');
+      sel.innerHTML = '<option value="">-- Select a deal to update --</option>';
+      data.deals.forEach(d => {
+        sel.innerHTML += `<option value="${d.submission_id}">${d.submission_id.substring(0,8)} — ${d.security_address || d.borrower_name || 'Untitled'} (£${formatNumber(d.loan_amount || 0)})</option>`;
+      });
+    }
+  } catch(e) { /* silent */ }
+}
+
+function toggleExistingDealSelect() {
+  const sel = document.getElementById('smart-existing-deal');
+  const mode = document.querySelector('input[name="smart-mode"]:checked')?.value;
+  sel.style.display = mode === 'existing' ? 'block' : 'none';
+}
+
+function cancelSmartParse() {
+  document.getElementById('smart-parse-review').style.display = 'none';
+  document.getElementById('smart-upload-progress').style.display = 'none';
+  // Clear form
+  document.querySelectorAll('#smart-parse-review input, #smart-parse-review textarea, #smart-parse-review select').forEach(el => {
+    if (el.type === 'radio') return;
+    el.value = el.tagName === 'SELECT' ? '' : '';
+  });
+  smartParsedData = null;
+  smartParseSessionId = null;
+}
+
+async function confirmSmartParse() {
+  // Collect form values
+  const parsed_data = {
+    borrower_name: document.getElementById('sp-borrower-name')?.value || null,
+    borrower_company: document.getElementById('sp-borrower-company')?.value || null,
+    borrower_email: document.getElementById('sp-borrower-email')?.value || null,
+    borrower_phone: document.getElementById('sp-borrower-phone')?.value || null,
+    broker_name: document.getElementById('sp-broker-name')?.value || null,
+    broker_company: document.getElementById('sp-broker-company')?.value || null,
+    security_address: document.getElementById('sp-security-address')?.value || null,
+    security_postcode: document.getElementById('sp-postcode')?.value || null,
+    asset_type: document.getElementById('sp-asset-type')?.value || null,
+    current_value: document.getElementById('sp-current-value')?.value || null,
+    purchase_price: document.getElementById('sp-purchase-price')?.value || null,
+    loan_amount: document.getElementById('sp-loan-amount')?.value || null,
+    ltv_requested: document.getElementById('sp-ltv')?.value || null,
+    loan_purpose: document.getElementById('sp-loan-purpose')?.value || null,
+    term_months: document.getElementById('sp-term')?.value || null,
+    rate_requested: document.getElementById('sp-rate')?.value || null,
+    exit_strategy: document.getElementById('sp-exit-strategy')?.value || null,
+    use_of_funds: document.getElementById('sp-use-of-funds')?.value || null,
+    additional_notes: document.getElementById('sp-notes')?.value || null
+  };
+
+  // Validate required fields
+  if (!parsed_data.security_address && !parsed_data.loan_amount && !parsed_data.loan_purpose) {
+    showToast('Please fill in at least: security address, loan amount, or loan purpose', true);
+    return;
+  }
+
+  const mode = document.querySelector('input[name="smart-mode"]:checked')?.value;
+  const existingDealId = mode === 'existing' ? document.getElementById('smart-existing-deal')?.value : null;
+
+  if (mode === 'existing' && !existingDealId) {
+    showToast('Please select an existing deal to update', true);
+    return;
+  }
+
+  const btn = document.getElementById('sp-confirm-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting...';
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/smart-parse/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        parsed_data,
+        deal_id: existingDealId || null,
+        parse_session_id: smartParseSessionId
+      })
+    });
+
+    const data = await resp.json();
+
+    if (resp.ok) {
+      showToast(data.message || 'Deal submitted successfully!');
+      cancelSmartParse();
+      // Refresh deals list
+      await loadUserDeals();
+      // If new deal was created, go to it
+      if (data.deal && data.deal.submission_id) {
+        showDealDetail(data.deal.submission_id);
+      }
+    } else {
+      showToast(data.error || 'Failed to submit deal', true);
+    }
+  } catch(e) {
+    showToast('Network error', true);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Confirm & Submit Deal';
 }
 
 // ═══ UTILITY FUNCTIONS ═════════════════════════════════════════════════════
