@@ -1457,6 +1457,7 @@
           <button class="admin-nav-item active" onclick="switchAdminTab('pipeline')">Pipeline</button>
           <button class="admin-nav-item" onclick="switchAdminTab('clients')">Clients</button>
           <button class="admin-nav-item" onclick="switchAdminTab('analytics')">Analytics</button>
+          <button class="admin-nav-item" onclick="switchAdminTab('create-user')">Create User</button>
         </div>
 
         <div class="admin-content">
@@ -1525,6 +1526,59 @@
                 <tbody id="admin-users-tbody">
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Create User Tab -->
+          <div id="admin-create-user" class="admin-tab">
+            <div style="max-width:600px;margin:0 auto;">
+              <div class="detail-panel" style="padding:24px;">
+                <h3 style="margin:0 0 20px;color:var(--primary);">Create Internal Staff Account</h3>
+                <div id="create-user-alert" class="alert" style="display:none;"></div>
+
+                <div class="form-group">
+                  <label style="font-weight:600;margin-bottom:4px;display:block;">Role *</label>
+                  <select id="cu-role" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                    <option value="rm">Relationship Manager (RM)</option>
+                    <option value="credit">Credit Analyst</option>
+                    <option value="compliance">Compliance Officer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                  <div class="form-group">
+                    <label style="font-weight:600;margin-bottom:4px;display:block;">First Name *</label>
+                    <input type="text" id="cu-first-name" placeholder="First name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                  </div>
+                  <div class="form-group">
+                    <label style="font-weight:600;margin-bottom:4px;display:block;">Last Name *</label>
+                    <input type="text" id="cu-last-name" placeholder="Last name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight:600;margin-bottom:4px;display:block;">Email Address *</label>
+                  <input type="email" id="cu-email" placeholder="email@daksfirst.com" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight:600;margin-bottom:4px;display:block;">Phone Number *</label>
+                  <input type="tel" id="cu-phone" placeholder="+44..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight:600;margin-bottom:4px;display:block;">Password * (min 8 characters)</label>
+                  <input type="password" id="cu-password" placeholder="Password" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;">
+                </div>
+
+                <button onclick="createInternalUser()" id="cu-submit-btn" class="btn btn-primary" style="width:100%;margin-top:12px;padding:12px;font-size:1rem;">Create Account</button>
+
+                <div id="cu-success" style="display:none;margin-top:16px;padding:16px;background:#f0fff4;border-radius:8px;border:1px solid #c6f6d5;">
+                  <div style="font-weight:700;color:#22543d;margin-bottom:4px;">Account Created Successfully</div>
+                  <div id="cu-success-detail" style="font-size:0.9rem;color:#2f855a;"></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2547,6 +2601,78 @@ async function loadAdminStats() {
     });
   } catch (err) {
     console.error('Error loading stats:', err);
+  }
+}
+
+async function createInternalUser() {
+  const alertEl = document.getElementById('create-user-alert');
+  const successEl = document.getElementById('cu-success');
+  alertEl.style.display = 'none';
+  successEl.style.display = 'none';
+
+  const role = document.getElementById('cu-role').value;
+  const first_name = document.getElementById('cu-first-name').value.trim();
+  const last_name = document.getElementById('cu-last-name').value.trim();
+  const email = document.getElementById('cu-email').value.trim();
+  const phone = document.getElementById('cu-phone').value.trim();
+  const password = document.getElementById('cu-password').value;
+
+  if (!first_name || !last_name || !email || !phone || !password) {
+    alertEl.style.display = 'block';
+    alertEl.className = 'alert error visible';
+    alertEl.textContent = 'All fields are required.';
+    return;
+  }
+  if (password.length < 8) {
+    alertEl.style.display = 'block';
+    alertEl.className = 'alert error visible';
+    alertEl.textContent = 'Password must be at least 8 characters.';
+    return;
+  }
+
+  const btn = document.getElementById('cu-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/admin/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ role, first_name, last_name, email, phone, password })
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      alertEl.style.display = 'block';
+      alertEl.className = 'alert error visible';
+      alertEl.textContent = data.error || 'Failed to create user.';
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+      return;
+    }
+
+    const roleLabels = { admin: 'Admin', rm: 'Relationship Manager', credit: 'Credit Analyst', compliance: 'Compliance Officer' };
+    successEl.style.display = 'block';
+    document.getElementById('cu-success-detail').textContent = `${first_name} ${last_name} (${roleLabels[role]}) — ${email}. They can now log in at apply.daksfirst.com.`;
+
+    // Clear form
+    document.getElementById('cu-first-name').value = '';
+    document.getElementById('cu-last-name').value = '';
+    document.getElementById('cu-email').value = '';
+    document.getElementById('cu-phone').value = '';
+    document.getElementById('cu-password').value = '';
+
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+
+    // Refresh users list
+    if (currentRole === 'admin') await loadAdminUsers();
+  } catch (err) {
+    alertEl.style.display = 'block';
+    alertEl.className = 'alert error visible';
+    alertEl.textContent = 'Network error. Please try again.';
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
   }
 }
 
