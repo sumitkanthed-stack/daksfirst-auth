@@ -355,8 +355,9 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
     const deal = result.rows[0];
     console.log('[deal] Created:', deal.submission_id);
 
-    // Fire webhook to n8n (async, non-blocking)
-    fireWebhook(deal.id, deal.submission_id, req.body, req.user);
+    // Webhook is now fired directly from the frontend browser to n8n
+    // (bypasses server-to-n8n connectivity issues)
+    // fireWebhook(deal.id, deal.submission_id, req.body, req.user);
 
     res.status(201).json({
       success: true,

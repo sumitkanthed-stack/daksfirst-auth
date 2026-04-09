@@ -713,6 +713,48 @@ async function submitDeal() {
       return;
     }
 
+    // Fire webhook directly to n8n from browser (bypasses server-to-n8n connectivity issues)
+    const N8N_WEBHOOK = 'https://sumitkanthed.app.n8n.cloud/webhook/4c811581-2d51-4432-aef1-2c04d53fe71c';
+    const webhookPayload = {
+      submissionId: data.deal.submission_id,
+      source: 'web_form',
+      timestamp: new Date().toISOString(),
+      submittedBy: { userId: currentUser.id, email: currentUser.email, role: currentRole },
+      borrower: {
+        name: body.borrower_name || '',
+        company: body.borrower_company || '',
+        email: body.borrower_email || '',
+        phone: body.borrower_phone || ''
+      },
+      broker: {
+        name: body.broker_name || '',
+        company: body.broker_company || '',
+        fca_number: body.broker_fca || ''
+      },
+      security: {
+        address: body.security_address || '',
+        postcode: body.security_postcode || '',
+        asset_type: body.asset_type || '',
+        current_value: body.current_value || null
+      },
+      loan: {
+        amount: body.loan_amount || null,
+        ltv_requested: body.ltv_requested || null,
+        purpose: body.loan_purpose || '',
+        exit_strategy: body.exit_strategy || '',
+        term_months: body.term_months || null,
+        rate_requested: null
+      },
+      documents: [],
+      additional_notes: body.additional_notes || ''
+    };
+    fetch(N8N_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload)
+    }).then(r => console.log('[n8n webhook] Status:', r.status))
+      .catch(e => console.warn('[n8n webhook] Failed:', e.message));
+
     // Show success with reference
     document.getElementById('deal-ref').textContent = `Reference: ${data.deal.submission_id}`;
     dealBtn.disabled = false;
