@@ -330,7 +330,7 @@ async function uploadFileToOneDrive(token, dealRef, filename, fileBuffer) {
 async function sendEmailViaGraph({ to, subject, htmlBody }) {
   try {
     const token = await getGraphToken();
-    const sendUrl = 'https://graph.microsoft.com/v1.0/users/sk@daksfirst.com/sendMail';
+    const sendUrl = 'https://graph.microsoft.com/v1.0/users/portal@daksfirst.com/sendMail';
 
     const response = await fetch(sendUrl, {
       method: 'POST',
@@ -343,7 +343,7 @@ async function sendEmailViaGraph({ to, subject, htmlBody }) {
           subject: subject,
           body: { contentType: 'HTML', content: htmlBody },
           toRecipients: [{ emailAddress: { address: to } }],
-          from: { emailAddress: { address: 'sk@daksfirst.com', name: 'Daksfirst Limited' } }
+          from: { emailAddress: { address: 'portal@daksfirst.com', name: 'Daksfirst Limited' } }
         },
         saveToSentItems: true
       })
