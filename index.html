@@ -480,18 +480,30 @@
       display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem;
       font-weight: 600; text-transform: uppercase; background: #edf2f7; color: var(--text);
     }
-    .stage-badge.stage-dip { background: #e2e8f0; color: #4a5568; }
+    .stage-badge.stage-received { background: #e2e8f0; color: #4a5568; }
+    .stage-badge.stage-assigned { background: #fef3c7; color: #92400e; }
     .stage-badge.stage-dip_issued { background: #bee3f8; color: #2a4365; }
+    .stage-badge.stage-info_gathering { background: #fed7aa; color: #92400e; }
+    .stage-badge.stage-ai_termsheet { background: #fce7f3; color: #831843; }
+    .stage-badge.stage-fee_pending { background: #fefcbf; color: #744210; }
+    .stage-badge.stage-fee_paid { background: #c6f6d5; color: #22543d; }
+    .stage-badge.stage-underwriting { background: #fefcbf; color: #744210; }
+    .stage-badge.stage-bank_submitted { background: #e9d8fd; color: #553c9a; }
+    .stage-badge.stage-bank_approved { background: #c6f6d5; color: #22543d; }
+    .stage-badge.stage-borrower_accepted { background: #bfdbfe; color: #1e40af; }
+    .stage-badge.stage-legal_instructed { background: #bee3f8; color: #2a4365; }
+    .stage-badge.stage-completed { background: #c6f6d5; color: #22543d; font-weight: 700; }
+    .stage-badge.stage-declined { background: #fed7d7; color: #9b2c2c; }
+    .stage-badge.stage-withdrawn { background: #e2e8f0; color: #718096; }
+    /* Legacy stages for compatibility */
+    .stage-badge.stage-dip { background: #e2e8f0; color: #4a5568; }
     .stage-badge.stage-termsheet_sent { background: #fefcbf; color: #744210; }
     .stage-badge.stage-termsheet_signed { background: #c6f6d5; color: #22543d; }
-    .stage-badge.stage-underwriting { background: #fefcbf; color: #744210; }
     .stage-badge.stage-credit_review { background: #e9d8fd; color: #553c9a; }
     .stage-badge.stage-compliance_review { background: #fed7e2; color: #97266d; }
     .stage-badge.stage-approved { background: #c6f6d5; color: #22543d; }
     .stage-badge.stage-legal { background: #bee3f8; color: #2a4365; }
     .stage-badge.stage-funds_released { background: #c6f6d5; color: #22543d; font-weight: 700; }
-    .stage-badge.stage-declined { background: #fed7d7; color: #9b2c2c; }
-    .stage-badge.stage-withdrawn { background: #e2e8f0; color: #718096; }
 
     .role-tag { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
     .role-tag.role-admin { background: #1a365d; color: #fff; }
@@ -2193,9 +2205,9 @@ async function showDealDetail(dealId) {
     statusEl.textContent = deal.status.charAt(0).toUpperCase() + deal.status.slice(1);
 
     // Stage badge
-    const stage = deal.deal_stage || 'dip';
+    const stage = deal.deal_stage || 'received';
     const stageEl = document.getElementById('detail-stage-badge');
-    const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'Termsheet Sent', termsheet_signed: 'Termsheet Signed', underwriting: 'In Underwriting', approved: 'Approved', legal: 'Legal Instructed', funds_released: 'Funds Released', declined: 'Declined', withdrawn: 'Withdrawn' };
+    const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
     stageEl.textContent = stageLabels[stage] || stage;
     stageEl.className = `stage-badge stage-${stage}`;
 
@@ -2268,7 +2280,7 @@ async function showDealDetail(dealId) {
     }
 
     // ── PHASE 2: Lock/Unlock ──
-    const unlockedStages = ['termsheet_signed', 'underwriting', 'approved', 'legal', 'funds_released', 'completed'];
+    const unlockedStages = ['fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
     const isPhase2Unlocked = unlockedStages.includes(stage);
 
     document.getElementById('phase2-lock').textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
@@ -2297,12 +2309,16 @@ async function showDealDetail(dealId) {
       populateOnboardingData(deal.onboarding_data);
     }
 
-    // ── INTERNAL STAFF CONTROLS ──
+    // ── WORKFLOW CONTROLS ──
     const workflowPanel = document.getElementById('workflow-controls');
     if (workflowPanel) {
       if (isInternal) {
         workflowPanel.style.display = 'block';
         renderWorkflowControls(deal);
+      } else if (['broker', 'borrower'].includes(currentRole)) {
+        // Show borrower/broker action panel for specific stages
+        workflowPanel.style.display = 'block';
+        renderExternalWorkflowControls(deal);
       } else {
         workflowPanel.style.display = 'none';
       }
@@ -2503,7 +2519,7 @@ async function loadAdminDeals() {
     const tbody = document.getElementById('admin-deals-tbody');
     tbody.innerHTML = '';
 
-    const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'TS Sent', termsheet_signed: 'TS Signed', underwriting: 'Underwriting', credit_review: 'Credit Review', compliance_review: 'Compliance', approved: 'Approved', legal: 'Legal', funds_released: 'Funded', declined: 'Declined', withdrawn: 'Withdrawn' };
+    const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
 
     deals.forEach(deal => {
       const row = document.createElement('tr');
@@ -2540,7 +2556,7 @@ async function loadStaffDeals() {
     const deals = data.deals || [];
     const tbody = document.getElementById('admin-deals-tbody');
     tbody.innerHTML = '';
-    const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'TS Sent', termsheet_signed: 'TS Signed', underwriting: 'Underwriting', credit_review: 'Credit Review', compliance_review: 'Compliance', approved: 'Approved', legal: 'Legal', funds_released: 'Funded', declined: 'Declined', withdrawn: 'Withdrawn' };
+    const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
 
     deals.forEach(deal => {
       const row = document.createElement('tr');
@@ -2744,13 +2760,13 @@ async function renderWorkflowControls(deal) {
   if (!panel) return;
 
   const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(currentRole);
-  const stage = deal.deal_stage || 'dip';
-  const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'Termsheet Sent', termsheet_signed: 'Termsheet Signed', underwriting: 'Underwriting', credit_review: 'Credit Review', compliance_review: 'Compliance Review', approved: 'Approved', legal: 'Legal Instructed', funds_released: 'Funds Released', declined: 'Declined', withdrawn: 'Withdrawn' };
+  const stage = deal.deal_stage || 'received';
+  const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
 
   let html = `<h3 style="margin:0 0 16px;color:var(--primary);">Deal Workflow</h3>`;
 
   // ── Stage Pipeline Visual ──
-  const stageOrder = ['dip', 'dip_issued', 'termsheet_sent', 'termsheet_signed', 'underwriting', 'credit_review', 'compliance_review', 'approved', 'legal', 'funds_released'];
+  const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
   html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
   stageOrder.forEach((s, i) => {
@@ -2824,28 +2840,184 @@ async function renderWorkflowControls(deal) {
     }, 100);
   }
 
-  // ── Stage Advancement (RM or Admin) ──
-  if (['admin', 'rm'].includes(currentRole)) {
-    const nextStages = {
-      dip: 'dip_issued', dip_issued: 'termsheet_sent', termsheet_sent: 'termsheet_signed',
-      termsheet_signed: 'underwriting', underwriting: 'credit_review', credit_review: 'compliance_review',
-      compliance_review: 'approved', approved: 'legal', legal: 'funds_released'
-    };
-    const nextStage = nextStages[stage];
+  // ── Stage-Specific Actions ──
 
+  // RECEIVED (Admin only)
+  if (stage === 'received' && currentRole === 'admin') {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Advance Stage</h4>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span style="font-size:13px;">Current: <strong>${stageLabels[stage]}</strong></span>
-        ${nextStage ? `
-          <span style="font-size:18px;">→</span>
-          <span style="font-size:13px;"><strong>${stageLabels[nextStage]}</strong></span>
-          <input type="text" id="stage-comment" placeholder="Comment (optional)" style="flex:1;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
-          <button onclick="advanceStage('${nextStage}')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Advance</button>
-        ` : '<span style="color:#48bb78;font-weight:600;">Final stage reached</span>'}
-        ${!['approved','declined','withdrawn','funds_released'].includes(stage) ? `
-          <button onclick="advanceStage('declined')" style="padding:8px 16px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Decline</button>
-        ` : ''}
+      <h4 style="margin:0 0 12px;">Assign to RM</h4>
+      <div style="display:flex;gap:8px;">
+        <select id="action-rm-select" style="flex:1;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+          <option value="">-- Select RM --</option>
+        </select>
+        <button onclick="assignRMAndAdvance()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Assign & Advance</button>
+      </div>
+    </div>`;
+    setTimeout(async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/admin/staff`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+        const data = await resp.json();
+        if (data.staff) {
+          const sel = document.getElementById('action-rm-select');
+          if (sel) {
+            data.staff.filter(s => ['rm', 'admin'].includes(s.role)).forEach(s => {
+              sel.innerHTML += `<option value="${s.id}">${s.first_name} ${s.last_name}</option>`;
+            });
+          }
+        }
+      } catch(e) { console.error('Failed to load staff:', e); }
+    }, 100);
+  }
+
+  // ASSIGNED (RM or Admin) - Issue DIP
+  if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Issue DIP</h4>
+      <textarea id="dip-notes" placeholder="DIP notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:80px;margin-bottom:8px;"></textarea>
+      <button onclick="issueDip()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Issue DIP</button>
+    </div>`;
+  }
+
+  // DIP_ISSUED (RM or Admin) - Move to Info Gathering
+  if (stage === 'dip_issued' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Next Stage</h4>
+      <button onclick="advanceStageSimple('info_gathering')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Move to Info Gathering</button>
+    </div>`;
+  }
+
+  // INFO_GATHERING (Credit or Admin) - Generate AI Termsheet
+  if (stage === 'info_gathering' && ['credit', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Generate AI Termsheet</h4>
+      <textarea id="ai-termsheet-data" placeholder="AI termsheet data / notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:80px;margin-bottom:8px;"></textarea>
+      <button onclick="generateAiTermsheet()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Generate Termsheet</button>
+    </div>`;
+  }
+
+  // AI_TERMSHEET (RM or Admin) - Request Fee
+  if (stage === 'ai_termsheet' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Request Fee</h4>
+      <div style="display:flex;gap:8px;align-items:end;">
+        <div style="flex:1;">
+          <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">Fee Amount (£)</label>
+          <input type="number" id="fee-amount-action" placeholder="0.00" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <button onclick="requestFee()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Request Fee</button>
+      </div>
+    </div>`;
+  }
+
+  // FEE_PENDING (RM or Admin) - Confirm Fee
+  if (stage === 'fee_pending' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Confirm Fee Payment</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:#666;">Fee Type</label>
+          <select id="fee-type-action" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+            <option value="dip_fee">DIP Fee</option>
+            <option value="commitment_fee">Commitment Fee</option>
+            <option value="arrangement_fee">Arrangement Fee</option>
+            <option value="valuation_fee">Valuation Fee</option>
+            <option value="legal_fee">Legal Fee</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Amount (£)</label>
+          <input type="number" id="fee-amount-action2" placeholder="0.00" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Payment Date</label>
+          <input type="date" id="fee-date-action" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <button onclick="confirmFeeAndAdvance()" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm</button>
+      </div>
+    </div>`;
+  }
+
+  // FEE_PAID (RM or Admin) - Start Underwriting
+  if (stage === 'fee_paid' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Next Stage</h4>
+      <button onclick="advanceStageSimple('underwriting')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Start Underwriting</button>
+    </div>`;
+  }
+
+  // UNDERWRITING (RM or Admin) - Submit to Bank
+  if (stage === 'underwriting' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Submit to GB Bank</h4>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="bank-ref" placeholder="Bank reference" style="flex:1;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        <button onclick="submitToBank()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Submit</button>
+      </div>
+    </div>`;
+  }
+
+  // BANK_SUBMITTED (Admin) - Record Bank Approval
+  if (stage === 'bank_submitted' && currentRole === 'admin') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Bank Decision</h4>
+      <textarea id="bank-approval-notes" placeholder="Bank approval notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+      <div style="display:flex;gap:8px;">
+        <button onclick="recordBankApproval()" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Bank Approved</button>
+        <button onclick="declineDeal()" style="padding:8px 16px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Bank Declined</button>
+      </div>
+    </div>`;
+  }
+
+  // BANK_APPROVED (RM or Admin) - Record Borrower Acceptance
+  if (stage === 'bank_approved' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Awaiting Borrower Acceptance</h4>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Awaiting borrower to accept terms or record acceptance if received offline.</p>
+      <button onclick="recordBorrowerAcceptance()" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Record Borrower Acceptance</button>
+    </div>`;
+  }
+
+  // BORROWER_ACCEPTED (RM or Admin) - Instruct Legal
+  if (stage === 'borrower_accepted' && ['rm', 'admin'].includes(currentRole)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Instruct Legal</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:#666;">Firm Name *</label>
+          <input type="text" id="lawyer-firm" placeholder="Law firm name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Lawyer Email *</label>
+          <input type="email" id="lawyer-email" placeholder="Email" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Contact Name</label>
+          <input type="text" id="lawyer-contact" placeholder="Contact name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <button onclick="instructLegal()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Instruct</button>
+      </div>
+      <p style="font-size:11px;color:#999;margin-top:8px;">Optionally: <a href="#" onclick="loadLawFirms(); return false;" style="color:var(--primary);">Select from onboarded firms</a></p>
+      <div id="law-firms-dropdown" style="display:none;margin-top:8px;padding:8px;background:white;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;">
+        <!-- Populated by loadLawFirms() -->
+      </div>
+    </div>`;
+  }
+
+  // LEGAL_INSTRUCTED (Admin) - Complete Deal
+  if (stage === 'legal_instructed' && currentRole === 'admin') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Complete Deal</h4>
+      <button onclick="completeDeal()" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Mark as Completed</button>
+    </div>`;
+  }
+
+  // Generic Decline/Withdraw for all stages (except final stages)
+  if (!['completed', 'declined', 'withdrawn'].includes(stage)) {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Deal Status</h4>
+      <div style="display:flex;gap:8px;">
+        <button onclick="withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Withdraw</button>
       </div>
     </div>`;
   }
@@ -3019,6 +3191,80 @@ async function renderWorkflowControls(deal) {
   panel.innerHTML = html;
 }
 
+// ── External (Broker/Borrower) Workflow Controls ──
+function renderExternalWorkflowControls(deal) {
+  const panel = document.getElementById('workflow-controls');
+  if (!panel) return;
+  const stage = deal.deal_stage || 'received';
+  const stageLabels = { received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued', info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet', fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting', bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved', borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed', completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn' };
+  const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+  const currentIdx = stageOrder.indexOf(stage);
+
+  let html = `<h3 style="margin:0 0 16px;color:var(--primary);">Deal Progress</h3>`;
+  // Stage pipeline (read-only)
+  html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
+  stageOrder.forEach((s, i) => {
+    const isActive = s === stage;
+    const isDone = i < currentIdx;
+    const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
+    const color = (isActive || isDone) ? '#fff' : '#666';
+    html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${stageLabels[s]}</span>`;
+  });
+  html += `</div>`;
+
+  // Stage-specific messages and actions for broker/borrower
+  if (stage === 'received' || stage === 'assigned') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
+  } else if (stage === 'dip_issued') {
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>DIP Issued</strong> — We have issued a Decision in Principle for your deal. Please submit all relevant details so we can progress.</p>${deal.dip_notes ? `<p style="color:#666;margin-top:8px;">${deal.dip_notes}</p>` : ''}</div>`;
+  } else if (stage === 'info_gathering') {
+    html += `<div style="background:#fffff0;padding:16px;border-radius:8px;border-left:4px solid #c9a84c;"><p style="font-size:14px;"><strong>Information Required</strong> — Please upload any outstanding documents and complete all required fields. Our team will generate a termsheet once we have sufficient information.</p></div>`;
+  } else if (stage === 'ai_termsheet') {
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
+  } else if (stage === 'fee_pending') {
+    html += `<div style="background:#fffbeb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;"><p style="font-size:14px;"><strong>Fee Payment Required</strong> — Please arrange payment of the requested fee to proceed. Amount: <strong>£${formatNumber(deal.fee_requested_amount || 0)}</strong></p></div>`;
+  } else if (stage === 'fee_paid' || stage === 'underwriting') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Underwriting in Progress</strong> — Our team is conducting formal underwriting. We may contact you for additional information.</p></div>`;
+  } else if (stage === 'bank_submitted') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Submitted to Bank</strong> — Your deal has been submitted to our funding partner for approval. We'll notify you of the outcome.</p></div>`;
+  } else if (stage === 'bank_approved') {
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;">
+      <p style="font-size:14px;margin-bottom:12px;"><strong>Bank Approved!</strong> — Your deal has been approved. Please confirm your acceptance below to proceed to legal.</p>
+      <button onclick="acceptDealExternal()" style="padding:10px 24px;background:#48bb78;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Accept Terms & Proceed</button>
+    </div>`;
+  } else if (stage === 'borrower_accepted') {
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Terms Accepted</strong> — Legal is being instructed. You'll receive details from the appointed law firm shortly.</p></div>`;
+  } else if (stage === 'legal_instructed') {
+    html += `<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">
+      <p style="font-size:14px;"><strong>Legal Instructed</strong> — Your deal is in the hands of the legal team.</p>
+      ${deal.lawyer_firm ? `<p style="color:#666;margin-top:8px;">Law Firm: <strong>${deal.lawyer_firm}</strong></p>` : ''}
+      ${deal.lawyer_contact ? `<p style="color:#666;">Contact: ${deal.lawyer_contact}</p>` : ''}
+    </div>`;
+  } else if (stage === 'completed') {
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Deal Completed</strong> — Congratulations! Your deal has been funded successfully.</p></div>`;
+  } else if (stage === 'declined') {
+    html += `<div style="background:#fef2f2;padding:16px;border-radius:8px;border-left:4px solid #e53e3e;"><p style="font-size:14px;"><strong>Deal Declined</strong> — Unfortunately this deal could not be progressed. Please contact your relationship manager for details.</p></div>`;
+  } else if (stage === 'withdrawn') {
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Deal Withdrawn</strong></p></div>`;
+  }
+
+  panel.innerHTML = html;
+}
+
+async function acceptDealExternal() {
+  if (!confirm('Are you sure you want to accept the terms and proceed to legal?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/borrower-accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Terms accepted! Proceeding to legal.'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to accept', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
 // ── Assignment Actions ──
 async function assignRM() {
   const rmId = document.getElementById('assign-rm-select')?.value;
@@ -3102,6 +3348,239 @@ async function submitRecommendation(decision) {
     if (resp.ok) { showToast(data.message); await showDealDetail(window.currentDealId); }
     else { showToast(data.error || 'Failed to submit recommendation', true); }
   } catch(e) { showToast('Network error', true); }
+}
+
+// ═══ NEW STAGE-SPECIFIC ACTIONS ═════════════════════════════════════
+
+async function assignRMAndAdvance() {
+  const rmId = document.getElementById('action-rm-select')?.value;
+  if (!rmId) { showToast('Please select an RM', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/admin/deals/${window.currentDealId}/assign`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ rm_id: parseInt(rmId) })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('RM assigned and stage advanced'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to assign RM', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function issueDip() {
+  const notes = document.getElementById('dip-notes')?.value || '';
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/issue-dip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ dip_notes: notes })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('DIP issued successfully'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to issue DIP', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function generateAiTermsheet() {
+  const data = document.getElementById('ai-termsheet-data')?.value || '';
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/generate-ai-termsheet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ ai_termsheet_data: data })
+    });
+    const respData = await resp.json();
+    if (resp.ok) { showToast('AI termsheet generated'); await showDealDetail(window.currentDealId); }
+    else { showToast(respData.error || 'Failed to generate termsheet', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function requestFee() {
+  const amount = document.getElementById('fee-amount-action')?.value;
+  if (!amount) { showToast('Please enter a fee amount', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/request-fee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ fee_amount: parseFloat(amount) })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Fee requested'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to request fee', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function confirmFeeAndAdvance() {
+  const feeType = document.getElementById('fee-type-action')?.value;
+  const amount = document.getElementById('fee-amount-action2')?.value;
+  const paymentDate = document.getElementById('fee-date-action')?.value;
+  if (!feeType || !amount || !paymentDate) { showToast('Fee type, amount and date are required', true); return; }
+  try {
+    // Step 1: Confirm the fee payment
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/fee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ fee_type: feeType, amount: parseFloat(amount), payment_date: paymentDate })
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Failed to confirm fee', true); return; }
+    // Step 2: Also advance the stage to fee_paid
+    const resp2 = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: 'fee_paid', comments: `Fee confirmed: ${feeType} £${amount}` })
+    });
+    if (resp2.ok) { showToast('Fee confirmed and stage advanced to Fee Paid'); }
+    else { showToast('Fee confirmed but stage could not be advanced', true); }
+    await showDealDetail(window.currentDealId);
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function submitToBank() {
+  const bankRef = document.getElementById('bank-ref')?.value;
+  if (!bankRef) { showToast('Please enter a bank reference', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/bank-submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ bank_reference: bankRef })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Submitted to GB Bank'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to submit', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function recordBankApproval() {
+  const notes = document.getElementById('bank-approval-notes')?.value || '';
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/bank-approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ bank_approval_notes: notes })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Bank approval recorded'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to record approval', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function recordBorrowerAcceptance() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/borrower-accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Borrower acceptance recorded'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to record acceptance', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function instructLegal() {
+  const firm = document.getElementById('lawyer-firm')?.value;
+  const email = document.getElementById('lawyer-email')?.value;
+  const contact = document.getElementById('lawyer-contact')?.value;
+  if (!firm || !email) { showToast('Firm name and email are required', true); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/instruct-legal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ lawyer_firm: firm, lawyer_email: email, lawyer_contact: contact || '', lawyer_reference: '' })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Legal instructed'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to instruct legal', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function completeDeal() {
+  if (!confirm('Are you sure you want to mark this deal as completed?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: 'completed' })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Deal completed'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to complete deal', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function declineDeal() {
+  if (!confirm('Are you sure you want to decline this deal?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: 'declined' })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Deal declined'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to decline deal', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function withdrawDeal() {
+  if (!confirm('Are you sure you want to withdraw this deal?')) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: 'withdrawn' })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Deal withdrawn'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to withdraw deal', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function advanceStageSimple(newStage) {
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ new_stage: newStage })
+    });
+    const data = await resp.json();
+    if (resp.ok) { showToast('Stage advanced'); await showDealDetail(window.currentDealId); }
+    else { showToast(data.error || 'Failed to advance stage', true); }
+  } catch(e) { showToast('Network error', true); }
+}
+
+async function loadLawFirms() {
+  const dropdown = document.getElementById('law-firms-dropdown');
+  if (dropdown.style.display === 'block') {
+    dropdown.style.display = 'none';
+    return;
+  }
+  try {
+    const resp = await fetch(`${API_BASE}/api/law-firms`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await resp.json();
+    if (data.law_firms && data.law_firms.length > 0) {
+      dropdown.innerHTML = data.law_firms.map(f => `
+        <div onclick="selectLawFirm('${f.firm_name}', '${f.email}', '${f.contact_name || ''}')" style="padding:8px;cursor:pointer;border-bottom:1px solid #e2e8f0;font-size:13px;">
+          <div style="font-weight:500;">${f.firm_name}</div>
+          <div style="font-size:11px;color:#666;">${f.email}</div>
+        </div>
+      `).join('');
+      dropdown.style.display = 'block';
+    } else {
+      dropdown.innerHTML = '<div style="padding:8px;color:#999;font-size:13px;">No law firms onboarded yet</div>';
+      dropdown.style.display = 'block';
+    }
+  } catch(e) { console.error('Failed to load law firms:', e); }
+}
+
+function selectLawFirm(firm, email, contact) {
+  document.getElementById('lawyer-firm').value = firm;
+  document.getElementById('lawyer-email').value = email;
+  document.getElementById('lawyer-contact').value = contact;
+  document.getElementById('law-firms-dropdown').style.display = 'none';
 }
 
 // ── Broker Onboarding ──

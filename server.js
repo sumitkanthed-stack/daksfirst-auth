@@ -30,7 +30,7 @@ app.use(cors({
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 app.use('/api/auth', authLimiter);
 
-const dealLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10 });
+const dealLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 100 });
 app.use('/api/deals', dealLimiter);
 
 const adminLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
@@ -270,12 +270,30 @@ async function runMigrations() {
         notes           TEXT,
         reviewed_by     INT           REFERENCES users(id),
         reviewed_at     TIMESTAMPTZ,
+        default_rm      INT           REFERENCES users(id),
         created_at      TIMESTAMPTZ   DEFAULT NOW(),
         updated_at      TIMESTAMPTZ   DEFAULT NOW()
       );
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_user ON broker_onboarding(user_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_status ON broker_onboarding(status);`);
+
+    // Law firms table (for legal instruction tracking)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS law_firms (
+        id              SERIAL PRIMARY KEY,
+        firm_name       VARCHAR(200)  NOT NULL,
+        contact_name    VARCHAR(200),
+        email           VARCHAR(255),
+        phone           VARCHAR(30),
+        address         TEXT,
+        notes           TEXT,
+        is_active       BOOLEAN       DEFAULT TRUE,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_law_firms_active ON law_firms(is_active);`);
 
     // Deal borrowers table (supports multiple borrowers per deal)
     await pool.query(`
@@ -385,7 +403,30 @@ async function runMigrations() {
       { col: 'final_decision_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_by INT REFERENCES users(id);' },
       { col: 'final_decision_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_at TIMESTAMPTZ;' },
       { col: 'submitted_to_credit_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_credit_at TIMESTAMPTZ;' },
-      { col: 'submitted_to_compliance_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_compliance_at TIMESTAMPTZ;' }
+      { col: 'submitted_to_compliance_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_compliance_at TIMESTAMPTZ;' },
+      // Phase 2 lifecycle & legal tracking
+      { col: 'borrower_user_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_user_id INT REFERENCES users(id);' },
+      { col: 'dip_issued_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_issued_at TIMESTAMPTZ;' },
+      { col: 'dip_issued_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_issued_by INT REFERENCES users(id);' },
+      { col: 'dip_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_notes TEXT;' },
+      { col: 'ai_termsheet_data', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ai_termsheet_data JSONB DEFAULT \'{}\'::jsonb;' },
+      { col: 'ai_termsheet_generated_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ai_termsheet_generated_at TIMESTAMPTZ;' },
+      { col: 'fee_requested_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fee_requested_at TIMESTAMPTZ;' },
+      { col: 'fee_requested_amount', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fee_requested_amount NUMERIC(15,2);' },
+      { col: 'bank_submitted_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_submitted_at TIMESTAMPTZ;' },
+      { col: 'bank_submitted_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_submitted_by INT REFERENCES users(id);' },
+      { col: 'bank_reference', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_reference VARCHAR(100);' },
+      { col: 'bank_approved_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_approved_at TIMESTAMPTZ;' },
+      { col: 'bank_approval_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_approval_notes TEXT;' },
+      { col: 'borrower_accepted_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_accepted_at TIMESTAMPTZ;' },
+      { col: 'legal_instructed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS legal_instructed_at TIMESTAMPTZ;' },
+      { col: 'lawyer_firm', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_firm VARCHAR(200);' },
+      { col: 'lawyer_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_email VARCHAR(255);' },
+      { col: 'lawyer_contact', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_contact VARCHAR(30);' },
+      { col: 'lawyer_reference', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_reference VARCHAR(100);' },
+      { col: 'completed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;' },
+      { col: 'borrower_invited_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invited_at TIMESTAMPTZ;' },
+      { col: 'borrower_invite_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invite_email VARCHAR(255);' }
     ];
 
     for (const check of columnChecks) {
@@ -404,6 +445,24 @@ async function runMigrations() {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_assigned ON deal_submissions(assigned_to);`);
     } catch (err) {
       console.log('[migrate] Index creation note:', err.message.substring(0, 80));
+    }
+
+    // Add default_rm column to broker_onboarding if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE broker_onboarding ADD COLUMN IF NOT EXISTS default_rm INT REFERENCES users(id);`);
+      console.log('[migrate] Ensured broker_onboarding.default_rm exists');
+    } catch (err) {
+      console.log('[migrate] Note on broker_onboarding.default_rm:', err.message.substring(0, 60));
+    }
+
+    // Update deal_submissions status constraint to support new deal stages
+    try {
+      await pool.query(`ALTER TABLE deal_submissions DROP CONSTRAINT IF EXISTS deal_submissions_status_check;`);
+      await pool.query(`ALTER TABLE deal_submissions ADD CONSTRAINT deal_submissions_status_check
+        CHECK (status IN ('received','assigned','dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed','declined','withdrawn'));`);
+      console.log('[migrate] Updated deal_submissions status constraint with new stages');
+    } catch (err) {
+      console.log('[migrate] Note on deal status constraint:', err.message.substring(0, 80));
     }
 
     console.log('[migrate] All tables and indexes created/updated successfully');
@@ -788,12 +847,21 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
       company_name, company_number, drawdown_date, interest_servicing,
       existing_charges, property_tenure, occupancy_status, current_use,
       purchase_price, use_of_funds, refurb_scope, refurb_cost,
-      deposit_source, concurrent_transactions
+      deposit_source, concurrent_transactions, borrower_invite_email
     } = req.body;
 
     // Validation
     if (!security_address || !loan_amount || !loan_purpose) {
       return res.status(400).json({ error: 'Security address, loan amount and loan purpose are required' });
+    }
+
+    // Get broker's default_rm if this is a broker submitting
+    let assignedRm = null;
+    if (req.user.role === 'broker') {
+      const brokerOnb = await pool.query(`SELECT default_rm FROM broker_onboarding WHERE user_id = $1`, [req.user.userId]);
+      if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
+        assignedRm = brokerOnb.rows[0].default_rm;
+      }
     }
 
     // Insert deal
@@ -808,8 +876,8 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
         company_name, company_number, drawdown_date, interest_servicing,
         existing_charges, property_tenure, occupancy_status, current_use,
         purchase_price, use_of_funds, refurb_scope, refurb_cost,
-        deposit_source, concurrent_transactions
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
+        deposit_source, concurrent_transactions, borrower_invite_email, assigned_rm
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42)
       RETURNING id, submission_id, status, created_at
     `, [
       req.user.userId,
@@ -823,7 +891,8 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
       company_name || null, company_number || null, drawdown_date || null, interest_servicing || null,
       existing_charges || null, property_tenure || null, occupancy_status || null, current_use || null,
       purchase_price || null, use_of_funds || null, refurb_scope || null, refurb_cost || null,
-      deposit_source || null, concurrent_transactions || null
+      deposit_source || null, concurrent_transactions || null,
+      borrower_invite_email || null, assignedRm || null
     ]);
 
     const deal = result.rows[0];
@@ -831,7 +900,7 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
 
     // Log audit trail
     await logAudit(deal.id, 'deal_submitted', null, 'received',
-      { submitted_by: req.user.userId, loan_amount, security_address }, req.user.userId);
+      { submitted_by: req.user.userId, loan_amount, security_address, assigned_rm: assignedRm }, req.user.userId);
 
     res.status(201).json({
       success: true,
@@ -854,17 +923,33 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 app.get('/api/deals', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.security_address,
-              ds.loan_amount, ds.loan_purpose, ds.asset_type, ds.created_at, ds.updated_at,
-              COUNT(dd.id) as document_count
-       FROM deal_submissions ds
-       LEFT JOIN deal_documents dd ON ds.id = dd.deal_id
-       WHERE ds.user_id = $1
-       GROUP BY ds.id
-       ORDER BY ds.created_at DESC`,
-      [req.user.userId]
-    );
+    // Broker/internal: see deals they submitted or are assigned to
+    // Borrower: see deals assigned to them
+    let query, params;
+
+    if (req.user.role === 'borrower') {
+      query = `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.security_address,
+                      ds.loan_amount, ds.loan_purpose, ds.asset_type, ds.created_at, ds.updated_at,
+                      COUNT(dd.id) as document_count
+               FROM deal_submissions ds
+               LEFT JOIN deal_documents dd ON ds.id = dd.deal_id
+               WHERE ds.borrower_user_id = $1
+               GROUP BY ds.id
+               ORDER BY ds.created_at DESC`;
+      params = [req.user.userId];
+    } else {
+      query = `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.security_address,
+                      ds.loan_amount, ds.loan_purpose, ds.asset_type, ds.created_at, ds.updated_at,
+                      COUNT(dd.id) as document_count
+               FROM deal_submissions ds
+               LEFT JOIN deal_documents dd ON ds.id = dd.deal_id
+               WHERE ds.user_id = $1
+               GROUP BY ds.id
+               ORDER BY ds.created_at DESC`;
+      params = [req.user.userId];
+    }
+
+    const result = await pool.query(query, params);
     res.json({ success: true, deals: result.rows });
   } catch (error) {
     console.error('[deals] Error:', error);
@@ -877,10 +962,21 @@ app.get('/api/deals', authenticateToken, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 app.get('/api/deals/:submissionId', authenticateToken, async (req, res) => {
   try {
-    const dealResult = await pool.query(
-      `SELECT * FROM deal_submissions WHERE submission_id = $1 AND user_id = $2`,
-      [req.params.submissionId, req.user.userId]
-    );
+    // Broker/internal: see deals they submitted or are assigned to
+    // Borrower: see deals assigned to them
+    let dealResult;
+
+    if (req.user.role === 'borrower') {
+      dealResult = await pool.query(
+        `SELECT * FROM deal_submissions WHERE submission_id = $1 AND borrower_user_id = $2`,
+        [req.params.submissionId, req.user.userId]
+      );
+    } else {
+      dealResult = await pool.query(
+        `SELECT * FROM deal_submissions WHERE submission_id = $1 AND user_id = $2`,
+        [req.params.submissionId, req.user.userId]
+      );
+    }
 
     if (dealResult.rows.length === 0) {
       return res.status(404).json({ error: 'Deal not found' });
@@ -1105,6 +1201,93 @@ app.post('/api/deals/:dealId/upload', authenticateToken, upload.any(), async (re
     });
   } catch (error) {
     console.error('[upload] Error:', error);
+    res.status(500).json({ error: 'File upload failed. Please try again.' });
+  }
+});
+
+// Internal staff file upload (admin can upload to any deal by ID)
+app.post('/api/admin/deals/:dealId/upload', authenticateToken, authenticateInternal, upload.any(), async (req, res) => {
+  try {
+    console.log('[admin-upload] File upload to deal:', req.params.dealId, 'files:', req.files?.length || 0);
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    // Verify deal exists (internal can access any deal)
+    const dealResult = await pool.query(
+      `SELECT id, submission_id FROM deal_submissions WHERE id = $1`,
+      [req.params.dealId]
+    );
+
+    if (dealResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    const deal = dealResult.rows[0];
+    const dealRef = deal.submission_id.substring(0, 8);
+
+    // Get OneDrive token
+    let token;
+    try {
+      token = await getGraphToken();
+    } catch (err) {
+      console.error('[admin-upload] Could not get OneDrive token:', err.message);
+      return res.status(503).json({
+        error: 'OneDrive service unavailable. Files may not be uploaded to cloud storage.'
+      });
+    }
+
+    // Upload each file
+    const uploadedDocs = [];
+    const uploadErrors = [];
+
+    for (const file of req.files) {
+      try {
+        const oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+
+        const docResult = await pool.query(
+          `INSERT INTO deal_documents
+           (deal_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, filename, file_size, uploaded_at`,
+          [
+            req.params.dealId,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            oneDriveInfo.itemId,
+            oneDriveInfo.path,
+            oneDriveInfo.downloadUrl
+          ]
+        );
+
+        uploadedDocs.push(docResult.rows[0]);
+        await logAudit(req.params.dealId, 'document_uploaded', null, file.originalname,
+          { uploaded_by: req.user.userId, file_type: file.mimetype }, req.user.userId);
+
+        console.log('[admin-upload] File uploaded:', file.originalname);
+      } catch (err) {
+        console.error('[admin-upload] Failed to upload', file.originalname, ':', err.message);
+        uploadErrors.push({ filename: file.originalname, error: err.message });
+      }
+    }
+
+    if (uploadedDocs.length === 0) {
+      return res.status(400).json({
+        error: 'Failed to upload any files',
+        details: uploadErrors
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `${uploadedDocs.length} file(s) uploaded successfully by internal staff`,
+      documents: uploadedDocs,
+      errors: uploadErrors.length > 0 ? uploadErrors : undefined
+    });
+  } catch (error) {
+    console.error('[admin-upload] Error:', error);
     res.status(500).json({ error: 'File upload failed. Please try again.' });
   }
 });
@@ -2096,6 +2279,329 @@ app.get('/api/admin/broker/:userId/onboarding', authenticateToken, authenticateI
     res.json({ success: true, onboarding: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch broker onboarding' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LAW FIRMS (manage legal firms)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// List law firms
+app.get('/api/law-firms', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT * FROM law_firms WHERE is_active = TRUE ORDER BY firm_name`);
+    res.json({ success: true, law_firms: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch law firms' });
+  }
+});
+
+// Create law firm
+app.post('/api/law-firms', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { firm_name, contact_name, email, phone, address, notes } = req.body;
+    if (!firm_name) return res.status(400).json({ error: 'Firm name is required' });
+
+    const result = await pool.query(
+      `INSERT INTO law_firms (firm_name, contact_name, email, phone, address, notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [firm_name, contact_name || null, email || null, phone || null, address || null, notes || null]
+    );
+    res.status(201).json({ success: true, law_firm: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create law firm' });
+  }
+});
+
+// Update law firm
+app.put('/api/law-firms/:id', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { firm_name, contact_name, email, phone, address, notes, is_active } = req.body;
+
+    const result = await pool.query(
+      `UPDATE law_firms SET
+        firm_name = COALESCE($1, firm_name),
+        contact_name = COALESCE($2, contact_name),
+        email = COALESCE($3, email),
+        phone = COALESCE($4, phone),
+        address = COALESCE($5, address),
+        notes = COALESCE($6, notes),
+        is_active = COALESCE($7, is_active),
+        updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [firm_name || null, contact_name || null, email || null, phone || null, address || null, notes || null,
+       is_active !== undefined ? is_active : null, req.params.id]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Law firm not found' });
+    res.json({ success: true, law_firm: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update law firm' });
+  }
+});
+
+// Delete (deactivate) law firm
+app.delete('/api/law-firms/:id', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE law_firms SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING firm_name`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Law firm not found' });
+    res.json({ success: true, message: `Law firm ${result.rows[0].firm_name} deactivated` });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to deactivate law firm' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEAL LIFECYCLE ENDPOINTS (issue-dip, generate-ai-termsheet, etc.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Issue DIP (Detailed Information Package)
+app.post('/api/deals/:submissionId/issue-dip', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { dip_notes } = req.body;
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'dip_issued',
+        dip_issued_at = NOW(),
+        dip_issued_by = $1,
+        dip_notes = $2,
+        updated_at = NOW()
+       WHERE id = $3 RETURNING submission_id, status, dip_issued_at`,
+      [req.user.userId, dip_notes || null, dealId]
+    );
+
+    await logAudit(dealId, 'dip_issued', dealResult.rows[0].status, 'dip_issued',
+      { issued_by: req.user.userId }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to issue DIP' });
+  }
+});
+
+// Generate AI Termsheet
+app.post('/api/deals/:submissionId/generate-ai-termsheet', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { ai_termsheet_data } = req.body;
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'ai_termsheet',
+        ai_termsheet_data = $1,
+        ai_termsheet_generated_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $2 RETURNING submission_id, status, ai_termsheet_generated_at`,
+      [ai_termsheet_data ? JSON.stringify(ai_termsheet_data) : '{}', dealId]
+    );
+
+    await logAudit(dealId, 'ai_termsheet_generated', dealResult.rows[0].status, 'ai_termsheet',
+      { generated_by: req.user.userId }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate termsheet' });
+  }
+});
+
+// Request Fee
+app.post('/api/deals/:submissionId/request-fee', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { fee_requested_amount } = req.body;
+    if (!fee_requested_amount) return res.status(400).json({ error: 'Fee amount is required' });
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'fee_pending',
+        fee_requested_at = NOW(),
+        fee_requested_amount = $1,
+        updated_at = NOW()
+       WHERE id = $2 RETURNING submission_id, status, fee_requested_at, fee_requested_amount`,
+      [fee_requested_amount, dealId]
+    );
+
+    await logAudit(dealId, 'fee_requested', dealResult.rows[0].status, 'fee_pending',
+      { amount: fee_requested_amount }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to request fee' });
+  }
+});
+
+// Bank Submit
+app.post('/api/deals/:submissionId/bank-submit', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { bank_reference } = req.body;
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'bank_submitted',
+        bank_submitted_at = NOW(),
+        bank_submitted_by = $1,
+        bank_reference = $2,
+        updated_at = NOW()
+       WHERE id = $3 RETURNING submission_id, status, bank_submitted_at, bank_reference`,
+      [req.user.userId, bank_reference || null, dealId]
+    );
+
+    await logAudit(dealId, 'bank_submitted', dealResult.rows[0].status, 'bank_submitted',
+      { bank_reference }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to submit to bank' });
+  }
+});
+
+// Bank Approve
+app.post('/api/deals/:submissionId/bank-approve', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { bank_approval_notes } = req.body;
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'bank_approved',
+        bank_approved_at = NOW(),
+        bank_approval_notes = $1,
+        updated_at = NOW()
+       WHERE id = $2 RETURNING submission_id, status, bank_approved_at`,
+      [bank_approval_notes || null, dealId]
+    );
+
+    await logAudit(dealId, 'bank_approved', dealResult.rows[0].status, 'bank_approved',
+      { notes: bank_approval_notes }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to approve deal at bank' });
+  }
+});
+
+// Borrower Accept
+app.post('/api/deals/:submissionId/borrower-accept', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT id, status, borrower_user_id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const dealId = dealResult.rows[0].id;
+    // Only the assigned borrower can accept
+    if (dealResult.rows[0].borrower_user_id && dealResult.rows[0].borrower_user_id !== req.user.userId) {
+      return res.status(403).json({ error: 'Not authorized to accept this deal' });
+    }
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'borrower_accepted',
+        borrower_accepted_at = NOW(),
+        borrower_user_id = $1,
+        updated_at = NOW()
+       WHERE id = $2 RETURNING submission_id, status, borrower_accepted_at`,
+      [req.user.userId, dealId]
+    );
+
+    await logAudit(dealId, 'borrower_accepted', dealResult.rows[0].status, 'borrower_accepted',
+      { accepted_by: req.user.userId }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to accept deal' });
+  }
+});
+
+// Instruct Legal
+app.post('/api/deals/:submissionId/instruct-legal', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { lawyer_firm, lawyer_email, lawyer_contact, lawyer_reference } = req.body;
+    if (!lawyer_firm) return res.status(400).json({ error: 'Law firm is required' });
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        status = 'legal_instructed',
+        legal_instructed_at = NOW(),
+        lawyer_firm = $1,
+        lawyer_email = $2,
+        lawyer_contact = $3,
+        lawyer_reference = $4,
+        updated_at = NOW()
+       WHERE id = $5 RETURNING submission_id, status, legal_instructed_at, lawyer_firm`,
+      [lawyer_firm, lawyer_email || null, lawyer_contact || null, lawyer_reference || null, dealId]
+    );
+
+    await logAudit(dealId, 'legal_instructed', dealResult.rows[0].status, 'legal_instructed',
+      { lawyer_firm, lawyer_email }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to instruct legal' });
+  }
+});
+
+// Invite Borrower
+app.post('/api/deals/:submissionId/invite-borrower', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { borrower_invite_email } = req.body;
+    if (!borrower_invite_email) return res.status(400).json({ error: 'Borrower email is required' });
+
+    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET
+        borrower_invited_at = NOW(),
+        borrower_invite_email = $1,
+        updated_at = NOW()
+       WHERE id = $2 RETURNING submission_id, borrower_invited_at, borrower_invite_email`,
+      [borrower_invite_email, dealId]
+    );
+
+    // Send invitation email
+    try {
+      await sendEmailViaGraph({
+        to: borrower_invite_email,
+        subject: 'Daksfirst Loan Application - Portal Access',
+        htmlBody: `<p>You have been invited to review your loan application on the Daksfirst portal.</p>
+          <p><a href="https://apply.daksfirst.com/deals/${req.params.submissionId}">View Your Application</a></p>`
+      });
+    } catch (emailErr) {
+      console.error('[invite-borrower] Email failed:', emailErr.message);
+      // Continue anyway - email failure shouldn't block the invitation
+    }
+
+    await logAudit(dealId, 'borrower_invited', dealResult.rows[0].status, 'borrower_invited',
+      { email: borrower_invite_email }, req.user.userId);
+
+    res.json({ success: true, deal: result.rows[0], message: 'Invitation sent' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to invite borrower' });
   }
 });
 
