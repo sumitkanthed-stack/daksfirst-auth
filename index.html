@@ -2175,6 +2175,10 @@ async function showDealDetail(dealId) {
     window.currentDealId = dealId;
     window.currentDealData = deal;
 
+    // Set logged-in user info in header
+    document.getElementById('detail-user-name').textContent = `${currentUser.first_name} ${currentUser.last_name}`;
+    document.getElementById('detail-user-role').textContent = currentRole.toUpperCase();
+
     // Update breadcrumb
     document.getElementById('breadcrumb-ref').textContent = `${dealId.substring(0, 8)}`;
 
