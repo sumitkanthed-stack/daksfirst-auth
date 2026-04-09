@@ -1,0 +1,418 @@
+const pool = require('./pool');
+
+async function runMigrations() {
+  try {
+    console.log('[migrate] Running database migrations...');
+
+    // Users table with admin role support
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id              SERIAL PRIMARY KEY,
+        role            VARCHAR(20)   NOT NULL CHECK (role IN ('broker', 'borrower', 'admin')),
+        first_name      VARCHAR(100)  NOT NULL,
+        last_name       VARCHAR(100)  NOT NULL,
+        email           VARCHAR(255)  NOT NULL UNIQUE,
+        phone           VARCHAR(30)   NOT NULL,
+        company         VARCHAR(200),
+        fca_number      VARCHAR(50),
+        loan_purpose    VARCHAR(50),
+        loan_amount     NUMERIC(15,2),
+        source          VARCHAR(50)   DEFAULT 'portal',
+        password_hash   TEXT          NOT NULL,
+        verification_token TEXT,
+        email_verified  BOOLEAN       DEFAULT FALSE,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_role  ON users(role);`);
+
+    // Refresh tokens table (for JWT refresh token functionality)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id              SERIAL PRIMARY KEY,
+        user_id         INT           REFERENCES users(id) ON DELETE CASCADE,
+        token           TEXT          NOT NULL UNIQUE,
+        expires_at      TIMESTAMPTZ   NOT NULL,
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);`);
+
+    // Deal submissions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_submissions (
+        id                SERIAL PRIMARY KEY,
+        submission_id     UUID          DEFAULT gen_random_uuid() UNIQUE,
+        user_id           INT           REFERENCES users(id),
+        status            VARCHAR(30)   DEFAULT 'received' CHECK (status IN ('received','processing','completed','failed','declined')),
+        borrower_name     VARCHAR(200),
+        borrower_company  VARCHAR(200),
+        borrower_email    VARCHAR(255),
+        borrower_phone    VARCHAR(30),
+        broker_name       VARCHAR(200),
+        broker_company    VARCHAR(200),
+        broker_fca        VARCHAR(50),
+        security_address  TEXT,
+        security_postcode VARCHAR(15),
+        asset_type        VARCHAR(50),
+        current_value     NUMERIC(15,2),
+        loan_amount       NUMERIC(15,2),
+        ltv_requested     NUMERIC(5,2),
+        loan_purpose      VARCHAR(100),
+        exit_strategy     TEXT,
+        term_months       INT,
+        rate_requested    NUMERIC(5,2),
+        documents         JSONB         DEFAULT '[]'::jsonb,
+        additional_notes  TEXT,
+        admin_notes       TEXT,
+        assigned_to       INT           REFERENCES users(id),
+        internal_status   VARCHAR(50)   DEFAULT 'new',
+        webhook_status    VARCHAR(20)   DEFAULT 'pending' CHECK (webhook_status IN ('pending','sent','failed','retrying')),
+        webhook_attempts  INT           DEFAULT 0,
+        webhook_last_try  TIMESTAMPTZ,
+        webhook_response  TEXT,
+        source            VARCHAR(50)   DEFAULT 'web_form',
+        created_at        TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_status      ON deal_submissions(status);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_user        ON deal_submissions(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_submission   ON deal_submissions(submission_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_webhook      ON deal_submissions(webhook_status);`);
+
+    // Webhook log table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS webhook_log (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        attempt         INT           NOT NULL,
+        status_code     INT,
+        response_body   TEXT,
+        error_message   TEXT,
+        sent_at         TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    // Deal documents table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_documents (
+        id                SERIAL PRIMARY KEY,
+        deal_id           INT           REFERENCES deal_submissions(id),
+        filename          VARCHAR(500)  NOT NULL,
+        file_type         VARCHAR(50),
+        file_size         INT,
+        file_content      BYTEA,
+        onedrive_item_id  TEXT,
+        onedrive_path     TEXT,
+        onedrive_download_url TEXT,
+        parse_session_id  UUID,
+        uploaded_at       TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_deal ON deal_documents(deal_id);`);
+
+    // Analysis results table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS analysis_results (
+        id                SERIAL PRIMARY KEY,
+        deal_id           INT           REFERENCES deal_submissions(id) UNIQUE,
+        credit_memo_url   TEXT,
+        termsheet_url     TEXT,
+        gbb_memo_url      TEXT,
+        analysis_json     JSONB,
+        completed_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_analysis_deal ON analysis_results(deal_id);`);
+
+    // Client notes table (CRM)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_notes (
+        id                SERIAL PRIMARY KEY,
+        user_id           INT           REFERENCES users(id),
+        deal_id           INT           REFERENCES deal_submissions(id),
+        note              TEXT          NOT NULL,
+        created_by        INT           REFERENCES users(id),
+        created_at        TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_user ON client_notes(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_deal ON client_notes(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_creator ON client_notes(created_by);`);
+
+    // Deal audit log table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_audit_log (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        action          VARCHAR(100)  NOT NULL,
+        from_value      TEXT,
+        to_value        TEXT,
+        details         JSONB,
+        performed_by    INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_deal ON deal_audit_log(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_user ON deal_audit_log(performed_by);`);
+
+    // Fee payments table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_fee_payments (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        fee_type        VARCHAR(50)   NOT NULL,
+        amount          NUMERIC(15,2) NOT NULL,
+        payment_date    DATE          NOT NULL,
+        payment_ref     VARCHAR(200),
+        notes           TEXT,
+        confirmed_by    INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_fees_deal ON deal_fee_payments(deal_id);`);
+
+    // Deal approvals table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_approvals (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        approval_stage  VARCHAR(50)   NOT NULL,
+        decision        VARCHAR(20)   NOT NULL CHECK (decision IN ('approve', 'decline', 'more_info')),
+        comments        TEXT,
+        decided_by      INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_approvals_deal ON deal_approvals(deal_id);`);
+
+    // Broker onboarding table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS broker_onboarding (
+        id              SERIAL PRIMARY KEY,
+        user_id         INT           REFERENCES users(id) UNIQUE,
+        status          VARCHAR(30)   DEFAULT 'pending' CHECK (status IN ('pending','submitted','under_review','approved','rejected')),
+        individual_name VARCHAR(200),
+        date_of_birth   DATE,
+        passport_doc_id INT,
+        proof_of_address_doc_id INT,
+        is_company      BOOLEAN       DEFAULT FALSE,
+        company_name    VARCHAR(200),
+        company_number  VARCHAR(50),
+        incorporation_doc_id INT,
+        bank_name       VARCHAR(200),
+        bank_sort_code  VARCHAR(10),
+        bank_account_no VARCHAR(20),
+        bank_account_name VARCHAR(200),
+        notes           TEXT,
+        reviewed_by     INT           REFERENCES users(id),
+        reviewed_at     TIMESTAMPTZ,
+        default_rm      INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_user ON broker_onboarding(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_broker_onb_status ON broker_onboarding(status);`);
+
+    // Law firms table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS law_firms (
+        id              SERIAL PRIMARY KEY,
+        firm_name       VARCHAR(200)  NOT NULL,
+        contact_name    VARCHAR(200),
+        email           VARCHAR(255),
+        phone           VARCHAR(30),
+        address         TEXT,
+        notes           TEXT,
+        is_active       BOOLEAN       DEFAULT TRUE,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_law_firms_active ON law_firms(is_active);`);
+
+    // Deal borrowers table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_borrowers (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        role            VARCHAR(30)   DEFAULT 'primary' CHECK (role IN ('primary','joint','guarantor','director')),
+        full_name       VARCHAR(200)  NOT NULL,
+        date_of_birth   DATE,
+        nationality     VARCHAR(100),
+        jurisdiction    VARCHAR(100),
+        email           VARCHAR(255),
+        phone           VARCHAR(30),
+        address         TEXT,
+        borrower_type   VARCHAR(30)   DEFAULT 'individual',
+        company_name    VARCHAR(200),
+        company_number  VARCHAR(50),
+        kyc_status      VARCHAR(30)   DEFAULT 'pending' CHECK (kyc_status IN ('pending','submitted','verified','rejected')),
+        kyc_data        JSONB         DEFAULT '{}'::jsonb,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_borrowers_deal ON deal_borrowers(deal_id);`);
+
+    // Deal properties table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_properties (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        address         TEXT          NOT NULL,
+        postcode        VARCHAR(15),
+        property_type   VARCHAR(50),
+        tenure          VARCHAR(30),
+        occupancy       VARCHAR(30),
+        current_use     VARCHAR(50),
+        market_value    NUMERIC(15,2),
+        purchase_price  NUMERIC(15,2),
+        gdv             NUMERIC(15,2),
+        reinstatement   NUMERIC(15,2),
+        day1_ltv        NUMERIC(5,2),
+        title_number    VARCHAR(50),
+        title_doc_id    INT,
+        valuation_doc_id INT,
+        valuation_date  DATE,
+        insurance_doc_id INT,
+        insurance_sum   NUMERIC(15,2),
+        solicitor_firm  VARCHAR(200),
+        solicitor_ref   VARCHAR(100),
+        notes           TEXT,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_deal ON deal_properties(deal_id);`);
+
+    // Update users role constraint
+    try {
+      await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`);
+      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('broker', 'borrower', 'admin', 'rm', 'credit', 'compliance'));`);
+      console.log('[migrate] Updated users table role constraint (6 roles)');
+    } catch (err) {
+      console.log('[migrate] Could not update users role constraint:', err.message.substring(0, 60));
+    }
+
+    // Add columns to deal_submissions if they don't exist
+    const columnChecks = [
+      { col: 'admin_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS admin_notes TEXT;' },
+      { col: 'assigned_to', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_to INT REFERENCES users(id);' },
+      { col: 'internal_status', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS internal_status VARCHAR(50) DEFAULT \'new\';' },
+      { col: 'borrower_dob', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_dob DATE;' },
+      { col: 'borrower_nationality', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_nationality VARCHAR(100);' },
+      { col: 'borrower_jurisdiction', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_jurisdiction VARCHAR(100);' },
+      { col: 'borrower_type', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_type VARCHAR(50);' },
+      { col: 'company_name', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS company_name VARCHAR(200);' },
+      { col: 'company_number', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS company_number VARCHAR(50);' },
+      { col: 'drawdown_date', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS drawdown_date DATE;' },
+      { col: 'interest_servicing', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS interest_servicing VARCHAR(30);' },
+      { col: 'existing_charges', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS existing_charges TEXT;' },
+      { col: 'property_tenure', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS property_tenure VARCHAR(30);' },
+      { col: 'occupancy_status', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS occupancy_status VARCHAR(30);' },
+      { col: 'current_use', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS current_use VARCHAR(50);' },
+      { col: 'purchase_price', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS purchase_price NUMERIC(15,2);' },
+      { col: 'use_of_funds', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS use_of_funds TEXT;' },
+      { col: 'refurb_scope', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS refurb_scope TEXT;' },
+      { col: 'refurb_cost', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS refurb_cost NUMERIC(15,2);' },
+      { col: 'deposit_source', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deposit_source TEXT;' },
+      { col: 'concurrent_transactions', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS concurrent_transactions TEXT;' },
+      { col: 'onboarding_data', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS onboarding_data JSONB DEFAULT \'{}\'::jsonb;' },
+      { col: 'deal_stage', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deal_stage VARCHAR(30) DEFAULT \'received\';' },
+      { col: 'termsheet_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_signed_at TIMESTAMPTZ;' },
+      { col: 'commitment_fee_received', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_received BOOLEAN DEFAULT FALSE;' },
+      { col: 'assigned_rm', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_rm INT REFERENCES users(id);' },
+      { col: 'assigned_credit', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_credit INT REFERENCES users(id);' },
+      { col: 'assigned_compliance', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_compliance INT REFERENCES users(id);' },
+      { col: 'dip_fee_confirmed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed BOOLEAN DEFAULT FALSE;' },
+      { col: 'dip_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed_at TIMESTAMPTZ;' },
+      { col: 'commitment_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_confirmed_at TIMESTAMPTZ;' },
+      { col: 'rm_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_recommendation VARCHAR(20);" },
+      { col: 'credit_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_recommendation VARCHAR(20);" },
+      { col: 'compliance_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS compliance_recommendation VARCHAR(20);" },
+      { col: 'final_decision', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision VARCHAR(20);" },
+      { col: 'final_decision_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_by INT REFERENCES users(id);' },
+      { col: 'final_decision_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_at TIMESTAMPTZ;' },
+      { col: 'submitted_to_credit_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_credit_at TIMESTAMPTZ;' },
+      { col: 'submitted_to_compliance_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_compliance_at TIMESTAMPTZ;' },
+      { col: 'borrower_user_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_user_id INT REFERENCES users(id);' },
+      { col: 'dip_issued_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_issued_at TIMESTAMPTZ;' },
+      { col: 'dip_issued_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_issued_by INT REFERENCES users(id);' },
+      { col: 'dip_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_notes TEXT;' },
+      { col: 'ai_termsheet_data', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ai_termsheet_data JSONB DEFAULT \'{}\'::jsonb;' },
+      { col: 'ai_termsheet_generated_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ai_termsheet_generated_at TIMESTAMPTZ;' },
+      { col: 'fee_requested_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fee_requested_at TIMESTAMPTZ;' },
+      { col: 'fee_requested_amount', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fee_requested_amount NUMERIC(15,2);' },
+      { col: 'bank_submitted_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_submitted_at TIMESTAMPTZ;' },
+      { col: 'bank_submitted_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_submitted_by INT REFERENCES users(id);' },
+      { col: 'bank_reference', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_reference VARCHAR(100);' },
+      { col: 'bank_approved_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_approved_at TIMESTAMPTZ;' },
+      { col: 'bank_approval_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS bank_approval_notes TEXT;' },
+      { col: 'borrower_accepted_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_accepted_at TIMESTAMPTZ;' },
+      { col: 'legal_instructed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS legal_instructed_at TIMESTAMPTZ;' },
+      { col: 'lawyer_firm', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_firm VARCHAR(200);' },
+      { col: 'lawyer_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_email VARCHAR(255);' },
+      { col: 'lawyer_contact', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_contact VARCHAR(30);' },
+      { col: 'lawyer_reference', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_reference VARCHAR(100);' },
+      { col: 'completed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;' },
+      { col: 'borrower_invited_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invited_at TIMESTAMPTZ;' },
+      { col: 'borrower_invite_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invite_email VARCHAR(255);' }
+    ];
+
+    for (const check of columnChecks) {
+      try {
+        await pool.query(check.sql);
+      } catch (err) {
+        console.log(`[migrate] Note on ${check.col}:`, err.message.substring(0, 60));
+      }
+    }
+
+    // Create indexes
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_internal ON deal_submissions(internal_status);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_assigned ON deal_submissions(assigned_to);`);
+    } catch (err) {
+      console.log('[migrate] Index creation note:', err.message.substring(0, 80));
+    }
+
+    // Fix deal_stage and status constraints
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN deal_stage SET DEFAULT 'received';`);
+      await pool.query(`UPDATE deal_submissions SET deal_stage = 'received' WHERE deal_stage = 'dip' OR deal_stage IS NULL;`);
+    } catch (err) {
+      console.log('[migrate] Note on deal_stage fix:', err.message.substring(0, 60));
+    }
+
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN loan_purpose TYPE TEXT;`);
+    } catch (err) {
+      console.log('[migrate] Note on loan_purpose:', err.message.substring(0, 60));
+    }
+
+    try {
+      await pool.query(`ALTER TABLE deal_submissions DROP CONSTRAINT IF EXISTS deal_submissions_status_check;`);
+      await pool.query(`ALTER TABLE deal_submissions ADD CONSTRAINT deal_submissions_status_check
+        CHECK (status IN ('received','assigned','dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed','declined','withdrawn'));`);
+    } catch (err) {
+      console.log('[migrate] Note on deal status constraint:', err.message.substring(0, 80));
+    }
+
+    console.log('[migrate] All tables and indexes created/updated successfully');
+  } catch (err) {
+    console.error('[migrate] Migration failed:', err.message);
+    throw err;
+  }
+}
+
+module.exports = { runMigrations };
