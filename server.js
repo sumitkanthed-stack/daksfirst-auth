@@ -3,7 +3,7 @@ const express    = require('express');
 const { Pool }   = require('pg');
 const bcrypt     = require('bcryptjs');
 const jwt        = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+// nodemailer removed — using Microsoft Graph API for email
 const cors       = require('cors');
 const rateLimit  = require('express-rate-limit');
 const multer     = require('multer');
@@ -42,16 +42,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ── Email ──────────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.office365.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
+// ── Email (via Microsoft Graph API) ────────────────────────────────────────
+// SMTP is blocked by Office 365 security defaults, so we use Graph API instead
 
 // ── n8n Webhook URL ───────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
@@ -334,6 +326,42 @@ async function uploadFileToOneDrive(token, dealRef, filename, fileBuffer) {
   }
 }
 
+// ── Send Email via Microsoft Graph API ─────────────────────────────────────
+async function sendEmailViaGraph({ to, subject, htmlBody }) {
+  try {
+    const token = await getGraphToken();
+    const sendUrl = 'https://graph.microsoft.com/v1.0/users/sk@daksfirst.com/sendMail';
+
+    const response = await fetch(sendUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: {
+          subject: subject,
+          body: { contentType: 'HTML', content: htmlBody },
+          toRecipients: [{ emailAddress: { address: to } }],
+          from: { emailAddress: { address: 'sk@daksfirst.com', name: 'Daksfirst Limited' } }
+        },
+        saveToSentItems: true
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Graph sendMail failed: ${response.status} ${text}`);
+    }
+
+    console.log('[email] Sent via Graph API to:', to);
+    return true;
+  } catch (err) {
+    console.error('[email] Graph sendMail error:', err.message);
+    throw err;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  HEALTH CHECK
 // ═══════════════════════════════════════════════════════════════════════════
@@ -398,28 +426,30 @@ app.post('/api/auth/register', async (req, res) => {
     const newUser = result.rows[0];
     console.log('[register] Created:', newUser.id, newUser.email, 'role:', newUser.role);
 
-    // Send verification email (non-blocking)
+    // Send verification email via Graph API (non-blocking)
     try {
       const verificationUrl = `https://apply.daksfirst.com/verify?token=${verificationToken}`;
-      await transporter.sendMail({
-        from: process.env.SMTP_USER || 'sk@daksfirst.com',
+      await sendEmailViaGraph({
         to: email,
         subject: 'Verify Your Daksfirst Account',
-        html: `
+        htmlBody: `
           <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
             <h2 style="color:#1a365d;">Welcome to Daksfirst</h2>
             <p>Hello ${first_name},</p>
-            <p>Thank you for registering. Please verify your email:</p>
-            <p><a href="${verificationUrl}" style="background:#c9a84c;color:white;padding:12px 24px;text-decoration:none;border-radius:8px;display:inline-block;">Verify Email Address</a></p>
-            <p>This link expires in 24 hours.</p>
-            <hr style="margin:30px 0;">
-            <p style="color:#666;font-size:14px;">Daksfirst Limited — Bridging Finance, Built for Professionals</p>
+            <p>Thank you for registering with Daksfirst. Please verify your email address to complete your account setup:</p>
+            <p style="text-align:center;margin:30px 0;">
+              <a href="${verificationUrl}" style="background:#c9a84c;color:white;padding:14px 32px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:bold;font-size:16px;">Verify Email Address</a>
+            </p>
+            <p>This link expires in 24 hours. If you did not create this account, please ignore this email.</p>
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e2e8f0;">
+            <p style="color:#666;font-size:13px;">Daksfirst Limited — Bridging Finance, Built for Professionals<br>West London, United Kingdom</p>
           </div>
         `
       });
       console.log('[register] Verification email sent to:', email);
     } catch (emailErr) {
       console.error('[register] Email failed:', emailErr.message);
+      // Registration still succeeds even if email fails
     }
 
     // Generate login token immediately

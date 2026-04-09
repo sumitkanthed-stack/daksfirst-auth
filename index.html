@@ -619,6 +619,23 @@
       </div>
     </div>
 
+    <!-- Email Verification Screen -->
+    <div id="screen-verify" class="screen">
+      <div class="form-container">
+        <div class="success-screen">
+          <div id="verify-spinner" style="font-size:48px;margin-bottom:20px;">&#8987;</div>
+          <h2 id="verify-title">Verifying Your Email...</h2>
+          <p id="verify-message" style="margin:20px 0;color:var(--text-light);">Please wait while we verify your email address.</p>
+          <div id="verify-actions" style="display:none;">
+            <button class="btn btn-primary" onclick="showScreen('screen-login')">Login to Your Account &#8594;</button>
+            <div class="login-link" style="margin-top:12px;">
+              <a href="#" onclick="showScreen('screen-landing');return false;">Return to Home</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Deal Submission Form -->
     <div id="screen-deal" class="screen">
       <div class="form-container" style="max-width:650px;">
@@ -1864,6 +1881,66 @@ function showToast(message, isError = false) {
     toast.remove();
   }, 3000);
 }
+
+// ═══ EMAIL VERIFICATION (auto-detect ?token= in URL) ════════════════════
+async function handleEmailVerification(token) {
+  showScreen('screen-verify');
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      document.getElementById('verify-spinner').textContent = '\u2713';
+      document.getElementById('verify-spinner').style.color = '#48bb78';
+      document.getElementById('verify-title').textContent = 'Email Verified!';
+      document.getElementById('verify-message').textContent = 'Your email has been verified successfully. You can now log in to your account.';
+    } else {
+      document.getElementById('verify-spinner').textContent = '\u2717';
+      document.getElementById('verify-spinner').style.color = '#e53e3e';
+      document.getElementById('verify-title').textContent = 'Verification Failed';
+      document.getElementById('verify-message').textContent = data.error || 'The verification link is invalid or has expired. Please register again or contact support.';
+    }
+  } catch (err) {
+    document.getElementById('verify-spinner').textContent = '\u2717';
+    document.getElementById('verify-spinner').style.color = '#e53e3e';
+    document.getElementById('verify-title').textContent = 'Verification Error';
+    document.getElementById('verify-message').textContent = 'Unable to connect to the server. Please try again later.';
+  }
+  document.getElementById('verify-actions').style.display = 'block';
+}
+
+// ═══ PAGE LOAD: Check for verification token or saved session ════════════
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const verifyToken = params.get('token');
+  if (verifyToken) {
+    // Clean the URL
+    window.history.replaceState({}, '', window.location.pathname);
+    handleEmailVerification(verifyToken);
+    return;
+  }
+
+  // Check for saved login session
+  const savedToken = sessionStorage.getItem('daksfirst_token');
+  const savedUser = sessionStorage.getItem('daksfirst_user');
+  if (savedToken && savedUser) {
+    try {
+      authToken = savedToken;
+      currentUser = JSON.parse(savedUser);
+      if (currentUser.role === 'admin') {
+        showAdminPanel();
+      } else {
+        showDashboard();
+      }
+    } catch (e) {
+      sessionStorage.removeItem('daksfirst_token');
+      sessionStorage.removeItem('daksfirst_user');
+    }
+  }
+})();
 </script>
 
 </body>
