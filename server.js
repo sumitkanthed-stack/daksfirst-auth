@@ -218,7 +218,32 @@ async function runMigrations() {
     const columnChecks = [
       { col: 'admin_notes', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS admin_notes TEXT;' },
       { col: 'assigned_to', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_to INT REFERENCES users(id);' },
-      { col: 'internal_status', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS internal_status VARCHAR(50) DEFAULT \'new\';' }
+      { col: 'internal_status', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS internal_status VARCHAR(50) DEFAULT \'new\';' },
+      // Phase 1 expanded fields
+      { col: 'borrower_dob', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_dob DATE;' },
+      { col: 'borrower_nationality', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_nationality VARCHAR(100);' },
+      { col: 'borrower_jurisdiction', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_jurisdiction VARCHAR(100);' },
+      { col: 'borrower_type', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_type VARCHAR(50);' },
+      { col: 'company_name', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS company_name VARCHAR(200);' },
+      { col: 'company_number', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS company_number VARCHAR(50);' },
+      { col: 'drawdown_date', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS drawdown_date DATE;' },
+      { col: 'interest_servicing', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS interest_servicing VARCHAR(30);' },
+      { col: 'existing_charges', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS existing_charges TEXT;' },
+      { col: 'property_tenure', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS property_tenure VARCHAR(30);' },
+      { col: 'occupancy_status', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS occupancy_status VARCHAR(30);' },
+      { col: 'current_use', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS current_use VARCHAR(50);' },
+      { col: 'purchase_price', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS purchase_price NUMERIC(15,2);' },
+      { col: 'use_of_funds', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS use_of_funds TEXT;' },
+      { col: 'refurb_scope', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS refurb_scope TEXT;' },
+      { col: 'refurb_cost', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS refurb_cost NUMERIC(15,2);' },
+      { col: 'deposit_source', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deposit_source TEXT;' },
+      { col: 'concurrent_transactions', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS concurrent_transactions TEXT;' },
+      // Phase 2 onboarding (stored as JSONB for flexibility)
+      { col: 'onboarding_data', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS onboarding_data JSONB DEFAULT \'{}\'::jsonb;' },
+      // Deal stage tracking
+      { col: 'deal_stage', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deal_stage VARCHAR(30) DEFAULT \'dip\';' },
+      { col: 'termsheet_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_signed_at TIMESTAMPTZ;' },
+      { col: 'commitment_fee_received', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_received BOOLEAN DEFAULT FALSE;' }
     ];
 
     for (const check of columnChecks) {
@@ -368,6 +393,35 @@ async function sendEmailViaGraph({ to, subject, htmlBody }) {
     throw err;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SEED ADMIN (one-time use — remove after first admin is created)
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/seed-admin', async (req, res) => {
+  try {
+    const { secret } = req.body;
+    if (secret !== 'daksfirst-seed-2026') return res.status(403).json({ error: 'Invalid seed secret' });
+
+    // Check if admin already exists
+    const existing = await pool.query("SELECT id FROM users WHERE email = 'sk@daksfirst.com'");
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Admin account already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash('Dax@2026', 12);
+    const result = await pool.query(
+      `INSERT INTO users (role, first_name, last_name, email, phone, password_hash, email_verified)
+       VALUES ('admin', 'Sumit', 'Kanthed', 'sk@daksfirst.com', '+44000000000', $1, true)
+       RETURNING id, email, role`,
+      [hashedPassword]
+    );
+    console.log('[seed] Admin created:', result.rows[0]);
+    res.status(201).json({ success: true, message: 'Admin account created', user: result.rows[0] });
+  } catch (error) {
+    console.error('[seed] Error:', error);
+    res.status(500).json({ error: 'Failed to create admin' });
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  HEALTH CHECK
@@ -544,7 +598,12 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
       broker_name, broker_company, broker_fca,
       security_address, security_postcode, asset_type, current_value,
       loan_amount, ltv_requested, loan_purpose, exit_strategy,
-      term_months, rate_requested, additional_notes, documents
+      term_months, rate_requested, additional_notes, documents,
+      borrower_dob, borrower_nationality, borrower_jurisdiction, borrower_type,
+      company_name, company_number, drawdown_date, interest_servicing,
+      existing_charges, property_tenure, occupancy_status, current_use,
+      purchase_price, use_of_funds, refurb_scope, refurb_cost,
+      deposit_source, concurrent_transactions
     } = req.body;
 
     // Validation
@@ -559,8 +618,13 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
         broker_name, broker_company, broker_fca,
         security_address, security_postcode, asset_type, current_value,
         loan_amount, ltv_requested, loan_purpose, exit_strategy,
-        term_months, rate_requested, additional_notes, documents, source, internal_status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        term_months, rate_requested, additional_notes, documents, source, internal_status,
+        borrower_dob, borrower_nationality, borrower_jurisdiction, borrower_type,
+        company_name, company_number, drawdown_date, interest_servicing,
+        existing_charges, property_tenure, occupancy_status, current_use,
+        purchase_price, use_of_funds, refurb_scope, refurb_cost,
+        deposit_source, concurrent_transactions
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
       RETURNING id, submission_id, status, created_at
     `, [
       req.user.userId,
@@ -569,7 +633,12 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
       security_address, security_postcode || null, asset_type || null, current_value || null,
       loan_amount, ltv_requested || null, loan_purpose, exit_strategy || null,
       term_months || null, rate_requested || null, additional_notes || null,
-      JSON.stringify(documents || []), 'web_form', 'new'
+      JSON.stringify(documents || []), 'web_form', 'new',
+      borrower_dob || null, borrower_nationality || null, borrower_jurisdiction || null, borrower_type || null,
+      company_name || null, company_number || null, drawdown_date || null, interest_servicing || null,
+      existing_charges || null, property_tenure || null, occupancy_status || null, current_use || null,
+      purchase_price || null, use_of_funds || null, refurb_scope || null, refurb_cost || null,
+      deposit_source || null, concurrent_transactions || null
     ]);
 
     const deal = result.rows[0];
@@ -686,6 +755,81 @@ app.put('/api/deals/:submissionId/status', authenticateToken, async (req, res) =
   } catch (error) {
     console.error('[deal-update] Error:', error);
     res.status(500).json({ error: 'Failed to update deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SAVE ONBOARDING DATA (Phase 2 — per tab)
+// ═══════════════════════════════════════════════════════════════════════════
+app.put('/api/deals/:submissionId/onboarding', authenticateToken, async (req, res) => {
+  try {
+    const { tab, data } = req.body;
+    if (!tab || !data) return res.status(400).json({ error: 'Tab name and data are required' });
+
+    // Valid Phase 2 tabs
+    const validTabs = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    if (!validTabs.includes(tab)) return res.status(400).json({ error: 'Invalid onboarding tab' });
+
+    // Get the deal
+    const dealResult = await pool.query(
+      'SELECT id, onboarding_data, deal_stage FROM deal_submissions WHERE submission_id = $1 AND user_id = $2',
+      [req.params.submissionId, req.user.userId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const deal = dealResult.rows[0];
+
+    // Check if Phase 2 is unlocked (termsheet must be signed)
+    const unlockedStages = ['termsheet_signed', 'underwriting', 'approved', 'legal', 'completed'];
+    if (!unlockedStages.includes(deal.deal_stage)) {
+      return res.status(403).json({ error: 'Onboarding is not yet available. Termsheet must be signed first.' });
+    }
+
+    // Merge the tab data into onboarding_data JSONB
+    const currentData = deal.onboarding_data || {};
+    currentData[tab] = { ...data, updated_at: new Date().toISOString() };
+
+    await pool.query(
+      'UPDATE deal_submissions SET onboarding_data = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(currentData), deal.id]
+    );
+
+    console.log(`[onboarding] Saved tab '${tab}' for deal ${req.params.submissionId}`);
+    res.json({ success: true, message: `${tab} data saved successfully` });
+  } catch (error) {
+    console.error('[onboarding] Error:', error);
+    res.status(500).json({ error: 'Failed to save onboarding data' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UPDATE DEAL STAGE (Admin only)
+// ═══════════════════════════════════════════════════════════════════════════
+app.put('/api/admin/deals/:submissionId/stage', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { stage } = req.body;
+    const validStages = ['dip', 'dip_issued', 'termsheet_sent', 'termsheet_signed', 'underwriting', 'approved', 'legal', 'funds_released', 'declined', 'withdrawn'];
+    if (!validStages.includes(stage)) return res.status(400).json({ error: 'Invalid deal stage' });
+
+    const updates = ['deal_stage = $1', 'updated_at = NOW()'];
+    const values = [stage];
+
+    if (stage === 'termsheet_signed') {
+      updates.push('termsheet_signed_at = NOW()');
+    }
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET ${updates.join(', ')} WHERE submission_id = $${values.length + 1} RETURNING id, submission_id, deal_stage`,
+      [...values, req.params.submissionId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    console.log(`[admin] Deal ${req.params.submissionId} stage updated to: ${stage}`);
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (error) {
+    console.error('[admin-stage] Error:', error);
+    res.status(500).json({ error: 'Failed to update deal stage' });
   }
 });
 
