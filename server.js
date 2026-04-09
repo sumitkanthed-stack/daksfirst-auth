@@ -203,15 +203,59 @@ async function runMigrations() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_deal ON client_notes(deal_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_creator ON client_notes(created_by);`);
 
-    // Migrate existing users table: update role constraint
+    // Deal audit log table (tracks every action on a deal)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_audit_log (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        action          VARCHAR(100)  NOT NULL,
+        from_value      TEXT,
+        to_value        TEXT,
+        details         JSONB,
+        performed_by    INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_deal ON deal_audit_log(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_user ON deal_audit_log(performed_by);`);
+
+    // Fee payments table (tracks DIP fee, commitment fee, etc.)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_fee_payments (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        fee_type        VARCHAR(50)   NOT NULL,
+        amount          NUMERIC(15,2) NOT NULL,
+        payment_date    DATE          NOT NULL,
+        payment_ref     VARCHAR(200),
+        notes           TEXT,
+        confirmed_by    INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_fees_deal ON deal_fee_payments(deal_id);`);
+
+    // Deal approvals table (tracks each stage of the approval chain)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_approvals (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        approval_stage  VARCHAR(50)   NOT NULL,
+        decision        VARCHAR(20)   NOT NULL CHECK (decision IN ('approve', 'decline', 'more_info')),
+        comments        TEXT,
+        decided_by      INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_approvals_deal ON deal_approvals(deal_id);`);
+
+    // Migrate existing users table: update role constraint to include internal staff roles
     try {
-      // First, drop the old constraint
       await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`);
-      // Then add the new one
-      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('broker', 'borrower', 'admin'));`);
-      console.log('[migrate] Updated users table role constraint');
+      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('broker', 'borrower', 'admin', 'rm', 'credit', 'compliance'));`);
+      console.log('[migrate] Updated users table role constraint (6 roles)');
     } catch (err) {
-      console.log('[migrate] Could not update users role constraint (may already exist):', err.message);
+      console.log('[migrate] Could not update users role constraint:', err.message);
     }
 
     // Add new columns to deal_submissions if they don't exist
@@ -243,7 +287,22 @@ async function runMigrations() {
       // Deal stage tracking
       { col: 'deal_stage', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS deal_stage VARCHAR(30) DEFAULT \'dip\';' },
       { col: 'termsheet_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_signed_at TIMESTAMPTZ;' },
-      { col: 'commitment_fee_received', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_received BOOLEAN DEFAULT FALSE;' }
+      { col: 'commitment_fee_received', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_received BOOLEAN DEFAULT FALSE;' },
+      // RM & approval chain fields
+      { col: 'assigned_rm', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_rm INT REFERENCES users(id);' },
+      { col: 'assigned_credit', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_credit INT REFERENCES users(id);' },
+      { col: 'assigned_compliance', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS assigned_compliance INT REFERENCES users(id);' },
+      { col: 'dip_fee_confirmed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed BOOLEAN DEFAULT FALSE;' },
+      { col: 'dip_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed_at TIMESTAMPTZ;' },
+      { col: 'commitment_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_confirmed_at TIMESTAMPTZ;' },
+      { col: 'rm_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_recommendation VARCHAR(20);" },
+      { col: 'credit_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_recommendation VARCHAR(20);" },
+      { col: 'compliance_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS compliance_recommendation VARCHAR(20);" },
+      { col: 'final_decision', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision VARCHAR(20);" },
+      { col: 'final_decision_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_by INT REFERENCES users(id);' },
+      { col: 'final_decision_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_decision_at TIMESTAMPTZ;' },
+      { col: 'submitted_to_credit_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_credit_at TIMESTAMPTZ;' },
+      { col: 'submitted_to_compliance_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS submitted_to_compliance_at TIMESTAMPTZ;' }
     ];
 
     for (const check of columnChecks) {
@@ -295,6 +354,31 @@ function authenticateAdmin(req, res, next) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MIDDLEWARE: AUTHENTICATE INTERNAL STAFF (admin, rm, credit, compliance)
+// ═══════════════════════════════════════════════════════════════════════════
+const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
+function authenticateInternal(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (!INTERNAL_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Internal staff access required' });
+  }
+  next();
+}
+
+// Helper: log an audit entry
+async function logAudit(dealId, action, fromVal, toVal, details, performedBy) {
+  try {
+    await pool.query(
+      `INSERT INTO deal_audit_log (deal_id, action, from_value, to_value, details, performed_by)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [dealId, action, fromVal || null, toVal || null, details ? JSON.stringify(details) : null, performedBy]
+    );
+  } catch (err) {
+    console.error('[audit] Failed to log:', err.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -476,8 +560,8 @@ app.post('/api/auth/register', async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
-    if (!['broker', 'borrower', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+    if (!['broker', 'borrower'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Only broker or borrower registration is allowed.' });
     }
 
     // Check existing
@@ -558,7 +642,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, role, password_hash, email_verified FROM users WHERE email = $1',
+      'SELECT id, email, first_name, last_name, role, company, password_hash, email_verified FROM users WHERE email = $1',
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
@@ -575,7 +659,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({
       success: true,
       token,
-      user: { id: user.id, email: user.email, first_name: user.first_name, last_name: user.last_name, role: user.role }
+      user: { id: user.id, email: user.email, first_name: user.first_name, last_name: user.last_name, role: user.role, company: user.company || null }
     });
   } catch (error) {
     console.error('[login] Error:', error);
@@ -661,6 +745,10 @@ app.post('/api/deals/submit', authenticateToken, async (req, res) => {
 
     const deal = result.rows[0];
     console.log('[deal] Created:', deal.submission_id);
+
+    // Log audit trail
+    await logAudit(deal.id, 'deal_submitted', null, 'received',
+      { submitted_by: req.user.userId, loan_amount, security_address }, req.user.userId);
 
     res.status(201).json({
       success: true,
@@ -1026,11 +1114,14 @@ app.get('/api/admin/deals', authenticateToken, authenticateAdmin, async (req, re
     const { status, asset_type, broker, page = 1, limit = 20 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    let query = `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.loan_amount,
-                        ds.asset_type, ds.created_at, ds.assigned_to, ds.internal_status,
-                        u.first_name, u.last_name, u.company
+    let query = `SELECT ds.id, ds.submission_id, ds.status, ds.deal_stage, ds.borrower_name, ds.broker_name,
+                        ds.loan_amount, ds.ltv_requested, ds.security_address,
+                        ds.asset_type, ds.created_at, ds.assigned_rm, ds.internal_status,
+                        ds.dip_fee_confirmed, ds.commitment_fee_received,
+                        ds.rm_recommendation, ds.credit_recommendation, ds.compliance_recommendation, ds.final_decision,
+                        rm.first_name as rm_first, rm.last_name as rm_last
                  FROM deal_submissions ds
-                 LEFT JOIN users u ON ds.assigned_to = u.id
+                 LEFT JOIN users rm ON ds.assigned_rm = rm.id
                  WHERE 1=1`;
     const params = [];
     let paramCount = 1;
@@ -1099,12 +1190,21 @@ app.get('/api/admin/deals', authenticateToken, authenticateAdmin, async (req, re
 // ═══════════════════════════════════════════════════════════════════════════
 //  ADMIN: GET SINGLE DEAL
 // ═══════════════════════════════════════════════════════════════════════════
-app.get('/api/admin/deals/:submissionId', authenticateToken, authenticateAdmin, async (req, res) => {
+app.get('/api/admin/deals/:submissionId', authenticateToken, authenticateInternal, async (req, res) => {
   try {
     const dealResult = await pool.query(
-      `SELECT ds.*, u.first_name, u.last_name, u.email as submitter_email
+      `SELECT ds.*,
+              u.first_name, u.last_name, u.email as submitter_email,
+              rm.first_name as rm_first, rm.last_name as rm_last, rm.email as rm_email,
+              cr.first_name as credit_first, cr.last_name as credit_last,
+              co.first_name as comp_first, co.last_name as comp_last,
+              fd.first_name as decision_first, fd.last_name as decision_last
        FROM deal_submissions ds
        LEFT JOIN users u ON ds.user_id = u.id
+       LEFT JOIN users rm ON ds.assigned_rm = rm.id
+       LEFT JOIN users cr ON ds.assigned_credit = cr.id
+       LEFT JOIN users co ON ds.assigned_compliance = co.id
+       LEFT JOIN users fd ON ds.final_decision_by = fd.id
        WHERE ds.submission_id = $1`,
       [req.params.submissionId]
     );
@@ -1138,13 +1238,49 @@ app.get('/api/admin/deals/:submissionId', authenticateToken, authenticateAdmin, 
       [dealId]
     );
 
+    // Get audit log
+    const auditResult = await pool.query(
+      `SELECT a.id, a.action, a.from_value, a.to_value, a.details, a.created_at,
+              u.first_name, u.last_name, u.role
+       FROM deal_audit_log a
+       LEFT JOIN users u ON a.performed_by = u.id
+       WHERE a.deal_id = $1
+       ORDER BY a.created_at DESC LIMIT 50`,
+      [dealId]
+    );
+
+    // Get fee payments
+    const feesResult = await pool.query(
+      `SELECT f.id, f.fee_type, f.amount, f.payment_date, f.payment_ref, f.notes, f.created_at,
+              u.first_name, u.last_name
+       FROM deal_fee_payments f
+       LEFT JOIN users u ON f.confirmed_by = u.id
+       WHERE f.deal_id = $1
+       ORDER BY f.created_at DESC`,
+      [dealId]
+    );
+
+    // Get approvals
+    const approvalsResult = await pool.query(
+      `SELECT a.id, a.approval_stage, a.decision, a.comments, a.created_at,
+              u.first_name, u.last_name, u.role
+       FROM deal_approvals a
+       LEFT JOIN users u ON a.decided_by = u.id
+       WHERE a.deal_id = $1
+       ORDER BY a.created_at DESC`,
+      [dealId]
+    );
+
     res.json({
       success: true,
       deal: {
         ...deal,
         documents: docsResult.rows,
         analysis: analysisResult.rows[0] || null,
-        notes: notesResult.rows
+        notes: notesResult.rows,
+        audit: auditResult.rows,
+        fees: feesResult.rows,
+        approvals: approvalsResult.rows
       }
     });
   } catch (error) {
@@ -1213,7 +1349,7 @@ app.get('/api/admin/users', authenticateToken, authenticateAdmin, async (req, re
     const result = await pool.query(query, params);
 
     // Get total count
-    let countQuery = `SELECT COUNT(*) as total FROM users WHERE role IN ('broker', 'borrower')`;
+    let countQuery = `SELECT COUNT(*) as total FROM users WHERE 1=1`;
     if (role) {
       countQuery += ` AND role = $1`;
     }
@@ -1360,46 +1496,409 @@ app.get('/api/admin/stats', authenticateToken, authenticateAdmin, async (req, re
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ADMIN: CREATE ADMIN USER (protected)
+//  ADMIN: CREATE INTERNAL USER (admin, rm, credit, compliance)
 // ═══════════════════════════════════════════════════════════════════════════
 app.post('/api/admin/create', authenticateToken, authenticateAdmin, async (req, res) => {
   try {
-    const { first_name, last_name, email, phone, password } = req.body;
+    const { first_name, last_name, email, phone, password, role } = req.body;
+    const userRole = role || 'admin';
 
     if (!first_name || !last_name || !email || !phone || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
-
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
+    if (!INTERNAL_ROLES.includes(userRole)) {
+      return res.status(400).json({ error: 'Invalid role. Must be admin, rm, credit, or compliance.' });
+    }
 
-    // Check existing
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Email address already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-
     const result = await pool.query(
       `INSERT INTO users (role, first_name, last_name, email, phone, password_hash, email_verified)
-       VALUES ('admin', $1, $2, $3, $4, $5, true)
+       VALUES ($1, $2, $3, $4, $5, $6, true)
        RETURNING id, email, first_name, last_name, role`,
-      [first_name, last_name, email.toLowerCase(), phone, hashedPassword]
+      [userRole, first_name, last_name, email.toLowerCase(), phone, hashedPassword]
     );
 
-    const newAdmin = result.rows[0];
-    console.log('[admin-create] New admin created:', newAdmin.id, newAdmin.email, 'by', req.user.userId);
+    const newUser = result.rows[0];
+    console.log(`[admin-create] New ${userRole} created:`, newUser.id, newUser.email, 'by', req.user.userId);
 
-    res.status(201).json({
-      success: true,
-      message: 'Admin user created successfully',
-      user: newAdmin
-    });
+    res.status(201).json({ success: true, message: `${userRole.toUpperCase()} user created successfully`, user: newUser });
   } catch (error) {
     console.error('[admin-create] Error:', error);
-    res.status(500).json({ error: 'Failed to create admin user' });
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: ASSIGN DEAL TO RM
+// ═══════════════════════════════════════════════════════════════════════════
+app.put('/api/admin/deals/:submissionId/assign', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { rm_id } = req.body;
+    if (!rm_id) return res.status(400).json({ error: 'RM user ID is required' });
+
+    // Verify the user is an RM (not a broker or borrower)
+    const rmCheck = await pool.query('SELECT id, role, first_name, last_name FROM users WHERE id = $1', [rm_id]);
+    if (rmCheck.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    if (!['rm', 'admin'].includes(rmCheck.rows[0].role)) {
+      return res.status(400).json({ error: 'Can only assign deals to RM or Admin staff. Brokers and borrowers cannot be assigned deals.' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, assigned_rm FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const deal = dealResult.rows[0];
+    const oldRm = deal.assigned_rm;
+    const rm = rmCheck.rows[0];
+
+    await pool.query(
+      `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = CASE WHEN deal_stage = 'dip' THEN 'dip' ELSE deal_stage END, updated_at = NOW() WHERE id = $2`,
+      [rm_id, deal.id]
+    );
+
+    await logAudit(deal.id, 'deal_assigned_to_rm', oldRm ? String(oldRm) : null, String(rm_id),
+      { rm_name: `${rm.first_name} ${rm.last_name}`, assigned_by: req.user.userId }, req.user.userId);
+
+    res.json({ success: true, message: `Deal assigned to ${rm.first_name} ${rm.last_name}` });
+  } catch (error) {
+    console.error('[assign-rm] Error:', error);
+    res.status(500).json({ error: 'Failed to assign deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: GET INTERNAL STAFF LIST (for assignment dropdowns)
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/staff', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { role } = req.query;
+    let query = `SELECT id, first_name, last_name, email, role FROM users WHERE role IN ('admin', 'rm', 'credit', 'compliance')`;
+    const params = [];
+    if (role) {
+      query += ` AND role = $1`;
+      params.push(role);
+    }
+    query += ` ORDER BY first_name`;
+    const result = await pool.query(query, params);
+    res.json({ success: true, staff: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch staff' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RM: CONFIRM FEE PAYMENT (DIP fee or commitment fee)
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/deals/:submissionId/fee', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { fee_type, amount, payment_date, payment_ref, notes } = req.body;
+    if (!fee_type || !amount || !payment_date) {
+      return res.status(400).json({ error: 'Fee type, amount, and payment date are required' });
+    }
+    if (!['dip_fee', 'commitment_fee', 'arrangement_fee', 'legal_fee', 'valuation_fee', 'other'].includes(fee_type)) {
+      return res.status(400).json({ error: 'Invalid fee type' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, assigned_rm FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Only the assigned RM or admin can confirm fees
+    if (req.user.role === 'rm' && deal.assigned_rm !== req.user.userId) {
+      return res.status(403).json({ error: 'Only the assigned RM can confirm fees for this deal' });
+    }
+
+    // Record the payment
+    await pool.query(
+      `INSERT INTO deal_fee_payments (deal_id, fee_type, amount, payment_date, payment_ref, notes, confirmed_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [deal.id, fee_type, amount, payment_date, payment_ref || null, notes || null, req.user.userId]
+    );
+
+    // Update deal flags
+    if (fee_type === 'dip_fee') {
+      await pool.query(`UPDATE deal_submissions SET dip_fee_confirmed = true, dip_fee_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`, [deal.id]);
+    }
+    if (fee_type === 'commitment_fee') {
+      await pool.query(`UPDATE deal_submissions SET commitment_fee_received = true, commitment_fee_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`, [deal.id]);
+    }
+
+    await logAudit(deal.id, `fee_confirmed_${fee_type}`, null, String(amount),
+      { fee_type, amount, payment_date, payment_ref, confirmed_by: req.user.userId }, req.user.userId);
+
+    res.json({ success: true, message: `${fee_type.replace('_', ' ')} of £${amount} confirmed` });
+  } catch (error) {
+    console.error('[fee] Error:', error);
+    res.status(500).json({ error: 'Failed to confirm fee' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RM: ADVANCE DEAL STAGE
+// ═══════════════════════════════════════════════════════════════════════════
+app.put('/api/deals/:submissionId/stage', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { new_stage, comments } = req.body;
+    const validStages = ['dip', 'dip_issued', 'termsheet_sent', 'termsheet_signed', 'underwriting', 'credit_review', 'compliance_review', 'approved', 'legal', 'funds_released', 'declined', 'withdrawn'];
+    if (!validStages.includes(new_stage)) {
+      return res.status(400).json({ error: 'Invalid stage' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, assigned_rm FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+    const oldStage = deal.deal_stage;
+
+    // Only assigned RM or admin can advance stage
+    if (req.user.role === 'rm' && deal.assigned_rm !== req.user.userId) {
+      return res.status(403).json({ error: 'Only the assigned RM can advance this deal' });
+    }
+
+    // Business rules
+    if (new_stage === 'underwriting' && !deal.dip_fee_confirmed) {
+      // Check if DIP fee has been confirmed
+      const feeCheck = await pool.query(`SELECT dip_fee_confirmed FROM deal_submissions WHERE id = $1`, [deal.id]);
+      if (!feeCheck.rows[0].dip_fee_confirmed) {
+        return res.status(400).json({ error: 'DIP fee must be confirmed before moving to underwriting' });
+      }
+    }
+
+    // Final approval can only be done by admin
+    if (['approved', 'declined'].includes(new_stage) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only Admin can make the final lending decision' });
+    }
+
+    const updateFields = { deal_stage: new_stage, updated_at: 'NOW()' };
+    if (new_stage === 'termsheet_signed') updateFields.termsheet_signed_at = 'NOW()';
+    if (new_stage === 'underwriting') updateFields.submitted_to_credit_at = 'NOW()';
+
+    await pool.query(
+      `UPDATE deal_submissions SET deal_stage = $1,
+       termsheet_signed_at = CASE WHEN $1 = 'termsheet_signed' THEN NOW() ELSE termsheet_signed_at END,
+       submitted_to_credit_at = CASE WHEN $1 = 'underwriting' THEN NOW() ELSE submitted_to_credit_at END,
+       submitted_to_compliance_at = CASE WHEN $1 = 'compliance_review' THEN NOW() ELSE submitted_to_compliance_at END,
+       final_decision = CASE WHEN $1 IN ('approved', 'declined') THEN $1 ELSE final_decision END,
+       final_decision_by = CASE WHEN $1 IN ('approved', 'declined') THEN $2 ELSE final_decision_by END,
+       final_decision_at = CASE WHEN $1 IN ('approved', 'declined') THEN NOW() ELSE final_decision_at END,
+       status = CASE WHEN $1 = 'approved' THEN 'completed' WHEN $1 = 'declined' THEN 'declined' ELSE status END,
+       updated_at = NOW()
+       WHERE id = $3`,
+      [new_stage, req.user.userId, deal.id]
+    );
+
+    await logAudit(deal.id, 'stage_advanced', oldStage, new_stage,
+      { comments, advanced_by: req.user.userId, role: req.user.role }, req.user.userId);
+
+    res.json({ success: true, message: `Deal stage updated to ${new_stage}`, from: oldStage, to: new_stage });
+  } catch (error) {
+    console.error('[stage] Error:', error);
+    res.status(500).json({ error: 'Failed to update deal stage' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CREDIT/COMPLIANCE: SUBMIT RECOMMENDATION
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/deals/:submissionId/recommendation', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { decision, comments } = req.body;
+    if (!['approve', 'decline', 'more_info'].includes(decision)) {
+      return res.status(400).json({ error: 'Decision must be approve, decline, or more_info' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, assigned_credit, assigned_compliance FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    let approvalStage = '';
+    let updateCol = '';
+
+    if (req.user.role === 'rm') {
+      approvalStage = 'rm_recommendation';
+      updateCol = 'rm_recommendation';
+    } else if (req.user.role === 'credit') {
+      approvalStage = 'credit_review';
+      updateCol = 'credit_recommendation';
+      if (deal.assigned_credit && deal.assigned_credit !== req.user.userId) {
+        return res.status(403).json({ error: 'You are not the assigned Credit Analyst for this deal' });
+      }
+    } else if (req.user.role === 'compliance') {
+      approvalStage = 'compliance_review';
+      updateCol = 'compliance_recommendation';
+      if (deal.assigned_compliance && deal.assigned_compliance !== req.user.userId) {
+        return res.status(403).json({ error: 'You are not the assigned Compliance officer for this deal' });
+      }
+    } else if (req.user.role === 'admin') {
+      // Admin can act as any role
+      approvalStage = req.body.stage || 'admin_decision';
+      updateCol = 'final_decision';
+    }
+
+    // Record the approval
+    await pool.query(
+      `INSERT INTO deal_approvals (deal_id, approval_stage, decision, comments, decided_by)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [deal.id, approvalStage, decision, comments || null, req.user.userId]
+    );
+
+    // Update the deal's recommendation field
+    if (updateCol) {
+      await pool.query(`UPDATE deal_submissions SET ${updateCol} = $1, updated_at = NOW() WHERE id = $2`, [decision, deal.id]);
+    }
+
+    await logAudit(deal.id, `recommendation_${approvalStage}`, null, decision,
+      { decision, comments, decided_by: req.user.userId, role: req.user.role }, req.user.userId);
+
+    res.json({ success: true, message: `${approvalStage} recorded: ${decision}` });
+  } catch (error) {
+    console.error('[recommendation] Error:', error);
+    res.status(500).json({ error: 'Failed to record recommendation' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: ASSIGN CREDIT ANALYST / COMPLIANCE TO DEAL
+// ═══════════════════════════════════════════════════════════════════════════
+app.put('/api/admin/deals/:submissionId/assign-reviewer', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { credit_id, compliance_id } = req.body;
+
+    const dealResult = await pool.query(
+      `SELECT id, assigned_credit, assigned_compliance FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    if (credit_id) {
+      const creditCheck = await pool.query('SELECT id, role, first_name, last_name FROM users WHERE id = $1', [credit_id]);
+      if (creditCheck.rows.length === 0) return res.status(404).json({ error: 'Credit analyst not found' });
+      if (!['credit', 'admin'].includes(creditCheck.rows[0].role)) {
+        return res.status(400).json({ error: 'User must have credit or admin role' });
+      }
+      await pool.query(`UPDATE deal_submissions SET assigned_credit = $1, updated_at = NOW() WHERE id = $2`, [credit_id, deal.id]);
+      await logAudit(deal.id, 'assigned_credit_analyst', deal.assigned_credit ? String(deal.assigned_credit) : null, String(credit_id),
+        { name: `${creditCheck.rows[0].first_name} ${creditCheck.rows[0].last_name}` }, req.user.userId);
+    }
+
+    if (compliance_id) {
+      const compCheck = await pool.query('SELECT id, role, first_name, last_name FROM users WHERE id = $1', [compliance_id]);
+      if (compCheck.rows.length === 0) return res.status(404).json({ error: 'Compliance officer not found' });
+      if (!['compliance', 'admin'].includes(compCheck.rows[0].role)) {
+        return res.status(400).json({ error: 'User must have compliance or admin role' });
+      }
+      await pool.query(`UPDATE deal_submissions SET assigned_compliance = $1, updated_at = NOW() WHERE id = $2`, [compliance_id, deal.id]);
+      await logAudit(deal.id, 'assigned_compliance', deal.assigned_compliance ? String(deal.assigned_compliance) : null, String(compliance_id),
+        { name: `${compCheck.rows[0].first_name} ${compCheck.rows[0].last_name}` }, req.user.userId);
+    }
+
+    res.json({ success: true, message: 'Reviewers assigned' });
+  } catch (error) {
+    console.error('[assign-reviewer] Error:', error);
+    res.status(500).json({ error: 'Failed to assign reviewers' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GET DEAL AUDIT LOG
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/deals/:submissionId/audit', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const auditResult = await pool.query(
+      `SELECT a.id, a.action, a.from_value, a.to_value, a.details, a.created_at,
+              u.first_name, u.last_name, u.role
+       FROM deal_audit_log a
+       LEFT JOIN users u ON a.performed_by = u.id
+       WHERE a.deal_id = $1
+       ORDER BY a.created_at DESC`,
+      [dealResult.rows[0].id]
+    );
+
+    res.json({ success: true, audit: auditResult.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch audit log' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GET DEAL FEE PAYMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/deals/:submissionId/fees', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const feesResult = await pool.query(
+      `SELECT f.id, f.fee_type, f.amount, f.payment_date, f.payment_ref, f.notes, f.created_at,
+              u.first_name, u.last_name
+       FROM deal_fee_payments f
+       LEFT JOIN users u ON f.confirmed_by = u.id
+       WHERE f.deal_id = $1
+       ORDER BY f.created_at DESC`,
+      [dealResult.rows[0].id]
+    );
+
+    res.json({ success: true, fees: feesResult.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch fees' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INTERNAL STAFF: GET MY ASSIGNED DEALS
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/staff/deals', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const role = req.user.role;
+
+    let whereClause = '';
+    if (role === 'rm') whereClause = `WHERE ds.assigned_rm = $1`;
+    else if (role === 'credit') whereClause = `WHERE ds.assigned_credit = $1`;
+    else if (role === 'compliance') whereClause = `WHERE ds.assigned_compliance = $1`;
+    else if (role === 'admin') whereClause = `WHERE 1=1`; // admin sees all
+
+    const result = await pool.query(
+      `SELECT ds.id, ds.submission_id, ds.status, ds.deal_stage, ds.borrower_name, ds.broker_name,
+              ds.loan_amount, ds.security_address, ds.asset_type, ds.created_at, ds.updated_at,
+              ds.assigned_rm, ds.assigned_credit, ds.assigned_compliance,
+              ds.dip_fee_confirmed, ds.commitment_fee_received,
+              ds.rm_recommendation, ds.credit_recommendation, ds.compliance_recommendation, ds.final_decision,
+              rm.first_name as rm_first, rm.last_name as rm_last,
+              cr.first_name as credit_first, cr.last_name as credit_last,
+              co.first_name as comp_first, co.last_name as comp_last
+       FROM deal_submissions ds
+       LEFT JOIN users rm ON ds.assigned_rm = rm.id
+       LEFT JOIN users cr ON ds.assigned_credit = cr.id
+       LEFT JOIN users co ON ds.assigned_compliance = co.id
+       ${whereClause}
+       ORDER BY ds.updated_at DESC`,
+      role === 'admin' ? [] : [userId]
+    );
+
+    res.json({ success: true, deals: result.rows });
+  } catch (error) {
+    console.error('[staff-deals] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch deals' });
   }
 });
 
