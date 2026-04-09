@@ -29,11 +29,10 @@
       color: white; padding: 80px 0; text-align: center;
     }
     .logo {
-      width: 60px; height: 60px; background: var(--secondary);
-      border-radius: 12px; margin: 0 auto 30px;
+      width: 80px; height: 80px; margin: 0 auto 30px;
       display: flex; align-items: center; justify-content: center;
     }
-    .logo::before { content: '\26A1'; font-size: 24px; color: white; }
+    .logo svg { width: 100%; height: 100%; }
     .hero-section h1 { font-size: 3rem; font-weight: 700; margin-bottom: 10px; }
     .hero-section h2 { font-size: 1.5rem; font-weight: 500; margin-bottom: 20px; opacity: 0.9; }
     .tagline { font-size: 1.1rem; opacity: 0.8; }
@@ -154,7 +153,9 @@
       display: flex; align-items: center; gap: 12px; font-weight: 700;
       color: var(--primary); font-size: 1.3rem;
     }
-    .dashboard-brand::before { content: '⚡'; font-size: 1.2rem; }
+    .dashboard-brand { display: flex; align-items: center; gap: 10px; }
+    .dashboard-brand .brand-logo { width: 32px; height: 32px; }
+    .dashboard-brand .brand-logo svg { width: 100%; height: 100%; }
     .dashboard-user {
       display: flex; align-items: center; gap: 15px;
     }
@@ -427,6 +428,66 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
+    /* ═══ DEAL SUBMISSION TABS ════════════════════════════════════════ */
+    .deal-tabs {
+      display: flex; gap: 0; margin-bottom: 25px; border-bottom: 2px solid var(--border);
+      overflow-x: auto;
+    }
+    .deal-tab {
+      padding: 10px 16px; border: none; background: none; cursor: pointer;
+      font-size: 0.85rem; font-weight: 500; color: var(--text-light);
+      border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap;
+    }
+    .deal-tab:hover { color: var(--primary); }
+    .deal-tab.active { color: var(--primary); border-bottom-color: var(--secondary); font-weight: 600; }
+    .deal-tab-panel { display: none; }
+    .deal-tab-panel.active { display: block; }
+
+    /* ═══ DEAL DETAIL TABS ════════════════════════════════════════════ */
+    .detail-tabs-nav {
+      background: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto;
+    }
+    .detail-tabs-group {
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 8px;
+    }
+    .detail-tabs-group:last-child { margin-bottom: 0; }
+    .detail-tabs-label {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-light); margin-right: 8px; min-width: 100px;
+    }
+    .detail-tab {
+      padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+      background: #f7fafc; cursor: pointer; font-size: 0.8rem; color: var(--text);
+      transition: all 0.15s;
+    }
+    .detail-tab:hover { background: #edf2f7; border-color: var(--primary); }
+    .detail-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .detail-tab-panel { display: none; }
+    .detail-tab-panel.active { display: block; }
+
+    .phase2-group { border-top: 1px dashed var(--border); padding-top: 10px; }
+    .phase2-tab.locked { opacity: 0.5; cursor: not-allowed; background: #f0f0f0; }
+    .lock-icon { font-size: 0.75rem; }
+    .lock-icon-large { font-size: 40px; display: block; margin-bottom: 10px; }
+    .phase2-notice {
+      text-align: center; padding: 50px 20px; color: var(--text-light);
+    }
+    .phase2-notice h3 { color: var(--text); margin-bottom: 10px; }
+    .phase2-tab.unlocked { border-color: #48bb78; }
+    .stage-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem;
+      font-weight: 600; text-transform: uppercase; background: #edf2f7; color: var(--text);
+    }
+    .stage-badge.stage-termsheet_signed { background: #c6f6d5; color: #22543d; }
+    .stage-badge.stage-underwriting { background: #fefcbf; color: #744210; }
+    .stage-badge.stage-approved { background: #c6f6d5; color: #22543d; }
+    .stage-badge.stage-declined { background: #fed7d7; color: #9b2c2c; }
+
+    .onboarding-form { padding-top: 10px; }
+    .onboarding-file { margin-top: 4px; }
+    .form-hint { font-size: 0.8rem; color: var(--text-light); margin-top: 4px; }
+
     /* Responsive */
     @media (max-width: 768px) {
       .dashboard-header-content { flex-direction: column; gap: 12px; }
@@ -447,7 +508,7 @@
 <!-- ═══ Hero Section ═══ -->
 <div class="hero-section">
   <div class="container">
-    <div class="logo"></div>
+    <div class="logo"><svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="100,8 185,53 185,147 100,192 15,147 15,53" stroke="white" stroke-width="7" fill="none"/><text x="56" y="128" font-family="Georgia,'Times New Roman',serif" font-size="82" font-weight="700" fill="white" letter-spacing="-6">DF</text></svg></div>
     <h1>Bridging Finance,<br>Built for Professionals</h1>
     <p class="tagline">Submit deals, track progress and manage your pipeline — all in one place</p>
   </div>
@@ -636,111 +697,265 @@
       </div>
     </div>
 
-    <!-- Deal Submission Form -->
+    <!-- Deal Submission Form (Phase 1 — 4 Tabs) -->
     <div id="screen-deal" class="screen">
-      <div class="form-container" style="max-width:650px;">
+      <div class="form-container" style="max-width:720px;">
         <div class="form-header">
           <h2>Submit a Deal</h2>
-          <p id="deal-subtitle">Provide the deal details for credit analysis</p>
+          <p id="deal-subtitle">Logged in as <span id="deal-user-info"></span></p>
         </div>
         <div class="form-body">
           <div id="deal-alert" class="alert"></div>
 
-          <!-- Security / Property -->
-          <div class="section-title">Security / Property Details</div>
-          <div class="form-group">
-            <label for="deal-address">Property Address *</label>
-            <textarea id="deal-address" placeholder="Full address including postcode" rows="2"></textarea>
+          <!-- Tab Navigation -->
+          <div class="deal-tabs">
+            <button class="deal-tab active" data-tab="dt-overview" onclick="switchDealTab(this)">1. Deal Overview</button>
+            <button class="deal-tab" data-tab="dt-borrower" onclick="switchDealTab(this)">2. Borrower</button>
+            <button class="deal-tab" data-tab="dt-property" onclick="switchDealTab(this)">3. Property</button>
+            <button class="deal-tab" data-tab="dt-funds" onclick="switchDealTab(this)">4. Use of Funds</button>
           </div>
-          <div class="form-group">
-            <div class="form-row">
-              <div>
-                <label for="deal-postcode">Postcode</label>
-                <input type="text" id="deal-postcode" placeholder="e.g. SW6 1AA">
-              </div>
-              <div>
-                <label for="deal-asset-type">Asset Type *</label>
-                <select id="deal-asset-type">
-                  <option value="">Select type</option>
-                  <option value="residential">Residential</option>
-                  <option value="commercial">Commercial</option>
-                  <option value="mixed_use">Mixed Use</option>
-                  <option value="hmo">HMO</option>
-                  <option value="semi_commercial">Semi-Commercial</option>
-                  <option value="land">Land with Planning</option>
-                </select>
-              </div>
+
+          <!-- Tab 1: Deal Overview -->
+          <div id="dt-overview" class="deal-tab-panel active">
+            <div class="form-group">
+              <label for="deal-loan-amount">Loan Amount Required (GBP) *</label>
+              <input type="number" id="deal-loan-amount" placeholder="e.g. 1750000">
             </div>
-          </div>
-          <div class="form-group">
-            <div class="form-row">
-              <div>
-                <label for="deal-value">Current Market Value (GBP) *</label>
-                <input type="number" id="deal-value" placeholder="e.g. 2500000">
-              </div>
-              <div>
-                <label for="deal-loan-amount">Loan Amount Required (GBP) *</label>
-                <input type="number" id="deal-loan-amount" placeholder="e.g. 1750000">
-              </div>
-            </div>
-          </div>
-
-          <hr class="section-divider">
-
-          <!-- Loan Details -->
-          <div class="section-title">Loan Details</div>
-          <div class="form-group">
-            <div class="form-row">
-              <div>
-                <label for="deal-purpose">Loan Purpose *</label>
-                <select id="deal-purpose">
-                  <option value="">Select purpose</option>
-                  <option value="purchase">Purchase</option>
-                  <option value="refinance">Refinance</option>
-                  <option value="capital-raise">Capital Raise</option>
-                  <option value="refurbishment">Refurbishment</option>
-                  <option value="auction">Auction Purchase</option>
-                </select>
-              </div>
-              <div>
-                <label for="deal-term">Term (months)</label>
-                <input type="number" id="deal-term" placeholder="e.g. 12" min="3" max="24">
-              </div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="deal-exit">Exit Strategy *</label>
-            <textarea id="deal-exit" placeholder="e.g. Sale of property, refinance to BTL mortgage, etc." rows="2"></textarea>
-          </div>
-
-          <hr class="section-divider">
-
-          <!-- Borrower Info (if broker submitting) -->
-          <div id="deal-borrower-section">
-            <div class="section-title">Borrower Details</div>
             <div class="form-group">
               <div class="form-row">
                 <div>
-                  <label for="deal-borrower-name">Borrower Name</label>
-                  <input type="text" id="deal-borrower-name">
+                  <label for="deal-purpose">Loan Purpose *</label>
+                  <select id="deal-purpose">
+                    <option value="">Select purpose</option>
+                    <option value="purchase">Purchase</option>
+                    <option value="refinance">Refinance</option>
+                    <option value="equity_release">Equity Release</option>
+                    <option value="refurbishment">Refurbishment</option>
+                    <option value="dev_exit">Development Exit</option>
+                    <option value="auction">Auction Purchase</option>
+                  </select>
                 </div>
                 <div>
-                  <label for="deal-borrower-company">Borrower Company</label>
+                  <label for="deal-term">Loan Term (months) *</label>
+                  <input type="number" id="deal-term" placeholder="e.g. 12" min="1" max="24">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-interest-servicing">Interest Servicing *</label>
+                  <select id="deal-interest-servicing">
+                    <option value="">Select preference</option>
+                    <option value="rolled">Rolled Up</option>
+                    <option value="retained">Retained</option>
+                    <option value="serviced">Serviced Monthly</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="deal-drawdown-date">Preferred Drawdown Date</label>
+                  <input type="date" id="deal-drawdown-date">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="deal-exit">Exit Strategy *</label>
+              <textarea id="deal-exit" placeholder="How and when will the loan be repaid? e.g. Sale of property, refinance to BTL mortgage..." rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="deal-existing-charges">Existing Charges on Property</label>
+              <textarea id="deal-existing-charges" placeholder="Details of any existing first or second charges, or 'None'" rows="2"></textarea>
+            </div>
+          </div>
+
+          <!-- Tab 2: Borrower Summary -->
+          <div id="dt-borrower" class="deal-tab-panel">
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-borrower-name">Full Legal Name *</label>
+                  <input type="text" id="deal-borrower-name" placeholder="As appearing on passport">
+                </div>
+                <div>
+                  <label for="deal-borrower-dob">Date of Birth</label>
+                  <input type="date" id="deal-borrower-dob">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-borrower-nationality">Nationality / Citizenship *</label>
+                  <input type="text" id="deal-borrower-nationality" placeholder="e.g. British">
+                </div>
+                <div>
+                  <label for="deal-borrower-jurisdiction">Country of Residence *</label>
+                  <input type="text" id="deal-borrower-jurisdiction" placeholder="e.g. United Kingdom">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="deal-borrower-type">Borrower Type *</label>
+              <select id="deal-borrower-type">
+                <option value="">Select type</option>
+                <option value="individual">Individual</option>
+                <option value="ltd_company">UK Limited Company (LTD)</option>
+                <option value="llp">Limited Liability Partnership (LLP)</option>
+                <option value="spv">Special Purpose Vehicle (SPV)</option>
+                <option value="trust">Trust</option>
+                <option value="pension">Pension Fund / SIPP</option>
+                <option value="plc">UK PLC</option>
+                <option value="partnership">Partnership</option>
+              </select>
+            </div>
+            <div id="deal-corporate-fields" style="display:none;">
+              <div class="form-group">
+                <div class="form-row">
+                  <div>
+                    <label for="deal-company-name">Company Name</label>
+                    <input type="text" id="deal-company-name" placeholder="Registered company name">
+                  </div>
+                  <div>
+                    <label for="deal-company-number">Companies House Number</label>
+                    <input type="text" id="deal-company-number" placeholder="e.g. 12345678">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-borrower-email">Contact Email</label>
+                  <input type="email" id="deal-borrower-email" placeholder="borrower@example.com">
+                </div>
+                <div>
+                  <label for="deal-borrower-phone">Contact Phone</label>
+                  <input type="tel" id="deal-borrower-phone" placeholder="+44 7XXX XXX XXX">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-borrower-company">Borrower Company (if different)</label>
                   <input type="text" id="deal-borrower-company">
+                </div>
+                <div>
+                  <label for="deal-broker-company-number">Broker Company Number</label>
+                  <input type="text" id="deal-broker-company-number" placeholder="Companies House number (if broker)">
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Additional Notes -->
-          <div class="form-group">
-            <label for="deal-notes">Additional Notes</label>
-            <textarea id="deal-notes" placeholder="Any other information relevant to the deal..." rows="3"></textarea>
+          <!-- Tab 3: Property / Security -->
+          <div id="dt-property" class="deal-tab-panel">
+            <div class="form-group">
+              <label for="deal-address">Full Property Address *</label>
+              <textarea id="deal-address" placeholder="Full address including postcode" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-postcode">Postcode *</label>
+                  <input type="text" id="deal-postcode" placeholder="e.g. SW6 1AA">
+                </div>
+                <div>
+                  <label for="deal-asset-type">Property Type *</label>
+                  <select id="deal-asset-type">
+                    <option value="">Select type</option>
+                    <option value="residential">Residential (House)</option>
+                    <option value="flat">Flat / Maisonette</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="mixed_use">Mixed Use</option>
+                    <option value="hmo">HMO</option>
+                    <option value="mufb">MUFB</option>
+                    <option value="land">Land with Planning</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-value">Current Market Value (GBP) *</label>
+                  <input type="number" id="deal-value" placeholder="e.g. 2500000">
+                </div>
+                <div>
+                  <label for="deal-purchase-price">Purchase Price (GBP)</label>
+                  <input type="number" id="deal-purchase-price" placeholder="If purchase transaction">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-row">
+                <div>
+                  <label for="deal-tenure">Tenure *</label>
+                  <select id="deal-tenure">
+                    <option value="">Select tenure</option>
+                    <option value="freehold">Freehold</option>
+                    <option value="leasehold">Leasehold</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="deal-occupancy">Occupancy Status *</label>
+                  <select id="deal-occupancy">
+                    <option value="">Select status</option>
+                    <option value="vacant">Vacant</option>
+                    <option value="tenanted">Tenanted</option>
+                    <option value="owner_occupied">Owner Occupied</option>
+                    <option value="partially_let">Partially Let</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="deal-current-use">Current Use</label>
+              <select id="deal-current-use">
+                <option value="">Select use</option>
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+                <option value="mixed_use">Mixed Use</option>
+                <option value="under_refurbishment">Under Refurbishment</option>
+              </select>
+            </div>
           </div>
 
+          <!-- Tab 4: Use of Funds -->
+          <div id="dt-funds" class="deal-tab-panel">
+            <div class="form-group">
+              <label for="deal-use-of-funds">Detailed Use of Funds *</label>
+              <textarea id="deal-use-of-funds" placeholder="Describe in detail what the loan proceeds will be used for..." rows="4"></textarea>
+            </div>
+            <div id="deal-refurb-fields" style="display:none;">
+              <div class="form-group">
+                <label for="deal-refurb-scope">Scope of Refurbishment Works</label>
+                <textarea id="deal-refurb-scope" placeholder="Brief description of planned works..." rows="3"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="deal-refurb-cost">Estimated Refurbishment Cost (GBP)</label>
+                <input type="number" id="deal-refurb-cost" placeholder="e.g. 150000">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="deal-deposit-source">Source of Deposit / Equity Contribution</label>
+              <textarea id="deal-deposit-source" placeholder="e.g. Personal savings, sale of another property, gift..." rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="deal-concurrent">Concurrent Transactions</label>
+              <textarea id="deal-concurrent" placeholder="Any simultaneous purchases, sales, or refinances on related properties? If none, write 'None'" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="deal-notes">Additional Notes</label>
+              <textarea id="deal-notes" placeholder="Any other information relevant to the deal..." rows="3"></textarea>
+            </div>
+          </div>
+
+          <!-- Navigation -->
           <div class="form-nav">
-            <button type="button" class="btn btn-secondary" onclick="showScreen('screen-landing')">&#8592; Cancel</button>
-            <button type="button" class="btn btn-primary" id="deal-submit-btn" onclick="submitDeal()">Submit Deal &#8594;</button>
+            <button type="button" class="btn btn-secondary" id="deal-back-btn" onclick="dealTabBack()">&#8592; Back</button>
+            <button type="button" class="btn btn-primary" id="deal-next-btn" onclick="dealTabNext()">Next &#8594;</button>
+            <button type="button" class="btn btn-primary" id="deal-submit-btn" onclick="submitDeal()" style="display:none;">Submit Deal &#8594;</button>
           </div>
         </div>
       </div>
@@ -768,7 +983,7 @@
         <!-- Dashboard Header -->
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand">Daksfirst</div>
+            <div class="dashboard-brand"><span class="brand-logo"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><polygon points="100,8 185,53 185,147 100,192 15,147 15,53" stroke="#1a365d" stroke-width="7" fill="none"/><text x="56" y="128" font-family="Georgia,'Times New Roman',serif" font-size="82" font-weight="700" fill="#1a365d" letter-spacing="-6">DF</text></svg></span> Daksfirst</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="user-name-display">User</span>
@@ -841,7 +1056,7 @@
       <div class="dashboard-container">
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand">Daksfirst</div>
+            <div class="dashboard-brand"><span class="brand-logo"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><polygon points="100,8 185,53 185,147 100,192 15,147 15,53" stroke="#1a365d" stroke-width="7" fill="none"/><text x="56" y="128" font-family="Georgia,'Times New Roman',serif" font-size="82" font-weight="700" fill="#1a365d" letter-spacing="-6">DF</text></svg></span> Daksfirst</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="detail-user-name">User</span>
@@ -859,7 +1074,7 @@
             <span id="breadcrumb-ref">Deal Details</span>
           </div>
 
-          <!-- Deal Info -->
+          <!-- Deal Header Bar -->
           <div class="detail-panel">
             <div class="detail-header">
               <div>
@@ -876,78 +1091,330 @@
                     </div>
                   </div>
                   <div class="detail-meta-item">
+                    <div class="detail-meta-label">Stage</div>
+                    <div class="detail-meta-value">
+                      <span id="detail-stage-badge" class="stage-badge">DIP</span>
+                    </div>
+                  </div>
+                  <div class="detail-meta-item">
                     <div class="detail-meta-label">Submitted</div>
                     <div class="detail-meta-value" id="detail-date">-</div>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="detail-content">
+          </div>
+
+          <!-- Detail Tabs Navigation -->
+          <div class="detail-tabs-nav">
+            <div class="detail-tabs-group">
+              <span class="detail-tabs-label">Initial Intake</span>
+              <button class="detail-tab active" data-dtab="dtab-overview" onclick="switchDetailTab(this)">Overview</button>
+              <button class="detail-tab" data-dtab="dtab-borrower" onclick="switchDetailTab(this)">Borrower</button>
+              <button class="detail-tab" data-dtab="dtab-property" onclick="switchDetailTab(this)">Property</button>
+              <button class="detail-tab" data-dtab="dtab-funds" onclick="switchDetailTab(this)">Use of Funds</button>
+              <button class="detail-tab" data-dtab="dtab-documents" onclick="switchDetailTab(this)">Documents</button>
+              <button class="detail-tab" data-dtab="dtab-analysis" onclick="switchDetailTab(this)">Analysis</button>
+            </div>
+            <div class="detail-tabs-group phase2-group">
+              <span class="detail-tabs-label">Full Onboarding <span id="phase2-lock" class="lock-icon">&#128274;</span></span>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-kyc" onclick="switchDetailTab(this)">KYC</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-financials" onclick="switchDetailTab(this)">Financials</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-valuation" onclick="switchDetailTab(this)">Valuation</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-refurb" onclick="switchDetailTab(this)">Refurb</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-exit" onclick="switchDetailTab(this)">Exit Evidence</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-aml" onclick="switchDetailTab(this)">AML</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-insurance" onclick="switchDetailTab(this)">Insurance</button>
+            </div>
+          </div>
+
+          <!-- TAB: Overview -->
+          <div id="dtab-overview" class="detail-tab-panel active">
+            <div class="detail-panel">
+              <div class="detail-content">
+                <div class="detail-grid">
+                  <div class="detail-item"><div class="detail-item-label">Loan Amount</div><div class="detail-item-value" id="detail-loan-amount">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">LTV</div><div class="detail-item-value" id="detail-ltv">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Property Value</div><div class="detail-item-value" id="detail-property-value">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Loan Purpose</div><div class="detail-item-value" id="detail-loan-purpose">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Term</div><div class="detail-item-value" id="detail-term">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Interest Servicing</div><div class="detail-item-value" id="detail-interest-servicing">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Drawdown Date</div><div class="detail-item-value" id="detail-drawdown-date">-</div></div>
+                  <div class="detail-item"><div class="detail-item-label">Asset Type</div><div class="detail-item-value" id="detail-asset-type">-</div></div>
+                </div>
+                <div style="margin-top:25px;">
+                  <div class="detail-item"><div class="detail-item-label">Exit Strategy</div><div class="detail-item-value" id="detail-exit-strategy" style="white-space:pre-wrap;">-</div></div>
+                </div>
+                <div style="margin-top:20px;">
+                  <div class="detail-item"><div class="detail-item-label">Existing Charges</div><div class="detail-item-value" id="detail-existing-charges" style="white-space:pre-wrap;">-</div></div>
+                </div>
+                <div style="margin-top:20px;">
+                  <div class="detail-item"><div class="detail-item-label">Notes</div><div class="detail-item-value" id="detail-notes" style="white-space:pre-wrap;">-</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Borrower -->
+          <div id="dtab-borrower" class="detail-tab-panel">
+            <div class="detail-panel"><div class="detail-content">
               <div class="detail-grid">
-                <div class="detail-item">
-                  <div class="detail-item-label">Loan Amount</div>
-                  <div class="detail-item-value" id="detail-loan-amount">-</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-item-label">LTV</div>
-                  <div class="detail-item-value" id="detail-ltv">-</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-item-label">Property Value</div>
-                  <div class="detail-item-value" id="detail-property-value">-</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-item-label">Asset Type</div>
-                  <div class="detail-item-value" id="detail-asset-type">-</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-item-label">Loan Purpose</div>
-                  <div class="detail-item-value" id="detail-loan-purpose">-</div>
-                </div>
-                <div class="detail-item">
-                  <div class="detail-item-label">Term</div>
-                  <div class="detail-item-value" id="detail-term">-</div>
-                </div>
+                <div class="detail-item"><div class="detail-item-label">Full Name</div><div class="detail-item-value" id="detail-borrower-name">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Date of Birth</div><div class="detail-item-value" id="detail-borrower-dob">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Nationality</div><div class="detail-item-value" id="detail-borrower-nationality">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Country of Residence</div><div class="detail-item-value" id="detail-borrower-jurisdiction">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Borrower Type</div><div class="detail-item-value" id="detail-borrower-type">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Company Name</div><div class="detail-item-value" id="detail-company-name">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Companies House No.</div><div class="detail-item-value" id="detail-company-number">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Email</div><div class="detail-item-value" id="detail-borrower-email">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Phone</div><div class="detail-item-value" id="detail-borrower-phone">-</div></div>
               </div>
-              <div style="margin-top: 25px;">
-                <div class="detail-item">
-                  <div class="detail-item-label">Exit Strategy</div>
-                  <div class="detail-item-value" id="detail-exit-strategy" style="white-space: pre-wrap;">-</div>
-                </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Property -->
+          <div id="dtab-property" class="detail-tab-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="detail-grid">
+                <div class="detail-item" style="grid-column:span 2;"><div class="detail-item-label">Address</div><div class="detail-item-value" id="detail-prop-address">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Postcode</div><div class="detail-item-value" id="detail-prop-postcode">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Property Type</div><div class="detail-item-value" id="detail-prop-type">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Market Value</div><div class="detail-item-value" id="detail-prop-value">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Purchase Price</div><div class="detail-item-value" id="detail-prop-purchase">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Tenure</div><div class="detail-item-value" id="detail-prop-tenure">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Occupancy</div><div class="detail-item-value" id="detail-prop-occupancy">-</div></div>
+                <div class="detail-item"><div class="detail-item-label">Current Use</div><div class="detail-item-value" id="detail-prop-use">-</div></div>
               </div>
-              <div style="margin-top: 20px;">
-                <div class="detail-item">
-                  <div class="detail-item-label">Notes</div>
-                  <div class="detail-item-value" id="detail-notes" style="white-space: pre-wrap;">-</div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Use of Funds -->
+          <div id="dtab-funds" class="detail-tab-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="detail-item"><div class="detail-item-label">Use of Funds</div><div class="detail-item-value" id="detail-use-of-funds" style="white-space:pre-wrap;">-</div></div>
+              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Refurbishment Scope</div><div class="detail-item-value" id="detail-refurb-scope" style="white-space:pre-wrap;">-</div></div>
+              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Refurbishment Cost</div><div class="detail-item-value" id="detail-refurb-cost">-</div></div>
+              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Deposit Source</div><div class="detail-item-value" id="detail-deposit-source" style="white-space:pre-wrap;">-</div></div>
+              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Concurrent Transactions</div><div class="detail-item-value" id="detail-concurrent" style="white-space:pre-wrap;">-</div></div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Documents -->
+          <div id="dtab-documents" class="detail-tab-panel">
+            <div class="detail-panel">
+              <div class="detail-content">
+                <div class="section-header">Uploaded Documents</div>
+                <div id="documents-list" class="documents-list"></div>
+                <div style="margin-top: 25px;">
+                  <div class="section-header">Upload New Document</div>
+                  <div id="upload-zone" class="upload-zone" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
+                    <div class="upload-icon">&#128206;</div>
+                    <div class="upload-text">Drag and drop files or click to browse</div>
+                    <div class="upload-subtext">PDF, DOCX, XLSX, JPG, PNG — Max 25MB per file, 10 files per deal</div>
+                    <input type="file" id="file-input" multiple style="display:none;" onchange="handleFileSelect(event)">
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Documents Section -->
-          <div class="detail-panel">
-            <div class="detail-content">
-              <div class="section-header">Documents</div>
-              <div id="documents-list" class="documents-list"></div>
-              <div style="margin-top: 25px;">
-                <div class="section-header">Upload New Document</div>
-                <div id="upload-zone" class="upload-zone" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
-                  <div class="upload-icon">📎</div>
-                  <div class="upload-text">Drag and drop files or click to browse</div>
-                  <div class="upload-subtext">PDF, DOCX, XLSX, JPG, PNG — Max 25MB per file, 10 files per deal</div>
-                  <input type="file" id="file-input" multiple style="display:none;" onchange="handleFileSelect(event)">
+          <!-- TAB: Analysis -->
+          <div id="dtab-analysis" class="detail-tab-panel">
+            <div id="analysis-section" class="detail-panel">
+              <div class="detail-content">
+                <div class="section-header">Credit Analysis Results</div>
+                <div id="analysis-content">
+                  <p style="color:var(--text-light);text-align:center;padding:30px 0;">Analysis results will appear here once the credit review is complete.</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Analysis Results Section -->
-          <div id="analysis-section" class="detail-panel" style="display:none;">
-            <div class="detail-content">
-              <div class="section-header">Analysis Results</div>
-              <div id="analysis-content"></div>
-            </div>
+          <!-- ═══ PHASE 2 TABS (Locked until termsheet signed) ═══ -->
+
+          <!-- TAB: KYC / Identity -->
+          <div id="dtab-kyc" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="kyc-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>KYC / Identity — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="kyc-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Individual Applicant KYC</div>
+                <div class="form-group"><label>Full Legal Name (as on passport) *</label><input type="text" id="kyc-full-name"></div>
+                <div class="form-group"><div class="form-row"><div><label>Date of Birth *</label><input type="date" id="kyc-dob"></div><div><label>National Insurance Number</label><input type="text" id="kyc-ni-number" placeholder="e.g. QQ 12 34 56 C"></div></div></div>
+                <div class="form-group"><div class="form-row"><div><label>Nationality *</label><input type="text" id="kyc-nationality"></div><div><label>Country of Birth *</label><input type="text" id="kyc-country-birth"></div></div></div>
+                <div class="form-group"><label>Current Residential Address *</label><textarea id="kyc-current-address" rows="2" placeholder="Full address including postcode"></textarea></div>
+                <div class="form-group"><label>3-Year Address History *</label><textarea id="kyc-address-history" rows="3" placeholder="All previous addresses for the last 3 years with dates"></textarea></div>
+                <div class="form-group"><label>PEP / Sanctions Declaration *</label><select id="kyc-pep"><option value="">Select</option><option value="no">Not a PEP</option><option value="yes">I am a PEP or connected to a PEP</option></select></div>
+                <div class="form-group"><label>Source of Wealth Statement *</label><textarea id="kyc-source-wealth" rows="3" placeholder="Brief narrative of how wealth was accumulated (employment, business, inheritance, investments)"></textarea></div>
+                <div class="form-group"><label>Source of Deposit / Equity *</label><textarea id="kyc-source-deposit" rows="2" placeholder="Bank statements, gift letter, sale proceeds — traceable funds only"></textarea></div>
+                <hr class="section-divider">
+                <div class="section-title">Document Uploads — KYC</div>
+                <div class="form-group"><label>Passport (certified copy) *</label><input type="file" id="kyc-passport-file" class="onboarding-file"></div>
+                <div class="form-group"><label>Proof of Address (within 90 days) *</label><input type="file" id="kyc-poa-file" class="onboarding-file"></div>
+                <div class="form-group"><label>UK Driving Licence (if available)</label><input type="file" id="kyc-licence-file" class="onboarding-file"></div>
+                <hr class="section-divider">
+                <div class="section-title">Corporate Borrower (if applicable)</div>
+                <div class="form-group"><div class="form-row"><div><label>Certificate of Incorporation</label><input type="file" id="kyc-cert-incorp" class="onboarding-file"></div><div><label>Mem &amp; Articles of Association</label><input type="file" id="kyc-mem-arts" class="onboarding-file"></div></div></div>
+                <div class="form-group"><div class="form-row"><div><label>Companies House Confirmation Statement</label><input type="file" id="kyc-ch-confirm" class="onboarding-file"></div><div><label>Board Resolution Authorising Borrowing</label><input type="file" id="kyc-board-res" class="onboarding-file"></div></div></div>
+                <div class="form-group"><label>UBO Declaration (all individuals with 25%+ interest)</label><textarea id="kyc-ubo-declaration" rows="2" placeholder="Names and percentage holdings of all UBOs"></textarea></div>
+                <div class="form-group"><label>Group Structure Chart (if subsidiary)</label><input type="file" id="kyc-group-chart" class="onboarding-file"></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('kyc')">Save KYC Data</button>
+              </div>
+            </div></div>
           </div>
+
+          <!-- TAB: Financials -->
+          <div id="dtab-financials" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="financials-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>Financial Information — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="financials-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Individual Borrower Financials</div>
+                <div class="form-group"><label>Last 3 Months Personal Bank Statements *</label><input type="file" id="fin-bank-statements" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Evidence of Income</label><input type="file" id="fin-income-evidence" class="onboarding-file" multiple><p class="form-hint">Last 3 months payslips or last 2 years SA302 + tax year overview</p></div>
+                <div class="form-group"><label>Credit Search Consent *</label><select id="fin-credit-consent"><option value="">Select</option><option value="yes">I consent to credit search</option><option value="no">I do not consent</option></select></div>
+                <div class="form-group"><label>CCJ / IVA / Bankruptcy Declaration *</label><select id="fin-adverse"><option value="">Select</option><option value="none">None declared</option><option value="ccj">CCJ</option><option value="iva">IVA</option><option value="bankruptcy_discharged">Bankruptcy (Discharged)</option><option value="defaults">Defaults</option><option value="other">Other adverse</option></select></div>
+                <div class="form-group"><label>Existing Mortgage Schedule</label><textarea id="fin-mortgage-schedule" rows="2" placeholder="Lender, balance, monthly payment for each existing mortgage"></textarea></div>
+                <div class="form-group"><label>Schedule of Assets &amp; Liabilities</label><input type="file" id="fin-assets-liabilities" class="onboarding-file"></div>
+                <hr class="section-divider">
+                <div class="section-title">Corporate Borrower Financials</div>
+                <div class="form-group"><label>Last 2 Years Statutory Accounts</label><input type="file" id="fin-statutory-accounts" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Management Accounts (current year)</label><input type="file" id="fin-mgmt-accounts" class="onboarding-file"></div>
+                <div class="form-group"><label>Last 3 Months Business Bank Statements</label><input type="file" id="fin-biz-bank" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Director's Loan Account Schedule</label><input type="file" id="fin-dla" class="onboarding-file"></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('financials')">Save Financial Data</button>
+              </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Valuation & Legal -->
+          <div id="dtab-valuation" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="valuation-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>Valuation &amp; Legal — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="valuation-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Valuation</div>
+                <div class="form-group"><label>RICS Valuation Report (addressed to Daksfirst) *</label><input type="file" id="val-rics-report" class="onboarding-file"></div>
+                <div class="form-group"><div class="form-row"><div><label>Day 1 Value (Current Market Value) *</label><input type="number" id="val-day1-value" placeholder="GBP"></div><div><label>Reinstatement / Insurance Value *</label><input type="number" id="val-reinstatement" placeholder="GBP"></div></div></div>
+                <div class="form-group"><div class="form-row"><div><label>GDV (if refurb/dev exit)</label><input type="number" id="val-gdv" placeholder="GBP"></div><div><label>90-Day Forced Sale Value</label><input type="number" id="val-90day" placeholder="If LTV > 65%"></div></div></div>
+                <div class="form-group"><label>180-Day Forced Sale Value</label><input type="number" id="val-180day" placeholder="If LTV > 65%"></div>
+                <hr class="section-divider">
+                <div class="section-title">Title &amp; Legal</div>
+                <div class="form-group"><label>Land Registry Entries (title register + plan, within 3 months) *</label><input type="file" id="val-title-docs" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Existing Charges Register / Redemption Statements</label><input type="file" id="val-charges" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Purchase Contract (if purchase)</label><input type="file" id="val-purchase-contract" class="onboarding-file"></div>
+                <div class="form-group"><div class="form-row"><div><label>Borrower's Solicitor Firm *</label><input type="text" id="val-solicitor-firm"></div><div><label>SRA Number *</label><input type="text" id="val-sra-number"></div></div></div>
+                <div class="form-group"><label>Supervising Partner Name</label><input type="text" id="val-solicitor-partner"></div>
+                <div class="form-group"><label>Search Results (Local Authority, Drainage, Environmental)</label><input type="file" id="val-searches" class="onboarding-file" multiple></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('valuation')">Save Valuation &amp; Legal Data</button>
+              </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Refurbishment (conditional) -->
+          <div id="dtab-refurb" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="refurb-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>Refurbishment — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="refurbishment-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Refurbishment / Development Exit</div>
+                <div class="form-group"><label>Schedule of Works (itemised) *</label><input type="file" id="refurb-schedule" class="onboarding-file"></div>
+                <div class="form-group"><div class="form-row"><div><label>Contractor Name *</label><input type="text" id="refurb-contractor-name"></div><div><label>Contractor Accreditations</label><input type="text" id="refurb-contractor-accred" placeholder="NICEIC, Gas Safe, etc."></div></div></div>
+                <div class="form-group"><label>Contractor Quote(s) *</label><input type="file" id="refurb-quotes" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Planning Consent (if required)</label><input type="file" id="refurb-planning" class="onboarding-file"></div>
+                <div class="form-group"><div class="form-row"><div><label>Pre-Works Day 1 Value (RICS) *</label><input type="number" id="refurb-day1" placeholder="GBP"></div><div><label>Post-Works GDV (RICS) *</label><input type="number" id="refurb-gdv" placeholder="GBP"></div></div></div>
+                <div class="form-group"><label>Build Programme / Timeline</label><input type="file" id="refurb-timeline" class="onboarding-file"></div>
+                <div class="form-group"><label>Monitoring Surveyor (if loan &gt; £500k or works &gt; 3 months)</label><input type="text" id="refurb-monitoring" placeholder="Surveyor name and firm"></div>
+                <div class="form-group"><label>PI Insurance for Contractors</label><input type="file" id="refurb-pi-insurance" class="onboarding-file"></div>
+                <div class="form-group"><label>Structural Engineer Report (if structural works)</label><input type="file" id="refurb-structural" class="onboarding-file"></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('refurbishment')">Save Refurbishment Data</button>
+              </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Exit Strategy Evidence -->
+          <div id="dtab-exit" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="exit-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>Exit Strategy Evidence — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="exit-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Exit Strategy Documentation</div>
+                <div class="form-group"><label>Written Exit Narrative (detailed) *</label><textarea id="exit-narrative" rows="4" placeholder="Detailed statement of how and when the loan will be repaid"></textarea></div>
+                <hr class="section-divider">
+                <div class="section-title">If Exit via Sale</div>
+                <div class="form-group"><label>Estate Agent Valuation(s)</label><input type="file" id="exit-agent-vals" class="onboarding-file" multiple></div>
+                <div class="form-group"><label>Executed Sale Contract (if available)</label><input type="file" id="exit-sale-contract" class="onboarding-file"></div>
+                <hr class="section-divider">
+                <div class="section-title">If Exit via Refinance</div>
+                <div class="form-group"><label>Agreement in Principle (AIP) from Long-Term Lender</label><input type="file" id="exit-aip" class="onboarding-file"></div>
+                <div class="form-group"><label>Rental Income Evidence (AST / rental schedule)</label><input type="file" id="exit-rental" class="onboarding-file" multiple></div>
+                <hr class="section-divider">
+                <div class="section-title">If Exit via Asset Sale</div>
+                <div class="form-group"><label>Asset Particulars / Agent Confirmation</label><input type="file" id="exit-asset-sale" class="onboarding-file"></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('exit_evidence')">Save Exit Evidence</button>
+              </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: AML & Compliance -->
+          <div id="dtab-aml" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="aml-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>AML &amp; Compliance — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="aml-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Anti-Money Laundering</div>
+                <div class="form-group"><label>Source of Funds Evidence *</label><input type="file" id="aml-source-funds" class="onboarding-file" multiple><p class="form-hint">Bank statements, solicitor client account statements, gift letters with donor KYC</p></div>
+                <div class="form-group"><label>Source of Wealth Narrative *</label><textarea id="aml-source-wealth" rows="3" placeholder="Employment history, business background, inheritance, investment returns"></textarea></div>
+                <div class="form-group"><label>PEP &amp; Sanctions Self-Declaration *</label><select id="aml-pep"><option value="">Select</option><option value="clear">No PEP or sanctions flags</option><option value="pep_domestic">Domestic PEP</option><option value="pep_foreign">Foreign PEP</option></select></div>
+                <div class="form-group"><div class="form-row"><div><label>HMRC UTR Number</label><input type="text" id="aml-utr" placeholder="For UK tax resident borrowers"></div><div><label>UK Tax Residency</label><select id="aml-tax-residency"><option value="">Select</option><option value="uk_resident">UK Tax Resident</option><option value="non_uk">Non-UK Tax Resident</option></select></div></div></div>
+                <div class="form-group"><label>Trust Deed (if borrower is a trust)</label><input type="file" id="aml-trust-deed" class="onboarding-file"></div>
+                <div class="form-group"><label>Overseas Entity Documentation (if non-UK)</label><input type="file" id="aml-overseas-docs" class="onboarding-file" multiple></div>
+                <hr class="section-divider">
+                <div class="section-title">Broker Compliance</div>
+                <div class="form-group"><label>AML Policy Acknowledgement *</label><select id="aml-broker-ack"><option value="">Select</option><option value="confirmed">Confirmed — AML checks completed</option><option value="pending">Pending</option></select></div>
+                <div class="form-group"><label>Declaration of Conflicts of Interest *</label><textarea id="aml-conflicts" rows="2" placeholder="Any relationship between broker and borrower/property beyond this transaction, or 'None'"></textarea></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('aml')">Save AML Data</button>
+              </div>
+            </div></div>
+          </div>
+
+          <!-- TAB: Insurance -->
+          <div id="dtab-insurance" class="detail-tab-panel phase2-panel">
+            <div class="detail-panel"><div class="detail-content">
+              <div class="phase2-notice" id="insurance-lock-notice">
+                <span class="lock-icon-large">&#128274;</span>
+                <h3>Insurance — Locked</h3>
+                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+              </div>
+              <div id="insurance-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Insurance Requirements</div>
+                <div class="form-group"><label>Buildings Insurance Schedule *</label><input type="file" id="ins-buildings" class="onboarding-file"><p class="form-hint">Daksfirst / Century Investcorp must be noted as interested party</p></div>
+                <div class="form-group"><label>Minimum Sum Insured (must equal or exceed reinstatement value)</label><input type="number" id="ins-sum-insured" placeholder="GBP"></div>
+                <div class="form-group"><label>Vacant Property Insurance (if applicable)</label><input type="file" id="ins-vacant" class="onboarding-file"></div>
+                <div class="form-group"><label>Development / Works Insurance (if refurbishment)</label><input type="file" id="ins-works" class="onboarding-file"></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('insurance')">Save Insurance Data</button>
+              </div>
+            </div></div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -957,7 +1424,7 @@
       <div class="admin-container">
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand">Daksfirst — Admin</div>
+            <div class="dashboard-brand"><span class="brand-logo"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><polygon points="100,8 185,53 185,147 100,192 15,147 15,53" stroke="#1a365d" stroke-width="7" fill="none"/><text x="56" y="128" font-family="Georgia,'Times New Roman',serif" font-size="82" font-weight="700" fill="#1a365d" letter-spacing="-6">DF</text></svg></span> Daksfirst — Admin</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="admin-user-name">Admin</span>
@@ -1290,16 +1757,59 @@ function logoutUser() {
   }
 }
 
-// ═══ DEAL SUBMISSION FORM ════════════════════════════════════════════════
+// ═══ DEAL SUBMISSION FORM (4 TABS) ══════════════════════════════════════
+let currentDealTab = 0;
+const dealTabIds = ['dt-overview', 'dt-borrower', 'dt-property', 'dt-funds'];
+
 function showDealForm() {
   if (currentUser) {
-    document.getElementById('deal-subtitle').textContent =
-      `Logged in as ${currentUser.first_name} ${currentUser.last_name} (${currentRole})`;
+    document.getElementById('deal-user-info').textContent =
+      `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role || currentRole})`;
   }
-  // Show borrower section only if broker
-  document.getElementById('deal-borrower-section').style.display =
-    currentRole === 'broker' ? 'block' : 'none';
+  currentDealTab = 0;
+  updateDealTabs();
+  // Show refurb fields if purpose is refurbishment
+  document.getElementById('deal-purpose').addEventListener('change', function() {
+    const isRefurb = ['refurbishment', 'dev_exit'].includes(this.value);
+    document.getElementById('deal-refurb-fields').style.display = isRefurb ? 'block' : 'none';
+  });
+  // Show corporate fields if borrower type is not individual
+  document.getElementById('deal-borrower-type').addEventListener('change', function() {
+    const isCorp = this.value && this.value !== 'individual';
+    document.getElementById('deal-corporate-fields').style.display = isCorp ? 'block' : 'none';
+  });
   showScreen('screen-deal');
+}
+
+function switchDealTab(btn) {
+  const tabId = btn.dataset.tab;
+  currentDealTab = dealTabIds.indexOf(tabId);
+  updateDealTabs();
+}
+
+function dealTabNext() {
+  if (currentDealTab < dealTabIds.length - 1) { currentDealTab++; updateDealTabs(); }
+}
+
+function dealTabBack() {
+  if (currentDealTab > 0) { currentDealTab--; updateDealTabs(); }
+  else showDashboard();
+}
+
+function updateDealTabs() {
+  // Tab buttons
+  document.querySelectorAll('.deal-tab').forEach((t, i) => {
+    t.classList.toggle('active', i === currentDealTab);
+  });
+  // Tab panels
+  dealTabIds.forEach((id, i) => {
+    document.getElementById(id).classList.toggle('active', i === currentDealTab);
+  });
+  // Nav buttons
+  document.getElementById('deal-back-btn').textContent = currentDealTab === 0 ? '\u2190 Cancel' : '\u2190 Back';
+  document.getElementById('deal-next-btn').style.display = currentDealTab < dealTabIds.length - 1 ? 'inline-block' : 'none';
+  document.getElementById('deal-submit-btn').style.display = currentDealTab === dealTabIds.length - 1 ? 'inline-block' : 'none';
+  window.scrollTo(0, 0);
 }
 
 // ═══ SUBMIT DEAL (REAL API CALL + WEBHOOK) ═══════════════════════════════
@@ -1311,12 +1821,12 @@ async function submitDeal() {
   const exit       = document.getElementById('deal-exit').value.trim();
 
   if (!address || !loanAmount || !purpose || !exit) {
-    showAlert('deal-alert', 'error', 'Please fill in all required fields (address, loan amount, purpose, exit strategy).');
+    showAlert('deal-alert', 'error', 'Please fill in all required fields across all tabs (address, loan amount, purpose, exit strategy).');
     return;
   }
 
   if (!authToken) {
-    showAlert('deal-alert', 'error', 'You must be logged in to submit a deal. Please register or sign in first.');
+    showAlert('deal-alert', 'error', 'You must be logged in to submit a deal.');
     return;
   }
 
@@ -1328,22 +1838,44 @@ async function submitDeal() {
   const ltv = (currentValue && loanAmount) ? ((loanAmount / currentValue) * 100).toFixed(1) : null;
 
   const body = {
+    // Tab 1: Deal Overview
+    loan_amount:        loanAmount,
+    loan_purpose:       purpose,
+    term_months:        document.getElementById('deal-term').value || null,
+    interest_servicing: document.getElementById('deal-interest-servicing').value || null,
+    drawdown_date:      document.getElementById('deal-drawdown-date').value || null,
+    exit_strategy:      exit,
+    existing_charges:   document.getElementById('deal-existing-charges').value.trim() || null,
+    // Tab 2: Borrower
+    borrower_name:      document.getElementById('deal-borrower-name')?.value.trim() || (currentRole === 'borrower' ? `${currentUser.first_name} ${currentUser.last_name}` : null),
+    borrower_dob:       document.getElementById('deal-borrower-dob').value || null,
+    borrower_nationality: document.getElementById('deal-borrower-nationality').value.trim() || null,
+    borrower_jurisdiction: document.getElementById('deal-borrower-jurisdiction').value.trim() || null,
+    borrower_type:      document.getElementById('deal-borrower-type').value || null,
+    company_name:       document.getElementById('deal-company-name')?.value.trim() || null,
+    company_number:     document.getElementById('deal-company-number')?.value.trim() || null,
+    borrower_email:     document.getElementById('deal-borrower-email')?.value.trim() || (currentRole === 'borrower' ? currentUser.email : null),
+    borrower_phone:     document.getElementById('deal-borrower-phone')?.value.trim() || null,
+    borrower_company:   document.getElementById('deal-borrower-company')?.value.trim() || null,
+    broker_fca:         document.getElementById('deal-broker-company-number')?.value.trim() || null,
+    broker_name:        currentRole === 'broker' ? `${currentUser.first_name} ${currentUser.last_name}` : null,
+    broker_company:     currentRole === 'broker' ? (currentUser.company || null) : null,
+    // Tab 3: Property
     security_address:   address,
     security_postcode:  document.getElementById('deal-postcode').value.trim() || null,
     asset_type:         document.getElementById('deal-asset-type').value || null,
     current_value:      currentValue || null,
-    loan_amount:        loanAmount,
+    purchase_price:     document.getElementById('deal-purchase-price')?.value || null,
+    property_tenure:    document.getElementById('deal-tenure').value || null,
+    occupancy_status:   document.getElementById('deal-occupancy').value || null,
+    current_use:        document.getElementById('deal-current-use').value || null,
     ltv_requested:      ltv,
-    loan_purpose:       purpose,
-    exit_strategy:      exit,
-    term_months:        document.getElementById('deal-term').value || null,
-    borrower_name:      document.getElementById('deal-borrower-name')?.value.trim() || (currentRole === 'borrower' ? `${currentUser.first_name} ${currentUser.last_name}` : null),
-    borrower_company:   document.getElementById('deal-borrower-company')?.value.trim() || null,
-    borrower_email:     currentRole === 'borrower' ? currentUser.email : null,
-    borrower_phone:     null,
-    broker_name:        currentRole === 'broker' ? `${currentUser.first_name} ${currentUser.last_name}` : null,
-    broker_company:     currentRole === 'broker' ? (currentUser.company || null) : null,
-    broker_fca:         null,
+    // Tab 4: Use of Funds
+    use_of_funds:       document.getElementById('deal-use-of-funds').value.trim() || null,
+    refurb_scope:       document.getElementById('deal-refurb-scope')?.value.trim() || null,
+    refurb_cost:        document.getElementById('deal-refurb-cost')?.value || null,
+    deposit_source:     document.getElementById('deal-deposit-source')?.value.trim() || null,
+    concurrent_transactions: document.getElementById('deal-concurrent')?.value.trim() || null,
     additional_notes:   document.getElementById('deal-notes').value.trim() || null,
     documents:          []
   };
@@ -1366,7 +1898,7 @@ async function submitDeal() {
       return;
     }
 
-    // Fire webhook directly to n8n from browser (bypasses server-to-n8n connectivity issues)
+    // Fire webhook directly to n8n from browser
     const N8N_WEBHOOK = 'https://sumitkanthed.app.n8n.cloud/webhook/4c811581-2d51-4432-aef1-2c04d53fe71c';
     const webhookPayload = {
       submissionId: data.deal.submission_id,
@@ -1374,30 +1906,24 @@ async function submitDeal() {
       timestamp: new Date().toISOString(),
       submittedBy: { userId: currentUser.id, email: currentUser.email, role: currentRole },
       borrower: {
-        name: body.borrower_name || '',
-        company: body.borrower_company || '',
-        email: body.borrower_email || '',
-        phone: body.borrower_phone || ''
+        name: body.borrower_name || '', company: body.borrower_company || '',
+        email: body.borrower_email || '', phone: body.borrower_phone || '',
+        type: body.borrower_type || '', nationality: body.borrower_nationality || '',
+        jurisdiction: body.borrower_jurisdiction || ''
       },
-      broker: {
-        name: body.broker_name || '',
-        company: body.broker_company || '',
-        fca_number: body.broker_fca || ''
-      },
+      broker: { name: body.broker_name || '', company: body.broker_company || '', fca_number: body.broker_fca || '' },
       security: {
-        address: body.security_address || '',
-        postcode: body.security_postcode || '',
-        asset_type: body.asset_type || '',
-        current_value: body.current_value || null
+        address: body.security_address || '', postcode: body.security_postcode || '',
+        asset_type: body.asset_type || '', current_value: body.current_value || null,
+        tenure: body.property_tenure || '', occupancy: body.occupancy_status || ''
       },
       loan: {
-        amount: body.loan_amount || null,
-        ltv_requested: body.ltv_requested || null,
-        purpose: body.loan_purpose || '',
-        exit_strategy: body.exit_strategy || '',
-        term_months: body.term_months || null,
-        rate_requested: null
+        amount: body.loan_amount || null, ltv_requested: body.ltv_requested || null,
+        purpose: body.loan_purpose || '', exit_strategy: body.exit_strategy || '',
+        term_months: body.term_months || null, interest_servicing: body.interest_servicing || '',
+        drawdown_date: body.drawdown_date || null
       },
+      use_of_funds: body.use_of_funds || '',
       documents: [],
       additional_notes: body.additional_notes || ''
     };
@@ -1408,7 +1934,6 @@ async function submitDeal() {
     }).then(r => console.log('[n8n webhook] Status:', r.status))
       .catch(e => console.warn('[n8n webhook] Failed:', e.message));
 
-    // Show success with reference
     document.getElementById('deal-ref').textContent = `Reference: ${data.deal.submission_id}`;
     dealBtn.disabled = false;
     dealBtn.textContent = 'Submit Deal \u2192';
@@ -1520,34 +2045,74 @@ async function showDealDetail(dealId) {
 
     const deal = data.deal;
     window.currentDealId = dealId;
+    window.currentDealData = deal;
 
     // Update breadcrumb
     document.getElementById('breadcrumb-ref').textContent = `${dealId.substring(0, 8)}`;
 
-    // Update deal info
+    // Header
     document.getElementById('detail-property-address').textContent = deal.security_address || 'N/A';
     document.getElementById('detail-ref-id').textContent = dealId;
     document.getElementById('detail-date').textContent = formatDate(deal.created_at);
-    document.getElementById('detail-loan-amount').textContent = `£${formatNumber(deal.loan_amount || 0)}`;
-    document.getElementById('detail-ltv').textContent = deal.ltv_requested ? deal.ltv_requested + '%' : 'N/A';
-    document.getElementById('detail-property-value').textContent = `£${formatNumber(deal.current_value || 0)}`;
-    document.getElementById('detail-asset-type').textContent = deal.asset_type || 'N/A';
-    document.getElementById('detail-loan-purpose').textContent = deal.loan_purpose || 'N/A';
-    document.getElementById('detail-term').textContent = deal.term_months ? deal.term_months + ' months' : 'N/A';
-    document.getElementById('detail-exit-strategy').textContent = deal.exit_strategy || 'N/A';
-    document.getElementById('detail-notes').textContent = deal.additional_notes || 'No notes';
 
-    // Update status badge
+    // Status badge
     const statusEl = document.getElementById('detail-status-badge');
     statusEl.className = `status-badge status-${deal.status}`;
     statusEl.textContent = deal.status.charAt(0).toUpperCase() + deal.status.slice(1);
 
-    // Load and display documents
+    // Stage badge
+    const stage = deal.deal_stage || 'dip';
+    const stageEl = document.getElementById('detail-stage-badge');
+    const stageLabels = { dip: 'DIP', dip_issued: 'DIP Issued', termsheet_sent: 'Termsheet Sent', termsheet_signed: 'Termsheet Signed', underwriting: 'In Underwriting', approved: 'Approved', legal: 'Legal Instructed', funds_released: 'Funds Released', declined: 'Declined', withdrawn: 'Withdrawn' };
+    stageEl.textContent = stageLabels[stage] || stage;
+    stageEl.className = `stage-badge stage-${stage}`;
+
+    // ── TAB: Overview ──
+    document.getElementById('detail-loan-amount').textContent = `\u00A3${formatNumber(deal.loan_amount || 0)}`;
+    document.getElementById('detail-ltv').textContent = deal.ltv_requested ? deal.ltv_requested + '%' : 'N/A';
+    document.getElementById('detail-property-value').textContent = `\u00A3${formatNumber(deal.current_value || 0)}`;
+    document.getElementById('detail-loan-purpose').textContent = deal.loan_purpose || 'N/A';
+    document.getElementById('detail-term').textContent = deal.term_months ? deal.term_months + ' months' : 'N/A';
+    document.getElementById('detail-interest-servicing').textContent = deal.interest_servicing || 'N/A';
+    document.getElementById('detail-drawdown-date').textContent = deal.drawdown_date ? formatDate(deal.drawdown_date) : 'N/A';
+    document.getElementById('detail-asset-type').textContent = deal.asset_type || 'N/A';
+    document.getElementById('detail-exit-strategy').textContent = deal.exit_strategy || 'N/A';
+    document.getElementById('detail-existing-charges').textContent = deal.existing_charges || 'None disclosed';
+    document.getElementById('detail-notes').textContent = deal.additional_notes || 'No notes';
+
+    // ── TAB: Borrower ──
+    document.getElementById('detail-borrower-name').textContent = deal.borrower_name || 'N/A';
+    document.getElementById('detail-borrower-dob').textContent = deal.borrower_dob ? formatDate(deal.borrower_dob) : 'N/A';
+    document.getElementById('detail-borrower-nationality').textContent = deal.borrower_nationality || 'N/A';
+    document.getElementById('detail-borrower-jurisdiction').textContent = deal.borrower_jurisdiction || 'N/A';
+    document.getElementById('detail-borrower-type').textContent = deal.borrower_type || 'N/A';
+    document.getElementById('detail-company-name').textContent = deal.company_name || 'N/A';
+    document.getElementById('detail-company-number').textContent = deal.company_number || 'N/A';
+    document.getElementById('detail-borrower-email').textContent = deal.borrower_email || 'N/A';
+    document.getElementById('detail-borrower-phone').textContent = deal.borrower_phone || 'N/A';
+
+    // ── TAB: Property ──
+    document.getElementById('detail-prop-address').textContent = deal.security_address || 'N/A';
+    document.getElementById('detail-prop-postcode').textContent = deal.security_postcode || 'N/A';
+    document.getElementById('detail-prop-type').textContent = deal.asset_type || 'N/A';
+    document.getElementById('detail-prop-value').textContent = deal.current_value ? `\u00A3${formatNumber(deal.current_value)}` : 'N/A';
+    document.getElementById('detail-prop-purchase').textContent = deal.purchase_price ? `\u00A3${formatNumber(deal.purchase_price)}` : 'N/A';
+    document.getElementById('detail-prop-tenure').textContent = deal.property_tenure || 'N/A';
+    document.getElementById('detail-prop-occupancy').textContent = deal.occupancy_status || 'N/A';
+    document.getElementById('detail-prop-use').textContent = deal.current_use || 'N/A';
+
+    // ── TAB: Use of Funds ──
+    document.getElementById('detail-use-of-funds').textContent = deal.use_of_funds || 'N/A';
+    document.getElementById('detail-refurb-scope').textContent = deal.refurb_scope || 'N/A';
+    document.getElementById('detail-refurb-cost').textContent = deal.refurb_cost ? `\u00A3${formatNumber(deal.refurb_cost)}` : 'N/A';
+    document.getElementById('detail-deposit-source').textContent = deal.deposit_source || 'N/A';
+    document.getElementById('detail-concurrent').textContent = deal.concurrent_transactions || 'None';
+
+    // ── TAB: Documents ──
     loadDealDocuments(deal.documents || []);
 
-    // Show analysis results if completed
+    // ── TAB: Analysis ──
     if (deal.status === 'completed' && deal.analysis_results) {
-      document.getElementById('analysis-section').style.display = 'block';
       const analysisEl = document.getElementById('analysis-content');
       analysisEl.innerHTML = '';
       if (deal.analysis_results.credit_memo_url) {
@@ -1568,9 +2133,40 @@ async function showDealDetail(dealId) {
         link.textContent = 'Download Termsheet';
         analysisEl.appendChild(link);
       }
-    } else {
-      document.getElementById('analysis-section').style.display = 'none';
     }
+
+    // ── PHASE 2: Lock/Unlock ──
+    const unlockedStages = ['termsheet_signed', 'underwriting', 'approved', 'legal', 'funds_released', 'completed'];
+    const isPhase2Unlocked = unlockedStages.includes(stage);
+
+    document.getElementById('phase2-lock').textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
+
+    document.querySelectorAll('.phase2-tab').forEach(tab => {
+      if (isPhase2Unlocked) {
+        tab.classList.remove('locked');
+        tab.classList.add('unlocked');
+      } else {
+        tab.classList.add('locked');
+        tab.classList.remove('unlocked');
+      }
+    });
+
+    // Show/hide Phase 2 forms vs lock notices
+    const phase2Tabs = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit', 'aml', 'insurance'];
+    phase2Tabs.forEach(t => {
+      const lockNotice = document.getElementById(`${t}-lock-notice`);
+      const form = document.getElementById(`${t}-form`) || document.getElementById(`${t === 'refurbishment' ? 'refurbishment' : t}-form`);
+      if (lockNotice) lockNotice.style.display = isPhase2Unlocked ? 'none' : 'block';
+      if (form) form.style.display = isPhase2Unlocked ? 'block' : 'none';
+    });
+
+    // Pre-fill Phase 2 forms from onboarding_data if it exists
+    if (isPhase2Unlocked && deal.onboarding_data) {
+      populateOnboardingData(deal.onboarding_data);
+    }
+
+    // Reset to Overview tab
+    switchDetailTab(document.querySelector('.detail-tab[data-dtab="dtab-overview"]'));
 
     showScreen('screen-deal-detail');
   } catch (err) {
@@ -1870,6 +2466,75 @@ function formatDate(dateString) {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   return date.toLocaleDateString('en-GB');
+}
+
+// ═══ DETAIL TAB SWITCHING ═════════════════════════════════════════════════
+function switchDetailTab(btn) {
+  if (!btn) return;
+  const tabId = btn.dataset.dtab;
+  // Block locked Phase 2 tabs
+  if (btn.classList.contains('locked')) {
+    showToast('This section unlocks after the termsheet is signed.', true);
+    return;
+  }
+  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.detail-tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(tabId);
+  if (panel) panel.classList.add('active');
+}
+
+// ═══ SAVE ONBOARDING TAB (Phase 2) ══════════════════════════════════════
+async function saveOnboardingTab(tabName) {
+  if (!authToken || !window.currentDealId) return;
+
+  // Collect all form data for this tab
+  const tabFormMap = {
+    kyc: ['kyc-full-name', 'kyc-dob', 'kyc-ni-number', 'kyc-nationality', 'kyc-country-birth', 'kyc-current-address', 'kyc-address-history', 'kyc-pep', 'kyc-source-wealth', 'kyc-source-deposit', 'kyc-ubo-declaration'],
+    financials: ['fin-credit-consent', 'fin-adverse', 'fin-mortgage-schedule'],
+    valuation: ['val-day1-value', 'val-reinstatement', 'val-gdv', 'val-90day', 'val-180day', 'val-solicitor-firm', 'val-sra-number', 'val-solicitor-partner'],
+    refurbishment: ['refurb-contractor-name', 'refurb-contractor-accred', 'refurb-day1', 'refurb-gdv', 'refurb-monitoring'],
+    exit_evidence: ['exit-narrative'],
+    aml: ['aml-source-wealth', 'aml-pep', 'aml-utr', 'aml-tax-residency', 'aml-broker-ack', 'aml-conflicts'],
+    insurance: ['ins-sum-insured']
+  };
+
+  const fields = tabFormMap[tabName] || [];
+  const data = {};
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) data[id] = el.value;
+  });
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/deals/${window.currentDealId}/onboarding`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ tab: tabName, data })
+    });
+    const result = await resp.json();
+    if (resp.ok) {
+      showToast(`${tabName.replace('_', ' ')} data saved successfully`);
+    } else {
+      showToast(result.error || 'Failed to save', true);
+    }
+  } catch (err) {
+    showToast('Network error — could not save', true);
+  }
+}
+
+// ═══ POPULATE ONBOARDING DATA (pre-fill from saved data) ════════════════
+function populateOnboardingData(onboardingData) {
+  if (!onboardingData) return;
+  Object.keys(onboardingData).forEach(tab => {
+    const tabData = onboardingData[tab];
+    if (!tabData) return;
+    Object.keys(tabData).forEach(fieldId => {
+      if (fieldId === 'updated_at') return;
+      const el = document.getElementById(fieldId);
+      if (el) el.value = tabData[fieldId];
+    });
+  });
 }
 
 function showToast(message, isError = false) {
