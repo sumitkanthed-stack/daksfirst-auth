@@ -455,6 +455,14 @@ async function runMigrations() {
       console.log('[migrate] Note on broker_onboarding.default_rm:', err.message.substring(0, 60));
     }
 
+    // Widen columns that may be too short for AI-extracted data
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN loan_purpose TYPE TEXT;`);
+      console.log('[migrate] Widened loan_purpose to TEXT');
+    } catch (err) {
+      console.log('[migrate] Note on loan_purpose:', err.message.substring(0, 60));
+    }
+
     // Update deal_submissions status constraint to support new deal stages
     try {
       await pool.query(`ALTER TABLE deal_submissions DROP CONSTRAINT IF EXISTS deal_submissions_status_check;`);
@@ -3076,7 +3084,17 @@ app.post('/api/smart-parse/confirm', authenticateToken, async (req, res) => {
     const { parsed_data, deal_id, parse_session_id } = req.body;
     if (!parsed_data) return res.status(400).json({ error: 'Parsed data is required' });
 
-    const pd = parsed_data;
+    // Sanitise parsed data — convert string numbers, truncate long strings
+    const pd = { ...parsed_data };
+    const numericFields = ['current_value', 'purchase_price', 'loan_amount', 'ltv_requested', 'rate_requested', 'term_months', 'refurb_cost'];
+    for (const f of numericFields) {
+      if (pd[f] !== null && pd[f] !== undefined) {
+        const num = parseFloat(String(pd[f]).replace(/[£$,]/g, ''));
+        pd[f] = isNaN(num) ? null : num;
+      }
+    }
+    // Remove confidence field (not a DB column)
+    delete pd.confidence;
 
     if (deal_id) {
       // UPDATE existing deal with parsed fields
