@@ -2338,6 +2338,7 @@ async function loadAdminDeals() {
     deals.forEach(deal => {
       const row = document.createElement('tr');
       row.style.cursor = 'pointer';
+      row.onclick = () => showDealDetail(deal.submission_id);
       const brokerOrBorrower = deal.broker_name || deal.borrower_name || 'N/A';
       const company = deal.broker_company || 'N/A';
       row.innerHTML = `
