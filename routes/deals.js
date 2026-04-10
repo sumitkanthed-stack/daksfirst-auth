@@ -1674,23 +1674,41 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
       if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
       const dealId = dealResult.rows[0].id;
 
-      // Ensure doc_category and uploaded_by columns exist
+      // Ensure required columns exist (safe to run multiple times)
       try {
         await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
         await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
+        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS file_content BYTEA`);
       } catch (migErr) {
         console.log('[smart-upload] Column migration note:', migErr.message.substring(0, 80));
+      }
+
+      // Check which columns actually exist so we insert correctly
+      let hasFileContent = true;
+      try {
+        await pool.query(`SELECT file_content FROM deal_documents LIMIT 0`);
+      } catch (e) {
+        hasFileContent = false;
       }
 
       const results = [];
       for (const file of req.files) {
         const category = categoriseFile(file.originalname);
 
-        const result = await pool.query(
-          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
-          [dealId, file.originalname, file.mimetype, file.size, file.buffer, category, req.user.userId]
-        );
+        let result;
+        if (hasFileContent) {
+          result = await pool.query(
+            `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
+            [dealId, file.originalname, file.mimetype, file.size, file.buffer, category, req.user.userId]
+          );
+        } else {
+          result = await pool.query(
+            `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, doc_category, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, filename, doc_category, uploaded_at`,
+            [dealId, file.originalname, file.mimetype, file.size, category, req.user.userId]
+          );
+        }
 
         results.push({ ...result.rows[0], category });
 
