@@ -41,6 +41,9 @@ module.exports = {
   GRAPH_USER_EMAIL: 'portal@daksfirst.com',
   ONEDRIVE_ROOT: 'Daksfirst Deals',
 
+  // Anthropic AI (for document categorisation)
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+
   // n8n webhook
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
 

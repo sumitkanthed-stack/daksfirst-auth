@@ -1635,9 +1635,10 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  SMART UPLOAD — auto-categorise files by filename patterns
+//  SMART UPLOAD — auto-categorise files by filename + AI content analysis
 // ═══════════════════════════════════════════════════════════════════════════
 const smartUploadMulter = require('multer')({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 20);
+const { categoriseWithAI } = require('../services/ai-categorise');
 
 // Filename pattern → category mapping
 const categoryPatterns = [
@@ -1693,7 +1694,22 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
 
       const results = [];
       for (const file of req.files) {
-        const category = categoriseFile(file.originalname);
+        let category = categoriseFile(file.originalname);
+        let classifiedBy = 'filename';
+
+        // If filename matching returned 'general', try AI content analysis
+        if (category === 'general') {
+          try {
+            const aiCategory = await categoriseWithAI(file);
+            if (aiCategory && aiCategory !== 'general') {
+              category = aiCategory;
+              classifiedBy = 'ai';
+              console.log(`[smart-upload] AI classified "${file.originalname}" → ${category}`);
+            }
+          } catch (aiErr) {
+            console.log('[smart-upload] AI categorisation skipped:', aiErr.message);
+          }
+        }
 
         let result;
         if (hasFileContent) {
@@ -1710,7 +1726,7 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
           );
         }
 
-        results.push({ ...result.rows[0], category });
+        results.push({ ...result.rows[0], category, classifiedBy });
 
         // Upload to OneDrive (non-blocking)
         try {
