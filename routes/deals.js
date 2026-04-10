@@ -1683,21 +1683,9 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
       const dealId = dealResult.rows[0].id;
 
       // Ensure required columns exist (safe to run multiple times)
-      try {
-        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
-        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
-        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS file_content BYTEA`);
-      } catch (migErr) {
-        console.log('[smart-upload] Column migration note:', migErr.message.substring(0, 80));
-      }
-
-      // Check which columns actually exist so we insert correctly
-      let hasFileContent = true;
-      try {
-        await pool.query(`SELECT file_content FROM deal_documents LIMIT 0`);
-      } catch (e) {
-        hasFileContent = false;
-      }
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS file_content BYTEA`);
 
       // Check for existing files to prevent duplicates
       const existingDocs = await pool.query(
@@ -1734,20 +1722,12 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
           }
         }
 
-        let result;
-        if (hasFileContent) {
-          result = await pool.query(
-            `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
-            [dealId, file.originalname, file.mimetype, file.size, file.buffer, category, req.user.userId]
-          );
-        } else {
-          result = await pool.query(
-            `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, doc_category, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, filename, doc_category, uploaded_at`,
-            [dealId, file.originalname, file.mimetype, file.size, category, req.user.userId]
-          );
-        }
+        // Always store file_content (BYTEA) — needed for AI extraction
+        const result = await pool.query(
+          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
+          [dealId, file.originalname, file.mimetype, file.size, file.buffer, category, req.user.userId]
+        );
 
         results.push({ ...result.rows[0], category, classifiedBy });
 
