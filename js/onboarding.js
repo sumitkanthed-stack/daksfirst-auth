@@ -61,11 +61,11 @@ export async function aiAutoFill(section) {
   const btn = document.getElementById(`ai-fill-${section}`);
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-sm"></span> AI Reading Documents...';
+    btn.innerHTML = '<span class="spinner-sm"></span> Reading Documents...';
   }
 
   try {
-    showToast('AI is reading your documents and extracting data...');
+    showToast('Reading your documents and extracting data...');
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/ai-extract/${section}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
@@ -98,15 +98,15 @@ export async function aiAutoFill(section) {
 
       showToast(`AI filled ${filled} field(s) from ${section.replace(/_/g, ' ')} documents. Please review before saving.`);
     } else {
-      showToast(data.error || data.message || 'AI extraction failed', true);
+      showToast(data.error || data.message || 'Auto-fill extraction failed', true);
     }
   } catch (err) {
     console.error('[ai-auto-fill] Error:', err);
-    showToast('Network error during AI extraction', true);
+    showToast('Network error during extraction', true);
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '&#x1F916; AI Auto-Fill from Documents';
+      btn.innerHTML = '&#x1F916; Auto-Fill from Documents';
     }
   }
 }
@@ -432,7 +432,7 @@ export async function approveOnboardingSection(sectionKey, approved = true) {
     if (resp.ok) {
       showToast(`${sectionKey.replace(/_/g, ' ')} ${approved ? 'approved' : 'approval revoked'}`);
       if (data.all_sections_approved) {
-        showToast('All onboarding sections approved! You can now generate the AI termsheet.', false);
+        showToast('All onboarding sections approved! You can now generate the indicative termsheet.', false);
       }
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {

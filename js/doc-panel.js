@@ -163,7 +163,7 @@ export async function renderDocPanel(deal) {
     html += `<div style="padding:10px 14px;border-bottom:2px solid var(--secondary);background:#fffbeb;">
       <label style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed #c9a84c;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:#92400e;background:#fff;">
         <input type="file" multiple style="display:none;" onchange="window.smartUploadFiles(this.files)">
-        <span style="font-size:16px;">&#x1F4E4;</span> Drop All Files Here — AI Will Sort Them
+        <span style="font-size:16px;">&#x1F4E4;</span> Drop All Files Here — Auto-Sorted
       </label>
     </div>`;
   }
@@ -340,7 +340,7 @@ export async function smartUploadFiles(files) {
   }
 
   try {
-    showToast(`Uploading ${files.length} file(s) — AI is categorising...`);
+    showToast(`Uploading ${files.length} file(s) — categorising...`);
     const token = getAuthToken();
     const resp = await fetch(`${API_BASE}/api/deals/${dealId}/smart-upload`, {
       method: 'POST',

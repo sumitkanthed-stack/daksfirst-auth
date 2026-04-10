@@ -479,7 +479,7 @@ export async function generateAiTermsheet() {
     });
     const respData = await resp.json();
     if (resp.ok) {
-      showToast('AI termsheet generated');
+      showToast('Indicative termsheet generated');
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(respData.error || 'Failed to generate termsheet', true);

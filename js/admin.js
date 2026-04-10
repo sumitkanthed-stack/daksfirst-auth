@@ -74,7 +74,7 @@ export async function loadAdminDeals() {
 
     const stageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -113,7 +113,7 @@ export async function loadStaffDeals() {
 
     const stageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -249,7 +249,7 @@ export function updateAdminDealsFilter() {
   if (tbody) {
     const stageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
