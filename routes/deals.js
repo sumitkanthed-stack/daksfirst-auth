@@ -1778,6 +1778,58 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  AI EXTRACT — read uploaded docs and extract form data for a section
+// ═══════════════════════════════════════════════════════════════════════════
+const { extractSectionData } = require('../services/ai-extract');
+
+router.post('/:submissionId/ai-extract/:section', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, section } = req.params;
+    const validSections = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions'];
+    if (!validSections.includes(section)) {
+      return res.status(400).json({ error: 'Invalid section: ' + section });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    // Fetch documents for this section (with file content)
+    let docs;
+    try {
+      docs = await pool.query(
+        `SELECT filename, file_type, file_content as buffer FROM deal_documents
+         WHERE deal_id = $1 AND doc_category = $2 AND file_content IS NOT NULL
+         ORDER BY uploaded_at DESC LIMIT 10`,
+        [dealId, section]
+      );
+    } catch (colErr) {
+      // file_content column might not exist
+      console.log('[ai-extract] file_content column issue:', colErr.message);
+      return res.status(400).json({ error: 'No document content available for extraction. Documents may need to be re-uploaded.' });
+    }
+
+    if (docs.rows.length === 0) {
+      return res.status(400).json({ error: `No documents with extractable content found in ${section}. Upload documents first.` });
+    }
+
+    console.log(`[ai-extract] Extracting from ${docs.rows.length} docs for section: ${section}, deal: ${submissionId}`);
+    const extracted = await extractSectionData(section, docs.rows);
+
+    if (!extracted || Object.keys(extracted).length === 0) {
+      return res.json({ success: true, extracted: {}, message: 'AI could not extract data from the uploaded documents. Try uploading clearer documents.' });
+    }
+
+    res.json({ success: true, extracted, fieldsFound: Object.keys(extracted).length });
+  } catch (error) {
+    console.error('[ai-extract] Error:', error);
+    res.status(500).json({ error: 'AI extraction failed: ' + error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  CLEAR ALL UPLOADED DOCUMENTS (admin only — for re-upload)
 // ═══════════════════════════════════════════════════════════════════════════
 router.delete('/:submissionId/clear-documents', authenticateToken, async (req, res) => {

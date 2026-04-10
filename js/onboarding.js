@@ -49,6 +49,69 @@ export async function saveOnboardingTab(tabName) {
 }
 
 /**
+ * AI Auto-Fill — read uploaded docs and extract data into form fields
+ */
+export async function aiAutoFill(section) {
+  const dealId = getCurrentDealId();
+  if (!dealId) {
+    showToast('No deal selected', true);
+    return;
+  }
+
+  const btn = document.getElementById(`ai-fill-${section}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> AI Reading Documents...';
+  }
+
+  try {
+    showToast('AI is reading your documents and extracting data...');
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/ai-extract/${section}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await resp.json();
+    if (resp.ok && data.extracted) {
+      const fields = Object.entries(data.extracted);
+      if (fields.length === 0) {
+        showToast('AI could not extract data — try uploading clearer documents', true);
+        return;
+      }
+
+      // Auto-fill each field with extracted data
+      let filled = 0;
+      fields.forEach(([fieldId, value]) => {
+        const el = document.getElementById(fieldId);
+        if (el && value) {
+          // Highlight the field to show it was AI-filled
+          el.value = value;
+          el.style.borderColor = '#10b981';
+          el.style.backgroundColor = '#f0fdf4';
+          setTimeout(() => {
+            el.style.borderColor = '';
+            el.style.backgroundColor = '';
+          }, 5000);
+          filled++;
+        }
+      });
+
+      showToast(`AI filled ${filled} field(s) from ${section.replace(/_/g, ' ')} documents. Please review before saving.`);
+    } else {
+      showToast(data.error || data.message || 'AI extraction failed', true);
+    }
+  } catch (err) {
+    console.error('[ai-auto-fill] Error:', err);
+    showToast('Network error during AI extraction', true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '&#x1F916; AI Auto-Fill from Documents';
+    }
+  }
+}
+
+/**
  * Populate onboarding form with existing data
  */
 export function populateOnboardingData(onboardingData) {

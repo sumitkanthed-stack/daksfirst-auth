@@ -906,7 +906,10 @@
                 <div class="form-group"><div class="form-row"><div><label>Companies House Confirmation Statement</label><input type="file" id="kyc-ch-confirm" class="onboarding-file"></div><div><label>Board Resolution Authorising Borrowing</label><input type="file" id="kyc-board-res" class="onboarding-file"></div></div></div>
                 <div class="form-group"><label>UBO Declaration (all individuals with 25%+ interest)</label><textarea id="kyc-ubo-declaration" rows="2" placeholder="Names and percentage holdings of all UBOs"></textarea></div>
                 <div class="form-group"><label>Group Structure Chart (if subsidiary)</label><input type="file" id="kyc-group-chart" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('kyc')">Save KYC Data</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-kyc" class="btn" onclick="aiAutoFill('kyc')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('kyc')" style="flex:1;">Save KYC Data</button>
+                </div>
               </div>
             </div></div>
           </div>
@@ -945,7 +948,10 @@
                 <div class="section-title">Broker Compliance</div>
                 <div class="form-group"><label>AML Policy Acknowledgement *</label><select id="aml-broker-ack"><option value="">Select</option><option value="confirmed">Confirmed — AML checks completed</option><option value="pending">Pending</option></select></div>
                 <div class="form-group"><label>Declaration of Conflicts of Interest *</label><textarea id="aml-conflicts" rows="2" placeholder="Any relationship between broker and borrower/property beyond this transaction, or 'None'"></textarea></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('financials_aml')">Save Financials &amp; AML Data</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-financials_aml" class="btn" onclick="aiAutoFill('financials_aml')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('financials_aml')" style="flex:1;">Save Financials &amp; AML Data</button>
+                </div>
               </div>
             </div></div>
           </div>
@@ -972,7 +978,10 @@
                 <div class="form-group"><div class="form-row"><div><label>Borrower's Solicitor Firm *</label><input type="text" id="val-solicitor-firm"></div><div><label>SRA Number *</label><input type="text" id="val-sra-number"></div></div></div>
                 <div class="form-group"><label>Supervising Partner Name</label><input type="text" id="val-solicitor-partner"></div>
                 <div class="form-group"><label>Search Results (Local Authority, Drainage, Environmental)</label><input type="file" id="val-searches" class="onboarding-file" multiple></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('valuation')">Save Valuation &amp; Legal Data</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-valuation" class="btn" onclick="aiAutoFill('valuation')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('valuation')" style="flex:1;">Save Valuation &amp; Legal Data</button>
+                </div>
               </div>
             </div></div>
           </div>
@@ -1000,7 +1009,10 @@
                 <div class="form-group"><label>Monitoring Surveyor (if loan &gt; £500k or works &gt; 3 months)</label><input type="text" id="refurb-monitoring" placeholder="Surveyor name and firm"></div>
                 <div class="form-group"><label>PI Insurance for Contractors</label><input type="file" id="refurb-pi-insurance" class="onboarding-file"></div>
                 <div class="form-group"><label>Structural Engineer Report (if structural works)</label><input type="file" id="refurb-structural" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('use_of_funds')">Save Use of Funds Data</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-use_of_funds" class="btn" onclick="aiAutoFill('use_of_funds')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('use_of_funds')" style="flex:1;">Save Use of Funds Data</button>
+                </div>
               </div>
             </div></div>
           </div>
@@ -1027,7 +1039,10 @@
                 <hr class="section-divider">
                 <div class="section-title">If Exit via Asset Sale</div>
                 <div class="form-group"><label>Asset Particulars / Agent Confirmation</label><input type="file" id="exit-asset-sale" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('exit_evidence')">Save Exit Evidence</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-exit_evidence" class="btn" onclick="aiAutoFill('exit_evidence')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('exit_evidence')" style="flex:1;">Save Exit Evidence</button>
+                </div>
               </div>
             </div></div>
           </div>
@@ -1054,7 +1069,10 @@
                 <div class="section-title">Other</div>
                 <div class="form-group"><label>Additional Notes / Conditions</label><textarea id="oc-other-notes" rows="3" placeholder="Any other conditions, warranties, or requirements specific to this deal"></textarea></div>
                 <div class="form-group"><label>Supporting Documents</label><input type="file" id="oc-other-docs" class="onboarding-file" multiple></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('other_conditions')">Save Other Conditions</button>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                  <button id="ai-fill-other_conditions" class="btn" onclick="aiAutoFill('other_conditions')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F916; AI Auto-Fill from Documents</button>
+                  <button class="btn btn-primary" onclick="saveOnboardingTab('other_conditions')" style="flex:1;">Save Other Conditions</button>
+                </div>
               </div>
             </div></div>
           </div>
