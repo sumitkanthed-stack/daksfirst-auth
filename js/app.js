@@ -26,7 +26,6 @@ window.updateAdminDealsFilter = updateAdminDealsFilter;
 window.loadAdminUsers = loadAdminUsers;
 window.switchDetailTab = switchDetailTab;
 window.saveOnboardingTab = saveOnboardingTab;
-window.toggleBrokerCompanyFields = toggleBrokerCompanyFields;
 window.loadBrokerOnboarding = loadBrokerOnboarding;
 window.showBrokerOnboarding = showBrokerOnboarding;
 window.hideBrokerOnboarding = hideBrokerOnboarding;
@@ -53,7 +52,6 @@ window.handleEmailVerification = handleEmailVerification;
 window.assignRM = () => import('./workflow-actions.js').then(m => m.assignRM());
 window.assignRMAndAdvance = () => import('./workflow-actions.js').then(m => m.assignRMAndAdvance());
 window.assignReviewer = (type) => import('./workflow-actions.js').then(m => m.assignReviewer(type));
-window.advanceStage = (newStage) => import('./workflow-actions.js').then(m => m.advanceStage(newStage));
 window.confirmFee = () => import('./workflow-actions.js').then(m => m.confirmFee());
 window.submitRecommendation = (decision) => import('./workflow-actions.js').then(m => m.submitRecommendation(decision));
 window.acceptDipExternal = () => import('./workflow-actions.js').then(m => m.acceptDipExternal());
@@ -171,10 +169,6 @@ window.doLogin = async function() {
   }
 };
 
-window.startLogin = function() {
-  showScreen('screen-login');
-};
-
 window.goToRegister = function(role) {
   window.selectedRole = role;
   // Show registration form
@@ -185,10 +179,6 @@ window.goToRegister = function(role) {
     if (nextPanel) nextPanel.classList.add('active');
   }
   showScreen('screen-register');
-};
-
-window.showRoleSelection = function() {
-  showScreen('screen-landing');
 };
 
 window.createInternalUser = () => import('./admin.js').then(m => m.createInternalUser?.());
