@@ -893,7 +893,7 @@ router.post('/:submissionId/issue-termsheet', authenticateToken, authenticateInt
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/credit-decision', authenticateToken, authenticateInternal, validate('creditDecision'), async (req, res) => {
   try {
-    const { decision, notes, conditions, next_stage } = req.validated;
+    const { decision, notes, conditions, retained_months } = req.validated;
     if (!decision) return res.status(400).json({ error: 'Decision is required' });
 
     const dealResult = await pool.query(
@@ -912,6 +912,23 @@ router.post('/:submissionId/credit-decision', authenticateToken, authenticateInt
       decided_by: req.user.userId,
       decided_at: new Date().toISOString()
     };
+
+    // If credit overrides retained months, store it
+    if (retained_months !== undefined && retained_months !== null) {
+      existingData.retained_months = retained_months;
+      console.log(`[credit-decision] Credit overrode retained months to ${retained_months}`);
+    }
+
+    // If moreinfo, store the question for the RM to see
+    if (decision === 'moreinfo' && notes) {
+      existingData.credit_query = {
+        question: notes,
+        asked_by: req.user.userId,
+        asked_at: new Date().toISOString(),
+        resolved: false
+      };
+      console.log('[credit-decision] More info requested — query stored for RM');
+    }
 
     const updates = [
       'ai_termsheet_data = $1',

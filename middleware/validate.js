@@ -154,9 +154,11 @@ const schemas = {
 
   // Credit decision
   creditDecision: Joi.object({
-    decision: Joi.string().valid('approve', 'decline', 'more_info').required(),
-    recommendation: Joi.string(),
-    comments: Joi.string()
+    decision: Joi.string().valid('approve', 'decline', 'moreinfo').required(),
+    notes: Joi.string().allow('', null),
+    conditions: Joi.string().allow('', null),
+    next_stage: Joi.string().allow('', null),
+    retained_months: Joi.number().min(0).max(36).allow(null),
   }),
 
   // Request fee

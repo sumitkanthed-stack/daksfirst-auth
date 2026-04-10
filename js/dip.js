@@ -245,29 +245,54 @@ export async function issueDip() {
  */
 export async function creditDecision(decision) {
   const dealId = getCurrentDealId();
-  const notes = document.getElementById('credit-notes')?.value || '';
+  let notes = document.getElementById('credit-notes')?.value || '';
   const conditions = document.getElementById('credit-conditions')?.value || '';
+  const retainedMonths = document.getElementById('credit-retained-months')?.value;
 
-  if (!notes && decision !== 'moreinfo') {
-    showToast('Please provide credit assessment notes', true);
-    return;
+  // ── More Info Needed: prompt credit to explain what they need ──
+  if (decision === 'moreinfo') {
+    const question = prompt('What information do you need from the RM?\n\nThis will be sent back to the RM as a query.');
+    if (!question) return; // cancelled
+    notes = question;
+    if (!confirm('Send this back to the RM for more information?\n\n"' + question + '"')) return;
   }
 
-  const confirmMsg = decision === 'approve' ? 'Issue In-Principle Approval? This will be visible to the broker/borrower.' :
-                     decision === 'decline' ? 'Decline this deal?' : 'Request more information?';
-  if (!confirm(confirmMsg)) return;
+  // ── Decline: require a reason ──
+  if (decision === 'decline') {
+    if (!notes) {
+      showToast('Please provide a reason for declining in the Credit Assessment Notes', true);
+      return;
+    }
+    if (!confirm('Decline this deal? This decision will be final.\n\nReason: ' + notes.substring(0, 200))) return;
+  }
+
+  // ── Approve: require notes ──
+  if (decision === 'approve') {
+    if (!notes) {
+      showToast('Please provide credit assessment notes before approving', true);
+      return;
+    }
+    if (!confirm('Issue In-Principle Approval?\n\nThis will be visible to the borrower once approved.')) return;
+  }
 
   try {
-    const nextStage = decision === 'approve' ? 'info_gathering' : decision === 'decline' ? 'declined' : 'assigned';
+    const body = { decision, notes, conditions };
+    if (retainedMonths !== undefined && retainedMonths !== null) {
+      body.retained_months = parseInt(retainedMonths, 10);
+    }
 
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision, notes, conditions, next_stage: nextStage })
+      body: JSON.stringify(body)
     });
     const data = await resp.json();
     if (resp.ok) {
-      const msgs = { approve: 'In-Principle Approval issued', decline: 'Deal declined', moreinfo: 'Sent back for more information' };
+      const msgs = {
+        approve: 'In-Principle Approval issued — awaiting borrower acceptance',
+        decline: 'Deal declined',
+        moreinfo: 'Sent back to RM for more information'
+      };
       showToast(msgs[decision] || 'Decision recorded');
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {

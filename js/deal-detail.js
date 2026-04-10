@@ -584,6 +584,18 @@ export function renderInternalWorkflowControls(deal) {
     }, 100);
   }
 
+  // Credit Query Banner — show when credit sent deal back for more info
+  if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
+    const tsData = deal.ai_termsheet_data || {};
+    if (tsData.credit_query && !tsData.credit_query.resolved) {
+      html += `<div style="background:#fef3c7;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #f59e0b;">
+        <h4 style="margin:0 0 8px;color:#92400e;">Credit Team Query</h4>
+        <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#78350f;">"${sanitizeHtml(tsData.credit_query.question)}"</p>
+        <p style="margin:0;font-size:11px;color:#92400e;">Asked ${tsData.credit_query.asked_at ? new Date(tsData.credit_query.asked_at).toLocaleDateString('en-GB') : ''} — Please address this before re-issuing the DIP.</p>
+      </div>`;
+    }
+  }
+
   // ASSIGNED (RM or Admin) - Issue DIP
   if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
     const dipLoan = deal.loan_amount || '';
@@ -1334,12 +1346,14 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
-  // Generic Decline/Withdraw for all stages (except final stages)
-  if (!['completed', 'declined', 'withdrawn'].includes(stage)) {
+  // Withdraw — only for admin/RM (lender withdraws offer) or broker/borrower (applicant withdraws application)
+  // Credit team uses Decline, not Withdraw. Final stages excluded.
+  if (!['completed', 'declined', 'withdrawn'].includes(stage) && ['admin', 'rm', 'broker', 'borrower'].includes(currentRole)) {
+    const withdrawLabel = ['broker', 'borrower'].includes(currentRole) ? 'Withdraw Application' : 'Withdraw Deal';
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Deal Status</h4>
       <div style="display:flex;gap:8px;">
-        <button onclick="window.withdrawDeal && window.withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Withdraw</button>
+        <button onclick="window.withdrawDeal && window.withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">${withdrawLabel}</button>
       </div>
     </div>`;
   }
