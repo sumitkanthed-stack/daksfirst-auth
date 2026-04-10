@@ -159,6 +159,9 @@ const schemas = {
     conditions: Joi.string().allow('', null),
     next_stage: Joi.string().allow('', null),
     retained_months: Joi.number().min(0).max(36).allow(null),
+    override_rate: Joi.number().min(0).max(5).allow(null),
+    override_ltv: Joi.number().min(0).max(80).allow(null),
+    override_arr_fee: Joi.number().min(0).max(10).allow(null),
   }),
 
   // Request fee

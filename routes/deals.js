@@ -893,7 +893,7 @@ router.post('/:submissionId/issue-termsheet', authenticateToken, authenticateInt
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/credit-decision', authenticateToken, authenticateInternal, validate('creditDecision'), async (req, res) => {
   try {
-    const { decision, notes, conditions, retained_months } = req.validated;
+    const { decision, notes, conditions, retained_months, override_rate, override_ltv, override_arr_fee } = req.validated;
     if (!decision) return res.status(400).json({ error: 'Decision is required' });
 
     const dealResult = await pool.query(
@@ -917,6 +917,20 @@ router.post('/:submissionId/credit-decision', authenticateToken, authenticateInt
     if (retained_months !== undefined && retained_months !== null) {
       existingData.retained_months = retained_months;
       console.log(`[credit-decision] Credit overrode retained months to ${retained_months}`);
+    }
+
+    // Store credit overrides for rate, LTV, arrangement fee
+    if (override_rate !== undefined) {
+      existingData.credit_override_rate = override_rate;
+      console.log(`[credit-decision] Credit overrode rate to ${override_rate}%/m`);
+    }
+    if (override_ltv !== undefined) {
+      existingData.credit_override_ltv = override_ltv;
+      console.log(`[credit-decision] Credit overrode max LTV to ${override_ltv}%`);
+    }
+    if (override_arr_fee !== undefined) {
+      existingData.credit_override_arr_fee = override_arr_fee;
+      console.log(`[credit-decision] Credit overrode arrangement fee to ${override_arr_fee}%`);
     }
 
     // If moreinfo, store the question for the RM to see
