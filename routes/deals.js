@@ -102,128 +102,12 @@ router.post('/submit', authenticateToken, validate('dealSubmit'), async (req, re
 // ═══════════════════════════════════════════════════════════════════════════
 //  GET USER'S DEALS (Dashboard)
 // ═══════════════════════════════════════════════════════════════════════════
-router.get('/', authenticateToken, async (req, res) => {
-  try {
-    // Broker/internal: see deals they submitted or are assigned to
-    // Borrower: see deals assigned to them
-    let query, params;
-
-    if (req.user.role === 'borrower') {
-      query = `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.security_address,
-                      ds.loan_amount, ds.loan_purpose, ds.asset_type, ds.created_at, ds.updated_at,
-                      COUNT(dd.id) as document_count
-               FROM deal_submissions ds
-               LEFT JOIN deal_documents dd ON ds.id = dd.deal_id
-               WHERE ds.borrower_user_id = $1
-               GROUP BY ds.id
-               ORDER BY ds.created_at DESC`;
-      params = [req.user.userId];
-    } else {
-      query = `SELECT ds.id, ds.submission_id, ds.status, ds.borrower_name, ds.security_address,
-                      ds.loan_amount, ds.loan_purpose, ds.asset_type, ds.created_at, ds.updated_at,
-                      COUNT(dd.id) as document_count
-               FROM deal_submissions ds
-               LEFT JOIN deal_documents dd ON ds.id = dd.deal_id
-               WHERE ds.user_id = $1
-               GROUP BY ds.id
-               ORDER BY ds.created_at DESC`;
-      params = [req.user.userId];
-    }
-
-    const result = await pool.query(query, params);
-    res.json({ success: true, deals: result.rows });
-  } catch (error) {
-    console.error('[deals] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch deals' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  GET SINGLE DEAL (Dashboard)
 // ═══════════════════════════════════════════════════════════════════════════
-router.get('/:submissionId', authenticateToken, async (req, res) => {
-  try {
-    // Broker/internal: see deals they submitted or are assigned to
-    // Borrower: see deals assigned to them
-    let dealResult;
-
-    if (req.user.role === 'borrower') {
-      dealResult = await pool.query(
-        `SELECT * FROM deal_submissions WHERE submission_id = $1 AND borrower_user_id = $2`,
-        [req.params.submissionId, req.user.userId]
-      );
-    } else {
-      dealResult = await pool.query(
-        `SELECT * FROM deal_submissions WHERE submission_id = $1 AND user_id = $2`,
-        [req.params.submissionId, req.user.userId]
-      );
-    }
-
-    if (dealResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Deal not found' });
-    }
-
-    const deal = dealResult.rows[0];
-    const dealId = deal.id;
-
-    // Get documents
-    const docsResult = await pool.query(
-      `SELECT id, filename, file_type, file_size, onedrive_download_url, uploaded_at
-       FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at DESC`,
-      [dealId]
-    );
-
-    // Get analysis results
-    const analysisResult = await pool.query(
-      `SELECT credit_memo_url, termsheet_url, gbb_memo_url, analysis_json, completed_at
-       FROM analysis_results WHERE deal_id = $1`,
-      [dealId]
-    );
-
-    res.json({
-      success: true,
-      deal: {
-        ...deal,
-        documents: docsResult.rows,
-        analysis: analysisResult.rows[0] || null
-      }
-    });
-  } catch (error) {
-    console.error('[deal-detail] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch deal details' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  UPDATE DEAL STATUS (from webhook callback)
 // ═══════════════════════════════════════════════════════════════════════════
-router.put('/:submissionId/status', authenticateToken, validate('dealStatusUpdate'), async (req, res) => {
-  try {
-    const { status, internal_status } = req.validated;
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
-    }
-
-    const result = await pool.query(
-      `UPDATE deal_submissions
-       SET status = $1, internal_status = COALESCE($2, internal_status), updated_at = NOW()
-       WHERE submission_id = $3 AND user_id = $4
-       RETURNING id, submission_id, status, updated_at`,
-      [status, internal_status || null, req.params.submissionId, req.user.userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Deal not found' });
-    }
-
-    console.log('[deal-update] Deal', req.params.submissionId, 'status updated to', status);
-    res.json({ success: true, deal: result.rows[0] });
-  } catch (error) {
-    console.error('[deal-update] Error:', error);
-    res.status(500).json({ error: 'Failed to update deal' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  SAVE ONBOARDING DATA (Phase 2 — per tab)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -444,51 +328,9 @@ router.post('/:submissionId/recommendation', authenticateToken, authenticateInte
 // ═══════════════════════════════════════════════════════════════════════════
 //  GET AUDIT LOG
 // ═══════════════════════════════════════════════════════════════════════════
-router.get('/:submissionId/audit', authenticateToken, authenticateInternal, async (req, res) => {
-  try {
-    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
-    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-
-    const auditResult = await pool.query(
-      `SELECT a.id, a.action, a.from_value, a.to_value, a.details, a.created_at,
-              u.first_name, u.last_name, u.role
-       FROM deal_audit_log a
-       LEFT JOIN users u ON a.performed_by = u.id
-       WHERE a.deal_id = $1
-       ORDER BY a.created_at DESC`,
-      [dealResult.rows[0].id]
-    );
-
-    res.json({ success: true, audit: auditResult.rows });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch audit log' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  GET FEES
 // ═══════════════════════════════════════════════════════════════════════════
-router.get('/:submissionId/fees', authenticateToken, authenticateInternal, async (req, res) => {
-  try {
-    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
-    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-
-    const feesResult = await pool.query(
-      `SELECT f.id, f.fee_type, f.amount, f.payment_date, f.payment_ref, f.notes, f.created_at,
-              u.first_name, u.last_name
-       FROM deal_fee_payments f
-       LEFT JOIN users u ON f.confirmed_by = u.id
-       WHERE f.deal_id = $1
-       ORDER BY f.created_at DESC`,
-      [dealResult.rows[0].id]
-    );
-
-    res.json({ success: true, fees: feesResult.rows });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch fees' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  ISSUE DIP — Generates PDF, uploads to OneDrive, borrower accepts in-portal
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1288,33 +1130,6 @@ router.post('/:submissionId/instruct-legal', authenticateToken, authenticateInte
 // ═══════════════════════════════════════════════════════════════════════════
 //  INVITE BORROWER
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/:submissionId/invite-borrower', authenticateToken, authenticateInternal, validate('inviteBorrower'), async (req, res) => {
-  try {
-    const { borrower_invite_email } = req.validated;
-    if (!borrower_invite_email) return res.status(400).json({ error: 'Borrower email is required' });
-
-    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
-    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-    const dealId = dealResult.rows[0].id;
-
-    const result = await pool.query(
-      `UPDATE deal_submissions SET
-        borrower_invited_at = NOW(),
-        borrower_invite_email = $1,
-        updated_at = NOW()
-       WHERE id = $2 RETURNING submission_id, borrower_invited_at, borrower_invite_email`,
-      [borrower_invite_email, dealId]
-    );
-
-    await logAudit(dealId, 'borrower_invited', dealResult.rows[0].status, 'borrower_invited',
-      { email: borrower_invite_email }, req.user.userId);
-
-    res.json({ success: true, deal: result.rows[0], message: 'Invitation sent' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to invite borrower' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  UPDATE INTAKE FIELDS (RM / Internal)
 //  Allows RM to amend pre-populated intake fields after review

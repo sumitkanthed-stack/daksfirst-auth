@@ -72,11 +72,6 @@ const schemas = {
     borrower_invite_email: Joi.string().email()
   }),
 
-  dealStatusUpdate: Joi.object({
-    status: Joi.string().required(),
-    internal_status: Joi.string()
-  }),
-
   dealOnboarding: Joi.object({
     tab: Joi.string().valid('kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance').required(),
     data: Joi.object().required()
@@ -84,46 +79,6 @@ const schemas = {
 
   dealStageUpdate: Joi.object({
     stage: Joi.string().required()
-  }),
-
-  // Smart parse endpoints
-  smartParseConfirm: Joi.object({
-    parse_session_id: Joi.string().uuid().required(),
-    deal_id: Joi.string().uuid(),
-    parsed_data: Joi.object({
-      borrower_name: Joi.string(),
-      borrower_company: Joi.string(),
-      borrower_email: Joi.string().email(),
-      borrower_phone: Joi.string(),
-      broker_name: Joi.string(),
-      broker_company: Joi.string(),
-      broker_fca: Joi.string(),
-      security_address: Joi.string(),
-      security_postcode: Joi.string(),
-      asset_type: Joi.string(),
-      current_value: Joi.number(),
-      loan_amount: Joi.number(),
-      ltv_requested: Joi.number(),
-      loan_purpose: Joi.string(),
-      exit_strategy: Joi.string(),
-      term_months: Joi.number(),
-      rate_requested: Joi.number(),
-      additional_notes: Joi.string(),
-      borrower_nationality: Joi.string(),
-      borrower_type: Joi.string(),
-      company_name: Joi.string(),
-      company_number: Joi.string(),
-      interest_servicing: Joi.string(),
-      existing_charges: Joi.string(),
-      property_tenure: Joi.string(),
-      occupancy_status: Joi.string(),
-      current_use: Joi.string(),
-      purchase_price: Joi.number(),
-      use_of_funds: Joi.string(),
-      refurb_scope: Joi.string(),
-      refurb_cost: Joi.number(),
-      deposit_source: Joi.string()
-    }).required()
   }),
 
   // Issue DIP
@@ -206,124 +161,6 @@ const schemas = {
     borrower_email: Joi.string().email().required()
   }),
 
-  // Borrower CRUD
-  borrowerCreate: Joi.object({
-    full_name: Joi.string().required(),
-    role: Joi.string().valid('primary', 'joint', 'guarantor', 'director'),
-    email: Joi.string().email(),
-    phone: Joi.string().max(30),
-    date_of_birth: Joi.date(),
-    nationality: Joi.string(),
-    jurisdiction: Joi.string(),
-    address: Joi.string(),
-    borrower_type: Joi.string().valid('individual', 'company'),
-    company_name: Joi.string(),
-    company_number: Joi.string()
-  }),
-
-  borrowerUpdate: Joi.object({
-    full_name: Joi.string(),
-    role: Joi.string().valid('primary', 'joint', 'guarantor', 'director'),
-    email: Joi.string().email(),
-    phone: Joi.string().max(30),
-    date_of_birth: Joi.date(),
-    nationality: Joi.string(),
-    jurisdiction: Joi.string(),
-    address: Joi.string(),
-    borrower_type: Joi.string().valid('individual', 'company'),
-    company_name: Joi.string(),
-    company_number: Joi.string()
-  }),
-
-  // Property CRUD
-  propertyCreate: Joi.object({
-    address: Joi.string().required(),
-    postcode: Joi.string().max(15),
-    property_type: Joi.string().max(50),
-    tenure: Joi.string().max(30),
-    occupancy: Joi.string().max(30),
-    current_use: Joi.string().max(50),
-    market_value: Joi.number().positive(),
-    purchase_price: Joi.number().positive(),
-    gdv: Joi.number().positive(),
-    reinstatement: Joi.number().positive(),
-    day1_ltv: Joi.number().min(0).max(100),
-    title_number: Joi.string().max(50),
-    valuation_date: Joi.date(),
-    insurance_sum: Joi.number().positive(),
-    solicitor_firm: Joi.string().max(200),
-    solicitor_ref: Joi.string().max(100),
-    notes: Joi.string()
-  }),
-
-  propertyUpdate: Joi.object({
-    address: Joi.string(),
-    postcode: Joi.string().max(15),
-    property_type: Joi.string().max(50),
-    tenure: Joi.string().max(30),
-    occupancy: Joi.string().max(30),
-    current_use: Joi.string().max(50),
-    market_value: Joi.number().positive(),
-    purchase_price: Joi.number().positive(),
-    gdv: Joi.number().positive(),
-    reinstatement: Joi.number().positive(),
-    day1_ltv: Joi.number().min(0).max(100),
-    title_number: Joi.string().max(50),
-    valuation_date: Joi.date(),
-    insurance_sum: Joi.number().positive(),
-    solicitor_firm: Joi.string().max(200),
-    solicitor_ref: Joi.string().max(100),
-    notes: Joi.string()
-  }),
-
-  // Broker onboarding
-  brokerOnboarding: Joi.object({
-    individual_name: Joi.string(),
-    date_of_birth: Joi.date(),
-    is_company: Joi.boolean(),
-    company_name: Joi.string(),
-    company_number: Joi.string(),
-    bank_name: Joi.string(),
-    bank_sort_code: Joi.string().length(6),
-    bank_account_no: Joi.string().length(8),
-    bank_account_name: Joi.string(),
-    notes: Joi.string()
-  }),
-
-  // Law firms CRUD
-  lawFirmCreate: Joi.object({
-    firm_name: Joi.string().max(200).required(),
-    contact_name: Joi.string().max(200),
-    email: Joi.string().email(),
-    phone: Joi.string().max(30),
-    address: Joi.string(),
-    notes: Joi.string()
-  }),
-
-  lawFirmUpdate: Joi.object({
-    firm_name: Joi.string().max(200),
-    contact_name: Joi.string().max(200),
-    email: Joi.string().email(),
-    phone: Joi.string().max(30),
-    address: Joi.string(),
-    notes: Joi.string()
-  }),
-
-  // Admin
-  adminCreate: Joi.object({
-    first_name: Joi.string().max(100).required(),
-    last_name: Joi.string().max(100).required(),
-    email: Joi.string().email().required(),
-    phone: Joi.string().max(30).required(),
-    role: Joi.string().valid('admin', 'rm', 'credit', 'compliance').required(),
-    password: Joi.string().min(8).required()
-  }),
-
-  adminAssign: Joi.object({
-    assigned_rm: Joi.number(),
-    assigned_credit: Joi.number(),
-    assigned_compliance: Joi.number()
-  })
 };
 
 // Middleware factory
