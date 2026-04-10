@@ -4,7 +4,7 @@
 import { API_BASE } from './config.js';
 import { fetchWithAuth, getAuthToken } from './auth.js';
 import { showToast, sanitizeHtml } from './utils.js';
-import { getCurrentDealId } from './state.js';
+import { getCurrentDealId, getCurrentRole } from './state.js';
 
 // ═══════════════════════════════════════════════════════════════
 //  Section definitions: who can view, who can upload
@@ -89,7 +89,7 @@ export async function renderDocPanel(deal) {
 
   sidebar.style.display = 'flex';
 
-  const role = window.currentRole || 'broker';
+  const role = getCurrentRole() || 'broker';
   const stage = deal.deal_stage || 'received';
   const approval = deal.onboarding_approval || {};
 

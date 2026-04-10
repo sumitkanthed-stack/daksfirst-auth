@@ -1,7 +1,7 @@
 import { API_BASE } from './config.js';
 import { showToast, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
-import { getCurrentDealId } from './state.js';
+import { getCurrentDealId, getCurrentRole } from './state.js';
 
 /**
  * Save onboarding tab data
@@ -195,7 +195,7 @@ export async function loadBrokerOnboarding() {
  */
 export function injectOnboardingSectionControls(deal) {
   const approval = deal.onboarding_approval || {};
-  const currentRole = window.currentRole || 'broker';
+  const currentRole = getCurrentRole() || 'broker';
   const isRM = ['rm', 'admin'].includes(currentRole);
   const isInternal = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole);
 
