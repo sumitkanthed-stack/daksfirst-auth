@@ -93,6 +93,7 @@ window.updateFees = () => import('./dip.js').then(m => m.updateFees());
 // Document panel
 window.toggleDocSection = (key) => import('./doc-panel.js').then(m => m.toggleDocSection(key));
 window.uploadToDocPanel = (cat, files) => import('./doc-panel.js').then(m => m.uploadToDocPanel(cat, files));
+window.smartUploadFiles = (files) => import('./doc-panel.js').then(m => m.smartUploadFiles(files));
 
 // Onboarding workflow
 window.confirmOnboardingFee = () => import('./onboarding.js').then(m => m.confirmOnboardingFee());

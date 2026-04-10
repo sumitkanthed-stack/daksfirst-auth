@@ -124,11 +124,14 @@ export async function renderDocPanel(deal) {
   }
 
   // Build system docs (DIP PDF, Termsheet)
+  const dipSigned = deal.dip_signed;
+  const dipSignedTick = dipSigned ? ' \u2705' : '';
+  const dipLabel = dipSigned ? 'Signed' : 'Issued';
   if (deal.dip_pdf_url) {
-    systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf`, onedrive_download_url: deal.dip_pdf_url, uploaded_at: deal.dip_issued_at, _by: 'System' }];
+    systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf${dipSignedTick}`, onedrive_download_url: deal.dip_pdf_url, uploaded_at: deal.dip_issued_at, _by: dipLabel }];
   } else if (deal.dip_issued_at) {
     // DIP was issued but PDF URL is missing (OneDrive upload may have failed)
-    systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf`, _status: 'regenerate', uploaded_at: deal.dip_issued_at, _by: 'System' }];
+    systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf${dipSignedTick}`, _status: 'regenerate', uploaded_at: deal.dip_issued_at, _by: dipLabel }];
   }
   if (deal.ts_pdf_url) {
     systemDocs.termsheet = [{ filename: `Termsheet_${deal.submission_id.substring(0,8)}.docx`, onedrive_download_url: deal.ts_pdf_url, uploaded_at: deal.ts_issued_at, _by: 'System' }];
@@ -153,6 +156,17 @@ export async function renderDocPanel(deal) {
   // Render sections
   const container = document.getElementById('doc-panel-sections');
   let html = '';
+
+  // Smart Upload zone — drop all files, AI categorises them
+  const canSmartUpload = ['broker', 'borrower', 'rm', 'admin'].includes(role) && phase2Unlocked;
+  if (canSmartUpload) {
+    html += `<div style="padding:10px 14px;border-bottom:2px solid var(--secondary);background:#fffbeb;">
+      <label style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed #c9a84c;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:#92400e;background:#fff;">
+        <input type="file" multiple style="display:none;" onchange="window.smartUploadFiles(this.files)">
+        <span style="font-size:16px;">&#x1F4E4;</span> Drop All Files Here — AI Will Sort Them
+      </label>
+    </div>`;
+  }
 
   SECTION_DEFS.forEach(section => {
     const canView = section.viewers.includes(role) || role === 'admin';
@@ -309,6 +323,42 @@ export async function uploadToDocPanel(category, files) {
     }
   } catch (err) {
     showToast('Network error uploading', true);
+  }
+}
+
+/**
+ * Smart Upload — drop all files, backend categorises by filename patterns + AI
+ */
+export async function smartUploadFiles(files) {
+  const dealId = getCurrentDealId();
+  if (!dealId || !files || files.length === 0) return;
+
+  const formData = new FormData();
+  formData.append('smart', 'true');
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  try {
+    showToast(`Uploading ${files.length} file(s) — AI is categorising...`);
+    const token = getAuthToken();
+    const resp = await fetch(`${API_BASE}/api/deals/${dealId}/smart-upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      // Show categorisation results
+      const summary = data.results.map(r => `${r.filename} → ${r.category.replace(/_/g, ' ')}`).join('\n');
+      showToast(`${data.results.length} file(s) categorised and uploaded`);
+      // Refresh panel
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Smart upload failed', true);
+    }
+  } catch (err) {
+    showToast('Network error during smart upload', true);
   }
 }
 

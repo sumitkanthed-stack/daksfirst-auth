@@ -1627,6 +1627,84 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  SMART UPLOAD — auto-categorise files by filename patterns
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) => {
+  try {
+    const multer = require('multer');
+    const upload = multer({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 20);
+
+    upload(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+
+      const dealResult = await pool.query(
+        `SELECT id, dip_fee_confirmed FROM deal_submissions WHERE submission_id = $1`,
+        [req.params.submissionId]
+      );
+      if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+      const dealId = dealResult.rows[0].id;
+
+      // Filename pattern → category mapping
+      const categoryPatterns = [
+        { pattern: /passport|driving.?licen|photo.?id|identity|national.?id/i, category: 'kyc' },
+        { pattern: /proof.?of.?address|poa|utility.?bill|council.?tax|bank.?letter/i, category: 'kyc' },
+        { pattern: /certificate.?of.?incorp|mem.?art|articles.?of.?assoc|companies.?house|board.?resolution|ubo/i, category: 'kyc' },
+        { pattern: /bank.?statement|sa302|tax.?return|payslip|income|p60|accounts|balance.?sheet|profit.?loss|assets?.?liab|mortgage.?schedule/i, category: 'financials_aml' },
+        { pattern: /aml|anti.?money|source.?of.?fund|source.?of.?wealth|pep|sanction|kyc.?check|compliance/i, category: 'financials_aml' },
+        { pattern: /valuation|rics|survey|title.?register|land.?registry|title.?plan|charges.?register|search.?result|local.?authority/i, category: 'valuation' },
+        { pattern: /solicitor|sra|legal.?opinion|purchase.?contract|transfer.?deed/i, category: 'valuation' },
+        { pattern: /redemption|redeem|use.?of.?fund|schedule.?of.?cost|refurb|renovation|contractor|quote|works|build.?programme|structural|planning.?consent/i, category: 'use_of_funds' },
+        { pattern: /exit|refinance|sale.?contract|agent.?val|estate.?agent|aip|agreement.?in.?principle|rental|tenancy|ast/i, category: 'exit_evidence' },
+        { pattern: /insurance|buildings?.?ins|vacant.?prop|sec.?106|section.?106|planning.?condition|fire.?safety|party.?wall|building.?control/i, category: 'other_conditions' },
+      ];
+
+      function categoriseFile(filename) {
+        const lower = filename.toLowerCase();
+        for (const { pattern, category } of categoryPatterns) {
+          if (pattern.test(lower)) return category;
+        }
+        return 'general';
+      }
+
+      const results = [];
+      for (const file of (req.files || [])) {
+        const category = categoriseFile(file.originalname);
+
+        const result = await pool.query(
+          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
+          [dealId, file.originalname, file.mimetype, file.size, file.buffer, category, req.user.userId]
+        );
+
+        results.push({ ...result.rows[0], category });
+
+        // Upload to OneDrive (non-blocking)
+        try {
+          const graphToken = await getGraphToken();
+          const subfolder = `${req.params.submissionId}/${category}`;
+          const uploadResult = await uploadFileToOneDrive(graphToken, subfolder, file.originalname, file.buffer);
+          await pool.query(
+            `UPDATE deal_documents SET onedrive_item_id = $1, onedrive_path = $2, onedrive_download_url = $3 WHERE id = $4`,
+            [uploadResult.id, uploadResult.name, uploadResult.downloadUrl, result.rows[0].id]
+          );
+        } catch (odErr) {
+          console.error('[smart-upload] OneDrive upload failed (non-blocking):', odErr.message);
+        }
+      }
+
+      await logAudit(dealId, 'smart_upload', null, null,
+        { files: results.map(r => ({ filename: r.filename, category: r.category })), uploaded_by: req.user.userId }, req.user.userId);
+
+      console.log('[smart-upload]', results.length, 'files categorised for deal', req.params.submissionId);
+      res.json({ success: true, results });
+    });
+  } catch (error) {
+    console.error('[smart-upload] Error:', error);
+    res.status(500).json({ error: 'Smart upload failed' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  LIST DOCUMENTS BY CATEGORY
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/documents-by-category', authenticateToken, async (req, res) => {
@@ -1638,21 +1716,33 @@ router.get('/:submissionId/documents-by-category', authenticateToken, async (req
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const dealId = dealResult.rows[0].id;
 
-    const { category } = req.query;
-    let query, params;
-    if (category) {
-      query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
-                      onedrive_download_url
-               FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 ORDER BY uploaded_at DESC`;
-      params = [dealId, category];
-    } else {
-      query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
-                      onedrive_download_url
-               FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
-      params = [dealId];
+    // Try with doc_category column; fall back to without if column doesn't exist yet
+    let result;
+    try {
+      const { category } = req.query;
+      let query, params;
+      if (category) {
+        query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
+                        onedrive_download_url
+                 FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 ORDER BY uploaded_at DESC`;
+        params = [dealId, category];
+      } else {
+        query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
+                        onedrive_download_url
+                 FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
+        params = [dealId];
+      }
+      result = await pool.query(query, params);
+    } catch (colErr) {
+      // doc_category column may not exist yet — return all docs without category
+      console.warn('[documents-by-category] Falling back (doc_category column may not exist):', colErr.message);
+      result = await pool.query(
+        `SELECT id, filename, file_type, file_size, uploaded_at, onedrive_download_url
+         FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at DESC`,
+        [dealId]
+      );
     }
 
-    const result = await pool.query(query, params);
     res.json({ documents: result.rows });
   } catch (error) {
     console.error('[documents-by-category] Error:', error);
