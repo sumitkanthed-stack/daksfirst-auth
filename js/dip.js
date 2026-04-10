@@ -343,6 +343,9 @@ export async function creditDecision(decision) {
   const notes = document.getElementById('credit-notes')?.value || '';
   const conditions = document.getElementById('credit-conditions')?.value || '';
   const retainedMonths = document.getElementById('credit-retained-months')?.value;
+  const overrideRate = document.getElementById('credit-override-rate')?.value;
+  const overrideLtv = document.getElementById('credit-override-ltv')?.value;
+  const overrideArrFee = document.getElementById('credit-override-arr-fee')?.value;
 
   // ── Decline: require a reason ──
   if (decision === 'decline') {
@@ -367,6 +370,10 @@ export async function creditDecision(decision) {
     if (retainedMonths !== undefined && retainedMonths !== null) {
       body.retained_months = parseInt(retainedMonths, 10);
     }
+    // Credit overrides — only send if fields exist (credit view)
+    if (overrideRate) body.override_rate = parseFloat(overrideRate);
+    if (overrideLtv) body.override_ltv = parseFloat(overrideLtv);
+    if (overrideArrFee) body.override_arr_fee = parseFloat(overrideArrFee);
 
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-decision`, {
       method: 'POST',

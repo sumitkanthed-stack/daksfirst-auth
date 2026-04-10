@@ -356,6 +356,21 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
+  // ── Role Guidance Banner ──
+  if (currentRole === 'rm') {
+    html += `<div style="margin-bottom:12px;padding:10px 14px;background:#dbeafe;border-radius:6px;border-left:4px solid #2563eb;font-size:12px;color:#1e40af;">
+      <strong>RM View</strong> — You manage borrower data, property details, fees and DIP terms. Ensure all information is accurate before issuing the DIP to credit for review.
+    </div>`;
+  } else if (currentRole === 'credit') {
+    html += `<div style="margin-bottom:12px;padding:10px 14px;background:#f5f3ff;border-radius:6px;border-left:4px solid #7c3aed;font-size:12px;color:#6b21a8;">
+      <strong>Credit View</strong> — You review the deal for risk and creditworthiness. You can override rate, fees, LTV and retained interest. Borrower and property data is managed by the RM.
+    </div>`;
+  } else if (currentRole === 'compliance') {
+    html += `<div style="margin-bottom:12px;padding:10px 14px;background:#fefce8;border-radius:6px;border-left:4px solid #ca8a04;font-size:12px;color:#854d0e;">
+      <strong>Compliance View</strong> — You review the deal for regulatory compliance, AML and KYC. Borrower and property data is managed by the RM.
+    </div>`;
+  }
+
   // ── Stage Pipeline Visual ──
   const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
@@ -490,39 +505,44 @@ export function renderInternalWorkflowControls(deal) {
 
   // ── Borrowers (verify before DIP) ──
   const borrowers = deal.borrowers || [];
+  const canEditBorrowers = ['admin', 'rm'].includes(currentRole);
   html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-    <h4 style="margin:0 0 12px;">Borrowers (${borrowers.length})</h4>`;
+    <h4 style="margin:0 0 12px;">Borrowers (${borrowers.length}) ${!canEditBorrowers ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages borrower data</span>' : ''}</h4>`;
 
   if (borrowers.length > 0) {
     html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
-      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Role</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Email</th><th style="text-align:left;padding:6px;">KYC</th><th style="padding:6px;"></th></tr>
+      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Role</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Email</th><th style="text-align:left;padding:6px;">KYC</th>${canEditBorrowers ? '<th style="padding:6px;"></th>' : ''}</tr>
       ${borrowers.map(b => `<tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:6px;">${sanitizeHtml(b.full_name)}</td>
         <td style="padding:6px;"><span style="padding:2px 8px;border-radius:10px;font-size:11px;background:${b.role === 'primary' ? '#bee3f8' : '#fefcbf'};color:${b.role === 'primary' ? '#2a4365' : '#744210'}">${b.role}</span></td>
         <td style="padding:6px;">${sanitizeHtml(b.borrower_type)}${b.company_name ? ` (${sanitizeHtml(b.company_name)})` : ''}</td>
         <td style="padding:6px;">${sanitizeHtml(b.email || '-')}</td>
         <td style="padding:6px;"><span style="color:${b.kyc_status === 'verified' ? '#48bb78' : b.kyc_status === 'submitted' ? '#c9a84c' : '#e53e3e'}">${b.kyc_status}</span></td>
-        <td style="padding:6px;"><button onclick="window.removeBorrower && window.removeBorrower(${b.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">×</button></td>
+        ${canEditBorrowers ? `<td style="padding:6px;"><button onclick="window.removeBorrower && window.removeBorrower(${b.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">×</button></td>` : ''}
       </tr>`).join('')}
     </table>`;
   }
 
-  html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
-    <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Borrower</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
-      <div><label style="font-size:11px;color:#666;">Full Name *</label><input type="text" id="bw-name" placeholder="Full name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
-      <div><label style="font-size:11px;color:#666;">Role</label><select id="bw-role" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="primary">Primary</option><option value="joint">Joint & Several</option><option value="guarantor">Guarantor</option><option value="director">Director</option></select></div>
-      <div><label style="font-size:11px;color:#666;">Type</label><select id="bw-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="individual">Individual</option><option value="corporate">Corporate</option><option value="spv">SPV</option></select></div>
-      <div><label style="font-size:11px;color:#666;">Email</label><input type="email" id="bw-email" placeholder="Email" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
-      <button onclick="window.addBorrower && window.addBorrower()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
-    </div>
-  </div></div>`;
+  if (canEditBorrowers) {
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Borrower</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div><label style="font-size:11px;color:#666;">Full Name *</label><input type="text" id="bw-name" placeholder="Full name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Role</label><select id="bw-role" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="primary">Primary</option><option value="joint">Joint & Several</option><option value="guarantor">Guarantor</option><option value="director">Director</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Type</label><select id="bw-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="individual">Individual</option><option value="corporate">Corporate</option><option value="spv">SPV</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Email</label><input type="email" id="bw-email" placeholder="Email" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <button onclick="window.addBorrower && window.addBorrower()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
 
   // ── Properties / Portfolio (verify before DIP) ──
   const properties = deal.properties || [];
   const summary = deal.portfolio_summary || {};
+  const canEditProperties = ['admin', 'rm'].includes(currentRole);
   html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-    <h4 style="margin:0 0 12px;">Properties / Portfolio (${properties.length})</h4>`;
+    <h4 style="margin:0 0 12px;">Properties / Portfolio (${properties.length}) ${!canEditProperties ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages property data</span>' : ''}</h4>`;
 
   if (properties.length > 0) {
     html += `<div style="display:flex;gap:16px;margin-bottom:12px;font-size:13px;">
@@ -530,7 +550,7 @@ export function renderInternalWorkflowControls(deal) {
       <span>Total GDV: <strong>£${formatNumber(summary.total_gdv || 0)}</strong></span>
     </div>`;
     html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
-      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Address</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Value</th><th style="text-align:left;padding:6px;">GDV</th><th style="text-align:left;padding:6px;">Day 1 LTV</th><th style="text-align:left;padding:6px;">Tenure</th><th style="padding:6px;"></th></tr>
+      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Address</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Value</th><th style="text-align:left;padding:6px;">GDV</th><th style="text-align:left;padding:6px;">Day 1 LTV</th><th style="text-align:left;padding:6px;">Tenure</th>${canEditProperties ? '<th style="padding:6px;"></th>' : ''}</tr>
       ${properties.map(p => `<tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:6px;">${sanitizeHtml(p.address)}${p.postcode ? `, ${sanitizeHtml(p.postcode)}` : ''}</td>
         <td style="padding:6px;">${sanitizeHtml(p.property_type || '-')}</td>
@@ -538,22 +558,25 @@ export function renderInternalWorkflowControls(deal) {
         <td style="padding:6px;">${p.gdv ? '£' + formatNumber(p.gdv) : '-'}</td>
         <td style="padding:6px;">${p.day1_ltv ? formatPct(p.day1_ltv) + '%' : '-'}</td>
         <td style="padding:6px;">${sanitizeHtml(p.tenure || '-')}</td>
-        <td style="padding:6px;"><button onclick="window.removeProperty && window.removeProperty(${p.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">×</button></td>
+        ${canEditProperties ? `<td style="padding:6px;"><button onclick="window.removeProperty && window.removeProperty(${p.id})" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:12px;">×</button></td>` : ''}
       </tr>`).join('')}
     </table>`;
   }
 
-  html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
-    <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Property</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
-      <div><label style="font-size:11px;color:#666;">Address *</label><input type="text" id="pp-address" placeholder="Full address" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
-      <div><label style="font-size:11px;color:#666;">Type</label><select id="pp-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="mixed_use">Mixed Use</option><option value="land">Land</option></select></div>
-      <div><label style="font-size:11px;color:#666;">Market Value (£)</label><input type="number" id="pp-value" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
-      <div><label style="font-size:11px;color:#666;">GDV (£)</label><input type="number" id="pp-gdv" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
-      <div><label style="font-size:11px;color:#666;">Tenure</label><select id="pp-tenure" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="freehold">Freehold</option><option value="leasehold">Leasehold</option></select></div>
-      <button onclick="window.addProperty && window.addProperty()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
-    </div>
-  </div></div>`;
+  if (canEditProperties) {
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Property</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div><label style="font-size:11px;color:#666;">Address *</label><input type="text" id="pp-address" placeholder="Full address" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Type</label><select id="pp-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="mixed_use">Mixed Use</option><option value="land">Land</option></select></div>
+        <div><label style="font-size:11px;color:#666;">Market Value (£)</label><input type="number" id="pp-value" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">GDV (£)</label><input type="number" id="pp-gdv" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:#666;">Tenure</label><select id="pp-tenure" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"><option value="freehold">Freehold</option><option value="leasehold">Leasehold</option></select></div>
+        <button onclick="window.addProperty && window.addProperty()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Add</button>
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
 
   // ── Stage-Specific Actions ──
 
@@ -1196,15 +1219,27 @@ export function renderInternalWorkflowControls(deal) {
         ${dipData.conditions ? '<div style="margin-top:8px;font-size:12px;"><strong>RM Conditions:</strong> ' + sanitizeHtml(dipData.conditions) + '</div>' : ''}
       </div>
 
-      <!-- Credit can override retained interest -->
-      <div style="background:#fff8f0;padding:12px;border-radius:6px;margin-bottom:16px;border:1px solid #f59e0b;">
-        <h5 style="margin:0 0 8px;color:#92400e;font-size:11px;text-transform:uppercase;">Credit Override &mdash; Retained Interest</h5>
-        <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;align-items:end;">
+      <!-- Credit Overrides — rate, fees, LTV, retained interest -->
+      <div style="background:#fff8f0;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #f59e0b;">
+        <h5 style="margin:0 0 10px;color:#92400e;font-size:11px;text-transform:uppercase;">Credit Overrides — Adjust Terms If Required</h5>
+        <p style="margin:0 0 12px;font-size:11px;color:#92400e;">Only change values if you disagree with the RM's proposed terms. Leave unchanged to accept as-is.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+          <div>
+            <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month)</label>
+            <input type="number" id="credit-override-rate" value="${dipData.rate_monthly || deal.rate_requested || 0.95}" min="0" max="5" step="0.05" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Max LTV (%)</label>
+            <input type="number" id="credit-override-ltv" value="${dipData.ltv || deal.ltv_requested || 70}" min="0" max="80" step="1" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
+            <input type="number" id="credit-override-arr-fee" value="${dipData.arrangement_fee_pct || dipData.arrangement_fee || 2}" min="0" max="10" step="0.25" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+          </div>
           <div>
             <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Retained Months</label>
             <input type="number" id="credit-retained-months" value="${dipData.retained_months || 6}" min="0" max="36" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
           </div>
-          <div style="font-size:11px;color:#6b7280;padding-bottom:8px;">Change if credit assessment warrants different retention period (default: 6 months set by RM)</div>
         </div>
       </div>
 
@@ -1382,6 +1417,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // ── Fee Tracker (visible to internal users at all stages from dip_issued onwards) ──
   const feeStages = ['dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
+  const canEditFees = ['admin', 'rm'].includes(currentRole);
   if (isInternal && feeStages.includes(stage)) {
     const fd = deal.ai_termsheet_data || {};
     const loanAmt = parseFloat(fd.loan_amount || deal.loan_amount || 0);
@@ -1389,11 +1425,15 @@ export function renderInternalWorkflowControls(deal) {
     const brkPct = parseFloat(fd.broker_fee || 0);
     const arrAmt = arrPct > 0 && arrPct < 50 ? Math.round(loanAmt * arrPct / 100) : arrPct;
     const brkAmt = brkPct > 0 && brkPct < 50 ? Math.round(loanAmt * brkPct / 100) : brkPct;
+    const feeInputStyle = canEditFees
+      ? 'width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;'
+      : 'width:90px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;font-size:12px;text-align:right;background:#f9fafb;color:#374151;cursor:not-allowed;';
+    const feeReadonly = canEditFees ? '' : 'readonly';
 
     html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker</h4>
-        <button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>
+        <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker ${!canEditFees ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages fees</span>' : ''}</h4>
+        ${canEditFees ? '<button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>' : ''}
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
@@ -1407,13 +1447,13 @@ export function renderInternalWorkflowControls(deal) {
         <tbody>
           <tr style="border-bottom:1px solid #f3f4f6;">
             <td style="padding:8px;">Onboarding Fee</td>
-            <td style="padding:8px;text-align:right;"><input type="text" id="ft-onboarding" value="${fd.fee_onboarding || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-onboarding" value="${fd.fee_onboarding || 0}" style="${feeInputStyle}" ${feeReadonly}></td>
             <td style="padding:8px;text-align:center;">${deal.fee_paid_onboarding ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
             <td style="padding:8px;font-size:11px;">After DIP acceptance</td>
           </tr>
           <tr style="border-bottom:1px solid #f3f4f6;">
             <td style="padding:8px;">Commitment Fee</td>
-            <td style="padding:8px;text-align:right;"><input type="text" id="ft-commitment" value="${fd.fee_commitment || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-commitment" value="${fd.fee_commitment || 0}" style="${feeInputStyle}" ${feeReadonly}></td>
             <td style="padding:8px;text-align:center;">${deal.fee_paid_commitment ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
             <td style="padding:8px;font-size:11px;">After Termsheet acceptance</td>
           </tr>
@@ -1431,13 +1471,13 @@ export function renderInternalWorkflowControls(deal) {
           </tr>
           <tr style="border-bottom:1px solid #f3f4f6;">
             <td style="padding:8px;">Valuation Fee</td>
-            <td style="padding:8px;text-align:right;"><input type="text" id="ft-valuation" value="${fd.valuation_cost || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-valuation" value="${fd.valuation_cost || 0}" style="${feeInputStyle}" ${feeReadonly}></td>
             <td style="padding:8px;text-align:center;">${deal.fee_paid_valuation ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
             <td style="padding:8px;font-size:11px;">Upfront</td>
           </tr>
           <tr style="border-bottom:1px solid #f3f4f6;">
             <td style="padding:8px;">Legal Fee</td>
-            <td style="padding:8px;text-align:right;"><input type="text" id="ft-legal" value="${fd.legal_cost || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-legal" value="${fd.legal_cost || 0}" style="${feeInputStyle}" ${feeReadonly}></td>
             <td style="padding:8px;text-align:center;">${deal.fee_paid_legal ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
             <td style="padding:8px;font-size:11px;">On completion</td>
           </tr>
