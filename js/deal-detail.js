@@ -74,6 +74,8 @@ export async function showDealDetail(dealId) {
     const editableStyle = inputStyle + 'border:1px solid #c9a84c;background:#fffdf5;';
     const readonlyStyle = inputStyle + 'border:1px solid #e5e7eb;background:#f9fafb;color:#374151;';
 
+    const moneyInputIds = []; // track money fields for post-render formatting
+
     function setField(elId, value, opts) {
       const el = document.getElementById(elId);
       if (!el) return;
@@ -81,17 +83,22 @@ export async function showDealDetail(dealId) {
       if (canEdit) {
         const fieldName = opts?.field || elId.replace('detail-', '');
         const type = opts?.type || 'text';
+        const inputId = 'intake-' + fieldName; // unique ID for the input
         if (type === 'select' && opts?.options) {
-          let selectHtml = '<select data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + '">';
+          let selectHtml = '<select id="' + inputId + '" data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + '">';
           opts.options.forEach(o => {
             selectHtml += '<option value="' + o.value + '"' + (o.value === v ? ' selected' : '') + '>' + sanitizeHtml(o.label) + '</option>';
           });
           selectHtml += '</select>';
           el.innerHTML = selectHtml;
         } else if (type === 'textarea') {
-          el.innerHTML = '<textarea data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + 'min-height:50px;resize:vertical;">' + sanitizeHtml(v) + '</textarea>';
+          el.innerHTML = '<textarea id="' + inputId + '" data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + 'min-height:50px;resize:vertical;">' + sanitizeHtml(v) + '</textarea>';
         } else {
-          el.innerHTML = '<input type="' + type + '" data-field="' + fieldName + '" class="intake-editable" value="' + sanitizeHtml(v) + '" style="' + editableStyle + '">';
+          el.innerHTML = '<input id="' + inputId + '" type="' + type + '" data-field="' + fieldName + '" class="intake-editable" value="' + sanitizeHtml(v) + '" style="' + editableStyle + '">';
+          // Track money fields for comma formatting
+          if (opts?.money) {
+            moneyInputIds.push(inputId);
+          }
         }
       } else {
         el.textContent = opts?.display || v || 'N/A';
@@ -124,9 +131,9 @@ export async function showDealDetail(dealId) {
       ltvIndicative = true;
     }
 
-    setField('detail-loan-amount', String(dLoan || ''), { field: 'loan_amount', display: dLoan ? '£' + formatNumber(dLoan) + (loanIndicative ? ' (INDICATIVE)' : '') : '£0' });
+    setField('detail-loan-amount', String(dLoan || ''), { field: 'loan_amount', money: true, display: dLoan ? '£' + formatNumber(dLoan) + (loanIndicative ? ' (INDICATIVE)' : '') : '£0' });
     setField('detail-ltv', String(dLtv || ''), { field: 'ltv_requested', display: dLtv ? formatPct(dLtv) + '%' + (ltvIndicative ? ' (INDICATIVE)' : '') : 'N/A' });
-    setField('detail-property-value', String(deal.current_value || ''), { field: 'current_value', display: '£' + formatNumber(deal.current_value || 0) });
+    setField('detail-property-value', String(deal.current_value || ''), { field: 'current_value', money: true, display: '£' + formatNumber(deal.current_value || 0) });
     setField('detail-loan-purpose', deal.loan_purpose || '', { field: 'loan_purpose', type: 'textarea' });
     setField('detail-term', String(deal.term_months || ''), { field: 'term_months', display: deal.term_months ? deal.term_months + ' months' : 'N/A' });
     setField('detail-interest-servicing', deal.interest_servicing || '', { field: 'interest_servicing', type: 'select', options: [
@@ -173,8 +180,8 @@ export async function showDealDetail(dealId) {
       { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' }, { value: 'mixed_use', label: 'Mixed Use' },
       { value: 'land', label: 'Land' }, { value: 'hmo', label: 'HMO' }, { value: 'mufb', label: 'MUFB' }
     ]});
-    setField('detail-prop-value', String(deal.current_value || ''), { field: 'current_value', display: deal.current_value ? '£' + formatNumber(deal.current_value) : 'N/A' });
-    setField('detail-prop-purchase', String(deal.purchase_price || ''), { field: 'purchase_price', display: deal.purchase_price ? '£' + formatNumber(deal.purchase_price) : 'N/A' });
+    setField('detail-prop-value', String(deal.current_value || ''), { field: 'current_value', money: true, display: deal.current_value ? '£' + formatNumber(deal.current_value) : 'N/A' });
+    setField('detail-prop-purchase', String(deal.purchase_price || ''), { field: 'purchase_price', money: true, display: deal.purchase_price ? '£' + formatNumber(deal.purchase_price) : 'N/A' });
     setField('detail-prop-tenure', deal.property_tenure || '', { field: 'property_tenure', type: 'select', options: [
       { value: 'freehold', label: 'Freehold' }, { value: 'leasehold', label: 'Leasehold' }
     ]});
@@ -186,7 +193,7 @@ export async function showDealDetail(dealId) {
     // ── TAB: Use of Funds ──
     setField('detail-use-of-funds', deal.use_of_funds || '', { field: 'use_of_funds', type: 'textarea' });
     setField('detail-refurb-scope', deal.refurb_scope || '', { field: 'refurb_scope', type: 'textarea' });
-    setField('detail-refurb-cost', String(deal.refurb_cost || ''), { field: 'refurb_cost', display: deal.refurb_cost ? '£' + formatNumber(deal.refurb_cost) : 'N/A' });
+    setField('detail-refurb-cost', String(deal.refurb_cost || ''), { field: 'refurb_cost', money: true, display: deal.refurb_cost ? '£' + formatNumber(deal.refurb_cost) : 'N/A' });
     setField('detail-deposit-source', deal.deposit_source || '', { field: 'deposit_source' });
     setField('detail-concurrent', deal.concurrent_transactions || '', { field: 'concurrent_transactions', type: 'textarea' });
 
@@ -212,6 +219,11 @@ export async function showDealDetail(dealId) {
           tab.appendChild(saveDiv);
         }
       });
+
+      // Apply comma formatting to all money input fields
+      setTimeout(() => {
+        moneyInputIds.forEach(id => attachMoneyFormat(id));
+      }, 50);
     }
 
     // ── TAB: Documents ──

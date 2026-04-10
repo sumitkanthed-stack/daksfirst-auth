@@ -660,7 +660,9 @@ export async function saveIntakeChanges() {
   fields.forEach(el => {
     const field = el.getAttribute('data-field');
     if (field) {
-      updates[field] = el.value.trim();
+      // Use data-raw for money-formatted fields (has commas in display value)
+      const rawVal = el.getAttribute('data-raw');
+      updates[field] = rawVal !== null ? rawVal : el.value.trim();
     }
   });
 
