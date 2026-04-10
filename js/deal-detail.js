@@ -926,7 +926,7 @@ export function renderInternalWorkflowControls(deal) {
         }
 
         // 12. Fee tracker has entries
-        const hasFees = ${deal.fees && deal.fees.length > 0 ? 'true' : 'false'};
+        const hasFees = !!(deal.fees && deal.fees.length > 0);
         checks.push({ label: 'Fee(s) entered in Fee Tracker', ok: hasFees });
 
         // 13. Exit strategy provided
