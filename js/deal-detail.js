@@ -5,6 +5,7 @@ import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, g
 import { renderDocumentsList } from './documents.js';
 import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
 import { renderDocPanel } from './doc-panel.js';
+import { renderDealMatrix } from './deal-matrix.js';
 
 /**
  * Show deal detail screen
@@ -232,6 +233,9 @@ export async function showDealDetail(dealId) {
 
     // ── TAB: Documents ──
     renderDocumentsList(deal.documents || []);
+
+    // ── TAB: Deal Matrix ──
+    renderDealMatrix(deal);
 
     // ── TAB: Analysis ──
     if (deal.status === 'completed' && deal.analysis_results) {

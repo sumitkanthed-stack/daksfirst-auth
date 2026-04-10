@@ -305,6 +305,90 @@ async function runMigrations() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_deal ON deal_properties(deal_id);`);
 
+    // Deal field status table (per-field, per-stage matrix tracking)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_field_status (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        section         VARCHAR(50)   NOT NULL,
+        field_key       VARCHAR(100)  NOT NULL,
+        stage           VARCHAR(30)   NOT NULL,
+        status          VARCHAR(30)   DEFAULT 'not_started' CHECK (status IN ('not_required','not_started','submitted','under_review','approved','finalized','locked')),
+        updated_by      INT           REFERENCES users(id),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW(),
+        UNIQUE(deal_id, field_key, stage)
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_field_status_deal ON deal_field_status(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_field_status_section ON deal_field_status(section);`);
+
+    // Deal info requests table (information requests per section)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_info_requests (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        section         VARCHAR(50)   NOT NULL,
+        message         TEXT          NOT NULL,
+        requested_by    INT           REFERENCES users(id),
+        requested_role  VARCHAR(20),
+        status          VARCHAR(20)   DEFAULT 'open' CHECK (status IN ('open','done','cancelled')),
+        resolved_by     INT           REFERENCES users(id),
+        resolved_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_info_req_deal ON deal_info_requests(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_info_req_status ON deal_info_requests(status);`);
+
+    // Deal documents issued table (documents issued at each stage)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_documents_issued (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        doc_type        VARCHAR(50)   NOT NULL,
+        stage           VARCHAR(30)   NOT NULL,
+        reference       VARCHAR(100),
+        issued_at       TIMESTAMPTZ,
+        issued_by       INT           REFERENCES users(id),
+        sent_to         TEXT,
+        signing_method  VARCHAR(30),
+        signed_at       TIMESTAMPTZ,
+        signed_status   VARCHAR(30)   DEFAULT 'not_issued' CHECK (signed_status IN ('not_issued','issued','sent','awaiting_signature','signed','countersigned','superseded')),
+        validity_days   INT,
+        file_url        TEXT,
+        signed_file_url TEXT,
+        envelope_id     VARCHAR(100),
+        notes           TEXT,
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_issued_deal ON deal_documents_issued(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_issued_type ON deal_documents_issued(doc_type);`);
+
+    // Deal document repo table (central document repository with categorization)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_document_repo (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id),
+        filename        VARCHAR(500)  NOT NULL,
+        file_type       VARCHAR(50),
+        file_size       INT,
+        category        VARCHAR(50),
+        section         VARCHAR(50),
+        status          VARCHAR(30)   DEFAULT 'uploaded' CHECK (status IN ('uploaded','verified','pending','missing','requested','rejected')),
+        uploaded_by     INT           REFERENCES users(id),
+        verified_by     INT           REFERENCES users(id),
+        verified_at     TIMESTAMPTZ,
+        source_doc_id   INT,
+        auto_parsed     BOOLEAN       DEFAULT false,
+        parse_confidence VARCHAR(10),
+        notes           TEXT,
+        created_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_repo_deal ON deal_document_repo(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_repo_category ON deal_document_repo(category);`);
+
     // Update users role constraint
     try {
       await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`);
@@ -412,7 +496,11 @@ async function runMigrations() {
       // Term snapshots — captured at each gate for side-by-side comparison & field locking
       { col: 'dip_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_snapshot JSONB;" },
       { col: 'termsheet_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_snapshot JSONB;" },
-      { col: 'final_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_snapshot JSONB;" }
+      { col: 'final_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_snapshot JSONB;" },
+      // Matrix data columns
+      { col: 'matrix_data', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS matrix_data JSONB DEFAULT '{}'::jsonb;" },
+      { col: 'borrower_financials', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_financials JSONB DEFAULT '{}'::jsonb;" },
+      { col: 'aml_data', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS aml_data JSONB DEFAULT '{}'::jsonb;" }
     ];
 
     for (const check of columnChecks) {

@@ -762,6 +762,10 @@
               <button class="detail-tab" data-dtab="dtab-documents" onclick="switchDetailTab(this)">Documents</button>
               <button class="detail-tab" data-dtab="dtab-analysis" onclick="switchDetailTab(this)">Analysis</button>
             </div>
+            <div class="detail-tabs-group" style="border-left:2px solid #2563eb;margin-left:4px;padding-left:6px;">
+              <span class="detail-tabs-label" style="color:#2563eb;font-weight:700;">Deal Matrix</span>
+              <button class="detail-tab" data-dtab="dtab-matrix" onclick="switchDetailTab(this)" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;border:none;">&#128202; Matrix</button>
+            </div>
             <div class="detail-tabs-group phase2-group">
               <span class="detail-tabs-label">Full Onboarding <span id="phase2-lock" class="lock-icon">&#128274;</span></span>
               <button class="detail-tab phase2-tab" data-dtab="dtab-kyc" onclick="switchDetailTab(this)">KYC</button>
@@ -872,6 +876,13 @@
                   <p style="color:var(--text-light);text-align:center;padding:30px 0;">Analysis results will appear here once the credit review is complete.</p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- TAB: Deal Information Matrix -->
+          <div id="dtab-matrix" class="detail-tab-panel">
+            <div id="dtab-matrix-content" style="padding:0;">
+              <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
             </div>
           </div>
 
