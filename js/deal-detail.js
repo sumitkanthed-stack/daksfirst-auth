@@ -752,7 +752,7 @@ export function renderInternalWorkflowControls(deal) {
       <!-- ═══ PROPERTY SCHEDULE (RM approves each property) ═══ -->
       <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h5 style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Security Schedule &mdash; ${propList.length} ${propList.length === 1 ? 'Property' : 'Properties'}</h5>
+          <h5 id="dip-schedule-header" style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Security Schedule &mdash; ${propList.length} ${propList.length === 1 ? 'Property' : 'Properties'}</h5>
           ${propList.length > 1 ? `<button onclick="window.approveAllDipProperties && window.approveAllDipProperties()" style="padding:5px 14px;background:#15803d;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Approve All</button>` : ''}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px;" id="dip-property-table">
@@ -807,7 +807,7 @@ export function renderInternalWorkflowControls(deal) {
           </div>
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Number of Properties</label>
-            <input type="text" value="${propList.length}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
+            <input type="text" id="dip-num-properties" value="${propList.length}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
           </div>
         </div>
         <p style="margin:8px 0 0;font-size:10px;color:#6b7280;">Total property value is auto-calculated from individual property valuations entered above. Enter each property's valuation in the Security Schedule.</p>
@@ -991,7 +991,10 @@ export function renderInternalWorkflowControls(deal) {
       const propValInputs = document.querySelectorAll('.dip-prop-valuation');
       const updatePropValTotal = () => {
         let total = 0;
-        propValInputs.forEach(inp => { total += parseFormattedNumber(inp.value); });
+        propValInputs.forEach(inp => {
+          // Skip removed/disabled property valuations
+          if (!inp.disabled) total += parseFormattedNumber(inp.value);
+        });
         const totalEl = document.getElementById('dip-prop-val-total');
         if (totalEl) totalEl.textContent = '£' + formatNumber(total);
         // Update the dip-property-value readonly field with the sum
@@ -1022,16 +1025,18 @@ export function renderInternalWorkflowControls(deal) {
         // 2. Loan within limits (£500k–£15m)
         checks.push({ label: 'Loan within £500k – £15m range', ok: loanAmt >= 500000 && loanAmt <= 15000000 });
 
-        // 3. At least one property valuation entered
+        // 3. At least one active property valuation entered
         let totalPropVal = 0;
-        document.querySelectorAll('.dip-prop-valuation').forEach(inp => { totalPropVal += parseFormattedNumber(inp.value); });
+        document.querySelectorAll('.dip-prop-valuation').forEach(inp => { if (!inp.disabled) totalPropVal += parseFormattedNumber(inp.value); });
         checks.push({ label: 'Property valuation(s) entered', ok: totalPropVal > 0 });
 
         // 4. All properties approved or removed
         let allPropsHandled = true;
         const propRows = document.querySelectorAll('#dip-property-table tbody tr');
         propRows.forEach((row, i) => {
-          if (row.style.opacity !== '0.5') { // not removed
+          const valInput = document.getElementById('dip-prop-val-' + i);
+          const isRemoved = valInput && valInput.disabled;
+          if (!isRemoved) { // only check active properties
             const statusEl = document.getElementById('dip-prop-status-' + i);
             if (statusEl && !statusEl.innerHTML.includes('Approved')) allPropsHandled = false;
           }

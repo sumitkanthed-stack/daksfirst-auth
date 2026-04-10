@@ -76,6 +76,7 @@ window.saveIntakeChanges = () => import('./workflow-actions.js').then(m => m.sav
 
 window.removeDipProperty = (idx) => import('./dip.js').then(m => m.removeDipProperty(idx));
 window.approveDipProperty = (idx) => import('./dip.js').then(m => m.approveDipProperty(idx));
+window.addBackDipProperty = (idx) => import('./dip.js').then(m => m.addBackDipProperty(idx));
 window.approveAllDipProperties = () => import('./dip.js').then(m => m.approveAllDipProperties());
 window.calcDipLtv = () => import('./dip.js').then(m => m.calcDipLtv());
 window.issueDip = () => import('./dip.js').then(m => m.issueDip());

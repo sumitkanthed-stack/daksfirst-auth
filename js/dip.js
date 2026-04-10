@@ -30,44 +30,142 @@ export function approveAllDipProperties() {
   if (!table) return;
   const rows = table.querySelectorAll('tbody tr');
   rows.forEach((row, i) => {
-    // Only approve if not already removed
-    if (row.style.opacity !== '0.5') {
+    // Only approve if not removed (check if valuation input is disabled)
+    const valInput = document.getElementById(`dip-prop-val-${i}`);
+    if (!valInput || !valInput.disabled) {
       approveDipProperty(i);
     }
   });
 }
 
 /**
- * Remove a property from DIP
+ * Remove a property from DIP security schedule
  */
 export function removeDipProperty(idx) {
   const row = document.getElementById(`dip-prop-${idx}`);
   if (!row) return;
 
   const addr = row.querySelectorAll('td')[1].textContent;
-  if (!confirm('Remove "' + addr.substring(0, 50) + '..." from this DIP?')) return;
+  if (!confirm('Remove "' + addr.substring(0, 50) + '..." from the security package?')) return;
 
-  // Apply visual styling to show removal
+  // Visual: strike-through, faded
   row.style.background = '#fee2e2';
-  row.style.textDecoration = 'line-through';
-  row.style.opacity = '0.5';
-  row.querySelector('button').disabled = true;
-  row.querySelector('button').textContent = 'Removed';
+  row.style.opacity = '0.4';
+  row.querySelectorAll('td').forEach(td => td.style.textDecoration = 'line-through');
+
+  // Status → Removed
+  const statusEl = document.getElementById(`dip-prop-status-${idx}`);
+  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fee2e2;color:#991b1b;border-radius:10px;font-size:10px;font-weight:600;">Removed</span>';
+
+  // Buttons → replace with "Add Back"
+  const actionCell = row.querySelector('td:last-child');
+  if (actionCell) {
+    actionCell.innerHTML = `<button onclick="window.addBackDipProperty && window.addBackDipProperty(${idx})" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:600;">Add Back</button>`;
+  }
+
+  // Zero out valuation input for this property
+  const valInput = document.getElementById(`dip-prop-val-${idx}`);
+  if (valInput) { valInput.dataset.removedVal = valInput.value; valInput.value = '0'; valInput.disabled = true; }
 
   // Track removal in state
   addDipRemovedProperty({ index: idx, address: addr });
 
-  // Update display
-  const removed = getDipRemovedProperties();
-  const removedDiv = document.getElementById('dip-removed-props');
-  if (removedDiv) {
-    removedDiv.style.display = 'block';
-    removedDiv.innerHTML = '<strong>Removed:</strong> ' + removed.map(p => p.address.substring(0, 40) + '...').join('; ');
+  // Update removed display + header + totals
+  updatePropertyScheduleUI();
+  calcDipLtv();
+  if (window.validateDipChecklist) window.validateDipChecklist();
+}
+
+/**
+ * Add back a previously removed property
+ */
+export function addBackDipProperty(idx) {
+  const row = document.getElementById(`dip-prop-${idx}`);
+  if (!row) return;
+
+  // Restore visual
+  row.style.background = '';
+  row.style.opacity = '1';
+  row.querySelectorAll('td').forEach(td => td.style.textDecoration = 'none');
+
+  // Status → Pending
+  const statusEl = document.getElementById(`dip-prop-status-${idx}`);
+  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span>';
+
+  // Restore buttons
+  const actionCell = row.querySelector('td:last-child');
+  if (actionCell) {
+    actionCell.innerHTML = `<button id="dip-prop-approve-${idx}" onclick="window.approveDipProperty && window.approveDipProperty(${idx})" style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-right:4px;">Approve</button><button id="dip-prop-remove-${idx}" onclick="window.removeDipProperty && window.removeDipProperty(${idx})" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;">Remove</button>`;
   }
 
+  // Restore valuation
+  const valInput = document.getElementById(`dip-prop-val-${idx}`);
+  if (valInput) { valInput.value = valInput.dataset.removedVal || '0'; valInput.disabled = false; delete valInput.dataset.removedVal; }
+
+  // Remove from state
+  const removed = getDipRemovedProperties();
+  const newRemoved = removed.filter(p => p.index !== idx);
+  setDipRemovedProperties(newRemoved);
+
+  // Update UI + totals
+  updatePropertyScheduleUI();
   calcDipLtv();
-  // Re-validate checklist after property removal
   if (window.validateDipChecklist) window.validateDipChecklist();
+}
+
+/**
+ * Update the security schedule header, removed summary, and total valuation
+ */
+function updatePropertyScheduleUI() {
+  const table = document.getElementById('dip-property-table');
+  if (!table) return;
+  const allRows = table.querySelectorAll('tbody tr');
+  const totalProps = allRows.length;
+  const removed = getDipRemovedProperties();
+  const removedCount = removed.length;
+  const activeCount = totalProps - removedCount;
+
+  // Update header text
+  const headerEl = document.getElementById('dip-schedule-header');
+  if (headerEl) {
+    if (removedCount > 0) {
+      headerEl.innerHTML = `Security Schedule &mdash; <span style="color:#15803d;font-weight:700;">${activeCount}</span> of ${totalProps} Accepted`;
+    } else {
+      headerEl.innerHTML = `Security Schedule &mdash; ${totalProps} ${totalProps === 1 ? 'Property' : 'Properties'}`;
+    }
+  }
+
+  // Update removed properties display
+  const removedDiv = document.getElementById('dip-removed-props');
+  if (removedDiv) {
+    if (removedCount > 0) {
+      removedDiv.style.display = 'block';
+      removedDiv.innerHTML = '<strong style="color:#991b1b;">Removed from security:</strong> ' + removed.map(p => sanitizeHtml(p.address.substring(0, 40)) + '...').join('; ');
+    } else {
+      removedDiv.style.display = 'none';
+      removedDiv.innerHTML = '';
+    }
+  }
+
+  // Update total valuation (only active properties)
+  let total = 0;
+  allRows.forEach((row, i) => {
+    const isRemoved = removed.some(p => p.index === i);
+    if (!isRemoved) {
+      const valInput = document.getElementById(`dip-prop-val-${i}`);
+      if (valInput) total += parseFormattedNumber(valInput.value) || 0;
+    }
+  });
+  const totalEl = document.getElementById('dip-prop-val-total');
+  if (totalEl) totalEl.textContent = '£' + formatNumber(total);
+
+  // Update the auto-summed property value field
+  const propValueInput = document.getElementById('dip-property-value');
+  if (propValueInput) propValueInput.value = formatNumber(total);
+
+  // Update number of properties field
+  const numPropsInput = document.getElementById('dip-num-properties');
+  if (numPropsInput) numPropsInput.value = removedCount > 0 ? `${activeCount} of ${totalProps}` : totalProps;
 }
 
 /**
