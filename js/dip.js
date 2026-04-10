@@ -213,10 +213,7 @@ export function calcDipLtv() {
   if (arrDisplay) arrDisplay.textContent = '£' + formatNumber(arrangementFee);
   const brokerDisplay = document.getElementById('dip-fee-broker-display');
   if (brokerDisplay) brokerDisplay.textContent = '£' + formatNumber(brokerFee);
-  const valDisplay = document.getElementById('dip-fee-val-display');
-  if (valDisplay) valDisplay.textContent = '£' + formatNumber(valuationCost);
-  const legalDisplay = document.getElementById('dip-fee-legal-display');
-  if (legalDisplay) legalDisplay.textContent = '£' + formatNumber(legalCost);
+  // Valuation and Legal fees are now direct inputs in the Fee Schedule — no display sync needed
 
   const summaryEl = document.getElementById('dip-summary');
   if (summaryEl) {
@@ -591,5 +588,41 @@ export async function confirmFeeAndAdvance() {
     import('./deal-detail.js').then(m => m.showDealDetail(dealId));
   } catch (err) {
     showToast('Network error', true);
+  }
+}
+
+/**
+ * Save Fee Tracker changes — persists editable fee amounts to ai_termsheet_data
+ */
+export async function updateFees() {
+  const dealId = getCurrentDealId();
+  if (!dealId) { showToast('No deal selected', true); return; }
+
+  const onboarding = parseFormattedNumber(document.getElementById('ft-onboarding')?.value || '0');
+  const commitment = parseFormattedNumber(document.getElementById('ft-commitment')?.value || '0');
+  const valuation  = parseFormattedNumber(document.getElementById('ft-valuation')?.value || '0');
+  const legal      = parseFormattedNumber(document.getElementById('ft-legal')?.value || '0');
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/update-fees`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fee_onboarding: onboarding,
+        fee_commitment: commitment,
+        valuation_cost: valuation,
+        legal_cost: legal
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showToast(data.error || 'Failed to save fees', true);
+      return;
+    }
+    showToast('Fees saved successfully');
+    // Refresh deal detail to reflect changes
+    import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+  } catch (err) {
+    showToast('Network error saving fees', true);
   }
 }

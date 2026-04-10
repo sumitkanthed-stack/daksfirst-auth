@@ -856,21 +856,11 @@ export function renderInternalWorkflowControls(deal) {
         <!-- ═══ RETAINED INTEREST & CLIENT COSTS ═══ -->
         <div style="background:#fff8f0;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #f59e0b;">
           <h5 style="margin:0 0 10px;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Day Zero Calculation ${rmLabel}</h5>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
               <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Retained Interest (months)</label>
               <input type="number" id="dip-retained-months" value="6" min="0" max="36" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <span style="font-size:10px;color:#92400e;">Default: 6 months</span>
-            </div>
-            <div>
-              <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Valuation Cost (£)</label>
-              <input type="text" id="dip-valuation-cost" value="0" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-              <span style="font-size:10px;color:#6b7280;">Client pays</span>
-            </div>
-            <div>
-              <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Legal Cost (£)</label>
-              <input type="text" id="dip-legal-cost" value="0" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-              <span style="font-size:10px;color:#6b7280;">Client pays</span>
             </div>
             <div>
               <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Broker Fee (%)</label>
@@ -921,15 +911,15 @@ export function renderInternalWorkflowControls(deal) {
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
               <td style="padding:8px;font-weight:600;">Valuation Fee</td>
-              <td style="padding:8px;text-align:right;"><span style="font-size:12px;" id="dip-fee-val-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from cost above</span></td>
+              <td style="padding:8px;text-align:right;"><input type="text" id="dip-valuation-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
               <td style="padding:8px;font-size:11px;color:#1e40af;">Upfront</td>
               <td style="padding:8px;font-size:11px;">Direct payment by client</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
               <td style="padding:8px;font-weight:600;">Legal Fee</td>
-              <td style="padding:8px;text-align:right;"><span style="font-size:12px;" id="dip-fee-legal-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from cost above</span></td>
+              <td style="padding:8px;text-align:right;"><input type="text" id="dip-legal-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
               <td style="padding:8px;font-size:11px;color:#1e40af;">On completion</td>
-              <td style="padding:8px;font-size:11px;">Direct payment by client</td>
+              <td style="padding:8px;font-size:11px;">Deducted from advance</td>
             </tr>
           </tbody>
         </table>
@@ -1387,6 +1377,72 @@ export function renderInternalWorkflowControls(deal) {
       <div style="display:flex;gap:8px;">
         <button onclick="window.withdrawDeal && window.withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">${withdrawLabel}</button>
       </div>
+    </div>`;
+  }
+
+  // ── Fee Tracker (visible to internal users at all stages from dip_issued onwards) ──
+  const feeStages = ['dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
+  if (isInternal && feeStages.includes(stage)) {
+    const fd = deal.ai_termsheet_data || {};
+    const loanAmt = parseFloat(fd.loan_amount || deal.loan_amount || 0);
+    const arrPct = parseFloat(fd.arrangement_fee || 0);
+    const brkPct = parseFloat(fd.broker_fee || 0);
+    const arrAmt = arrPct > 0 && arrPct < 50 ? Math.round(loanAmt * arrPct / 100) : arrPct;
+    const brkAmt = brkPct > 0 && brkPct < 50 ? Math.round(loanAmt * brkPct / 100) : brkPct;
+
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker</h4>
+        <button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#f5f3ff;">
+            <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #7c3aed;">Fee</th>
+            <th style="text-align:right;padding:6px 8px;border-bottom:2px solid #7c3aed;">Amount (£)</th>
+            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid #7c3aed;">Status</th>
+            <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #7c3aed;">When Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;">Onboarding Fee</td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-onboarding" value="${fd.fee_onboarding || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:center;">${deal.fee_paid_onboarding ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
+            <td style="padding:8px;font-size:11px;">After DIP acceptance</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;">Commitment Fee</td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-commitment" value="${fd.fee_commitment || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:center;">${deal.fee_paid_commitment ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
+            <td style="padding:8px;font-size:11px;">After Termsheet acceptance</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
+            <td style="padding:8px;font-weight:600;">Arrangement Fee (${arrPct > 0 && arrPct < 50 ? arrPct.toFixed(2) + '%' : ''})</td>
+            <td style="padding:8px;text-align:right;font-weight:600;">£${formatNumber(arrAmt)}</td>
+            <td style="padding:8px;text-align:center;"><span style="color:#6b7280;">On completion</span></td>
+            <td style="padding:8px;font-size:11px;">Deducted from advance</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
+            <td style="padding:8px;padding-left:24px;color:#92400e;">↳ of which Broker (${brkPct > 0 && brkPct < 50 ? brkPct.toFixed(2) + '%' : ''})</td>
+            <td style="padding:8px;text-align:right;color:#92400e;">£${formatNumber(brkAmt)}</td>
+            <td style="padding:8px;text-align:center;"><span style="color:#6b7280;">On completion</span></td>
+            <td style="padding:8px;font-size:11px;color:#92400e;">From arrangement fee</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;">Valuation Fee</td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-valuation" value="${fd.valuation_cost || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:center;">${deal.fee_paid_valuation ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
+            <td style="padding:8px;font-size:11px;">Upfront</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;">Legal Fee</td>
+            <td style="padding:8px;text-align:right;"><input type="text" id="ft-legal" value="${fd.legal_cost || 0}" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;"></td>
+            <td style="padding:8px;text-align:center;">${deal.fee_paid_legal ? '<span style="color:#15803d;font-weight:600;">Paid</span>' : '<span style="color:#f59e0b;">Pending</span>'}</td>
+            <td style="padding:8px;font-size:11px;">On completion</td>
+          </tr>
+        </tbody>
+      </table>
     </div>`;
   }
 
