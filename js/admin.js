@@ -1,5 +1,5 @@
 import { API_BASE } from './config.js';
-import { showScreen, showToast, formatNumber, formatDate, sanitizeHtml } from './utils.js';
+import { showScreen, showToast, formatNumber, formatPct, formatDate, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setAllAdminDeals, getAllAdminDeals, setCurrentDealId } from './state.js';
 
@@ -165,13 +165,13 @@ export function renderPipelineRows(deals, tbody, stageLabels) {
     const valuation = deal.current_value ? `Val: £${formatNumber(deal.current_value)}` : '';
     const notionalDisplay = `<strong>${loanAmt}</strong>${valuation ? `<br><span class="pipe-sub">${valuation}</span>` : ''}`;
 
-    // LTV
+    // LTV (2 decimal places)
     let ltvDisplay = '-';
     if (deal.ltv_requested) {
-      ltvDisplay = `<strong>${Number(deal.ltv_requested).toFixed(0)}%</strong>`;
+      ltvDisplay = `<strong>${formatPct(deal.ltv_requested)}%</strong>`;
     } else if (deal.loan_amount && deal.current_value && Number(deal.current_value) > 0) {
-      const calcLtv = ((Number(deal.loan_amount) / Number(deal.current_value)) * 100).toFixed(0);
-      ltvDisplay = `<strong>${calcLtv}%</strong><br><span class="pipe-sub">calc</span>`;
+      const calcLtv = (Number(deal.loan_amount) / Number(deal.current_value)) * 100;
+      ltvDisplay = `<strong>${formatPct(calcLtv)}%</strong><br><span class="pipe-sub">calc</span>`;
     }
 
     // Term
@@ -314,8 +314,8 @@ export async function loadAdminStats() {
     // Update stat cards (try both old and new IDs)
     const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setEl('analytics-total-deals', stats.total_deals || 0);
-    setEl('analytics-approval-rate', stats.approval_rate ? stats.approval_rate + '%' : '0%');
-    setEl('analytics-avg-ltv', stats.avg_ltv ? stats.avg_ltv + '%' : '0%');
+    setEl('analytics-approval-rate', stats.approval_rate ? formatPct(stats.approval_rate) + '%' : '0.00%');
+    setEl('analytics-avg-ltv', stats.avg_ltv ? formatPct(stats.avg_ltv) + '%' : '0.00%');
     setEl('stat-total', stats.total_deals || 0);
     setEl('stat-processing', stats.processing || 0);
     setEl('stat-completed', stats.completed || 0);

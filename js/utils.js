@@ -13,19 +13,39 @@ export function sanitizeHtml(str) {
 }
 
 /**
- * Format number with UK locale
+ * Format whole number with UK locale comma separation (no decimals)
+ * Use for: loan amounts, valuations, property values, fees
  */
 export function formatNumber(num) {
-  return new Intl.NumberFormat('en-GB').format(num);
+  if (num === null || num === undefined || isNaN(num)) return '0';
+  return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 }).format(Math.round(Number(num)));
 }
 
 /**
- * Format date with UK locale
+ * Format percentage/LTV to 2 decimal places
+ * Use for: LTV, rates, arrangement fee percentages
+ */
+export function formatPct(num) {
+  if (num === null || num === undefined || isNaN(num)) return '0.00';
+  return Number(num).toFixed(2);
+}
+
+/**
+ * Format date with UK locale (date only)
  */
 export function formatDate(dateString) {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   return date.toLocaleDateString('en-GB');
+}
+
+/**
+ * Format date with UK locale including time (for audit trail)
+ */
+export function formatDateTime(dateString) {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-GB') + ' ' + date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
 /**

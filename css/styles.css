@@ -11,7 +11,7 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Garamond', 'Adobe Garamond Pro', 'Times New Roman', serif;
       line-height: 1.6;
       color: var(--text);
       background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);

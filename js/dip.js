@@ -1,7 +1,39 @@
 import { API_BASE } from './config.js';
-import { showToast, formatNumber, sanitizeHtml } from './utils.js';
+import { showToast, formatNumber, formatPct, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentDealId, setDipRemovedProperties, getDipRemovedProperties, addDipRemovedProperty, removeDipRemovedProperty, clearDipRemovedProperties } from './state.js';
+
+/**
+ * Approve a property in the DIP (RM confirms it as acceptable security)
+ */
+export function approveDipProperty(idx) {
+  const statusEl = document.getElementById(`dip-prop-status-${idx}`);
+  const approveBtn = document.getElementById(`dip-prop-approve-${idx}`);
+  if (statusEl) {
+    statusEl.innerHTML = '<span style="padding:2px 8px;background:#dcfce7;color:#166534;border-radius:10px;font-size:10px;font-weight:600;">Approved</span>';
+  }
+  if (approveBtn) {
+    approveBtn.disabled = true;
+    approveBtn.textContent = 'Approved';
+    approveBtn.style.background = '#86efac';
+    approveBtn.style.cursor = 'default';
+  }
+}
+
+/**
+ * Approve all properties in bulk
+ */
+export function approveAllDipProperties() {
+  const table = document.getElementById('dip-property-table');
+  if (!table) return;
+  const rows = table.querySelectorAll('tbody tr');
+  rows.forEach((row, i) => {
+    // Only approve if not already removed
+    if (row.style.opacity !== '0.5') {
+      approveDipProperty(i);
+    }
+  });
+}
 
 /**
  * Remove a property from DIP
@@ -35,7 +67,10 @@ export function removeDipProperty(idx) {
 }
 
 /**
- * Calculate DIP LTV and update summary
+ * Calculate DIP LTV and update summary with full retained interest logic
+ * Default: 6 months interest retained from gross loan
+ * Client day zero = gross loan - retained interest - arrangement fee - valuation cost - legal cost
+ * Broker fee is disclosed to borrower
  */
 export function calcDipLtv() {
   const loan = parseFloat(document.getElementById('dip-loan-amount')?.value) || 0;
@@ -44,16 +79,27 @@ export function calcDipLtv() {
   const rate = parseFloat(document.getElementById('dip-rate')?.value) || 0;
   const arrFee = parseFloat(document.getElementById('dip-arrangement-fee')?.value) || 0;
   const interest = document.getElementById('dip-interest')?.value || 'retained';
+  const retainedMonths = parseInt(document.getElementById('dip-retained-months')?.value) || 6;
+  const valuationCost = parseFloat(document.getElementById('dip-valuation-cost')?.value) || 0;
+  const legalCost = parseFloat(document.getElementById('dip-legal-cost')?.value) || 0;
+  const brokerFeePct = parseFloat(document.getElementById('dip-broker-fee')?.value) || 0;
 
-  // Calculate LTV
-  const ltv = val > 0 ? ((loan / val) * 100).toFixed(1) : 0;
+  // Calculate LTV (2 decimal places)
+  const ltv = val > 0 ? ((loan / val) * 100) : 0;
   const ltvEl = document.getElementById('dip-ltv');
-  if (ltvEl) ltvEl.value = ltv;
+  if (ltvEl) ltvEl.value = ltv.toFixed(2);
 
   // Calculate costs
   const totalInterest = loan * (rate / 100) * term;
+  const retainedInterest = interest === 'retained' ? loan * (rate / 100) * retainedMonths : 0;
   const arrangementFee = loan * (arrFee / 100);
-  const netAdvance = interest === 'retained' ? loan - totalInterest - arrangementFee : loan - arrangementFee;
+  const brokerFee = loan * (brokerFeePct / 100);
+
+  // Lender day zero = gross loan - retained interest - arrangement fee
+  const lenderDayZero = loan - retainedInterest - arrangementFee;
+
+  // Client day zero = lender day zero - valuation cost - legal cost (paid by client)
+  const clientDayZero = lenderDayZero - valuationCost - legalCost;
 
   // LTV check
   const ltvOk = ltv <= 75;
@@ -62,15 +108,26 @@ export function calcDipLtv() {
   const summaryEl = document.getElementById('dip-summary');
   if (summaryEl) {
     summaryEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-        <div>LTV: <strong style="color:${ltvOk ? '#15803d' : '#e53e3e'};">${ltv}%</strong> ${!ltvOk ? '(exceeds 75% max!)' : ''}</div>
-        <div>Gross Loan: <strong>£${loan.toLocaleString()}</strong></div>
-        <div>Net Day 1 Advance: <strong>£${Math.round(netAdvance).toLocaleString()}</strong></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>LTV: <strong style="color:${ltvOk ? '#15803d' : '#e53e3e'};">${formatPct(ltv)}%</strong> ${!ltvOk ? '<span style="color:#e53e3e;font-weight:600;">(exceeds 75% max!)</span>' : ''}</div>
+        <div>Rate: <strong style="color:${rateOk ? '#15803d' : '#e53e3e'};">${formatPct(rate)}%/m</strong> ${!rateOk ? '<span style="color:#e53e3e;font-weight:600;">(below 0.85% min!)</span>' : ''}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px;">
-        <div>Total Interest: <strong>£${Math.round(totalInterest).toLocaleString()}</strong> (${term}m @ ${rate}%)</div>
-        <div>Arrangement Fee: <strong>£${Math.round(arrangementFee).toLocaleString()}</strong> (${arrFee}%)</div>
-        <div>Rate: <strong style="color:${rateOk ? '#15803d' : '#e53e3e'};">${rate}%/m</strong> ${!rateOk ? '(below 0.85% min!)' : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #fbbf24;">
+        <div>Gross Loan: <strong>£${formatNumber(loan)}</strong></div>
+        <div>Total Interest (${term}m): <strong>£${formatNumber(totalInterest)}</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
+        <div>Retained Interest (${retainedMonths}m): <strong style="color:#b45309;">£${formatNumber(retainedInterest)}</strong></div>
+        <div>Arrangement Fee (${formatPct(arrFee)}%): <strong>£${formatNumber(arrangementFee)}</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
+        <div>Valuation Cost (client): <strong>£${formatNumber(valuationCost)}</strong></div>
+        <div>Legal Cost (client): <strong>£${formatNumber(legalCost)}</strong></div>
+      </div>
+      ${brokerFeePct > 0 ? `<div style="margin-top:4px;">Broker Fee (${formatPct(brokerFeePct)}%): <strong>£${formatNumber(brokerFee)}</strong> <span style="font-size:11px;color:#6b7280;">(disclosed to borrower)</span></div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:2px solid #92400e;">
+        <div>Lender Day Zero: <strong style="font-size:14px;">£${formatNumber(lenderDayZero)}</strong></div>
+        <div>Client Day Zero: <strong style="font-size:14px;color:${clientDayZero > 0 ? '#15803d' : '#e53e3e'};">£${formatNumber(clientDayZero)}</strong></div>
       </div>
     `;
   }
@@ -92,6 +149,23 @@ export async function issueDip() {
   const purpose = document.getElementById('dip-purpose')?.value;
   const notes = document.getElementById('dip-notes')?.value || '';
   const purchasePrice = document.getElementById('dip-purchase-price')?.value;
+  const retainedMonths = document.getElementById('dip-retained-months')?.value || '6';
+  const valuationCost = document.getElementById('dip-valuation-cost')?.value || '0';
+  const legalCost = document.getElementById('dip-legal-cost')?.value || '0';
+  const brokerFeePct = document.getElementById('dip-broker-fee')?.value || '0';
+
+  // Corporate borrower fields
+  const pgUbo = document.getElementById('dip-pg-ubo')?.value || null;
+  const fixedCharge = document.getElementById('dip-fixed-charge')?.value || 'first_charge';
+  const uboNames = document.getElementById('dip-ubo-names')?.value || '';
+
+  // Fee schedule
+  const feeSchedule = {
+    arrangement: { when: document.getElementById('dip-fee-arr-when')?.value || 'on_completion', method: document.getElementById('dip-fee-arr-method')?.value || 'deducted_from_advance' },
+    valuation: { when: document.getElementById('dip-fee-val-when')?.value || 'upfront', method: document.getElementById('dip-fee-val-method')?.value || 'direct_payment' },
+    legal: { when: document.getElementById('dip-fee-legal-when')?.value || 'on_completion', method: document.getElementById('dip-fee-legal-method')?.value || 'direct_payment' },
+    broker: { when: document.getElementById('dip-fee-broker-when')?.value || 'on_completion', method: document.getElementById('dip-fee-broker-method')?.value || 'deducted_from_advance' }
+  };
 
   // Validate
   if (!loanAmount || !term || !rate) {
@@ -120,6 +194,16 @@ export async function issueDip() {
           rate_monthly: parseFloat(rate),
           interest_servicing: interest,
           arrangement_fee_pct: parseFloat(arrFee) || 2,
+          retained_months: parseInt(retainedMonths) || 6,
+          valuation_cost: parseFloat(valuationCost) || 0,
+          legal_cost: parseFloat(legalCost) || 0,
+          broker_fee_pct: parseFloat(brokerFeePct) || 0,
+          // Corporate borrower / security
+          pg_from_ubo: pgUbo,
+          fixed_charge: fixedCharge,
+          ubo_guarantor_names: uboNames,
+          // Fee schedule
+          fee_schedule: feeSchedule,
           exit_strategy: exitStrategy,
           loan_purpose: purpose,
           conditions: notes,

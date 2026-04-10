@@ -68,6 +68,8 @@ window.withdrawDeal = () => import('./workflow-actions.js').then(m => m.withdraw
 window.advanceStageSimple = (newStage) => import('./workflow-actions.js').then(m => m.advanceStageSimple(newStage));
 
 window.removeDipProperty = (idx) => import('./dip.js').then(m => m.removeDipProperty(idx));
+window.approveDipProperty = (idx) => import('./dip.js').then(m => m.approveDipProperty(idx));
+window.approveAllDipProperties = () => import('./dip.js').then(m => m.approveAllDipProperties());
 window.calcDipLtv = () => import('./dip.js').then(m => m.calcDipLtv());
 window.issueDip = () => import('./dip.js').then(m => m.issueDip());
 window.creditDecision = (decision) => import('./dip.js').then(m => m.creditDecision(decision));
