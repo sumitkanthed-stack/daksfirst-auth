@@ -1818,7 +1818,7 @@ async function loadTermsTracker(submissionId) {
   if (!container) return;
 
   try {
-    const resp = await fetchWithAuth(`${window.API_BASE || ''}/api/deals/${submissionId}/terms-tracker`);
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/terms-tracker`);
     if (!resp.ok) {
       container.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">Terms tracker not available yet.</div>';
       return;
@@ -1924,7 +1924,7 @@ async function loadTermsTracker(submissionId) {
  */
 async function loadFieldLocks(submissionId) {
   try {
-    const resp = await fetchWithAuth(`${window.API_BASE || ''}/api/deals/${submissionId}/field-locks`);
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/field-locks`);
     if (!resp.ok) return;
     const { locked, reasons } = await resp.json();
     if (!locked || locked.length === 0) return;
