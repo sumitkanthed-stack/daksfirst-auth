@@ -1640,17 +1640,24 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
 const smartUploadMulter = require('multer')({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 20);
 const { categoriseWithAI } = require('../services/ai-categorise');
 
-// Filename pattern → category mapping
+// Filename pattern → category mapping (ORDER MATTERS — first match wins)
 const categoryPatterns = [
+  // KYC patterns (check BEFORE financials_aml to avoid "kyc check" going to AML)
   { pattern: /passport|driving.?licen|photo.?id|identity|national.?id/i, category: 'kyc' },
   { pattern: /proof.?of.?address|poa|utility.?bill|council.?tax|bank.?letter/i, category: 'kyc' },
   { pattern: /certificate.?of.?incorp|mem.?art|articles.?of.?assoc|companies.?house|board.?resolution|ubo/i, category: 'kyc' },
+  { pattern: /kyc|know.?your.?customer|id.?check|identity.?verif/i, category: 'kyc' },
+  // Financials / AML
   { pattern: /bank.?statement|sa302|tax.?return|payslip|income|p60|accounts|balance.?sheet|profit.?loss|assets?.?liab|mortgage.?schedule/i, category: 'financials_aml' },
-  { pattern: /aml|anti.?money|source.?of.?fund|source.?of.?wealth|pep|sanction|kyc.?check|compliance/i, category: 'financials_aml' },
+  { pattern: /aml|anti.?money|source.?of.?fund|source.?of.?wealth|pep|sanction|compliance/i, category: 'financials_aml' },
+  // Valuation
   { pattern: /valuation|rics|survey|title.?register|land.?registry|title.?plan|charges.?register|search.?result|local.?authority/i, category: 'valuation' },
   { pattern: /solicitor|sra|legal.?opinion|purchase.?contract|transfer.?deed/i, category: 'valuation' },
+  // Use of Funds
   { pattern: /redemption|redeem|use.?of.?fund|schedule.?of.?cost|refurb|renovation|contractor|quote|works|build.?programme|structural|planning.?consent/i, category: 'use_of_funds' },
+  // Exit Evidence
   { pattern: /exit|refinance|sale.?contract|agent.?val|estate.?agent|aip|agreement.?in.?principle|rental|tenancy|ast/i, category: 'exit_evidence' },
+  // Other Conditions
   { pattern: /insurance|buildings?.?ins|vacant.?prop|sec.?106|section.?106|planning.?condition|fire.?safety|party.?wall|building.?control/i, category: 'other_conditions' },
 ];
 
@@ -1692,8 +1699,24 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
         hasFileContent = false;
       }
 
+      // Check for existing files to prevent duplicates
+      const existingDocs = await pool.query(
+        `SELECT filename, file_size FROM deal_documents WHERE deal_id = $1`,
+        [dealId]
+      );
+      const existingSet = new Set(existingDocs.rows.map(d => `${d.filename}::${d.file_size}`));
+
       const results = [];
+      let skippedDupes = 0;
       for (const file of req.files) {
+        // Skip duplicates (same filename + same size = same file)
+        const fileKey = `${file.originalname}::${file.size}`;
+        if (existingSet.has(fileKey)) {
+          skippedDupes++;
+          continue;
+        }
+        existingSet.add(fileKey); // Prevent dupes within same batch too
+
         let category = categoriseFile(file.originalname);
         let classifiedBy = 'filename';
 
@@ -1745,8 +1768,8 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
       await logAudit(dealId, 'smart_upload', null, null,
         { files: results.map(r => ({ filename: r.filename, category: r.category })), uploaded_by: req.user.userId }, req.user.userId);
 
-      console.log('[smart-upload]', results.length, 'files categorised for deal', req.params.submissionId);
-      res.json({ success: true, results });
+      console.log('[smart-upload]', results.length, 'files categorised,', skippedDupes, 'duplicates skipped for deal', req.params.submissionId);
+      res.json({ success: true, results, skippedDuplicates: skippedDupes });
     } catch (error) {
       console.error('[smart-upload] Error:', error);
       res.status(500).json({ error: 'Smart upload failed: ' + error.message });

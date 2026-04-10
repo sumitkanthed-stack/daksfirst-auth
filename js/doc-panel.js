@@ -350,8 +350,10 @@ export async function smartUploadFiles(files) {
     const data = await resp.json();
     if (resp.ok) {
       // Show categorisation results
-      const summary = data.results.map(r => `${r.filename} → ${r.category.replace(/_/g, ' ')}`).join('\n');
-      showToast(`${data.results.length} file(s) categorised and uploaded`);
+      const aiCount = data.results.filter(r => r.classifiedBy === 'ai').length;
+      const dupeMsg = data.skippedDuplicates ? `, ${data.skippedDuplicates} duplicate(s) skipped` : '';
+      const aiMsg = aiCount ? ` (${aiCount} by AI content analysis)` : '';
+      showToast(`${data.results.length} file(s) categorised${aiMsg}${dupeMsg}`);
       // Refresh panel
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
