@@ -24,14 +24,14 @@ router.get('/', authenticateToken, async (req, res) => {
       // Internal staff see all deals
       result = await pool.query(
         `SELECT d.*, u.first_name AS broker_first, u.last_name AS broker_last, u.email AS broker_email
-         FROM deals d
+         FROM deal_submissions d
          LEFT JOIN users u ON d.user_id = u.id
          ORDER BY d.created_at DESC`
       );
     } else {
       // Brokers / borrowers see only their own
       result = await pool.query(
-        `SELECT * FROM deals WHERE user_id = $1 ORDER BY created_at DESC`,
+        `SELECT * FROM deal_submissions WHERE user_id = $1 ORDER BY created_at DESC`,
         [userId]
       );
     }
@@ -53,9 +53,9 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
 
     let result;
     if (['admin', 'rm', 'credit', 'compliance'].includes(role)) {
-      result = await pool.query('SELECT * FROM deals WHERE submission_id = $1', [submissionId]);
+      result = await pool.query('SELECT * FROM deal_submissions WHERE submission_id = $1', [submissionId]);
     } else {
-      result = await pool.query('SELECT * FROM deals WHERE submission_id = $1 AND user_id = $2', [submissionId, userId]);
+      result = await pool.query('SELECT * FROM deal_submissions WHERE submission_id = $1 AND user_id = $2', [submissionId, userId]);
     }
 
     if (result.rows.length === 0) {
