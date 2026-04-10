@@ -9,69 +9,64 @@ import { getCurrentDealId, getCurrentRole } from './state.js';
 // ═══════════════════════════════════════════════════════════════
 //  Section definitions: who can view, who can upload
 // ═══════════════════════════════════════════════════════════════
+// Ordered to match deal lifecycle: submission → DIP → onboarding → termsheet → completion
 const SECTION_DEFS = [
   {
-    key: 'initial', label: 'Initial Submission', icon: '\u{1F4CB}',
+    key: 'initial', label: '1. Initial Submission', icon: '\u{1F4CB}',
     owners: ['broker'],
     viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
     category: 'general', phase: 1
   },
   {
-    key: 'kyc', label: 'KYC / Identity', icon: '\u{1FAAA}',
-    owners: ['borrower', 'broker'],
-    viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
-    category: 'kyc', phase: 2
-  },
-  {
-    key: 'financials', label: 'Financials (ALIE)', icon: '\u{1F4B7}',
-    owners: ['broker'],
-    viewers: ['broker', 'rm', 'credit', 'admin'],
-    category: 'financials', phase: 2
-  },
-  {
-    key: 'valuation', label: 'Valuation', icon: '\u{1F3E0}',
-    owners: ['broker', 'rm'],
-    viewers: ['broker', 'rm', 'credit', 'admin'],
-    category: 'valuation', phase: 2
-  },
-  {
-    key: 'refurbishment', label: 'Refurbishment', icon: '\u{1F528}',
-    owners: ['broker'],
-    viewers: ['broker', 'rm', 'credit', 'admin'],
-    category: 'refurbishment', phase: 2
-  },
-  {
-    key: 'exit_evidence', label: 'Exit Evidence', icon: '\u{1F6AA}',
-    owners: ['broker'],
-    viewers: ['broker', 'rm', 'credit', 'admin'],
-    category: 'exit_evidence', phase: 2
-  },
-  {
-    key: 'aml', label: 'AML', icon: '\u{1F50D}',
-    owners: ['broker', 'borrower'],
-    viewers: ['broker', 'borrower', 'rm', 'compliance', 'credit', 'admin'],
-    category: 'aml', phase: 2
-  },
-  {
-    key: 'insurance', label: 'Insurance', icon: '\u{1F6E1}',
-    owners: ['borrower', 'broker'],
-    viewers: ['broker', 'borrower', 'rm', 'credit', 'admin'],
-    category: 'insurance', phase: 2
-  },
-  {
-    key: 'dip', label: 'DIP Document', icon: '\u{1F4C4}',
+    key: 'dip', label: '2. DIP Document', icon: '\u{1F4C4}',
     owners: [],
     viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
     category: null, system: true, phase: 1
   },
   {
-    key: 'termsheet', label: 'Termsheet', icon: '\u{1F4DD}',
+    key: 'kyc', label: '3. KYC / Identity', icon: '\u{1FAAA}',
+    owners: ['borrower', 'broker'],
+    viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
+    category: 'kyc', phase: 2
+  },
+  {
+    key: 'financials_aml', label: '4. Financials / AML', icon: '\u{1F4B7}',
+    owners: ['broker', 'borrower'],
+    viewers: ['broker', 'borrower', 'rm', 'compliance', 'credit', 'admin'],
+    category: 'financials_aml', phase: 2
+  },
+  {
+    key: 'valuation', label: '5. Valuation', icon: '\u{1F3E0}',
+    owners: ['broker', 'rm'],
+    viewers: ['broker', 'rm', 'credit', 'admin'],
+    category: 'valuation', phase: 2
+  },
+  {
+    key: 'use_of_funds', label: '6. Use of Funds', icon: '\u{1F4B0}',
+    owners: ['broker'],
+    viewers: ['broker', 'rm', 'credit', 'admin'],
+    category: 'use_of_funds', phase: 2
+  },
+  {
+    key: 'exit_evidence', label: '7. Exit Evidence', icon: '\u{1F6AA}',
+    owners: ['broker'],
+    viewers: ['broker', 'rm', 'credit', 'admin'],
+    category: 'exit_evidence', phase: 2
+  },
+  {
+    key: 'other_conditions', label: '8. Other Conditions', icon: '\u{1F6E1}',
+    owners: ['borrower', 'broker', 'rm'],
+    viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
+    category: 'other_conditions', phase: 2
+  },
+  {
+    key: 'termsheet', label: '9. Termsheet', icon: '\u{1F4DD}',
     owners: [],
     viewers: ['rm', 'credit', 'admin'],
     category: null, system: true, phase: 3
   },
   {
-    key: 'post_completion', label: 'Post-Completion', icon: '\u{2705}',
+    key: 'post_completion', label: '10. Post-Completion', icon: '\u{2705}',
     owners: ['rm'],
     viewers: ['broker', 'borrower', 'rm', 'credit', 'compliance', 'admin'],
     category: 'post_completion', phase: 4
@@ -108,6 +103,24 @@ export async function renderDocPanel(deal) {
     }
   } catch (err) {
     console.error('[doc-panel] Failed to load docs:', err);
+  }
+
+  // Merge legacy docs from deal.documents JSONB (initial submission uploads)
+  if (deal.documents && Array.isArray(deal.documents)) {
+    if (!docsByCategory['general']) docsByCategory['general'] = [];
+    const existingNames = new Set(docsByCategory['general'].map(d => d.filename));
+    deal.documents.forEach(doc => {
+      const fname = doc.filename || doc.original_name || 'Document';
+      if (!existingNames.has(fname)) {
+        docsByCategory['general'].push({
+          filename: fname,
+          onedrive_download_url: doc.onedrive_download_url || doc.download_url || doc.url,
+          uploaded_at: doc.uploaded_at || deal.created_at,
+          file_size: doc.file_size || doc.size,
+          _by: 'Broker'
+        });
+      }
+    });
   }
 
   // Build system docs (DIP PDF, Termsheet)
