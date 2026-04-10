@@ -234,12 +234,18 @@ export async function showDealDetail(dealId) {
     renderDocumentsList(deal.documents || []);
 
     // ── TAB: Deal Matrix (lazy-loaded to avoid breaking deal-detail if file missing) ──
-    import('./deal-matrix.js').then(mod => {
-      mod.renderDealMatrix(deal);
+    import('./deal-matrix.js').then(async (mod) => {
+      try {
+        await mod.renderDealMatrix(deal);
+      } catch (renderErr) {
+        console.error('[matrix] renderDealMatrix error:', renderErr);
+        const mc = document.getElementById('dtab-matrix-content');
+        if (mc) mc.innerHTML = '<p style="color:#dc2626;text-align:center;padding:40px;">Matrix render error: ' + renderErr.message + '</p>';
+      }
     }).catch(err => {
-      console.warn('[matrix] Could not load deal-matrix.js:', err.message);
+      console.error('[matrix] Could not load deal-matrix.js:', err);
       const mc = document.getElementById('dtab-matrix-content');
-      if (mc) mc.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:40px;">Deal Matrix module not available.</p>';
+      if (mc) mc.innerHTML = '<p style="color:#dc2626;text-align:center;padding:40px;">Deal Matrix module not available: ' + err.message + '</p>';
     });
 
     // ── TAB: Analysis ──

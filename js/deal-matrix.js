@@ -175,11 +175,23 @@ export async function renderDealMatrix(deal) {
 
   const role = getCurrentRole();
   const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
-  const currentStage = deal.deal_stage || 'dip';
+  const currentStage = deal.deal_stage || 'received';
 
-  // Stage mapping
-  const stageIndex = { 'dip': 0, 'indicative-ts': 1, 'formal-offer': 2, 'execution': 3 };
-  const currentStageIdx = stageIndex[currentStage] || 0;
+  // Safe number helpers
+  const num = (v) => v != null ? Number(v) : 0;
+  const fmtMoney = (v) => num(v) ? num(v).toLocaleString() : '0';
+  const fmtPct = (v) => num(v) ? num(v).toFixed(1) : '0.0';
+  const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
+
+  // Stage mapping — deal_stage values from DB to matrix column index
+  const stageIndex = {
+    'received': 0, 'assigned': 0, 'dip_issued': 0,
+    'info_gathering': 1, 'ai_termsheet': 1,
+    'fee_pending': 2, 'fee_paid': 2, 'underwriting': 2,
+    'bank_submitted': 2, 'bank_approved': 2,
+    'borrower_accepted': 3, 'legal_instructed': 3, 'completed': 3
+  };
+  const currentStageIdx = stageIndex[currentStage] ?? 0;
 
   // ═══════════════════════════════════════════════════════════════════
   // HEADER & CONTEXT SECTION
@@ -191,7 +203,7 @@ export async function renderDealMatrix(deal) {
       <div style="width:36px;height:36px;background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px">📊</div>
       <div>
         <h2 style="font-size:16px;font-weight:700;color:#0f172a">Deal Information Matrix</h2>
-        <div style="font-size:11px;color:#64748b;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${deal.loan_amount ? (deal.loan_amount / 1000000).toFixed(1) : '0'}M</div>
+        <div style="font-size:11px;color:#64748b;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${fmtM(deal.loan_amount)}M</div>
       </div>
     </div>
 
@@ -209,12 +221,12 @@ export async function renderDealMatrix(deal) {
       <div style="width:1px;height:24px;background:#e2e8f0"></div>
       <div style="display:flex;flex-direction:column;gap:0">
         <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Loan</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">£${deal.loan_amount ? deal.loan_amount.toLocaleString() : '0'}</span>
+        <span style="font-size:12px;font-weight:600;color:#1e293b">£${fmtMoney(deal.loan_amount)}</span>
       </div>
       <div style="width:1px;height:24px;background:#e2e8f0"></div>
       <div style="display:flex;flex-direction:column;gap:0">
         <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">LTV</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">${deal.ltv_requested ? deal.ltv_requested.toFixed(1) : '0'}%</span>
+        <span style="font-size:12px;font-weight:600;color:#1e293b">${fmtPct(deal.ltv_requested)}%</span>
       </div>
       <div style="width:1px;height:24px;background:#e2e8f0"></div>
       <div style="display:flex;flex-direction:column;gap:0">
@@ -224,7 +236,7 @@ export async function renderDealMatrix(deal) {
       <div style="width:1px;height:24px;background:#e2e8f0"></div>
       <div style="display:flex;flex-direction:column;gap:0">
         <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Stage</span>
-        <span style="font-size:12px;font-weight:600;color:#2563eb">${sanitizeHtml(currentStage.replace(/-/g, ' ').toUpperCase())}</span>
+        <span style="font-size:12px;font-weight:600;color:#2563eb">${sanitizeHtml(currentStage.replace(/_/g, ' ').toUpperCase())}</span>
       </div>
     </div>
 
@@ -405,7 +417,7 @@ export async function renderDealMatrix(deal) {
 
       <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
-        ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${deal.loan_amount ? deal.loan_amount.toLocaleString() : '0'}, Term: ${deal.term_months || '12'} months, Rate: ${deal.interest_rate || 'TBA'}%`,
+        ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '12'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
           ['approved', 'not-started', 'not-started', 'not-started'])}
 
         <!-- Use of Funds -->
