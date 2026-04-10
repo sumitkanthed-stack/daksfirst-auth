@@ -126,6 +126,9 @@ export async function renderDocPanel(deal) {
   // Build system docs (DIP PDF, Termsheet)
   if (deal.dip_pdf_url) {
     systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf`, onedrive_download_url: deal.dip_pdf_url, uploaded_at: deal.dip_issued_at, _by: 'System' }];
+  } else if (deal.dip_issued_at) {
+    // DIP was issued but PDF URL is missing (OneDrive upload may have failed)
+    systemDocs.dip = [{ filename: `DIP_${deal.submission_id.substring(0,8)}.pdf`, _status: 'regenerate', uploaded_at: deal.dip_issued_at, _by: 'System' }];
   }
   if (deal.ts_pdf_url) {
     systemDocs.termsheet = [{ filename: `Termsheet_${deal.submission_id.substring(0,8)}.docx`, onedrive_download_url: deal.ts_pdf_url, uploaded_at: deal.ts_issued_at, _by: 'System' }];
@@ -227,6 +230,8 @@ export async function renderDocPanel(deal) {
           html += `</div>`;
           if (dlUrl) {
             html += `<a href="${sanitizeHtml(dlUrl)}" target="_blank" class="doc-file-dl" title="Download">\u2193</a>`;
+          } else if (doc._status === 'regenerate') {
+            html += `<button onclick="window.viewDipPdf && window.viewDipPdf('${deal.submission_id}')" class="doc-file-dl" title="View/Regenerate DIP PDF" style="background:#f59e0b;color:#fff;border-color:#f59e0b;">View PDF</button>`;
           }
           html += `</div>`;
         });
