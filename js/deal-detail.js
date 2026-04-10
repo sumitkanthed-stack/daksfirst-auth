@@ -1122,6 +1122,27 @@ export function renderInternalWorkflowControls(deal) {
     }, 100);
   }
 
+  // DIP_ISSUED — DocuSign status banner for all internal users
+  if (stage === 'dip_issued' && isInternal) {
+    const dsStatus = deal.docusign_status || 'none';
+    const dipPdfLink = deal.dip_pdf_url;
+    const signedPdfLink = deal.dip_signed_pdf_url;
+    const dsEnvId = deal.docusign_envelope_id;
+
+    let dsBannerBg = '#eff6ff'; let dsBorderCol = '#3b82f6'; let dsIcon = '📄'; let dsLabel = 'DIP PDF Generated';
+    if (dsStatus === 'sent') { dsBannerBg = '#fffbeb'; dsBorderCol = '#f59e0b'; dsIcon = '✉️'; dsLabel = 'DocuSign Sent — Awaiting Borrower Signature'; }
+    else if (dsStatus === 'completed') { dsBannerBg = '#f0fff4'; dsBorderCol = '#48bb78'; dsIcon = '✅'; dsLabel = 'DIP Signed by Borrower'; }
+    else if (dsStatus === 'declined') { dsBannerBg = '#fee2e2'; dsBorderCol = '#e53e3e'; dsIcon = '❌'; dsLabel = 'Borrower Declined to Sign DIP'; }
+
+    html += '<div style="background:' + dsBannerBg + ';padding:12px 16px;border-radius:8px;margin-bottom:12px;border-left:4px solid ' + dsBorderCol + ';display:flex;align-items:center;justify-content:space-between;">' +
+      '<div><span style="font-size:16px;margin-right:8px;">' + dsIcon + '</span><strong style="font-size:13px;">' + dsLabel + '</strong>' +
+      (dsEnvId ? '<span style="font-size:10px;color:#999;margin-left:10px;">Envelope: ' + sanitizeHtml(dsEnvId.substring(0, 12)) + '...</span>' : '') +
+      '</div><div style="display:flex;gap:8px;">' +
+      (dipPdfLink ? '<a href="' + sanitizeHtml(dipPdfLink) + '" target="_blank" style="padding:4px 12px;background:#1a365d;color:white;text-decoration:none;border-radius:4px;font-size:11px;font-weight:600;">View DIP PDF</a>' : '') +
+      (signedPdfLink ? '<a href="' + sanitizeHtml(signedPdfLink) + '" target="_blank" style="padding:4px 12px;background:#047857;color:white;text-decoration:none;border-radius:4px;font-size:11px;font-weight:600;">Signed PDF</a>' : '') +
+      '</div></div>';
+  }
+
   // DIP_ISSUED (Credit or Admin) - Credit Review & In-Principle Approval
   if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole)) {
     const dipData = deal.ai_termsheet_data || {};
@@ -1446,7 +1467,36 @@ export function renderExternalWorkflowControls(deal) {
   if (stage === 'received' || stage === 'assigned') {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
   } else if (stage === 'dip_issued') {
-    html += `<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;"><p style="font-size:14px;margin-bottom:12px;"><strong>DIP Under Credit Review</strong> — Your decision in principle is being reviewed by our credit team. We'll notify you of the outcome shortly.</p></div>`;
+    const dipSigned = deal.dip_signed;
+    const docuStatus = deal.docusign_status || 'none';
+    const dipPdfUrl = deal.dip_pdf_url;
+    const signedPdfUrl = deal.dip_signed_pdf_url;
+
+    if (dipSigned) {
+      // DIP has been signed via DocuSign
+      html += '<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;">' +
+        '<p style="font-size:14px;margin-bottom:12px;"><strong>DIP Signed</strong> — You have signed the Decision in Principle. Our team is now proceeding with your application.</p>' +
+        (signedPdfUrl ? '<a href="' + sanitizeHtml(signedPdfUrl) + '" target="_blank" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">Download Signed DIP PDF</a>' : '') +
+        '</div>';
+    } else if (docuStatus === 'sent') {
+      // DIP sent for signing, awaiting signature
+      html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
+        '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Issued — Awaiting Your Signature</strong></p>' +
+        '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been sent to your email via DocuSign. Please check your inbox and sign the document to proceed.</p>' +
+        (dipPdfUrl ? '<a href="' + sanitizeHtml(dipPdfUrl) + '" target="_blank" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;margin-right:8px;">View DIP PDF</a>' : '') +
+        '<div style="margin-top:12px;padding:10px;background:#fffbeb;border-radius:6px;font-size:12px;color:#92400e;">If you haven\'t received the DocuSign email, please check your spam folder or contact your relationship manager.</div>' +
+        '</div>';
+    } else if (docuStatus === 'declined') {
+      html += '<div style="background:#fee2e2;padding:16px;border-radius:8px;border-left:4px solid #e53e3e;">' +
+        '<p style="font-size:14px;"><strong>DIP Declined</strong> — The Decision in Principle was declined during signing. Please contact your relationship manager for next steps.</p>' +
+        '</div>';
+    } else {
+      // Fallback — DIP issued but DocuSign not yet configured or no status
+      html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
+        '<p style="font-size:14px;margin-bottom:12px;"><strong>DIP Issued</strong> — Your Decision in Principle has been issued. Our team will be in touch with signing details shortly.</p>' +
+        (dipPdfUrl ? '<a href="' + sanitizeHtml(dipPdfUrl) + '" target="_blank" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">View DIP PDF</a>' : '') +
+        '</div>';
+    }
   } else if (stage === 'info_gathering') {
     const dipData = deal.ai_termsheet_data || {};
     const extLoan = dipData.loan_amount || deal.loan_amount || 0;

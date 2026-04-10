@@ -8,6 +8,9 @@ const { authenticateInternal } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { notifyDealEvent } = require('../services/notifications');
+const { generateDipPdf } = require('../services/dip-pdf');
+const { sendForSigning } = require('../services/docusign');
+const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SUBMIT DEAL
@@ -487,88 +490,164 @@ router.get('/:submissionId/fees', authenticateToken, authenticateInternal, async
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ISSUE DIP
+//  ISSUE DIP — Generates PDF, uploads to OneDrive, sends to DocuSign
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal, validate('issueDip'), async (req, res) => {
   try {
     const { notes, dip_data } = req.validated;
 
-    const dealResult = await pool.query(`SELECT id, status, user_id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    // 1. Fetch full deal data
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-    const dealId = dealResult.rows[0].id;
-    const userId = dealResult.rows[0].user_id;
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+    const userId = deal.user_id;
 
-    // Build update: store DIP data in ai_termsheet_data, update key deal fields, and dip_notes
-    const updateFields = [];
-    const updateValues = [req.user.userId, notes || null, dealId];
+    // 2. Get borrowers for this deal (for the DIP PDF)
+    const borrowersResult = await pool.query(
+      `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`,
+      [dealId]
+    );
+    const dipDataWithBorrowers = {
+      ...dip_data,
+      notes,
+      borrowers: borrowersResult.rows.map(b => ({
+        name: b.full_name,
+        role: b.role,
+        email: b.email,
+        kyc_verified: b.kyc_status === 'verified'
+      }))
+    };
+
+    // 3. Generate DIP PDF
+    console.log('[issue-dip] Generating DIP PDF for', req.params.submissionId);
+    const pdfBuffer = await generateDipPdf(deal, dipDataWithBorrowers, {
+      issuedBy: req.user.userId,
+      issuedAt: new Date().toISOString()
+    });
+    const pdfFilename = `DIP_${req.params.submissionId}.pdf`;
+
+    // 4. Upload unsigned DIP PDF to OneDrive
+    let dipPdfUrl = null;
+    try {
+      const graphToken = await getGraphToken();
+      const uploadResult = await uploadFileToOneDrive(graphToken, req.params.submissionId, pdfFilename, pdfBuffer);
+      dipPdfUrl = uploadResult.downloadUrl;
+      console.log('[issue-dip] DIP PDF uploaded to OneDrive:', dipPdfUrl);
+    } catch (uploadErr) {
+      console.error('[issue-dip] OneDrive upload failed (non-blocking):', uploadErr.message);
+    }
+
+    // 5. Send to DocuSign for signing
+    let docusignResult = null;
+    const borrowerEmail = deal.borrower_email || deal.borrower_invite_email;
+    const borrowerName = deal.borrower_name || 'Borrower';
+
+    if (config.DOCUSIGN_INTEGRATION_KEY && borrowerEmail) {
+      try {
+        // Get broker info for CC
+        const brokerResult = await pool.query(`SELECT first_name, last_name, email FROM users WHERE id = $1`, [userId]);
+        const broker = brokerResult.rows[0] || {};
+
+        docusignResult = await sendForSigning({
+          pdfBuffer,
+          pdfName: pdfFilename,
+          borrowerName,
+          borrowerEmail,
+          brokerName: broker.first_name ? `${broker.first_name} ${broker.last_name}` : null,
+          brokerEmail: broker.email || null,
+          dealRef: req.params.submissionId,
+          callbackUrl: config.DOCUSIGN_WEBHOOK_URL
+        });
+
+        console.log('[issue-dip] DocuSign envelope created:', docusignResult.envelopeId);
+      } catch (dsErr) {
+        console.error('[issue-dip] DocuSign send failed (non-blocking):', dsErr.message);
+        // Don't fail the whole operation — DIP is still issued, just not sent for e-sign
+      }
+    } else {
+      console.log('[issue-dip] DocuSign not configured or no borrower email — skipping e-sign');
+    }
+
+    // 6. Update deal in database
+    const updateFields = [
+      `status = 'dip_issued'`,
+      `deal_stage = 'dip_issued'`,
+      `dip_issued_at = NOW()`,
+      `dip_issued_by = $1`,
+      `dip_notes = $2`,
+      `dip_pdf_url = $3`,
+      `updated_at = NOW()`
+    ];
+    const updateValues = [req.user.userId, notes || null, dipPdfUrl || null];
     let paramIdx = 4;
 
     // Store structured DIP data
     if (dip_data) {
       updateFields.push(`ai_termsheet_data = $${paramIdx}`);
-      updateValues.splice(2, 0, JSON.stringify(dip_data));
+      updateValues.push(JSON.stringify(dip_data));
       paramIdx++;
 
       // Also update core deal fields from DIP data
-      if (dip_data.loan_amount !== undefined) {
-        updateFields.push(`loan_amount = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.loan_amount);
-        paramIdx++;
-      }
-      if (dip_data.ltv !== undefined) {
-        updateFields.push(`ltv_requested = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.ltv);
-        paramIdx++;
-      }
-      if (dip_data.term_months !== undefined) {
-        updateFields.push(`term_months = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.term_months);
-        paramIdx++;
-      }
-      if (dip_data.rate_monthly !== undefined) {
-        updateFields.push(`rate_requested = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.rate_monthly);
-        paramIdx++;
-      }
-      if (dip_data.property_value !== undefined) {
-        updateFields.push(`current_value = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.property_value);
-        paramIdx++;
-      }
-      if (dip_data.exit_strategy !== undefined) {
-        updateFields.push(`exit_strategy = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.exit_strategy);
-        paramIdx++;
-      }
-      if (dip_data.interest_servicing !== undefined) {
-        updateFields.push(`interest_servicing = $${paramIdx}`);
-        updateValues.splice(2, 0, dip_data.interest_servicing);
-        paramIdx++;
+      const fieldMap = {
+        loan_amount: 'loan_amount',
+        ltv: 'ltv_requested',
+        term_months: 'term_months',
+        rate_monthly: 'rate_requested',
+        property_value: 'current_value',
+        exit_strategy: 'exit_strategy',
+        interest_servicing: 'interest_servicing'
+      };
+      for (const [dipKey, dbCol] of Object.entries(fieldMap)) {
+        if (dip_data[dipKey] !== undefined) {
+          updateFields.push(`${dbCol} = $${paramIdx}`);
+          updateValues.push(dip_data[dipKey]);
+          paramIdx++;
+        }
       }
     }
 
-    updateFields.push(`status = 'dip_issued'`);
-    updateFields.push(`deal_stage = 'dip_issued'`);
-    updateFields.push(`dip_issued_at = NOW()`);
-    updateFields.push(`dip_issued_by = $1`);
-    updateFields.push(`dip_notes = $2`);
-    updateFields.push(`updated_at = NOW()`);
+    // Store DocuSign envelope ID if created
+    if (docusignResult && docusignResult.envelopeId) {
+      updateFields.push(`docusign_envelope_id = $${paramIdx}`);
+      updateValues.push(docusignResult.envelopeId);
+      paramIdx++;
+      updateFields.push(`docusign_status = $${paramIdx}`);
+      updateValues.push('sent');
+      paramIdx++;
+    }
 
+    updateValues.push(dealId);
     const result = await pool.query(
       `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx} RETURNING submission_id, status, dip_issued_at`,
       updateValues
     );
 
-    await logAudit(dealId, 'dip_issued', dealResult.rows[0].status, 'dip_issued',
-      { issued_by: req.user.userId, dip_data_stored: !!dip_data }, req.user.userId);
+    await logAudit(dealId, 'dip_issued', deal.status, 'dip_issued', {
+      issued_by: req.user.userId,
+      dip_data_stored: !!dip_data,
+      pdf_generated: !!pdfBuffer,
+      pdf_uploaded: !!dipPdfUrl,
+      docusign_sent: !!(docusignResult && docusignResult.envelopeId),
+      docusign_envelope_id: docusignResult ? docusignResult.envelopeId : null
+    }, req.user.userId);
 
-    // Notify broker
-    const brokerEmail = await pool.query(`SELECT email FROM users WHERE id = $1`, [userId]);
-    if (brokerEmail.rows.length > 0) {
-      await notifyDealEvent('dip_issued', result.rows[0], [brokerEmail.rows[0].email]);
+    // Notify broker via email
+    const brokerEmailResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [userId]);
+    if (brokerEmailResult.rows.length > 0) {
+      await notifyDealEvent('dip_issued', result.rows[0], [brokerEmailResult.rows[0].email]);
     }
 
-    res.json({ success: true, deal: result.rows[0] });
+    res.json({
+      success: true,
+      deal: result.rows[0],
+      pdf_url: dipPdfUrl,
+      docusign: docusignResult ? {
+        envelope_id: docusignResult.envelopeId,
+        status: docusignResult.status,
+        sent_to: borrowerEmail
+      } : null
+    });
   } catch (error) {
     console.error('[issue-dip] Error:', error);
     res.status(500).json({ error: 'Failed to issue DIP' });
@@ -879,6 +958,86 @@ router.post('/:submissionId/invite-borrower', authenticateToken, authenticateInt
     res.json({ success: true, deal: result.rows[0], message: 'Invitation sent' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to invite borrower' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UPDATE INTAKE FIELDS (RM / Internal)
+//  Allows RM to amend pre-populated intake fields after review
+// ═══════════════════════════════════════════════════════════════════════════
+router.put('/:submissionId/intake', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const updates = req.body;
+    if (!updates || Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No fields provided to update' });
+    }
+
+    // Whitelist of editable intake fields — only these can be changed
+    const allowedFields = [
+      'borrower_name', 'borrower_company', 'borrower_email', 'borrower_phone',
+      'borrower_dob', 'borrower_nationality', 'borrower_jurisdiction', 'borrower_type',
+      'company_name', 'company_number',
+      'broker_name', 'broker_company', 'broker_fca',
+      'security_address', 'security_postcode', 'asset_type', 'current_value',
+      'loan_amount', 'ltv_requested', 'loan_purpose', 'exit_strategy',
+      'term_months', 'rate_requested', 'additional_notes',
+      'drawdown_date', 'interest_servicing', 'existing_charges',
+      'property_tenure', 'occupancy_status', 'current_use',
+      'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
+      'deposit_source', 'concurrent_transactions'
+    ];
+
+    // Numeric fields that need parsing
+    const numericFields = [
+      'current_value', 'loan_amount', 'ltv_requested', 'term_months',
+      'rate_requested', 'purchase_price', 'refurb_cost'
+    ];
+
+    // Build dynamic SET clause — only for allowed fields present in the body
+    const setClauses = [];
+    const values = [];
+    let paramIdx = 1;
+
+    for (const [key, val] of Object.entries(updates)) {
+      if (!allowedFields.includes(key)) continue; // skip anything not whitelisted
+      setClauses.push(`${key} = $${paramIdx}`);
+      if (numericFields.includes(key) && val !== null && val !== '') {
+        // Strip commas and parse as number
+        const parsed = parseFloat(String(val).replace(/,/g, ''));
+        values.push(isNaN(parsed) ? null : parsed);
+      } else {
+        values.push(val === '' ? null : val);
+      }
+      paramIdx++;
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided to update' });
+    }
+
+    // Add updated_at
+    setClauses.push(`updated_at = NOW()`);
+
+    // Add submission_id as final param
+    values.push(req.params.submissionId);
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET ${setClauses.join(', ')} WHERE submission_id = $${paramIdx} RETURNING id, submission_id, updated_at`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    await logAudit(result.rows[0].id, 'intake_fields_updated', null, null,
+      { fields_updated: Object.keys(updates).filter(k => allowedFields.includes(k)), updated_by: req.user.userId }, req.user.userId);
+
+    console.log('[intake-update] Deal', req.params.submissionId, '- fields updated by', req.user.userId, ':', setClauses.length, 'fields');
+    res.json({ success: true, message: `${setClauses.length - 1} field(s) updated`, deal: result.rows[0] });
+  } catch (error) {
+    console.error('[intake-update] Error:', error);
+    res.status(500).json({ error: 'Failed to update intake fields' });
   }
 });
 

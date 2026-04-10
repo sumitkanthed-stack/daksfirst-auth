@@ -128,10 +128,29 @@ const schemas = {
 
   // Issue DIP
   issueDip: Joi.object({
-    dip_notes: Joi.string(),
-    dip_amount: Joi.number().positive(),
-    dip_term_days: Joi.number().positive()
-  }),
+    notes: Joi.string().allow('', null),
+    dip_data: Joi.object({
+      loan_amount: Joi.number().positive(),
+      property_value: Joi.number().positive(),
+      ltv: Joi.number().min(0).max(100),
+      term_months: Joi.number().positive(),
+      rate_monthly: Joi.number().positive(),
+      interest_servicing: Joi.string(),
+      exit_strategy: Joi.string(),
+      arrangement_fee: Joi.number().min(0),
+      broker_fee: Joi.number().min(0),
+      valuation_cost: Joi.number().min(0),
+      legal_cost: Joi.number().min(0),
+      fee_onboarding: Joi.number().min(0),
+      fee_commitment: Joi.number().min(0),
+      retained_months: Joi.number().min(0),
+      fixed_charge: Joi.string(),
+      pg_ubo: Joi.string(),
+      additional_security: Joi.string().allow('', null),
+      ubo_names: Joi.string().allow('', null),
+      notes: Joi.string().allow('', null)
+    }).unknown(true) // allow extra fields like property valuations
+  }).unknown(true),
 
   // Credit decision
   creditDecision: Joi.object({

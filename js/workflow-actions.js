@@ -670,7 +670,7 @@ export async function saveIntakeChanges() {
   }
 
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}`, {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/intake`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)

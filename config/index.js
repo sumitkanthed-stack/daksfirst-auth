@@ -44,6 +44,16 @@ module.exports = {
   // n8n webhook
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
 
+  // DocuSign
+  DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',
+  DOCUSIGN_SECRET_KEY: process.env.DOCUSIGN_SECRET_KEY || '',
+  DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID || '',
+  DOCUSIGN_USER_ID: process.env.DOCUSIGN_USER_ID || '',
+  DOCUSIGN_PRIVATE_KEY: (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  DOCUSIGN_BASE_URL: process.env.DOCUSIGN_BASE_URL || 'https://demo.docusign.net/restapi',
+  DOCUSIGN_AUTH_SERVER: process.env.DOCUSIGN_AUTH_SERVER || 'https://account-d.docusign.com',
+  DOCUSIGN_WEBHOOK_URL: process.env.DOCUSIGN_WEBHOOK_URL || 'https://daksfirst-auth.onrender.com/api/docusign/webhook',
+
   // Twilio SMS
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',

@@ -367,7 +367,14 @@ async function runMigrations() {
       { col: 'lawyer_reference', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS lawyer_reference VARCHAR(100);' },
       { col: 'completed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;' },
       { col: 'borrower_invited_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invited_at TIMESTAMPTZ;' },
-      { col: 'borrower_invite_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invite_email VARCHAR(255);' }
+      { col: 'borrower_invite_email', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_invite_email VARCHAR(255);' },
+      // DocuSign / DIP PDF columns
+      { col: 'dip_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_pdf_url TEXT;' },
+      { col: 'dip_signed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_signed BOOLEAN DEFAULT false;' },
+      { col: 'dip_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_signed_at TIMESTAMPTZ;' },
+      { col: 'dip_signed_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_signed_pdf_url TEXT;' },
+      { col: 'docusign_envelope_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS docusign_envelope_id VARCHAR(100);' },
+      { col: 'docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS docusign_status VARCHAR(30) DEFAULT 'none';" }
     ];
 
     for (const check of columnChecks) {
