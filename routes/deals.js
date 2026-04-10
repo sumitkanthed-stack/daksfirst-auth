@@ -9,7 +9,7 @@ const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { notifyDealEvent } = require('../services/notifications');
 const { generateDipPdf } = require('../services/dip-pdf');
-const { sendForSigning } = require('../services/docusign');
+// const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -490,7 +490,7 @@ router.get('/:submissionId/fees', authenticateToken, authenticateInternal, async
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ISSUE DIP — Generates PDF, uploads to OneDrive, sends to DocuSign
+//  ISSUE DIP — Generates PDF, uploads to OneDrive, borrower accepts in-portal
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal, validate('issueDip'), async (req, res) => {
   try {
@@ -527,7 +527,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
     });
     const pdfFilename = `DIP_${req.params.submissionId}.pdf`;
 
-    // 4. Upload unsigned DIP PDF to OneDrive
+    // 4. Upload DIP PDF to OneDrive
     let dipPdfUrl = null;
     try {
       const graphToken = await getGraphToken();
@@ -538,38 +538,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       console.error('[issue-dip] OneDrive upload failed (non-blocking):', uploadErr.message);
     }
 
-    // 5. Send to DocuSign for signing
-    let docusignResult = null;
-    const borrowerEmail = deal.borrower_email || deal.borrower_invite_email;
-    const borrowerName = deal.borrower_name || 'Borrower';
-
-    if (config.DOCUSIGN_INTEGRATION_KEY && borrowerEmail) {
-      try {
-        // Get broker info for CC
-        const brokerResult = await pool.query(`SELECT first_name, last_name, email FROM users WHERE id = $1`, [userId]);
-        const broker = brokerResult.rows[0] || {};
-
-        docusignResult = await sendForSigning({
-          pdfBuffer,
-          pdfName: pdfFilename,
-          borrowerName,
-          borrowerEmail,
-          brokerName: broker.first_name ? `${broker.first_name} ${broker.last_name}` : null,
-          brokerEmail: broker.email || null,
-          dealRef: req.params.submissionId,
-          callbackUrl: config.DOCUSIGN_WEBHOOK_URL
-        });
-
-        console.log('[issue-dip] DocuSign envelope created:', docusignResult.envelopeId);
-      } catch (dsErr) {
-        console.error('[issue-dip] DocuSign send failed (non-blocking):', dsErr.message);
-        // Don't fail the whole operation — DIP is still issued, just not sent for e-sign
-      }
-    } else {
-      console.log('[issue-dip] DocuSign not configured or no borrower email — skipping e-sign');
-    }
-
-    // 6. Update deal in database
+    // 5. Update deal in database
     const updateFields = [
       `status = 'dip_issued'`,
       `deal_stage = 'dip_issued'`,
@@ -577,6 +546,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       `dip_issued_by = $1`,
       `dip_notes = $2`,
       `dip_pdf_url = $3`,
+      `dip_signed = false`,
       `updated_at = NOW()`
     ];
     const updateValues = [req.user.userId, notes || null, dipPdfUrl || null];
@@ -607,16 +577,6 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       }
     }
 
-    // Store DocuSign envelope ID if created
-    if (docusignResult && docusignResult.envelopeId) {
-      updateFields.push(`docusign_envelope_id = $${paramIdx}`);
-      updateValues.push(docusignResult.envelopeId);
-      paramIdx++;
-      updateFields.push(`docusign_status = $${paramIdx}`);
-      updateValues.push('sent');
-      paramIdx++;
-    }
-
     updateValues.push(dealId);
     const result = await pool.query(
       `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx} RETURNING submission_id, status, dip_issued_at`,
@@ -627,9 +587,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       issued_by: req.user.userId,
       dip_data_stored: !!dip_data,
       pdf_generated: !!pdfBuffer,
-      pdf_uploaded: !!dipPdfUrl,
-      docusign_sent: !!(docusignResult && docusignResult.envelopeId),
-      docusign_envelope_id: docusignResult ? docusignResult.envelopeId : null
+      pdf_uploaded: !!dipPdfUrl
     }, req.user.userId);
 
     // Notify broker via email
@@ -641,16 +599,67 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
     res.json({
       success: true,
       deal: result.rows[0],
-      pdf_url: dipPdfUrl,
-      docusign: docusignResult ? {
-        envelope_id: docusignResult.envelopeId,
-        status: docusignResult.status,
-        sent_to: borrowerEmail
-      } : null
+      pdf_url: dipPdfUrl
     });
   } catch (error) {
     console.error('[issue-dip] Error:', error);
     res.status(500).json({ error: 'Failed to issue DIP' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ACCEPT DIP — Borrower/broker accepts the DIP in-portal (no DocuSign)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      `SELECT id, submission_id, status, deal_stage, dip_signed FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    if (deal.dip_signed) {
+      return res.status(400).json({ error: 'DIP has already been accepted' });
+    }
+    if (deal.deal_stage !== 'dip_issued') {
+      return res.status(400).json({ error: 'DIP has not been issued for this deal' });
+    }
+
+    // Record acceptance with timestamp and IP for audit trail
+    const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    await pool.query(
+      `UPDATE deal_submissions SET
+        dip_signed = true,
+        dip_signed_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $1`,
+      [deal.id]
+    );
+
+    await logAudit(deal.id, 'dip_accepted', deal.status, deal.status, {
+      accepted_by: req.user.userId,
+      accepted_role: req.user.role,
+      client_ip: clientIp,
+      user_agent: userAgent,
+      method: 'in_portal'
+    }, req.user.userId);
+
+    // Notify internal team
+    await notifyDealEvent('dip_accepted', { submission_id: deal.submission_id }, []);
+
+    console.log('[accept-dip] DIP accepted by user', req.user.userId, 'for deal', deal.submission_id);
+
+    res.json({
+      success: true,
+      message: 'DIP accepted successfully',
+      accepted_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[accept-dip] Error:', error);
+    res.status(500).json({ error: 'Failed to accept DIP' });
   }
 });
 

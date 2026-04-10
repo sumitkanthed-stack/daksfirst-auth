@@ -333,6 +333,31 @@ export async function requestFee() {
 /**
  * Confirm fee and advance to fee_paid
  */
+/**
+ * Accept DIP — borrower/broker clicks Accept in-portal
+ */
+export async function acceptDip(submissionId) {
+  if (!confirm('By accepting this DIP, you confirm your intention to proceed on the terms outlined. Continue?')) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/accept-dip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('DIP accepted successfully');
+      // Reload deal view
+      const dealId = getCurrentDealId() || submissionId;
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to accept DIP', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
 export async function confirmFeeAndAdvance() {
   const dealId = getCurrentDealId();
   const feeType = document.getElementById('fee-type-action')?.value;

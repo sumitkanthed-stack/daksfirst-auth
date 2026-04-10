@@ -81,6 +81,7 @@ window.calcDipLtv = () => import('./dip.js').then(m => m.calcDipLtv());
 window.issueDip = () => import('./dip.js').then(m => m.issueDip());
 window.creditDecision = (decision) => import('./dip.js').then(m => m.creditDecision(decision));
 window.generateAiTermsheet = () => import('./dip.js').then(m => m.generateAiTermsheet());
+window.acceptDip = (submissionId) => import('./dip.js').then(m => m.acceptDip(submissionId));
 window.requestFee = () => import('./dip.js').then(m => m.requestFee());
 window.confirmFeeAndAdvance = () => import('./dip.js').then(m => m.confirmFeeAndAdvance());
 

@@ -17,7 +17,7 @@ const propertiesRoutes = require('./routes/properties');
 const brokerRoutes = require('./routes/broker');
 const webhookRoutes = require('./routes/webhooks');
 const smartParseRoutes = require('./routes/smart-parse');
-const docusignWebhookRoutes = require('./routes/docusign-webhook');
+// const docusignWebhookRoutes = require('./routes/docusign-webhook'); // Parked — will use for Termsheet/Facility Letter
 
 // Initialize Express app
 const app = express();
@@ -70,7 +70,7 @@ app.use('/api/deals', propertiesRoutes);
 app.use('/api', brokerRoutes);        // Mounts /broker/*, /staff/*, /law-firms/*, /admin/broker/*
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/smart-parse', smartParseRoutes);
-app.use('/api/docusign', docusignWebhookRoutes);
+// app.use('/api/docusign', docusignWebhookRoutes); // Parked
 
 // Error handling
 app.use((err, req, res, next) => {
