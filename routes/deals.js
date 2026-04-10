@@ -1592,6 +1592,14 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
 
       const dealId = dealResult.rows[0].id;
 
+      // Ensure doc_category and uploaded_by columns exist
+      try {
+        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
+        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
+      } catch (migErr) {
+        console.log('[upload-categorised] Column check note:', migErr.message.substring(0, 60));
+      }
+
       const uploaded = [];
       for (const file of (req.files || [])) {
         const result = await pool.query(
@@ -1643,6 +1651,14 @@ router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) =
       );
       if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
       const dealId = dealResult.rows[0].id;
+
+      // Ensure doc_category and uploaded_by columns exist
+      try {
+        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
+        await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
+      } catch (migErr) {
+        console.log('[smart-upload] Column check note:', migErr.message.substring(0, 60));
+      }
 
       // Filename pattern → category mapping
       const categoryPatterns = [
