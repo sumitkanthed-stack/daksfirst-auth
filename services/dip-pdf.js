@@ -38,17 +38,33 @@ let LH_LOADED = false;
       path.join(process.cwd(), 'letterhead_template.docx'),
     ];
     let buf = null;
+    let foundPath = null;
     for (const p of searchPaths) {
-      if (fs.existsSync(p)) { buf = fs.readFileSync(p); break; }
+      if (fs.existsSync(p)) { buf = fs.readFileSync(p); foundPath = p; break; }
     }
-    if (!buf) { console.warn('[dip-pdf] letterhead_template.docx not found — no logo'); return; }
+    if (!buf) {
+      console.warn('[dip-pdf] letterhead_template.docx not found in:', searchPaths.join(', '));
+      return;
+    }
+    console.log('[dip-pdf] Found letterhead at:', foundPath);
 
     const zip = await JSZip.loadAsync(buf);
-    const imgFile = zip.file('word/media/image1.png');
+    // Find any image in word/media/ (could be image1.png, image1.jpeg, image2.png etc.)
+    const mediaFiles = Object.keys(zip.files).filter(f => f.startsWith('word/media/'));
+    console.log('[dip-pdf] Media files in docx:', mediaFiles.join(', '));
+
+    let imgFile = null;
+    // Prefer PNG, then JPEG, then any image
+    for (const ext of ['.png', '.jpeg', '.jpg', '.emf', '.gif']) {
+      const match = mediaFiles.find(f => f.toLowerCase().endsWith(ext));
+      if (match) { imgFile = zip.file(match); break; }
+    }
     if (imgFile) {
       LH_IMG = await imgFile.async('nodebuffer');
       LH_LOADED = true;
-      console.log('[dip-pdf] Letterhead image loaded OK');
+      console.log('[dip-pdf] Letterhead image loaded OK (' + imgFile.name + ', ' + LH_IMG.length + ' bytes)');
+    } else {
+      console.warn('[dip-pdf] No image files found in letterhead_template.docx media folder');
     }
   } catch (e) {
     console.warn('[dip-pdf] letterhead load failed:', e.message);
@@ -205,19 +221,25 @@ async function generateDipPdf(deal, dipData, options = {}) {
         rowIdx = 0;
       }
 
-      // ═══ DATA ROW (alternating background) ═══
+      // ═══ DATA ROW (alternating background, auto-height for long text) ═══
       function dataRow(label, value) {
-        checkPage(18);
         const val = clean(value);
         const isTBC = /^(tbc|unknown|not provided|n\/a|tbd|\u2014)/i.test(val.trim());
         const bgColor = isTBC ? '#FFFBEB' : (rowIdx % 2 === 0 ? WHITE : LGREY);
 
-        doc.rect(M, y, W, 16).fill(bgColor);
+        // Calculate actual height needed for value text
+        doc.font('Helvetica').fontSize(8);
+        const valHeight = doc.heightOfString(val, { width: VALUE_W });
+        const rowH = Math.max(16, valHeight + 8); // min 16, or text height + padding
+
+        checkPage(rowH + 2);
+
+        doc.rect(M, y, W, rowH).fill(bgColor);
         doc.font('Helvetica-Bold').fontSize(8).fillColor(TXT);
         doc.text(label, M + 6, y + 4, { width: LABEL_W - 6 });
         doc.font('Helvetica').fontSize(8).fillColor(isTBC ? AMBER : TXT);
         doc.text(val, VALUE_X, y + 4, { width: VALUE_W });
-        y += 16;
+        y += rowH;
         rowIdx++;
       }
 
@@ -270,6 +292,8 @@ async function generateDipPdf(deal, dipData, options = {}) {
 
       // ═══ FEE SCHEDULE ═══
       const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
+      // Ensure fee section + sub-header + at least 3 rows stay together (~130px)
+      checkPage(130);
       sectionBar('Fee Schedule');
       // Fee sub-header
       doc.rect(M, y, W, 14).fill(NAVY);
@@ -288,6 +312,7 @@ async function generateDipPdf(deal, dipData, options = {}) {
       y += 6;
 
       // ═══ CONDITIONS PRECEDENT ═══
+      checkPage(160); // Keep header + first few conditions together
       sectionBar('Conditions Precedent');
       const conds = [
         'Satisfactory independent valuation of the security property',
@@ -318,8 +343,8 @@ async function generateDipPdf(deal, dipData, options = {}) {
       doc.text('IMPORTANT NOTICE: THIS DECISION IN PRINCIPLE IS INDICATIVE ONLY AND DOES NOT CONSTITUTE A BINDING OFFER OR COMMITMENT TO LEND. FINAL APPROVAL IS SUBJECT TO FULL UNDERWRITING, VALUATION AND CREDIT COMMITTEE APPROVAL.', M + 8, y + 6, { width: W - 16, align: 'center' });
       y += 40;
 
-      // ═══ BORROWER ACKNOWLEDGEMENT ═══
-      checkPage(60);
+      // ═══ BORROWER ACKNOWLEDGEMENT + SIGNATURE (keep together) ═══
+      checkPage(140);
       doc.font('Helvetica-Bold').fontSize(11).fillColor(NAVY);
       doc.text('BORROWER ACKNOWLEDGEMENT', M, y, { width: W });
       y += 16;
