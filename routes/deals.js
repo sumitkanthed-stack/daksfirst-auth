@@ -634,9 +634,29 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
   try {
     const { ai_termsheet_data } = req.body;
 
-    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    const dealResult = await pool.query(
+      `SELECT id, status, dip_fee_confirmed, onboarding_approval FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-    const dealId = dealResult.rows[0].id;
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    // GATE: Onboarding fee must be confirmed
+    if (!deal.dip_fee_confirmed) {
+      return res.status(400).json({ error: 'Onboarding fee must be confirmed before generating AI termsheet' });
+    }
+
+    // GATE: All 7 onboarding sections must be approved by RM
+    const requiredSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    const approval = deal.onboarding_approval || {};
+    const unapproved = requiredSections.filter(s => !approval[s] || !approval[s].approved);
+    if (unapproved.length > 0) {
+      return res.status(400).json({
+        error: `All onboarding sections must be approved before generating AI termsheet. Missing: ${unapproved.join(', ')}`,
+        missing_sections: unapproved
+      });
+    }
 
     const result = await pool.query(
       `UPDATE deal_submissions SET
@@ -1358,11 +1378,16 @@ router.post('/:submissionId/approve-onboarding-section', authenticateToken, auth
     }
 
     const dealResult = await pool.query(
-      `SELECT id, deal_stage, onboarding_approval FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, deal_stage, dip_fee_confirmed, onboarding_approval FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const deal = dealResult.rows[0];
+
+    // GATE: Onboarding fee must be confirmed before sections can be approved
+    if (!deal.dip_fee_confirmed) {
+      return res.status(400).json({ error: 'Onboarding fee must be confirmed before approving sections' });
+    }
 
     const approval = deal.onboarding_approval || {};
     approval[section] = {
@@ -1408,11 +1433,29 @@ router.post('/:submissionId/rm-signoff', authenticateToken, authenticateInternal
     const { notes } = req.body;
 
     const dealResult = await pool.query(
-      `SELECT id, deal_stage, ai_termsheet_data, rm_signoff_at FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, deal_stage, ai_termsheet_data, ai_termsheet_generated_at, onboarding_approval, dip_fee_confirmed, rm_signoff_at FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const deal = dealResult.rows[0];
+
+    // GATE: Onboarding fee must be confirmed
+    if (!deal.dip_fee_confirmed) {
+      return res.status(400).json({ error: 'Onboarding fee must be confirmed first' });
+    }
+
+    // GATE: All 7 onboarding sections must be approved
+    const requiredSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    const approval = deal.onboarding_approval || {};
+    const unapproved = requiredSections.filter(s => !approval[s] || !approval[s].approved);
+    if (unapproved.length > 0) {
+      return res.status(400).json({ error: `All onboarding sections must be approved first. Missing: ${unapproved.join(', ')}` });
+    }
+
+    // GATE: AI termsheet must have been generated
+    if (!deal.ai_termsheet_generated_at) {
+      return res.status(400).json({ error: 'AI termsheet must be generated before RM can sign off' });
+    }
 
     if (deal.rm_signoff_at) {
       return res.status(400).json({ error: 'RM has already signed off on this termsheet' });
@@ -1459,12 +1502,19 @@ router.post('/:submissionId/credit-signoff', authenticateToken, authenticateInte
     }
 
     const dealResult = await pool.query(
-      `SELECT id, deal_stage, ai_termsheet_data, rm_signoff_at FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, deal_stage, ai_termsheet_data, ai_termsheet_generated_at, rm_signoff_at, dip_fee_confirmed FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const deal = dealResult.rows[0];
 
+    // GATE: Full chain must be complete
+    if (!deal.dip_fee_confirmed) {
+      return res.status(400).json({ error: 'Onboarding fee must be confirmed first' });
+    }
+    if (!deal.ai_termsheet_generated_at) {
+      return res.status(400).json({ error: 'AI termsheet must be generated first' });
+    }
     if (!deal.rm_signoff_at) {
       return res.status(400).json({ error: 'RM must sign off before Credit can review' });
     }
@@ -1530,10 +1580,16 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
       }
 
       const dealResult = await pool.query(
-        `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+        `SELECT id, dip_fee_confirmed FROM deal_submissions WHERE submission_id = $1`,
         [req.params.submissionId]
       );
       if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+      // GATE: Onboarding fee must be confirmed before categorised uploads (except 'general')
+      if (category !== 'general' && !dealResult.rows[0].dip_fee_confirmed) {
+        return res.status(400).json({ error: 'Onboarding fee must be confirmed before uploading section documents' });
+      }
+
       const dealId = dealResult.rows[0].id;
 
       const uploaded = [];
