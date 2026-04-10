@@ -251,6 +251,20 @@ router.post('/confirm', authenticateToken, async (req, res) => {
     // Remove confidence field (not a DB column)
     delete pd.confidence;
 
+    // ── Auto-detect corporate borrower ──────────────────────────────
+    // If borrower_company or company_name is present, force borrower_type to 'corporate'
+    // and sync company_name ↔ borrower_company so both fields are populated
+    const hasCompany = pd.borrower_company || pd.company_name;
+    if (hasCompany) {
+      if (pd.borrower_type === 'individual' || !pd.borrower_type) {
+        pd.borrower_type = 'corporate';
+        console.log(`[smart-parse] Auto-corrected borrower_type to corporate (company: ${hasCompany})`);
+      }
+      // Sync: if one is set but not the other, copy across
+      if (pd.borrower_company && !pd.company_name) pd.company_name = pd.borrower_company;
+      if (pd.company_name && !pd.borrower_company) pd.borrower_company = pd.company_name;
+    }
+
     // Auto-calculate indicative loan amount and LTV if not provided
     // Rule: Max 75% LTV (of current value) or 90% LTC (of purchase price), whichever is LOWER
     const currentVal = pd.current_value ? Number(pd.current_value) : null;

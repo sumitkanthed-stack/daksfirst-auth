@@ -333,8 +333,8 @@ export function renderInternalWorkflowControls(deal) {
   const stageResponsibility = {
     received: { who: 'Admin', action: 'Assign to RM' },
     assigned: { who: 'RM', action: 'Issue DIP' },
-    dip_issued: { who: 'Credit', action: 'Credit Review' },
-    info_gathering: { who: 'Credit', action: 'Generate Termsheet' },
+    dip_issued: { who: 'Credit → Borrower', action: 'Credit Review then Borrower Accept' },
+    info_gathering: { who: 'RM', action: 'Generate AI Termsheet' },
     ai_termsheet: { who: 'RM', action: 'Request Fee' },
     fee_pending: { who: 'RM / Broker', action: 'Confirm Fee Payment' },
     fee_paid: { who: 'RM', action: 'Start Underwriting' },
@@ -1138,11 +1138,14 @@ export function renderInternalWorkflowControls(deal) {
   const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(currentRole);
   if (stage === 'dip_issued' && isInternal) {
     const dipAccepted = deal.dip_signed;
+    const creditApproved = deal.credit_recommendation === 'approve';
     let dsBannerBg, dsBorderCol, dsIcon, dsLabel;
     if (dipAccepted) {
       dsBannerBg = '#f0fff4'; dsBorderCol = '#48bb78'; dsIcon = '✅'; dsLabel = 'DIP Accepted by Borrower';
+    } else if (creditApproved) {
+      dsBannerBg = '#eff6ff'; dsBorderCol = '#3b82f6'; dsIcon = '✅'; dsLabel = 'Credit Approved — Awaiting Borrower Acceptance';
     } else {
-      dsBannerBg = '#fffbeb'; dsBorderCol = '#f59e0b'; dsIcon = '⏳'; dsLabel = 'DIP Issued — Awaiting Borrower Acceptance';
+      dsBannerBg = '#fffbeb'; dsBorderCol = '#f59e0b'; dsIcon = '⏳'; dsLabel = 'DIP Issued — Awaiting Credit Review';
     }
 
     html += '<div style="background:' + dsBannerBg + ';padding:12px 16px;border-radius:8px;margin-bottom:12px;border-left:4px solid ' + dsBorderCol + ';display:flex;align-items:center;justify-content:space-between;">' +
@@ -1493,6 +1496,7 @@ export function renderExternalWorkflowControls(deal) {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
   } else if (stage === 'dip_issued') {
     const dipAccepted = deal.dip_signed;
+    const creditApproved = deal.credit_recommendation === 'approve';
 
     const viewDipBtn = '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-right:8px;">View DIP PDF</button>';
 
@@ -1502,11 +1506,17 @@ export function renderExternalWorkflowControls(deal) {
         '<p style="font-size:14px;margin-bottom:12px;"><strong>DIP Accepted</strong> — You have accepted the Decision in Principle. Our team is now proceeding with your application.</p>' +
         viewDipBtn +
         '</div>';
+    } else if (!creditApproved) {
+      // Credit hasn't approved yet — borrower must wait
+      html += '<div style="background:#fffbeb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
+        '<p style="font-size:14px;margin-bottom:4px;"><strong>DIP Under Review</strong></p>' +
+        '<p style="font-size:13px;color:#555;">Your deal is currently being reviewed by our credit team. You will be notified once a decision has been made and your DIP is ready for acceptance.</p>' +
+        '</div>';
     } else {
-      // DIP issued — show PDF and Accept button
+      // Credit approved — show DIP PDF and Accept button
       html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
-        '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Issued — Please Review & Accept</strong></p>' +
-        '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been issued. Please review the DIP document below and click Accept to proceed with your application.</p>' +
+        '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Approved — Please Review & Accept</strong></p>' +
+        '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been approved by our credit team. Please review the DIP document below and click Accept to proceed with your application.</p>' +
         viewDipBtn +
         '<button onclick="acceptDip(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#047857;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Accept DIP</button>' +
         '<div style="margin-top:12px;padding:10px;background:#f7fafc;border-radius:6px;font-size:12px;color:#4a5568;">By clicking Accept, you confirm your intention to proceed on the terms outlined in the DIP. This is valid for 14 days from the date of issue.</div>' +

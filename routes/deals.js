@@ -659,7 +659,7 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
 router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(
-      `SELECT id, submission_id, status, deal_stage, dip_signed FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, submission_id, status, deal_stage, dip_signed, credit_recommendation FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
@@ -671,21 +671,28 @@ router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => 
     if (deal.deal_stage !== 'dip_issued') {
       return res.status(400).json({ error: 'DIP has not been issued for this deal' });
     }
+    // Credit must approve before borrower can accept
+    if (deal.credit_recommendation !== 'approve') {
+      return res.status(400).json({ error: 'DIP is still under credit review. Please wait for credit approval.' });
+    }
 
     // Record acceptance with timestamp and IP for audit trail
     const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
+    // Accept DIP and advance to info_gathering (credit already approved)
     await pool.query(
       `UPDATE deal_submissions SET
         dip_signed = true,
         dip_signed_at = NOW(),
+        status = 'info_gathering',
+        deal_stage = 'info_gathering',
         updated_at = NOW()
        WHERE id = $1`,
       [deal.id]
     );
 
-    await logAudit(deal.id, 'dip_accepted', deal.status, deal.status, {
+    await logAudit(deal.id, 'dip_accepted', deal.status, 'info_gathering', {
       accepted_by: req.user.userId,
       accepted_role: req.user.role,
       client_ip: clientIp,
@@ -915,16 +922,33 @@ router.post('/:submissionId/credit-decision', authenticateToken, authenticateInt
     let paramIdx = 3;
 
     // Set the next stage based on decision
+    // At dip_issued: credit approval does NOT advance the stage — borrower acceptance does
+    const currentStatus = deal.status || '';
     if (decision === 'approve') {
-      updates.push(`status = $${paramIdx}`);
-      values.push('info_gathering');
-      paramIdx++;
+      if (currentStatus === 'dip_issued') {
+        // Stay at dip_issued — borrower must accept before advancing
+        // credit_recommendation is already set above, that's the gate
+        console.log('[credit-decision] Approved at dip_issued — awaiting borrower acceptance before advancing');
+      } else {
+        updates.push(`status = $${paramIdx}`);
+        values.push('info_gathering');
+        paramIdx++;
+        updates.push(`deal_stage = $${paramIdx}`);
+        values.push('info_gathering');
+        paramIdx++;
+      }
     } else if (decision === 'decline') {
       updates.push(`status = $${paramIdx}`);
       values.push('declined');
       paramIdx++;
+      updates.push(`deal_stage = $${paramIdx}`);
+      values.push('declined');
+      paramIdx++;
     } else if (decision === 'moreinfo') {
       updates.push(`status = $${paramIdx}`);
+      values.push('assigned');
+      paramIdx++;
+      updates.push(`deal_stage = $${paramIdx}`);
       values.push('assigned');
       paramIdx++;
     }
