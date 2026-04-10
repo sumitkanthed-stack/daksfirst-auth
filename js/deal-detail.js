@@ -563,33 +563,75 @@ export function renderInternalWorkflowControls(deal) {
           <h5 style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Borrower &mdash; ${borrowerTypeLabel}</h5>
           ${borrowerTypeBadge}
         </div>
-        <div style="display:grid;grid-template-columns:${isCorporate ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr'};gap:8px;font-size:13px;">
+        ${isCorporate ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;margin-bottom:12px;">
+          <div style="padding:10px;background:#eff6ff;border-radius:6px;border:1px solid #bfdbfe;">
+            <span style="font-size:10px;color:#1e40af;display:block;font-weight:600;">Corporate Entity</span>
+            <strong style="font-size:14px;">${sanitizeHtml(deal.borrower_company || deal.company_name || 'N/A')}</strong>
+            ${deal.company_number ? '<div style="font-size:11px;color:#6b7280;margin-top:2px;">Co. No: ' + sanitizeHtml(deal.company_number) + '</div>' : ''}
+          </div>
+          <div style="padding:10px;background:#fef3c7;border-radius:6px;border:1px solid #fbbf24;">
+            <span style="font-size:10px;color:#92400e;display:block;font-weight:600;">Ultimate Beneficial Owner (UBO)</span>
+            <strong style="font-size:14px;">${sanitizeHtml(deal.borrower_name || 'N/A')}</strong>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px;">${sanitizeHtml(deal.borrower_email || '')} ${deal.borrower_phone ? '&middot; ' + sanitizeHtml(deal.borrower_phone) : ''}</div>
+          </div>
+        </div>
+        ` : `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;margin-bottom:12px;">
           <div><span style="font-size:10px;color:#6b7280;display:block;">Name</span><strong>${sanitizeHtml(deal.borrower_name || 'N/A')}</strong></div>
-          ${isCorporate ? `<div><span style="font-size:10px;color:#6b7280;display:block;">Company</span><strong>${sanitizeHtml(deal.borrower_company || deal.company_name || 'N/A')}</strong></div>` : ''}
-          ${isCorporate ? `<div><span style="font-size:10px;color:#6b7280;display:block;">Co. Number</span><strong>${sanitizeHtml(deal.company_number || 'N/A')}</strong></div>` : ''}
           <div><span style="font-size:10px;color:#6b7280;display:block;">Email</span>${sanitizeHtml(deal.borrower_email || 'N/A')}</div>
           <div><span style="font-size:10px;color:#6b7280;display:block;">Phone</span>${sanitizeHtml(deal.borrower_phone || 'N/A')}</div>
         </div>
-        ${isCorporate ? `
+        `}
+
+        <!-- All Borrowers / Guarantors on this deal -->
+        ${borrowers.length > 0 ? `
+        <div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
+          <h5 style="margin:0 0 8px;color:#374151;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the DIP (${borrowers.length})</h5>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f3f4f6;">
+              <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Name</th>
+              <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Role</th>
+              <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Type</th>
+              <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;">KYC Status</th>
+              <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;">DIP Status</th>
+            </tr>
+            ${borrowers.map(b => '<tr style="border-bottom:1px solid #f0f0f0;">' +
+              '<td style="padding:5px 8px;font-weight:600;">' + sanitizeHtml(b.full_name || '') + '</td>' +
+              '<td style="padding:5px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;background:' + (b.role === 'primary' ? '#bee3f8' : b.role === 'guarantor' ? '#fef3c7' : '#e5e7eb') + ';color:' + (b.role === 'primary' ? '#2a4365' : b.role === 'guarantor' ? '#744210' : '#374151') + ';">' + sanitizeHtml(b.role || 'primary') + '</span></td>' +
+              '<td style="padding:5px 8px;">' + sanitizeHtml(b.borrower_type || 'individual') + (b.company_name ? ' (' + sanitizeHtml(b.company_name) + ')' : '') + '</td>' +
+              '<td style="padding:5px 8px;text-align:center;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + (b.kyc_status === 'verified' ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e') + ';">' + (b.kyc_status === 'verified' ? 'Verified' : 'KYC Pending') + '</span></td>' +
+              '<td style="padding:5px 8px;text-align:center;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + (b.kyc_status === 'verified' ? '#dcfce7;color:#166534">Included' : '#fef3c7;color:#92400e">Consent Pending') + '</span></td>' +
+            '</tr>').join('')}
+          </table>
+        </div>
+        ` : ''}
+
+        <!-- Security & Guarantee Structure -->
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-          <h5 style="margin:0 0 8px;color:#1e40af;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Corporate Structure &mdash; RM to Confirm ${rmLabel}</h5>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <h5 style="margin:0 0 8px;color:#1e40af;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <div>
-              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee from UBO</label>
-              <select id="dip-pg-ubo" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-                <option value="required" selected>Required</option>
-                <option value="waived">Waived (state reason in notes)</option>
-                <option value="limited">Limited Guarantee</option>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
+              <select id="dip-fixed-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+                <option value="first_and_debenture" selected>First Charge + Debenture</option>
+                <option value="first_charge">First Legal Charge only</option>
+                <option value="debenture">Debenture only</option>
+                <option value="second_charge">Second Charge</option>
               </select>
             </div>
             <div>
-              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Fixed Charge on Assets</label>
-              <select id="dip-fixed-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-                <option value="first_charge" selected>First Legal Charge</option>
-                <option value="second_charge">Second Charge</option>
-                <option value="debenture">Debenture over Company Assets</option>
-                <option value="first_and_debenture">First Charge + Debenture</option>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee</label>
+              <select id="dip-pg-ubo" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+                <option value="required" selected>PG from UBO — Required</option>
+                <option value="limited">Limited Guarantee</option>
+                <option value="waived">Waived (state reason in notes)</option>
               </select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Additional Security</label>
+              <input type="text" id="dip-additional-security" placeholder="e.g. Second charge on another asset" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+              <span style="font-size:10px;color:#6b7280;">RM to add if applicable</span>
             </div>
           </div>
           <div style="margin-top:8px;">
@@ -597,22 +639,7 @@ export function renderInternalWorkflowControls(deal) {
             <input type="text" id="dip-ubo-names" placeholder="Full legal name(s) of UBO / guarantor(s)" value="${sanitizeHtml(deal.borrower_name || '')}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#6b7280;">Must match title holder(s) on the property</span>
           </div>
-        </div>` : `
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-            <div>
-              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Security Charge ${rmLabel}</label>
-              <select id="dip-fixed-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-                <option value="first_charge" selected>First Legal Charge</option>
-                <option value="second_charge">Second Charge</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Title Holder Confirmation</label>
-              <div style="padding:8px;background:#f0fff4;border:1px solid #86efac;border-radius:4px;font-size:12px;color:#166534;">Borrower must be the registered title holder or provide evidence of beneficial ownership</div>
-            </div>
-          </div>
-        </div>`}
+        </div>
       </div>
 
       <!-- ═══ PROPERTY SCHEDULE (RM approves each property) ═══ -->
@@ -741,49 +768,64 @@ export function renderInternalWorkflowControls(deal) {
             <div>
               <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Broker Fee (%)</label>
               <input type="number" step="0.01" id="dip-broker-fee" value="0" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-              <span style="font-size:10px;color:#6b7280;">Disclosed to borrower</span>
+              <span style="font-size:10px;color:#b45309;font-weight:600;">Paid from Arrangement Fee (not additional)</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ═══ FEE SCHEDULE (read-only, populated from Fee Tracker above) ═══ -->
+      <!-- ═══ FEE SCHEDULE (RM sets all fees — disclosed to borrower in DIP) ═══ -->
       <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7c3aed;">
-        <h5 style="margin:0 0 10px;color:#7c3aed;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Fee Schedule <span style="font-size:9px;background:#f5f3ff;color:#7c3aed;padding:1px 5px;border-radius:3px;">From Fee Tracker</span></h5>
-        ${deal.fees && deal.fees.length > 0 ? `
+        <h5 style="margin:0 0 4px;color:#7c3aed;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Fee Schedule ${rmLabel}</h5>
+        <p style="margin:0 0 12px;font-size:11px;color:#666;">All fees disclosed to borrower. No fee required before DIP issuance. Amounts set by RM.</p>
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:#f5f3ff;">
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Fee Type</th>
-              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Amount</th>
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Payment Date</th>
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Status</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #7c3aed;">Fee Type</th>
+              <th style="text-align:right;padding:6px 8px;border-bottom:2px solid #7c3aed;">Amount (£)</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #7c3aed;">When Due</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #7c3aed;">Payment Trigger</th>
             </tr>
           </thead>
           <tbody>
-            ${deal.fees.map(f => `<tr>
-              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;font-weight:600;">${sanitizeHtml(f.fee_type.replace(/_/g, ' '))}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:600;">£${formatNumber(f.amount)}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${f.payment_date ? formatDate(f.payment_date) : '-'}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;"><span style="padding:2px 8px;background:#dcfce7;color:#166534;border-radius:10px;font-size:10px;font-weight:600;">Confirmed</span></td>
-            </tr>`).join('')}
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Onboarding / DIP Fee</td>
+              <td style="padding:8px;text-align:right;"><input type="text" id="dip-fee-onboarding" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">After DIP acceptance</td>
+              <td style="padding:8px;font-size:11px;">Before Credit Review</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Commitment Fee</td>
+              <td style="padding:8px;text-align:right;"><input type="text" id="dip-fee-commitment" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">After Termsheet acceptance</td>
+              <td style="padding:8px;font-size:11px;">Before Underwriting</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
+              <td style="padding:8px;font-weight:600;">Arrangement Fee<br><span style="font-size:10px;color:#6b7280;font-weight:400;">(includes broker fee below)</span></td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;" id="dip-fee-arr-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from % above</span></td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">On completion</td>
+              <td style="padding:8px;font-size:11px;">Deducted from advance</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
+              <td style="padding:8px;font-weight:400;padding-left:24px;color:#92400e;">↳ of which Broker Fee</td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;color:#92400e;" id="dip-fee-broker-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Paid from arrangement</span></td>
+              <td style="padding:8px;font-size:11px;color:#92400e;">On completion</td>
+              <td style="padding:8px;font-size:11px;color:#92400e;">From arrangement fee</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Valuation Fee</td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;" id="dip-fee-val-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from cost above</span></td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">Upfront</td>
+              <td style="padding:8px;font-size:11px;">Direct payment by client</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Legal Fee</td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;" id="dip-fee-legal-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from cost above</span></td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">On completion</td>
+              <td style="padding:8px;font-size:11px;">Direct payment by client</td>
+            </tr>
           </tbody>
         </table>
-        ` : `
-        <div style="padding:16px;text-align:center;background:#fef3c7;border-radius:6px;border:1px dashed #f59e0b;">
-          <p style="margin:0;font-size:12px;color:#92400e;font-weight:600;">No fees entered yet</p>
-          <p style="margin:4px 0 0;font-size:11px;color:#6b7280;">Please enter fees in the Fee Tracker section above before issuing the DIP.</p>
-        </div>
-        `}
-        <!-- Hidden fields to store fee schedule data for DIP submission -->
-        <input type="hidden" id="dip-fee-arr-when" value="${deal.fees && deal.fees.find(f => f.fee_type === 'arrangement_fee') ? 'confirmed' : 'on_completion'}">
-        <input type="hidden" id="dip-fee-arr-method" value="${deal.fees && deal.fees.find(f => f.fee_type === 'arrangement_fee') ? 'confirmed' : 'deducted_from_advance'}">
-        <input type="hidden" id="dip-fee-val-when" value="${deal.fees && deal.fees.find(f => f.fee_type === 'valuation_fee') ? 'confirmed' : 'upfront'}">
-        <input type="hidden" id="dip-fee-val-method" value="${deal.fees && deal.fees.find(f => f.fee_type === 'valuation_fee') ? 'confirmed' : 'direct_payment'}">
-        <input type="hidden" id="dip-fee-legal-when" value="${deal.fees && deal.fees.find(f => f.fee_type === 'legal_fee') ? 'confirmed' : 'on_completion'}">
-        <input type="hidden" id="dip-fee-legal-method" value="${deal.fees && deal.fees.find(f => f.fee_type === 'legal_fee') ? 'confirmed' : 'direct_payment'}">
-        <input type="hidden" id="dip-fee-broker-when" value="${deal.fees && deal.fees.find(f => f.fee_type === 'broker_fee') ? 'confirmed' : 'on_completion'}">
-        <input type="hidden" id="dip-fee-broker-method" value="${deal.fees && deal.fees.find(f => f.fee_type === 'broker_fee') ? 'confirmed' : 'deducted_from_advance'}">
       </div>
 
       <!-- ═══ PURPOSE & EXIT (broker-sourced) ═══ -->
@@ -834,7 +876,7 @@ export function renderInternalWorkflowControls(deal) {
     // Auto-calculate DIP summary after render + attach money formatting
     setTimeout(() => {
       // Attach comma formatting to money fields
-      ['dip-loan-amount', 'dip-purchase-price', 'dip-valuation-cost', 'dip-legal-cost'].forEach(id => {
+      ['dip-loan-amount', 'dip-purchase-price', 'dip-valuation-cost', 'dip-legal-cost', 'dip-fee-onboarding', 'dip-fee-commitment'].forEach(id => {
         attachMoneyFormat(id);
       });
 
@@ -925,9 +967,9 @@ export function renderInternalWorkflowControls(deal) {
           checks.push({ label: 'UBO / Guarantor names entered', ok: !!(uboEl?.value?.trim()) });
         }
 
-        // 12. Fee tracker has entries
-        const hasFees = !!(deal.fees && deal.fees.length > 0);
-        checks.push({ label: 'Fee(s) entered in Fee Tracker', ok: hasFees });
+        // 12. Onboarding fee amount set
+        const onboardingFee = money('dip-fee-onboarding');
+        checks.push({ label: 'Onboarding / DIP fee amount set', ok: onboardingFee > 0 });
 
         // 13. Exit strategy provided
         checks.push({ label: 'Exit strategy provided', ok: !!val('dip-exit') });
@@ -983,7 +1025,7 @@ export function renderInternalWorkflowControls(deal) {
       }
 
       // Attach checklist validation to all DIP form fields
-      ['dip-loan-amount', 'dip-property-value', 'dip-term', 'dip-rate', 'dip-arrangement-fee', 'dip-interest', 'dip-retained-months', 'dip-valuation-cost', 'dip-legal-cost', 'dip-broker-fee', 'dip-exit', 'dip-purpose', 'dip-pg-ubo', 'dip-fixed-charge', 'dip-ubo-names', 'dip-notes'].forEach(id => {
+      ['dip-loan-amount', 'dip-property-value', 'dip-term', 'dip-rate', 'dip-arrangement-fee', 'dip-interest', 'dip-retained-months', 'dip-valuation-cost', 'dip-legal-cost', 'dip-broker-fee', 'dip-exit', 'dip-purpose', 'dip-pg-ubo', 'dip-fixed-charge', 'dip-ubo-names', 'dip-notes', 'dip-fee-onboarding', 'dip-fee-commitment'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
           el.addEventListener('input', validateDipChecklist);

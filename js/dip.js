@@ -98,8 +98,9 @@ export function calcDipLtv() {
   const retainedInterest = interest === 'retained' ? loan * (rate / 100) * retainedMonths : 0;
   const arrangementFee = loan * (arrFee / 100);
   const brokerFee = loan * (brokerFeePct / 100);
+  const lenderNetArrFee = arrangementFee - brokerFee; // Lender keeps this after paying broker
 
-  // Lender day zero = gross loan - retained interest - arrangement fee
+  // Lender day zero = gross loan - retained interest - arrangement fee (broker fee is INSIDE arr fee)
   const lenderDayZero = loan - retainedInterest - arrangementFee;
 
   // Client day zero = lender day zero - valuation cost - legal cost (paid by client)
@@ -108,6 +109,16 @@ export function calcDipLtv() {
   // LTV check
   const ltvOk = ltv <= 75;
   const rateOk = rate >= 0.85;
+
+  // Update fee schedule display fields
+  const arrDisplay = document.getElementById('dip-fee-arr-display');
+  if (arrDisplay) arrDisplay.textContent = '£' + formatNumber(arrangementFee);
+  const brokerDisplay = document.getElementById('dip-fee-broker-display');
+  if (brokerDisplay) brokerDisplay.textContent = '£' + formatNumber(brokerFee);
+  const valDisplay = document.getElementById('dip-fee-val-display');
+  if (valDisplay) valDisplay.textContent = '£' + formatNumber(valuationCost);
+  const legalDisplay = document.getElementById('dip-fee-legal-display');
+  if (legalDisplay) legalDisplay.textContent = '£' + formatNumber(legalCost);
 
   const summaryEl = document.getElementById('dip-summary');
   if (summaryEl) {
@@ -124,11 +135,11 @@ export function calcDipLtv() {
         <div>Retained Interest (${retainedMonths}m): <strong style="color:#b45309;">£${formatNumber(retainedInterest)}</strong></div>
         <div>Arrangement Fee (${formatPct(arrFee)}%): <strong>£${formatNumber(arrangementFee)}</strong></div>
       </div>
+      ${brokerFeePct > 0 ? `<div style="margin-top:4px;padding:4px 8px;background:#fefce8;border-radius:4px;font-size:12px;">↳ of which Broker (${formatPct(brokerFeePct)}%): <strong>£${formatNumber(brokerFee)}</strong> <span style="color:#6b7280;">(from arrangement fee, not additional)</span> · Lender nets: <strong>£${formatNumber(lenderNetArrFee)}</strong></div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
         <div>Valuation Cost (client): <strong>£${formatNumber(valuationCost)}</strong></div>
         <div>Legal Cost (client): <strong>£${formatNumber(legalCost)}</strong></div>
       </div>
-      ${brokerFeePct > 0 ? `<div style="margin-top:4px;">Broker Fee (${formatPct(brokerFeePct)}%): <strong>£${formatNumber(brokerFee)}</strong> <span style="font-size:11px;color:#6b7280;">(disclosed to borrower)</span></div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:2px solid #92400e;">
         <div>Lender Day Zero: <strong style="font-size:14px;">£${formatNumber(lenderDayZero)}</strong></div>
         <div>Client Day Zero: <strong style="font-size:14px;color:${clientDayZero > 0 ? '#15803d' : '#e53e3e'};">£${formatNumber(clientDayZero)}</strong></div>
