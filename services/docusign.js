@@ -136,7 +136,7 @@ async function sendForSigning({ pdfBuffer, pdfName, docType, dealRef, signers, c
       {
         documentBase64: pdfBuffer.toString('base64'),
         name: pdfName || `${docType}_${dealRef}.pdf`,
-        fileExtension: 'pdf',
+        fileExtension: pdfName && pdfName.endsWith('.docx') ? 'docx' : 'pdf',
         documentId: '1'
       }
     ],

@@ -694,6 +694,148 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  ISSUE TERMSHEET — Generate DOCX from ai_termsheet_data, send via DocuSign
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/issue-termsheet', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    // 1. Fetch full deal data + ai_termsheet_data
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    const aiData = typeof deal.ai_termsheet_data === 'string'
+      ? JSON.parse(deal.ai_termsheet_data)
+      : (deal.ai_termsheet_data || {});
+
+    if (!aiData.termsheet) {
+      return res.status(400).json({ error: 'AI termsheet data not found. Generate the AI analysis first.' });
+    }
+
+    // 2. Generate Termsheet DOCX (branded with VML letterhead)
+    const { generateTermsheetDocx } = require('../services/termsheet-doc');
+    console.log('[issue-termsheet] Generating Termsheet DOCX for', req.params.submissionId);
+    const docxBuffer = await generateTermsheetDocx(aiData.termsheet);
+    const docxFilename = `Termsheet_${req.params.submissionId}.docx`;
+
+    // 3. Upload DOCX to OneDrive
+    let tsDocUrl = null;
+    try {
+      const graphToken = await getGraphToken();
+      const uploadResult = await uploadFileToOneDrive(graphToken, req.params.submissionId, docxFilename, docxBuffer);
+      tsDocUrl = uploadResult.downloadUrl;
+      console.log('[issue-termsheet] DOCX uploaded to OneDrive:', tsDocUrl);
+    } catch (uploadErr) {
+      console.error('[issue-termsheet] OneDrive upload failed (non-blocking):', uploadErr.message);
+    }
+
+    // 4. Send via DocuSign (if configured)
+    let docusignResult = null;
+    if (config.DOCUSIGN_INTEGRATION_KEY) {
+      try {
+        const { sendForSigning } = require('../services/docusign');
+
+        // Build signer list — Borrower + Guarantor(s)
+        const signers = [];
+        const borrowerEmail = deal.borrower_email || deal.borrower_invite_email;
+        const borrowerName = deal.borrower_name || aiData.termsheet.borrower || 'Borrower';
+
+        if (borrowerEmail) {
+          signers.push({ name: borrowerName, email: borrowerEmail, role: 'borrower' });
+        }
+
+        // Get guarantors from deal_borrowers table
+        const guarantorResult = await pool.query(
+          `SELECT full_name, email FROM deal_borrowers WHERE deal_id = $1 AND role = 'guarantor' AND email IS NOT NULL`,
+          [dealId]
+        );
+        for (const g of guarantorResult.rows) {
+          if (g.email) signers.push({ name: g.full_name, email: g.email, role: 'guarantor' });
+        }
+
+        if (signers.length === 0) {
+          console.log('[issue-termsheet] No signer emails found — skipping DocuSign');
+        } else {
+          // CC the broker
+          const ccRecipients = [];
+          const brokerResult = await pool.query(`SELECT first_name, last_name, email FROM users WHERE id = $1`, [deal.user_id]);
+          if (brokerResult.rows.length > 0 && brokerResult.rows[0].email) {
+            const b = brokerResult.rows[0];
+            ccRecipients.push({ name: `${b.first_name} ${b.last_name}`.trim(), email: b.email });
+          }
+
+          docusignResult = await sendForSigning({
+            pdfBuffer: docxBuffer,
+            pdfName: docxFilename,
+            docType: 'termsheet',
+            dealRef: req.params.submissionId,
+            signers,
+            ccRecipients,
+            callbackUrl: config.DOCUSIGN_WEBHOOK_URL
+          });
+          console.log('[issue-termsheet] DocuSign envelope created:', docusignResult.envelopeId, 'signers:', signers.length);
+        }
+      } catch (dsErr) {
+        console.error('[issue-termsheet] DocuSign send failed (non-blocking):', dsErr.message);
+      }
+    } else {
+      console.log('[issue-termsheet] DocuSign not configured — DOCX only');
+    }
+
+    // 5. Update deal in database
+    const updateFields = [
+      `ts_pdf_url = $1`,
+      `ts_issued_at = NOW()`,
+      `ts_issued_by = $2`,
+      `ts_signed = false`,
+      `updated_at = NOW()`
+    ];
+    const updateValues = [tsDocUrl, req.user.userId];
+    let paramIdx = 3;
+
+    if (docusignResult && docusignResult.envelopeId) {
+      updateFields.push(`ts_docusign_envelope_id = $${paramIdx}`);
+      updateValues.push(docusignResult.envelopeId);
+      paramIdx++;
+      updateFields.push(`ts_docusign_status = $${paramIdx}`);
+      updateValues.push('sent');
+      paramIdx++;
+    }
+
+    updateValues.push(dealId);
+    await pool.query(
+      `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+
+    await logAudit(dealId, 'termsheet_issued', deal.status, deal.status, {
+      issued_by: req.user.userId,
+      docx_uploaded: !!tsDocUrl,
+      docusign_sent: !!(docusignResult && docusignResult.envelopeId),
+      docusign_envelope_id: docusignResult ? docusignResult.envelopeId : null
+    }, req.user.userId);
+
+    // Notify broker
+    const brokerEmailResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [deal.user_id]);
+    if (brokerEmailResult.rows.length > 0) {
+      await notifyDealEvent('termsheet_issued', { submission_id: deal.submission_id }, [brokerEmailResult.rows[0].email]);
+    }
+
+    res.json({
+      success: true,
+      doc_url: tsDocUrl,
+      docusign: docusignResult ? {
+        envelope_id: docusignResult.envelopeId,
+        status: docusignResult.status
+      } : null
+    });
+  } catch (error) {
+    console.error('[issue-termsheet] Error:', error);
+    res.status(500).json({ error: 'Failed to issue termsheet' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  CREDIT DECISION
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/credit-decision', authenticateToken, authenticateInternal, validate('creditDecision'), async (req, res) => {
