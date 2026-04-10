@@ -77,7 +77,8 @@ router.post('/register', validate('register'), async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Account created successfully. Please check your email to verify your account.',
-      access_token: accessToken,
+      token: accessToken,             // backward compat with old frontend
+      access_token: accessToken,      // new frontend uses this
       refresh_token: refreshToken,
       user: newUser
     });
@@ -129,7 +130,8 @@ router.post('/login', validate('login'), async (req, res) => {
 
     res.json({
       success: true,
-      access_token: accessToken,
+      token: accessToken,           // backward compat with old frontend
+      access_token: accessToken,    // new frontend uses this
       refresh_token: refreshToken,
       user: {
         id: user.id,
