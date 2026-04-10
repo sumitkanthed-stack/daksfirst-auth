@@ -251,19 +251,14 @@
 
     /* ═══ DEAL DETAIL STYLES ═══ */
     .deal-detail-layout {
-      display: flex; gap: 0; max-width: 1340px; margin: 0 auto; align-items: flex-start;
+      display: block; max-width: 1440px; margin: 0 auto;
     }
     .deal-detail-container {
-      flex: 1; min-width: 0; padding: 0;
+      width: 100%; padding: 0;
     }
 
-    /* ── Document Repository Sidebar ── */
-    .deal-doc-sidebar {
-      width: 300px; flex-shrink: 0; position: sticky; top: 0;
-      background: #fff; border-left: 1px solid var(--border);
-      max-height: 100vh; overflow-y: auto;
-      display: none; flex-direction: column;
-    }
+    /* ── Document Sidebar removed — Matrix handles documents ── */
+    .deal-doc-sidebar { display: none !important; }
     .doc-panel-header {
       background: var(--primary); color: #fff; padding: 14px 16px;
       position: sticky; top: 0; z-index: 2;
@@ -332,11 +327,7 @@
     }
 
     @media (max-width: 1100px) {
-      .deal-detail-layout { flex-direction: column; }
-      .deal-doc-sidebar {
-        width: 100%; position: static; max-height: none;
-        border-left: none; border-top: 1px solid var(--border);
-      }
+      .deal-detail-layout { max-width: 100%; }
     }
     .breadcrumb {
       padding: 20px; background: white; border-bottom: 1px solid var(--border);

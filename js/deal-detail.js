@@ -4,7 +4,7 @@ import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
 import { switchDetailTab } from './onboarding.js';
-import { renderDocPanel } from './doc-panel.js';
+// import { renderDocPanel } from './doc-panel.js'; // Sidebar removed — Matrix handles documents
 
 /**
  * Show deal detail screen
@@ -38,8 +38,7 @@ export async function showDealDetail(dealId) {
     window.currentDealId = dealId;
     window.currentDealData = deal;
 
-    // Render document sidebar
-    renderDocPanel(deal);
+    // Document sidebar removed — Matrix handles documents now
 
     // Set logged-in user info in header
     document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
@@ -290,9 +289,9 @@ export async function showDealDetail(dealId) {
       }
     }
 
-    // Reset to Overview tab
-    const overviewTab = document.querySelector('.detail-tab[data-dtab="dtab-overview"]');
-    if (overviewTab) switchDetailTab(overviewTab);
+    // Default to Matrix tab
+    const matrixTab = document.querySelector('.detail-tab[data-dtab="dtab-matrix"]');
+    if (matrixTab) switchDetailTab(matrixTab);
 
     showScreen('screen-deal-detail');
   } catch (err) {

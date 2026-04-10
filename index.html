@@ -720,57 +720,46 @@
             <span id="breadcrumb-ref">Deal Details</span>
           </div>
 
-          <!-- Deal Header Bar -->
-          <div class="detail-panel">
-            <div class="detail-header">
-              <div>
-                <div class="detail-title" id="detail-property-address">Property Address</div>
-                <div class="detail-meta">
-                  <div class="detail-meta-item">
-                    <div class="detail-meta-label">Reference</div>
-                    <div class="detail-meta-value" id="detail-ref-id">-</div>
-                  </div>
-                  <div class="detail-meta-item">
-                    <div class="detail-meta-label">Status</div>
-                    <div class="detail-meta-value">
-                      <span id="detail-status-badge" class="status-badge status-received">Received</span>
-                    </div>
-                  </div>
-                  <div class="detail-meta-item">
-                    <div class="detail-meta-label">Stage</div>
-                    <div class="detail-meta-value">
-                      <span id="detail-stage-badge" class="stage-badge">DIP</span>
-                    </div>
-                  </div>
-                  <div class="detail-meta-item">
-                    <div class="detail-meta-label">Submitted</div>
-                    <div class="detail-meta-value" id="detail-date">-</div>
-                  </div>
-                </div>
-              </div>
+          <!-- Deal Header Bar — Compact -->
+          <div style="background:#fff;padding:12px 20px;border-bottom:2px solid #1e3a5f;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <div style="flex:1;min-width:0;">
+              <div class="detail-title" id="detail-property-address" style="font-size:16px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Property Address</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;flex-shrink:0;font-size:12px;">
+              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">REF</span><span id="detail-ref-id" style="font-weight:600;color:#374151;font-family:monospace;">-</span></div>
+              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">STATUS</span><span id="detail-status-badge" class="status-badge status-received" style="font-size:11px;">Received</span></div>
+              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">STAGE</span><span id="detail-stage-badge" class="stage-badge" style="font-size:11px;">DIP</span></div>
+              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">SUBMITTED</span><span id="detail-date" style="font-weight:500;color:#374151;">-</span></div>
             </div>
           </div>
 
-          <!-- Detail Tabs Navigation -->
+          <!-- Detail Tabs Navigation — Matrix-first layout -->
           <div class="detail-tabs-nav">
             <div class="detail-tabs-group">
-              <span class="detail-tabs-label">Initial Intake</span>
-              <button class="detail-tab active" data-dtab="dtab-overview" onclick="switchDetailTab(this)">Overview</button>
+              <button class="detail-tab active" data-dtab="dtab-matrix" onclick="switchDetailTab(this)" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;border:none;font-weight:700;padding:8px 18px;">&#128202; Deal Matrix</button>
+            </div>
+            <div class="detail-tabs-group" style="border-left:1px solid #e2e8f0;margin-left:6px;padding-left:6px;">
+              <span class="detail-tabs-label" style="font-size:10px;color:#94a3b8;">Intake Data</span>
+              <button class="detail-tab" data-dtab="dtab-overview" onclick="switchDetailTab(this)">Overview</button>
               <button class="detail-tab" data-dtab="dtab-borrower" onclick="switchDetailTab(this)">Borrower</button>
               <button class="detail-tab" data-dtab="dtab-property" onclick="switchDetailTab(this)">Property</button>
               <button class="detail-tab" data-dtab="dtab-funds" onclick="switchDetailTab(this)">Use of Funds</button>
+            </div>
+            <div class="detail-tabs-group" style="border-left:1px solid #e2e8f0;margin-left:6px;padding-left:6px;">
               <button class="detail-tab" data-dtab="dtab-documents" onclick="switchDetailTab(this)">Documents</button>
               <button class="detail-tab" data-dtab="dtab-analysis" onclick="switchDetailTab(this)">Analysis</button>
             </div>
-            <div class="detail-tabs-group" style="border-left:2px solid #2563eb;margin-left:4px;padding-left:6px;">
-              <span class="detail-tabs-label" style="color:#2563eb;font-weight:700;">Deal Matrix</span>
-              <button class="detail-tab" data-dtab="dtab-matrix" onclick="switchDetailTab(this)" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;border:none;">&#128202; Matrix</button>
+          </div>
+
+          <!-- TAB: Deal Information Matrix (DEFAULT) -->
+          <div id="dtab-matrix" class="detail-tab-panel active">
+            <div id="dtab-matrix-content" style="padding:0;">
+              <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
             </div>
-            <!-- Full Onboarding tabs removed — replaced by Deal Matrix -->
           </div>
 
           <!-- TAB: Overview -->
-          <div id="dtab-overview" class="detail-tab-panel active">
+          <div id="dtab-overview" class="detail-tab-panel">
             <div class="detail-panel">
               <div class="detail-content">
                 <div class="detail-grid">
@@ -871,12 +860,7 @@
             </div>
           </div>
 
-          <!-- TAB: Deal Information Matrix -->
-          <div id="dtab-matrix" class="detail-tab-panel">
-            <div id="dtab-matrix-content" style="padding:0;">
-              <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
-            </div>
-          </div>
+          <!-- Matrix panel moved to top as default -->
 
           <!-- Phase 2 tabs removed from UI — replaced by Deal Matrix. Hidden so JS references don't error. -->
           <div style="display:none!important">
@@ -1086,17 +1070,8 @@
 
          </div>
 
-         <!-- Document Repository Sidebar -->
-         <div class="deal-doc-sidebar" id="deal-doc-sidebar">
-           <div class="doc-panel-header">
-             <div class="doc-panel-title">Deal Documents</div>
-             <div class="doc-panel-summary" id="doc-panel-summary">0 files</div>
-           </div>
-           <div class="doc-panel-sections" id="doc-panel-sections">
-             <!-- Populated dynamically by JS -->
-           </div>
-           <div class="doc-panel-footer" id="doc-panel-footer"></div>
-         </div>
+         <!-- Document Sidebar removed — replaced by Matrix Document Repository -->
+         <div id="deal-doc-sidebar" style="display:none!important"></div>
 
         </div>
       </div>
