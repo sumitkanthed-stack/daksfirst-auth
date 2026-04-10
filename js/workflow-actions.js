@@ -187,11 +187,11 @@ export async function submitRecommendation(decision) {
  */
 export async function acceptDipExternal() {
   const dealId = getCurrentDealId();
+  if (!confirm('By accepting this DIP, you confirm your intention to proceed on the terms outlined. Continue?')) return;
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/borrower-accept`, {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/accept-dip`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'accept_dip' })
+      headers: { 'Content-Type': 'application/json' }
     });
     const data = await resp.json();
     if (resp.ok) {
