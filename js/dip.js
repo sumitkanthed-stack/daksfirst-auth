@@ -1,5 +1,5 @@
 import { API_BASE } from './config.js';
-import { showToast, formatNumber, formatPct, sanitizeHtml } from './utils.js';
+import { showToast, formatNumber, formatPct, sanitizeHtml, parseFormattedNumber } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentDealId, setDipRemovedProperties, getDipRemovedProperties, addDipRemovedProperty, removeDipRemovedProperty, clearDipRemovedProperties } from './state.js';
 
@@ -18,6 +18,8 @@ export function approveDipProperty(idx) {
     approveBtn.style.background = '#86efac';
     approveBtn.style.cursor = 'default';
   }
+  // Re-validate checklist after property approval
+  if (window.validateDipChecklist) window.validateDipChecklist();
 }
 
 /**
@@ -64,6 +66,8 @@ export function removeDipProperty(idx) {
   }
 
   calcDipLtv();
+  // Re-validate checklist after property removal
+  if (window.validateDipChecklist) window.validateDipChecklist();
 }
 
 /**
@@ -73,15 +77,15 @@ export function removeDipProperty(idx) {
  * Broker fee is disclosed to borrower
  */
 export function calcDipLtv() {
-  const loan = parseFloat(document.getElementById('dip-loan-amount')?.value) || 0;
-  const val = parseFloat(document.getElementById('dip-property-value')?.value) || 0;
+  const loan = parseFormattedNumber(document.getElementById('dip-loan-amount')?.value);
+  const val = parseFormattedNumber(document.getElementById('dip-property-value')?.value);
   const term = parseInt(document.getElementById('dip-term')?.value) || 0;
   const rate = parseFloat(document.getElementById('dip-rate')?.value) || 0;
   const arrFee = parseFloat(document.getElementById('dip-arrangement-fee')?.value) || 0;
   const interest = document.getElementById('dip-interest')?.value || 'retained';
   const retainedMonths = parseInt(document.getElementById('dip-retained-months')?.value) || 6;
-  const valuationCost = parseFloat(document.getElementById('dip-valuation-cost')?.value) || 0;
-  const legalCost = parseFloat(document.getElementById('dip-legal-cost')?.value) || 0;
+  const valuationCost = parseFormattedNumber(document.getElementById('dip-valuation-cost')?.value);
+  const legalCost = parseFormattedNumber(document.getElementById('dip-legal-cost')?.value);
   const brokerFeePct = parseFloat(document.getElementById('dip-broker-fee')?.value) || 0;
 
   // Calculate LTV (2 decimal places)
@@ -168,7 +172,7 @@ export async function issueDip() {
   };
 
   // Validate
-  if (!loanAmount || !term || !rate) {
+  if (!parseFormattedNumber(loanAmount) || !term || !rate) {
     showToast('Please fill in loan amount, term, and rate', true);
     return;
   }
@@ -186,17 +190,17 @@ export async function issueDip() {
       body: JSON.stringify({
         notes,
         dip_data: {
-          loan_amount: parseFloat(loanAmount),
-          property_value: parseFloat(propertyValue) || null,
-          purchase_price: parseFloat(purchasePrice) || null,
+          loan_amount: parseFormattedNumber(loanAmount),
+          property_value: parseFormattedNumber(propertyValue) || null,
+          purchase_price: parseFormattedNumber(purchasePrice) || null,
           ltv: parseFloat(ltv) || null,
           term_months: parseInt(term),
           rate_monthly: parseFloat(rate),
           interest_servicing: interest,
           arrangement_fee_pct: parseFloat(arrFee) || 2,
           retained_months: parseInt(retainedMonths) || 6,
-          valuation_cost: parseFloat(valuationCost) || 0,
-          legal_cost: parseFloat(legalCost) || 0,
+          valuation_cost: parseFormattedNumber(valuationCost),
+          legal_cost: parseFormattedNumber(legalCost),
           broker_fee_pct: parseFloat(brokerFeePct) || 0,
           // Corporate borrower / security
           pg_from_ubo: pgUbo,
@@ -301,7 +305,7 @@ export async function requestFee() {
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/request-fee`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fee_amount: parseFloat(amount) })
+      body: JSON.stringify({ fee_amount: parseFormattedNumber(amount) })
     });
     const data = await resp.json();
     if (resp.ok) {
@@ -332,7 +336,7 @@ export async function confirmFeeAndAdvance() {
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/fee`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fee_type: feeType, amount: parseFloat(amount), payment_date: paymentDate })
+      body: JSON.stringify({ fee_type: feeType, amount: parseFormattedNumber(amount), payment_date: paymentDate })
     });
     const data = await resp.json();
     if (!resp.ok) {
@@ -343,7 +347,7 @@ export async function confirmFeeAndAdvance() {
     const resp2 = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/stage`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ new_stage: 'fee_paid', comments: `Fee confirmed: ${feeType} £${amount}` })
+      body: JSON.stringify({ new_stage: 'fee_paid', comments: `Fee confirmed: ${feeType} £${formatNumber(parseFormattedNumber(amount))}` })
     });
     if (resp2.ok) {
       showToast('Fee confirmed and stage advanced to Fee Paid');
