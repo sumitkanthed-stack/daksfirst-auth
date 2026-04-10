@@ -1198,7 +1198,9 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   // DIP_ISSUED (Credit or Admin) - Credit Review & In-Principle Approval
-  if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole)) {
+  // Only show if credit has NOT yet decided (pending/moreinfo = show, approve/decline = don't show)
+  const creditAlreadyDecided = ['approve', 'decline'].includes(deal.credit_recommendation);
+  if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole) && !creditAlreadyDecided) {
     const dipData = deal.ai_termsheet_data || {};
     html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <h4 style="margin:0 0 4px;color:#7c3aed;">Credit Review — In-Principle Decision</h4>
@@ -1274,6 +1276,29 @@ export function renderInternalWorkflowControls(deal) {
           </div>
         </div>
       </div>
+    </div>`;
+  }
+
+  // DIP_ISSUED — Credit has already decided: show read-only summary
+  if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole) && creditAlreadyDecided) {
+    const dipData = deal.ai_termsheet_data || {};
+    const cd = dipData.credit_decision || {};
+    const decColor = deal.credit_recommendation === 'approve' ? '#15803d' : '#e53e3e';
+    const decLabel = deal.credit_recommendation === 'approve' ? 'APPROVED' : 'DECLINED';
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${decColor};">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h4 style="margin:0;color:${decColor};">Credit Decision: ${decLabel}</h4>
+        <span style="font-size:11px;color:#6b7280;">${cd.decided_at ? new Date(cd.decided_at).toLocaleDateString('en-GB') + ' ' + new Date(cd.decided_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'}) : ''}</span>
+      </div>
+      ${cd.notes ? '<div style="font-size:13px;margin-bottom:8px;"><strong>Assessment:</strong> ' + sanitizeHtml(cd.notes) + '</div>' : ''}
+      ${cd.conditions ? '<div style="font-size:13px;margin-bottom:8px;"><strong>Conditions:</strong> ' + sanitizeHtml(cd.conditions) + '</div>' : ''}
+      <div style="display:flex;gap:16px;font-size:12px;color:#6b7280;flex-wrap:wrap;">
+        ${dipData.credit_override_rate ? '<span>Rate override: <strong style="color:#7c3aed;">' + formatPct(dipData.credit_override_rate) + '%/m</strong></span>' : ''}
+        ${dipData.credit_override_ltv ? '<span>LTV override: <strong style="color:#7c3aed;">' + formatPct(dipData.credit_override_ltv) + '%</strong></span>' : ''}
+        ${dipData.credit_override_arr_fee ? '<span>Arr. Fee override: <strong style="color:#7c3aed;">' + formatPct(dipData.credit_override_arr_fee) + '%</strong></span>' : ''}
+        ${dipData.retained_months ? '<span>Retained: <strong>' + dipData.retained_months + ' months</strong></span>' : ''}
+      </div>
+      <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;">Awaiting borrower acceptance. Credit decision is final — no further action required.</p>
     </div>`;
   }
 
@@ -1425,15 +1450,18 @@ export function renderInternalWorkflowControls(deal) {
     const brkPct = parseFloat(fd.broker_fee || 0);
     const arrAmt = arrPct > 0 && arrPct < 50 ? Math.round(loanAmt * arrPct / 100) : arrPct;
     const brkAmt = brkPct > 0 && brkPct < 50 ? Math.round(loanAmt * brkPct / 100) : brkPct;
-    const feeInputStyle = canEditFees
+    // Fees locked at dip_issued (already in borrower's DIP document) — editable again after info_gathering
+    const dipFeesLocked = stage === 'dip_issued';
+    const feesEditable = canEditFees && !dipFeesLocked;
+    const feeInputStyle = feesEditable
       ? 'width:90px;padding:4px;border-radius:4px;border:1px solid #ddd;font-size:12px;text-align:right;'
       : 'width:90px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;font-size:12px;text-align:right;background:#f9fafb;color:#374151;cursor:not-allowed;';
-    const feeReadonly = canEditFees ? '' : 'readonly';
+    const feeReadonly = feesEditable ? '' : 'readonly';
 
     html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker ${!canEditFees ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages fees</span>' : ''}</h4>
-        ${canEditFees ? '<button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>' : ''}
+        <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker ${dipFeesLocked ? '<span style="font-size:10px;color:#f59e0b;font-weight:400;margin-left:8px;">Locked — DIP issued to borrower with these terms</span>' : !canEditFees ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages fees</span>' : ''}</h4>
+        ${feesEditable ? '<button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>' : ''}
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
@@ -1486,27 +1514,39 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
-  // ── Recommendation (Credit / Compliance) ──
-  if (['credit', 'compliance', 'admin'].includes(currentRole)) {
-    const existingRec = currentRole === 'credit' ? deal.credit_recommendation : currentRole === 'compliance' ? deal.compliance_recommendation : null;
+  // ── Recommendation Status & Actions ──
+  // At dip_issued: Credit Review panel above handles the decision — only show read-only status summary
+  // At later stages: show full recommendation panel with buttons for compliance/admin
+  const rmStatus = deal.dip_issued_at ? 'DIP Issued' : (deal.rm_recommendation || 'Pending');
+  const creditStatus = deal.credit_recommendation || 'Pending';
+  const complianceStatus = deal.compliance_recommendation || 'Pending';
 
+  if (['credit', 'compliance', 'admin'].includes(currentRole)) {
+    // Always show the status summary
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Recommendation ${existingRec ? `(Current: <span style="color:${existingRec === 'approve' ? '#48bb78' : existingRec === 'decline' ? '#e53e3e' : '#c9a84c'}">${existingRec.toUpperCase()}</span>)` : ''}</h4>
-      <div style="margin-bottom:8px;">
-        <span style="font-size:13px;">RM: <strong>${sanitizeHtml(deal.rm_recommendation || 'Pending')}</strong></span>
-        <span style="margin-left:16px;font-size:13px;">Credit: <strong>${sanitizeHtml(deal.credit_recommendation || 'Pending')}</strong></span>
-        <span style="margin-left:16px;font-size:13px;">Compliance: <strong>${sanitizeHtml(deal.compliance_recommendation || 'Pending')}</strong></span>
-        <span style="margin-left:16px;font-size:13px;">Final: <strong style="color:${deal.final_decision === 'approve' ? '#48bb78' : deal.final_decision === 'decline' ? '#e53e3e' : '#666'}">${deal.final_decision ? sanitizeHtml(deal.final_decision.toUpperCase()) : 'Pending'}</strong></span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:end;">
+      <h4 style="margin:0 0 12px;">Decision Status</h4>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px;">
+        <span style="font-size:13px;">RM: <strong style="color:${rmStatus === 'DIP Issued' ? '#2563eb' : '#666'}">${sanitizeHtml(rmStatus)}</strong></span>
+        <span style="font-size:13px;">Credit: <strong style="color:${creditStatus === 'approve' ? '#15803d' : creditStatus === 'decline' ? '#e53e3e' : creditStatus === 'moreinfo' ? '#c9a84c' : '#666'}">${sanitizeHtml(creditStatus === 'approve' ? 'Approved' : creditStatus === 'decline' ? 'Declined' : creditStatus === 'moreinfo' ? 'More Info Requested' : creditStatus)}</strong></span>
+        <span style="font-size:13px;">Compliance: <strong style="color:${complianceStatus === 'approve' ? '#15803d' : complianceStatus === 'decline' ? '#e53e3e' : '#666'}">${sanitizeHtml(complianceStatus === 'approve' ? 'Approved' : complianceStatus === 'decline' ? 'Declined' : complianceStatus)}</strong></span>
+        <span style="font-size:13px;">Final: <strong style="color:${deal.final_decision === 'approve' ? '#15803d' : deal.final_decision === 'decline' ? '#e53e3e' : '#666'}">${deal.final_decision ? sanitizeHtml(deal.final_decision.toUpperCase()) : 'Pending'}</strong></span>
+      </div>`;
+
+    // Only show action buttons at stages AFTER dip_issued (e.g. underwriting, bank review) or if this role hasn't decided yet
+    const showRecButtons = (stage !== 'dip_issued') || (currentRole === 'compliance' && !deal.compliance_recommendation);
+    if (showRecButtons) {
+      html += `<div style="display:flex;gap:8px;align-items:end;">
         <textarea id="rec-comments" placeholder="Comments / rationale..." style="flex:1;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;"></textarea>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button onclick="window.submitRecommendation && window.submitRecommendation('approve')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Approve</button>
           <button onclick="window.submitRecommendation && window.submitRecommendation('more_info')" style="padding:8px 16px;background:#c9a84c;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">More Info</button>
           <button onclick="window.submitRecommendation && window.submitRecommendation('decline')" style="padding:8px 16px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Decline</button>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+    } else {
+      html += `<p style="margin:0;font-size:11px;color:#9ca3af;">No further action required at this stage.</p>`;
+    }
+    html += `</div>`;
   }
 
   // ── Audit Trail (enriched with stage transitions, elapsed time) ──
