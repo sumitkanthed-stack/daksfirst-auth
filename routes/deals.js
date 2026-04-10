@@ -1520,6 +1520,31 @@ router.post('/:submissionId/approve-onboarding-section', authenticateToken, auth
             return acc;
           }, {}),
 
+          // DIP (Decision in Principle) data — what was already quoted to borrower
+          dip: {
+            issued: !!dealData.dip_issued_at,
+            issued_at: dealData.dip_issued_at || null,
+            issued_by: dealData.dip_issued_by || null,
+            notes: dealData.dip_notes || null,
+            signed: !!dealData.dip_signed,
+            signed_at: dealData.dip_signed_at || null,
+            fee_confirmed: !!dealData.dip_fee_confirmed,
+            fee_confirmed_at: dealData.dip_fee_confirmed_at || null,
+            // AI-generated indicative terms (with any RM credit overrides applied)
+            terms: (() => {
+              try {
+                const raw = dealData.ai_termsheet_data;
+                return typeof raw === 'string' ? JSON.parse(raw) : (raw || null);
+              } catch { return null; }
+            })()
+          },
+
+          // Credit decision (if RM already made one at DIP stage)
+          credit: {
+            recommendation: dealData.credit_recommendation || null,
+            decision_notes: dealData.credit_notes || null
+          },
+
           // Additional notes
           additional_notes: dealData.additional_notes,
 
