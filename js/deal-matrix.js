@@ -674,5 +674,3 @@ export async function renderDealMatrix(deal) {
     }
   });
 }
-
-export { renderDealMatrix };
