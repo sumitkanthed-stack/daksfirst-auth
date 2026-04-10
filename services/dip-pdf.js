@@ -159,11 +159,25 @@ async function generateDipPdf(deal, dipData, options = {}) {
       doc.moveTo(L, y).lineTo(L + pageWidth, y).strokeColor(BRAND.gold).lineWidth(1).stroke();
       y += 5;
 
+      // Calculate fee amounts — if values look like percentages (< 50), convert using loan amount
+      const loanAmt = parseFloat(dipData?.loan_amount || deal.loan_amount || 0);
+      function feeAmt(raw, fallback) {
+        const v = parseFloat(raw || fallback || 0);
+        if (isNaN(v)) return 0;
+        // If value is small (< 50), treat as percentage of loan; otherwise treat as absolute amount
+        return v > 0 && v < 50 ? Math.round(loanAmt * v / 100) : v;
+      }
+
+      const arrFee = feeAmt(dipData?.arrangement_fee, 0);
+      const brkFee = feeAmt(dipData?.broker_fee, 0);
+      const arrFeePct = dipData?.arrangement_fee && parseFloat(dipData.arrangement_fee) < 50 ? parseFloat(dipData.arrangement_fee).toFixed(2) + '%' : '';
+      const brkFeePct = dipData?.broker_fee && parseFloat(dipData.broker_fee) < 50 ? parseFloat(dipData.broker_fee).toFixed(2) + '%' : '';
+
       const fees = [
         ['Onboarding Fee', money(dipData?.fee_onboarding || 0), 'Before Credit Review', 'Gates credit review', false],
         ['Commitment Fee', money(dipData?.fee_commitment || 0), 'Before Underwriting', 'Gates underwriting', false],
-        ['Arrangement Fee', money(dipData?.arrangement_fee || 0), 'On Completion', 'Deducted from advance', false],
-        ['  (of which Broker)', money(dipData?.broker_fee || 0), 'From Arrangement Fee', 'Paid to broker', true],
+        ['Arrangement Fee', money(arrFee) + (arrFeePct ? ' (' + arrFeePct + ')' : ''), 'On Completion', 'Deducted from advance', false],
+        ['  (of which Broker)', money(brkFee) + (brkFeePct ? ' (' + brkFeePct + ')' : ''), 'From Arrangement Fee', 'Paid to broker', true],
         ['Valuation Fee', money(dipData?.valuation_cost || 0), 'On Instruction', 'Paid to valuer direct', false],
         ['Legal Fee', money(dipData?.legal_cost || 0), 'On Completion', 'Deducted from advance', false]
       ];
