@@ -13,6 +13,63 @@ const { generateDipPdf } = require('../services/dip-pdf');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  LIST DEALS (dashboard)
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    let result;
+
+    if (['admin', 'credit', 'compliance', 'rm'].includes(role)) {
+      // Internal staff see all deals
+      result = await pool.query(
+        `SELECT d.*, u.first_name AS broker_first, u.last_name AS broker_last, u.email AS broker_email
+         FROM deals d
+         LEFT JOIN users u ON d.user_id = u.id
+         ORDER BY d.created_at DESC`
+      );
+    } else {
+      // Brokers / borrowers see only their own
+      result = await pool.query(
+        `SELECT * FROM deals WHERE user_id = $1 ORDER BY created_at DESC`,
+        [userId]
+      );
+    }
+
+    res.json({ deals: result.rows });
+  } catch (err) {
+    console.error('[deals] List error:', err);
+    res.status(500).json({ error: 'Failed to load deals' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GET SINGLE DEAL (broker / borrower view)
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { userId, role } = req.user;
+
+    let result;
+    if (['admin', 'rm', 'credit', 'compliance'].includes(role)) {
+      result = await pool.query('SELECT * FROM deals WHERE submission_id = $1', [submissionId]);
+    } else {
+      result = await pool.query('SELECT * FROM deals WHERE submission_id = $1 AND user_id = $2', [submissionId, userId]);
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    res.json({ deal: result.rows[0] });
+  } catch (err) {
+    console.error('[deals] Get single deal error:', err);
+    res.status(500).json({ error: 'Failed to load deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  SUBMIT DEAL
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/submit', authenticateToken, validate('dealSubmit'), async (req, res) => {
