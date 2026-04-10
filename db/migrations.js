@@ -118,6 +118,15 @@ async function runMigrations() {
 
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_deal ON deal_documents(deal_id);`);
 
+    // Add doc_category column for onboarding section categorisation
+    try {
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50);`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT REFERENCES users(id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_category ON deal_documents(doc_category);`);
+    } catch (err) {
+      console.log('[migrate] Note on doc_category:', err.message.substring(0, 60));
+    }
+
     // Analysis results table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS analysis_results (
@@ -392,7 +401,14 @@ async function runMigrations() {
       { col: 'fl_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_signed_at TIMESTAMPTZ;' },
       { col: 'fl_signed_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_signed_pdf_url TEXT;' },
       { col: 'fl_docusign_envelope_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_docusign_envelope_id VARCHAR(100);' },
-      { col: 'fl_docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_docusign_status VARCHAR(30) DEFAULT 'none';" }
+      { col: 'fl_docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_docusign_status VARCHAR(30) DEFAULT 'none';" },
+      // Onboarding approval tracking (per-section RM sign-off)
+      { col: 'onboarding_approval', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS onboarding_approval JSONB DEFAULT '{}'::jsonb;" },
+      // Dual sign-off: RM and Credit on AI termsheet
+      { col: 'rm_signoff_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_signoff_at TIMESTAMPTZ;' },
+      { col: 'rm_signoff_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_signoff_by INT REFERENCES users(id);' },
+      { col: 'credit_signoff_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_signoff_at TIMESTAMPTZ;' },
+      { col: 'credit_signoff_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_signoff_by INT REFERENCES users(id);' }
     ];
 
     for (const check of columnChecks) {

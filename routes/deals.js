@@ -1309,4 +1309,299 @@ router.patch('/:submissionId/update-fees', authenticateToken, authenticateIntern
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONFIRM ONBOARDING FEE — gates full onboarding unlock
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/confirm-onboarding-fee', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, status, dip_fee_confirmed FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    if (deal.dip_fee_confirmed) {
+      return res.status(400).json({ error: 'Onboarding fee already confirmed' });
+    }
+
+    await pool.query(
+      `UPDATE deal_submissions SET
+        dip_fee_confirmed = true,
+        dip_fee_confirmed_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $1`,
+      [deal.id]
+    );
+
+    await logAudit(deal.id, 'onboarding_fee_confirmed', deal.deal_stage, deal.deal_stage,
+      { confirmed_by: req.user.userId }, req.user.userId);
+
+    console.log('[confirm-onboarding-fee] Deal', req.params.submissionId, 'fee confirmed by', req.user.userId);
+    res.json({ success: true, confirmed_at: new Date().toISOString() });
+  } catch (error) {
+    console.error('[confirm-onboarding-fee] Error:', error);
+    res.status(500).json({ error: 'Failed to confirm onboarding fee' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  APPROVE ONBOARDING SECTION — RM ticks off each section
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/approve-onboarding-section', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { section, approved, notes } = req.body;
+
+    const validSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    if (!validSections.includes(section)) {
+      return res.status(400).json({ error: `Invalid section. Must be one of: ${validSections.join(', ')}` });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, onboarding_approval FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    const approval = deal.onboarding_approval || {};
+    approval[section] = {
+      approved: approved !== false,
+      approved_by: req.user.userId,
+      approved_at: new Date().toISOString(),
+      notes: notes || null
+    };
+
+    // Check if all sections are now approved
+    const allApproved = validSections.every(s => approval[s] && approval[s].approved);
+
+    await pool.query(
+      `UPDATE deal_submissions SET onboarding_approval = $1, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(approval), deal.id]
+    );
+
+    await logAudit(deal.id, 'onboarding_section_approved', deal.deal_stage, deal.deal_stage,
+      { section, approved: approved !== false, notes, approved_by: req.user.userId }, req.user.userId);
+
+    console.log('[approve-section] Deal', req.params.submissionId, '- section', section,
+      approved !== false ? 'approved' : 'rejected', 'by', req.user.userId,
+      allApproved ? '(ALL SECTIONS APPROVED)' : '');
+
+    res.json({
+      success: true,
+      section,
+      approved: approved !== false,
+      all_sections_approved: allApproved,
+      onboarding_approval: approval
+    });
+  } catch (error) {
+    console.error('[approve-section] Error:', error);
+    res.status(500).json({ error: 'Failed to approve onboarding section' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RM SIGN-OFF on AI Termsheet
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/rm-signoff', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { notes } = req.body;
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, ai_termsheet_data, rm_signoff_at FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    if (deal.rm_signoff_at) {
+      return res.status(400).json({ error: 'RM has already signed off on this termsheet' });
+    }
+
+    // Store RM sign-off in ai_termsheet_data as well for downstream access
+    const aiData = deal.ai_termsheet_data || {};
+    aiData.rm_signoff = {
+      signed_by: req.user.userId,
+      signed_at: new Date().toISOString(),
+      notes: notes || null
+    };
+
+    await pool.query(
+      `UPDATE deal_submissions SET
+        rm_signoff_at = NOW(),
+        rm_signoff_by = $1,
+        ai_termsheet_data = $2,
+        updated_at = NOW()
+       WHERE id = $3`,
+      [req.user.userId, JSON.stringify(aiData), deal.id]
+    );
+
+    await logAudit(deal.id, 'rm_signoff', deal.deal_stage, deal.deal_stage,
+      { signed_by: req.user.userId, notes }, req.user.userId);
+
+    console.log('[rm-signoff] Deal', req.params.submissionId, 'RM signed off by', req.user.userId);
+    res.json({ success: true, signed_at: new Date().toISOString() });
+  } catch (error) {
+    console.error('[rm-signoff] Error:', error);
+    res.status(500).json({ error: 'Failed to record RM sign-off' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CREDIT SIGN-OFF on AI Termsheet
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/credit-signoff', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { notes, decision } = req.body;
+
+    if (!['approve', 'decline', 'moreinfo'].includes(decision)) {
+      return res.status(400).json({ error: 'Decision must be approve, decline, or moreinfo' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, deal_stage, ai_termsheet_data, rm_signoff_at FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    if (!deal.rm_signoff_at) {
+      return res.status(400).json({ error: 'RM must sign off before Credit can review' });
+    }
+
+    const aiData = deal.ai_termsheet_data || {};
+    aiData.credit_signoff = {
+      decision,
+      signed_by: req.user.userId,
+      signed_at: new Date().toISOString(),
+      notes: notes || null
+    };
+
+    const updateFields = [
+      `credit_signoff_at = NOW()`,
+      `credit_signoff_by = $1`,
+      `ai_termsheet_data = $2`,
+      `updated_at = NOW()`
+    ];
+    const updateValues = [req.user.userId, JSON.stringify(aiData)];
+    let paramIdx = 3;
+
+    // If approved, advance stage to ai_termsheet (ready for formal termsheet issuance)
+    if (decision === 'approve') {
+      updateFields.push(`deal_stage = $${paramIdx}`);
+      updateValues.push('ai_termsheet');
+      paramIdx++;
+    }
+
+    updateValues.push(deal.id);
+    await pool.query(
+      `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+
+    await logAudit(deal.id, 'credit_signoff', deal.deal_stage, decision === 'approve' ? 'ai_termsheet' : deal.deal_stage,
+      { decision, signed_by: req.user.userId, notes }, req.user.userId);
+
+    console.log('[credit-signoff] Deal', req.params.submissionId, 'Credit decision:', decision, 'by', req.user.userId);
+    res.json({ success: true, decision, signed_at: new Date().toISOString() });
+  } catch (error) {
+    console.error('[credit-signoff] Error:', error);
+    res.status(500).json({ error: 'Failed to record Credit sign-off' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UPLOAD DOCUMENT WITH CATEGORY (for onboarding sections)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/upload-categorised', authenticateToken, async (req, res) => {
+  try {
+    const multer = require('multer');
+    const upload = multer({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 10);
+
+    upload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || 'Upload failed' });
+      }
+
+      const { category } = req.body;
+      const validCategories = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance', 'general'];
+      if (category && !validCategories.includes(category)) {
+        return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` });
+      }
+
+      const dealResult = await pool.query(
+        `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+        [req.params.submissionId]
+      );
+      if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+      const dealId = dealResult.rows[0].id;
+
+      const uploaded = [];
+      for (const file of (req.files || [])) {
+        const result = await pool.query(
+          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, uploaded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, filename, doc_category, uploaded_at`,
+          [dealId, file.originalname, file.mimetype, file.size, file.buffer, category || 'general', req.user.userId]
+        );
+        uploaded.push(result.rows[0]);
+
+        // Upload to OneDrive (non-blocking)
+        try {
+          const graphToken = await getGraphToken();
+          const subfolder = category ? `${req.params.submissionId}/${category}` : req.params.submissionId;
+          const uploadResult = await uploadFileToOneDrive(graphToken, subfolder, file.originalname, file.buffer);
+          await pool.query(
+            `UPDATE deal_documents SET onedrive_item_id = $1, onedrive_path = $2, onedrive_download_url = $3 WHERE id = $4`,
+            [uploadResult.id, uploadResult.name, uploadResult.downloadUrl, result.rows[0].id]
+          );
+        } catch (odErr) {
+          console.error('[upload-categorised] OneDrive upload failed (non-blocking):', odErr.message);
+        }
+      }
+
+      await logAudit(dealId, 'documents_uploaded', null, null,
+        { category, files: uploaded.map(u => u.filename), uploaded_by: req.user.userId }, req.user.userId);
+
+      res.json({ success: true, documents: uploaded });
+    });
+  } catch (error) {
+    console.error('[upload-categorised] Error:', error);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LIST DOCUMENTS BY CATEGORY
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/documents-by-category', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const { category } = req.query;
+    let query, params;
+    if (category) {
+      query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
+                      onedrive_download_url
+               FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 ORDER BY uploaded_at DESC`;
+      params = [dealId, category];
+    } else {
+      query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
+                      onedrive_download_url
+               FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
+      params = [dealId];
+    }
+
+    const result = await pool.query(query, params);
+    res.json({ documents: result.rows });
+  } catch (error) {
+    console.error('[documents-by-category] Error:', error);
+    res.status(500).json({ error: 'Failed to load documents' });
+  }
+});
+
 module.exports = router;
