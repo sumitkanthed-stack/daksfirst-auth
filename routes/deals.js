@@ -1354,4 +1354,46 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  UPDATE FEES (Fee Tracker)
+// ═══════════════════════════════════════════════════════════════════════════
+router.patch('/:submissionId/update-fees', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { fee_onboarding, fee_commitment, valuation_cost, legal_cost } = req.body;
+
+    const dealResult = await pool.query(
+      `SELECT id, ai_termsheet_data, status FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const deal = dealResult.rows[0];
+    const existing = deal.ai_termsheet_data || {};
+
+    // Merge new fee values into existing ai_termsheet_data
+    const updated = {
+      ...existing,
+      fee_onboarding: fee_onboarding ?? existing.fee_onboarding,
+      fee_commitment: fee_commitment ?? existing.fee_commitment,
+      valuation_cost: valuation_cost ?? existing.valuation_cost,
+      legal_cost:     legal_cost     ?? existing.legal_cost
+    };
+
+    await pool.query(
+      `UPDATE deal_submissions SET ai_termsheet_data = $1, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(updated), deal.id]
+    );
+
+    await logAudit(deal.id, 'fees_updated', deal.status, deal.status,
+      { fee_onboarding, fee_commitment, valuation_cost, legal_cost, updated_by: req.user.userId },
+      req.user.userId);
+
+    console.log('[update-fees] Deal', req.params.submissionId, '- fees updated by', req.user.userId);
+    res.json({ success: true, fees: { fee_onboarding, fee_commitment, valuation_cost, legal_cost } });
+  } catch (error) {
+    console.error('[update-fees] Error:', error);
+    res.status(500).json({ error: 'Failed to update fees' });
+  }
+});
+
 module.exports = router;
