@@ -132,32 +132,87 @@ export async function loadStaffDeals() {
 export function renderPipelineRows(deals, tbody, stageLabels) {
   tbody.innerHTML = '';
 
+  const countEl = document.getElementById('admin-deals-count');
+  if (countEl) countEl.textContent = `${deals.length} deal${deals.length !== 1 ? 's' : ''}`;
+
   deals.forEach(deal => {
     const row = document.createElement('tr');
+    row.style.cursor = 'pointer';
     row.onclick = () => {
       setCurrentDealId(deal.submission_id);
       import('./deal-detail.js').then(m => m.showDealDetail(deal.submission_id));
     };
-    row.style.cursor = 'pointer';
 
+    // Borrower
+    const borrowerDisplay = deal.borrower_name
+      ? `<strong>${sanitizeHtml(deal.borrower_name)}</strong>${deal.borrower_company ? `<br><span class="pipe-sub">${sanitizeHtml(deal.borrower_company)}</span>` : ''}${deal.borrower_type ? `<br><span class="pipe-tag">${sanitizeHtml(deal.borrower_type.toUpperCase())}</span>` : ''}`
+      : '<span class="pipe-empty">-</span>';
+
+    // Broker
+    const brokerDisplay = deal.broker_name
+      ? `<strong>${sanitizeHtml(deal.broker_name)}</strong>${deal.broker_company ? `<br><span class="pipe-sub">${sanitizeHtml(deal.broker_company)}</span>` : ''}`
+      : '<span class="pipe-empty">-</span>';
+
+    // Security
+    const address = deal.security_address || '-';
+    const shortAddr = address.length > 35 ? sanitizeHtml(address.substring(0, 35)) + '...' : sanitizeHtml(address);
+    const assetTypes = { residential: 'Resi', commercial: 'Comm', mixed_use: 'Mixed', land: 'Land', hmo: 'HMO', development: 'Dev', flat: 'Flat', mufb: 'MUFB' };
+    const assetLabel = assetTypes[deal.asset_type] || deal.asset_type || '';
+    const securityDisplay = `<span title="${sanitizeHtml(address)}">${shortAddr}</span>${deal.security_postcode || assetLabel ? `<br><span class="pipe-sub">${sanitizeHtml(deal.security_postcode || '')}${deal.security_postcode && assetLabel ? ' · ' : ''}${assetLabel ? '<span class="pipe-tag">' + sanitizeHtml(assetLabel) + '</span>' : ''}</span>` : ''}`;
+
+    // Notional (loan amount + current value)
+    const loanAmt = deal.loan_amount ? `£${formatNumber(deal.loan_amount)}` : '-';
+    const valuation = deal.current_value ? `Val: £${formatNumber(deal.current_value)}` : '';
+    const notionalDisplay = `<strong>${loanAmt}</strong>${valuation ? `<br><span class="pipe-sub">${valuation}</span>` : ''}`;
+
+    // LTV
+    let ltvDisplay = '-';
+    if (deal.ltv_requested) {
+      ltvDisplay = `<strong>${Number(deal.ltv_requested).toFixed(0)}%</strong>`;
+    } else if (deal.loan_amount && deal.current_value && Number(deal.current_value) > 0) {
+      const calcLtv = ((Number(deal.loan_amount) / Number(deal.current_value)) * 100).toFixed(0);
+      ltvDisplay = `<strong>${calcLtv}%</strong><br><span class="pipe-sub">calc</span>`;
+    }
+
+    // Term
+    const termDisplay = deal.term_months ? `${deal.term_months}m` : '-';
+
+    // Drawdown
+    const drawdownDisplay = deal.drawdown_date ? formatDate(deal.drawdown_date) : '<span class="pipe-empty">TBC</span>';
+
+    // Stage
     const stage = deal.deal_stage || 'received';
-    const rmName = deal.rm_first ? `${sanitizeHtml(deal.rm_first)} ${sanitizeHtml(deal.rm_last)}` : '-';
-    const creditName = deal.credit_first ? `${sanitizeHtml(deal.credit_first)} ${sanitizeHtml(deal.credit_last)}` : '-';
-    const compName = deal.comp_first ? `${sanitizeHtml(deal.comp_first)} ${sanitizeHtml(deal.comp_last)}` : '-';
+    const stageDisplay = `<span class="stage-badge stage-${stage}">${sanitizeHtml(stageLabels[stage] || stage)}</span>`;
+
+    // Team (RM, Credit, Compliance)
+    const rmName = deal.rm_first ? `${sanitizeHtml(deal.rm_first)} ${sanitizeHtml(deal.rm_last)}` : null;
+    const creditName = deal.credit_first ? `${sanitizeHtml(deal.credit_first)} ${sanitizeHtml(deal.credit_last)}` : null;
+    const compName = deal.comp_first ? `${sanitizeHtml(deal.comp_first)} ${sanitizeHtml(deal.comp_last)}` : null;
+    let teamHtml = '';
+    if (rmName) {
+      teamHtml += `<span class="pipe-role">RM:</span> ${rmName}`;
+    } else {
+      teamHtml += '<span style="color:#e53e3e;font-weight:600;">No RM</span>';
+    }
+    if (creditName) teamHtml += `<br><span class="pipe-role">CR:</span> ${creditName}`;
+    if (compName) teamHtml += `<br><span class="pipe-role">CO:</span> ${compName}`;
+
+    // Updated
+    const updatedDisplay = deal.updated_at ? formatDate(deal.updated_at) : formatDate(deal.created_at);
 
     row.innerHTML = `
-      <td class="pipe-cell"><span class="deal-ref">${sanitizeHtml(deal.submission_id.substring(0, 8))}</span></td>
-      <td class="pipe-cell"><span class="deal-address">${sanitizeHtml(deal.security_address || '-')}</span></td>
-      <td class="pipe-cell">£${formatNumber(deal.loan_amount || 0)}</td>
-      <td class="pipe-cell">${deal.ltv_requested || '-'}%</td>
-      <td class="pipe-cell"><span class="pipe-tag">${sanitizeHtml(stageLabels[stage] || stage)}</span></td>
-      <td class="pipe-cell"><span class="pipe-role">${sanitizeHtml(rmName)}</span></td>
-      <td class="pipe-cell"><span class="pipe-role">${sanitizeHtml(creditName)}</span></td>
-      <td class="pipe-cell"><span class="pipe-role">${sanitizeHtml(compName)}</span></td>
-      <td class="pipe-cell"><span class="status-badge status-${deal.status}">${sanitizeHtml(deal.status)}</span></td>
-      <td class="pipe-cell">${formatDate(deal.created_at)}</td>
+      <td><span class="deal-ref">${sanitizeHtml(deal.submission_id.substring(0, 8))}</span></td>
+      <td class="pipe-cell">${borrowerDisplay}</td>
+      <td class="pipe-cell">${brokerDisplay}</td>
+      <td class="pipe-cell">${securityDisplay}</td>
+      <td class="pipe-cell" style="white-space:nowrap;">${notionalDisplay}</td>
+      <td class="pipe-cell" style="text-align:center;">${ltvDisplay}</td>
+      <td class="pipe-cell" style="text-align:center;">${termDisplay}</td>
+      <td class="pipe-cell" style="white-space:nowrap;">${drawdownDisplay}</td>
+      <td class="pipe-cell">${stageDisplay}</td>
+      <td class="pipe-cell">${teamHtml}</td>
+      <td class="pipe-cell" style="white-space:nowrap;font-size:0.85em;">${updatedDisplay}</td>
     `;
-
     tbody.appendChild(row);
   });
 }
@@ -176,11 +231,16 @@ export function updateAdminDealsFilter() {
     const stage = deal.deal_stage || 'received';
     const stageMatch = !filterStage || stage === filterStage;
     const assetMatch = !filterAsset || deal.asset_type === filterAsset;
-    const rmMatch = !filterRm || (deal.rm_id && deal.rm_id.toString() === filterRm);
-    const searchMatch = !filterSearch ||
-      (deal.security_address && deal.security_address.toLowerCase().includes(filterSearch)) ||
-      (deal.borrower_name && deal.borrower_name.toLowerCase().includes(filterSearch)) ||
-      deal.submission_id.includes(filterSearch);
+    const rmMatch = !filterRm || (filterRm === 'unassigned' ? !deal.rm_first : (deal.assigned_rm && deal.assigned_rm.toString() === filterRm));
+    let searchMatch = true;
+    if (filterSearch) {
+      const searchable = [
+        deal.submission_id, deal.borrower_name, deal.borrower_company,
+        deal.broker_name, deal.broker_company, deal.security_address,
+        deal.security_postcode, deal.loan_purpose
+      ].filter(Boolean).join(' ').toLowerCase();
+      searchMatch = searchable.includes(filterSearch);
+    }
 
     return stageMatch && assetMatch && rmMatch && searchMatch;
   });
@@ -224,8 +284,10 @@ export async function loadAdminUsers() {
       row.innerHTML = `
         <td>${sanitizeHtml(user.first_name)} ${sanitizeHtml(user.last_name)}</td>
         <td>${sanitizeHtml(user.email)}</td>
-        <td><span class="role-badge">${sanitizeHtml(user.role.toUpperCase())}</span></td>
-        <td>${sanitizeHtml(user.company || '-')}</td>
+        <td>${sanitizeHtml(user.company || 'N/A')}</td>
+        <td><span class="role-badge">${sanitizeHtml(user.role)}</span></td>
+        <td>${sanitizeHtml(user.fca_number || user.company_number || '-')}</td>
+        <td>${user.deals_count || 0}</td>
         <td>${formatDate(user.created_at)}</td>
       `;
       tbody.appendChild(row);
