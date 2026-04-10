@@ -408,7 +408,11 @@ async function runMigrations() {
       { col: 'rm_signoff_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_signoff_at TIMESTAMPTZ;' },
       { col: 'rm_signoff_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_signoff_by INT REFERENCES users(id);' },
       { col: 'credit_signoff_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_signoff_at TIMESTAMPTZ;' },
-      { col: 'credit_signoff_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_signoff_by INT REFERENCES users(id);' }
+      { col: 'credit_signoff_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_signoff_by INT REFERENCES users(id);' },
+      // Term snapshots — captured at each gate for side-by-side comparison & field locking
+      { col: 'dip_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_snapshot JSONB;" },
+      { col: 'termsheet_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS termsheet_snapshot JSONB;" },
+      { col: 'final_snapshot', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS final_snapshot JSONB;" }
     ];
 
     for (const check of columnChecks) {

@@ -63,7 +63,7 @@ export async function showDealDetail(dealId) {
     const stageEl = document.getElementById('detail-stage-badge');
     const stageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -340,7 +340,7 @@ export function renderInternalWorkflowControls(deal) {
   const stage = deal.deal_stage || 'received';
   const stageLabels = {
     received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-    info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+    info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
     fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
     bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
     borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -368,7 +368,7 @@ export function renderInternalWorkflowControls(deal) {
     received: { who: 'Admin', action: 'Assign to RM' },
     assigned: { who: 'RM', action: 'Issue DIP' },
     dip_issued: { who: 'Credit → Borrower', action: 'Credit Review then Borrower Accept' },
-    info_gathering: { who: 'RM', action: 'Generate AI Termsheet' },
+    info_gathering: { who: 'RM', action: 'Generate Indicative Termsheet' },
     ai_termsheet: { who: 'RM', action: 'Request Fee' },
     fee_pending: { who: 'RM / Broker', action: 'Confirm Fee Payment' },
     fee_paid: { who: 'RM', action: 'Start Underwriting' },
@@ -1344,16 +1344,16 @@ export function renderInternalWorkflowControls(deal) {
           ${isOK ? '&#10003;' : '&#9711;'} ${sectionLabels[s] || s}</div>`;
       });
       html += `</div>
-        <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">Review and approve each section in the Full Onboarding tabs above. All 7 must be approved before AI analysis.</p>
+        <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">Review and approve each section in the Full Onboarding tabs above. All 6 must be approved before analysis can proceed.</p>
       </div>`;
 
       // Step 3: Generate AI Termsheet (only when all sections approved)
       if (allApproved && !deal.ai_termsheet_generated_at) {
         html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
-          <h4 style="margin:0 0 8px;color:var(--primary);">Step 3: Generate AI Termsheet</h4>
-          <p style="margin:0 0 12px;font-size:12px;color:#666;">All onboarding sections are approved. Submit the deal to the AI engine for analysis. It will review all uploaded documents and data to generate a draft termsheet with proposed terms.</p>
-          <textarea id="ai-termsheet-data" placeholder="Additional notes for AI analysis (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
-          <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Generate AI Termsheet</button>
+          <h4 style="margin:0 0 8px;color:var(--primary);">Step 3: Generate Indicative Termsheet</h4>
+          <p style="margin:0 0 12px;font-size:12px;color:#666;">All onboarding sections are approved. Submit the deal for analysis. All uploaded documents and data will be reviewed to generate a draft termsheet with proposed terms.</p>
+          <textarea id="ai-termsheet-data" placeholder="Additional notes for analysis (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+          <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Generate Indicative Termsheet</button>
         </div>`;
       }
 
@@ -1362,13 +1362,13 @@ export function renderInternalWorkflowControls(deal) {
         if (['rm', 'admin'].includes(currentRole)) {
           html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #3b82f6;">
             <h4 style="margin:0 0 8px;color:#1e40af;">Step 4: RM Sign-off</h4>
-            <p style="margin:0 0 12px;font-size:12px;color:#666;">AI analysis complete. Review the proposed terms and sign off to send to Credit for final approval.</p>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">Analysis complete. Review the proposed terms and sign off to send to Credit for final approval.</p>
             <textarea id="rm-signoff-notes" placeholder="RM comments / adjustments (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
             <button onclick="window.rmSignoff()" style="padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">RM Sign-off — Send to Credit</button>
           </div>`;
         } else {
           html += `<div style="background:#fef3c7;padding:12px 16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #f59e0b;">
-            <strong>Awaiting RM Sign-off</strong> — The RM needs to review and sign off on the AI termsheet before Credit can review.
+            <strong>Awaiting RM Sign-off</strong> — The RM needs to review and sign off on the indicative termsheet before Credit can review.
           </div>`;
         }
       }
@@ -1387,7 +1387,7 @@ export function renderInternalWorkflowControls(deal) {
         if (['credit', 'admin'].includes(currentRole)) {
           html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
             <h4 style="margin:0 0 8px;color:#7c3aed;">Step 5: Credit Sign-off</h4>
-            <p style="margin:0 0 12px;font-size:12px;color:#666;">RM has signed off. Review the AI termsheet and the full onboarding pack. Approve, decline, or request more info.</p>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">RM has signed off. Review the indicative termsheet and the full onboarding pack. Approve, decline, or request more info.</p>
             <textarea id="credit-signoff-notes" placeholder="Credit comments / conditions (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
             <div style="display:flex;gap:8px;">
               <button onclick="window.creditSignoff('approve')" style="padding:8px 16px;background:#22c55e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Approve</button>
@@ -1420,16 +1420,16 @@ export function renderInternalWorkflowControls(deal) {
   if (stage === 'ai_termsheet' && ['rm', 'credit', 'admin'].includes(currentRole)) {
     const aiGenAt = deal.ai_termsheet_generated_at;
     const aiData = deal.ai_termsheet_data || {};
-    html += accordion('wf-ai-termsheet', 'AI Termsheet', '🤖', true);
+    html += accordion('wf-ai-termsheet', 'Indicative Termsheet', '📋', true);
     html += `<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #22c55e;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <span style="font-size:22px;">🤖</span>
         <div>
-          <h4 style="margin:0;color:#15803d;">AI Termsheet Generated</h4>
+          <h4 style="margin:0;color:#15803d;">Indicative Termsheet Generated</h4>
           ${aiGenAt ? `<div style="font-size:12px;color:#666;">Generated on ${new Date(aiGenAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>` : ''}
         </div>
       </div>
-      <p style="margin:0 0 8px;font-size:13px;color:#555;">The AI engine has analysed all onboarding documents and generated a draft termsheet. The RM and Credit team signed off on the analysis. Next step: issue the formal termsheet document.</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#555;">All onboarding documents have been analysed and a draft termsheet has been generated. The RM and Credit team signed off on the analysis. Next step: issue the formal termsheet document.</p>
       ${deal.rm_signoff_at ? `<div style="font-size:12px;color:#15803d;margin-bottom:4px;">✓ RM signed off ${new Date(deal.rm_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</div>` : ''}
       ${deal.credit_signoff_at ? `<div style="font-size:12px;color:#15803d;">✓ Credit signed off ${new Date(deal.credit_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</div>` : ''}
     </div>`;
@@ -1668,6 +1668,16 @@ export function renderInternalWorkflowControls(deal) {
     html += accordionEnd();
   }
 
+  // ── Terms Comparison Tracker ──
+  // Shows side-by-side DIP → Indicative Termsheet → Final terms
+  if (['admin', 'rm', 'credit', 'compliance'].includes(currentRole)) {
+    html += accordion('wf-terms-tracker', 'Terms Tracker', '📊', false);
+    html += `<div id="terms-tracker-content" style="background:#fff;padding:16px;border-radius:8px;margin-bottom:8px;border:1px solid #e5e7eb;">
+      <div style="text-align:center;padding:20px;color:#94a3b8;font-size:13px;">Loading terms tracker...</div>
+    </div>`;
+    html += accordionEnd();
+  }
+
   // ── Recommendation Status & Actions ──
   // At dip_issued: Credit Review panel above handles the decision — only show read-only status summary
   // At later stages: show full recommendation panel with buttons for compliance/admin
@@ -1708,7 +1718,7 @@ export function renderInternalWorkflowControls(deal) {
   if (deal.audit && deal.audit.length > 0) {
     const auditStageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -1790,6 +1800,156 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   panel.innerHTML = html;
+
+  // ── Load Terms Tracker data (async) ──
+  if (['admin', 'rm', 'credit', 'compliance'].includes(currentRole)) {
+    loadTermsTracker(deal.submission_id);
+  }
+
+  // ── Load field locks for inline edit indicators ──
+  loadFieldLocks(deal.submission_id);
+}
+
+/**
+ * Fetch and render the Terms Comparison Tracker
+ */
+async function loadTermsTracker(submissionId) {
+  const container = document.getElementById('terms-tracker-content');
+  if (!container) return;
+
+  try {
+    const resp = await fetchWithAuth(`${window.API_BASE || ''}/api/deals/${submissionId}/terms-tracker`);
+    if (!resp.ok) {
+      container.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">Terms tracker not available yet.</div>';
+      return;
+    }
+    const data = await resp.json();
+    const { stages, rows, variances, locks } = data;
+
+    // Determine which columns to show
+    const hasDip = stages.dip?.exists;
+    const hasTs = stages.termsheet?.exists;
+    const hasFinal = stages.final?.exists;
+
+    if (!hasDip && !hasTs && !hasFinal) {
+      container.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">No snapshots captured yet. Terms tracking begins when the DIP is signed.</div>';
+      return;
+    }
+
+    const fmtVal = (val, format) => {
+      if (val === null || val === undefined || val === '') return '<span style="color:#cbd5e1;">—</span>';
+      if (format === 'currency') return '£' + Number(val).toLocaleString('en-GB', { minimumFractionDigits: 0 });
+      if (format === 'pct') return Number(val).toFixed(2) + '%';
+      if (format === 'months') return val + ' mo';
+      return sanitizeHtml(String(val));
+    };
+
+    let colCount = 2; // field + current
+    if (hasDip) colCount++;
+    if (hasTs) colCount++;
+    if (hasFinal) colCount++;
+
+    let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0;">
+          <th style="padding:8px 10px;text-align:left;font-weight:600;color:#475569;">Field</th>
+          ${hasDip ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#2563eb;">DIP</th>' : ''}
+          ${hasTs ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#7c3aed;">Indicative TS</th>' : ''}
+          ${hasFinal ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#15803d;">Bank Submit</th>' : ''}
+          <th style="padding:8px 10px;text-align:right;font-weight:600;color:#64748b;">Current</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    for (const row of rows) {
+      const changed = row.changed;
+      const rowBg = changed ? 'background:#fef3c7;' : '';
+      const changeIcon = changed ? ' <span title="Value changed between stages" style="color:#f59e0b;cursor:help;">⚠</span>' : '';
+
+      tableHtml += `<tr style="border-bottom:1px solid #f1f5f9;${rowBg}">
+        <td style="padding:6px 10px;font-weight:500;color:#1e293b;">${sanitizeHtml(row.field)}${changeIcon}</td>
+        ${hasDip ? `<td style="padding:6px 10px;text-align:right;color:#2563eb;">${fmtVal(row.dip, row.format)}</td>` : ''}
+        ${hasTs ? `<td style="padding:6px 10px;text-align:right;color:#7c3aed;">${fmtVal(row.termsheet, row.format)}</td>` : ''}
+        ${hasFinal ? `<td style="padding:6px 10px;text-align:right;color:#15803d;">${fmtVal(row.final, row.format)}</td>` : ''}
+        <td style="padding:6px 10px;text-align:right;color:#64748b;">${fmtVal(row.current, row.format)}</td>
+      </tr>`;
+    }
+
+    tableHtml += '</tbody></table>';
+
+    // Variance summary
+    let varianceHtml = '';
+    if (variances.dip_to_termsheet?.length > 0) {
+      varianceHtml += `<div style="margin-top:12px;padding:10px;background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;">
+        <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:4px;">DIP → Termsheet Variances (${variances.dip_to_termsheet.length})</div>
+        ${variances.dip_to_termsheet.map(v => `<div style="font-size:11px;color:#78350f;">${sanitizeHtml(v.field)}: ${v.DIP ?? '—'} → ${v.Termsheet ?? '—'}</div>`).join('')}
+      </div>`;
+    }
+    if (variances.termsheet_to_final?.length > 0) {
+      varianceHtml += `<div style="margin-top:8px;padding:10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;">
+        <div style="font-size:12px;font-weight:600;color:#991b1b;margin-bottom:4px;">Termsheet → Final Variances (${variances.termsheet_to_final.length})</div>
+        ${variances.termsheet_to_final.map(v => `<div style="font-size:11px;color:#7f1d1d;">${sanitizeHtml(v.field)}: ${v.Termsheet ?? '—'} → ${v.Final ?? '—'}</div>`).join('')}
+      </div>`;
+    }
+
+    // Lock status
+    let lockHtml = '';
+    if (locks && locks.locked.length > 0) {
+      const tier1Locked = locks.locked.filter(f => ['borrower_name','borrower_company','security_address','asset_type'].includes(f));
+      const tier2Locked = locks.locked.filter(f => ['loan_amount','ltv_requested','current_value','rate_requested','term_months'].includes(f));
+      lockHtml = `<div style="margin-top:12px;padding:10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#166534;">
+        🔒 <strong>${locks.locked.length} field(s) locked</strong>
+        ${tier1Locked.length > 0 ? ' — Identity fields locked (DIP signed)' : ''}
+        ${tier2Locked.length > 0 ? ' — Commercial fields locked (Indicative TS issued)' : ''}
+      </div>`;
+    }
+
+    // Stage timestamps
+    let stageTimeline = '<div style="display:flex;gap:16px;margin-bottom:12px;">';
+    if (hasDip) stageTimeline += `<div style="font-size:11px;color:#2563eb;">DIP: ${new Date(stages.dip.captured_at).toLocaleDateString('en-GB')}</div>`;
+    if (hasTs) stageTimeline += `<div style="font-size:11px;color:#7c3aed;">Termsheet: ${new Date(stages.termsheet.captured_at).toLocaleDateString('en-GB')}</div>`;
+    if (hasFinal) stageTimeline += `<div style="font-size:11px;color:#15803d;">Bank Submit: ${new Date(stages.final.captured_at).toLocaleDateString('en-GB')}</div>`;
+    stageTimeline += '</div>';
+
+    container.innerHTML = stageTimeline + tableHtml + varianceHtml + lockHtml;
+
+  } catch (err) {
+    console.error('[terms-tracker] Load error:', err);
+    container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px;">Failed to load terms tracker.</div>';
+  }
+}
+
+/**
+ * Fetch field locks and apply visual indicators to inline edit fields
+ */
+async function loadFieldLocks(submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${window.API_BASE || ''}/api/deals/${submissionId}/field-locks`);
+    if (!resp.ok) return;
+    const { locked, reasons } = await resp.json();
+    if (!locked || locked.length === 0) return;
+
+    // Find all inline-edit inputs and disable locked ones
+    for (const field of locked) {
+      const input = document.querySelector(`[data-field="${field}"]`);
+      if (input) {
+        input.disabled = true;
+        input.style.background = '#f1f5f9';
+        input.style.cursor = 'not-allowed';
+        input.title = reasons[field] || 'Field locked';
+        // Add lock icon
+        const lockIcon = document.createElement('span');
+        lockIcon.innerHTML = '🔒';
+        lockIcon.style.cssText = 'font-size:10px;margin-left:4px;cursor:help;';
+        lockIcon.title = reasons[field] || 'Field locked';
+        if (input.nextElementSibling?.innerHTML !== '🔒') {
+          input.parentNode.insertBefore(lockIcon, input.nextSibling);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[field-locks] Load error:', err);
+  }
 }
 
 /**

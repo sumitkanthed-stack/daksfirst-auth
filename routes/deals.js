@@ -13,6 +13,132 @@ const { generateDipPdf } = require('../services/dip-pdf');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  FIELD LOCK & SNAPSHOT SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Tier 1 — Identity fields: lock when DIP is signed (borrower has committed)
+const TIER1_FIELDS = [
+  'borrower_name', 'borrower_company', 'borrower_email', 'borrower_phone',
+  'borrower_dob', 'borrower_nationality', 'borrower_jurisdiction', 'borrower_type',
+  'company_name', 'company_number',
+  'security_address', 'security_postcode', 'asset_type'
+];
+
+// Tier 2 — Commercial fields: lock when Indicative Termsheet is generated
+const TIER2_FIELDS = [
+  'loan_amount', 'ltv_requested', 'current_value', 'term_months',
+  'rate_requested', 'purchase_price', 'interest_servicing'
+];
+
+// Tier 3 — Supporting detail: lock at bank submission
+const TIER3_FIELDS = [
+  'exit_strategy', 'loan_purpose', 'use_of_funds', 'refurb_scope',
+  'refurb_cost', 'deposit_source', 'drawdown_date', 'existing_charges',
+  'property_tenure', 'occupancy_status', 'current_use', 'concurrent_transactions'
+];
+
+// Snapshot fields — the core terms we track across stages
+const SNAPSHOT_FIELDS = [
+  'borrower_name', 'borrower_company', 'company_name',
+  'security_address', 'asset_type',
+  'loan_amount', 'current_value', 'ltv_requested',
+  'rate_requested', 'term_months', 'exit_strategy',
+  'interest_servicing', 'loan_purpose'
+];
+
+/**
+ * Capture a snapshot of critical deal fields at a given gate
+ */
+function captureSnapshot(dealRow) {
+  const snap = { captured_at: new Date().toISOString() };
+  for (const field of SNAPSHOT_FIELDS) {
+    snap[field] = dealRow[field] ?? null;
+  }
+  // Also capture DIP terms if they exist (rate, arrangement fee etc from ai_termsheet_data)
+  const tsData = typeof dealRow.ai_termsheet_data === 'string'
+    ? (() => { try { return JSON.parse(dealRow.ai_termsheet_data); } catch { return {}; } })()
+    : (dealRow.ai_termsheet_data || {});
+  if (tsData && Object.keys(tsData).length > 0) {
+    snap.dip_terms = {
+      loan_amount: tsData.loan_amount || null,
+      ltv: tsData.ltv || null,
+      rate_monthly: tsData.rate_monthly || null,
+      arrangement_fee_pct: tsData.arrangement_fee_pct || null,
+      term_months: tsData.term_months || null
+    };
+  }
+  return snap;
+}
+
+/**
+ * Check which fields are locked at the current deal stage.
+ * Returns an object { locked: [...fieldNames], reason: string } or null if none locked.
+ */
+function getLockedFields(deal) {
+  const locked = [];
+  const reasons = {};
+
+  // After DIP signed → Tier 1 locked
+  if (deal.dip_signed) {
+    for (const f of TIER1_FIELDS) {
+      locked.push(f);
+      reasons[f] = 'DIP signed — identity fields locked';
+    }
+  }
+
+  // After Indicative Termsheet generated → Tier 2 locked
+  if (deal.ai_termsheet_generated_at) {
+    for (const f of TIER2_FIELDS) {
+      locked.push(f);
+      reasons[f] = 'Indicative Termsheet issued — commercial fields locked';
+    }
+  }
+
+  // After bank submission → Tier 3 locked (everything)
+  const bankStages = ['bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+  if (bankStages.includes(deal.status)) {
+    for (const f of TIER3_FIELDS) {
+      locked.push(f);
+      reasons[f] = 'Bank submitted — all deal fields locked';
+    }
+  }
+
+  return { locked, reasons };
+}
+
+/**
+ * Compare two snapshots and return variances
+ */
+function compareSnapshots(label1, snap1, label2, snap2) {
+  if (!snap1 || !snap2) return [];
+  const variances = [];
+  const compareFields = [
+    { key: 'loan_amount', label: 'Loan Amount', format: 'currency' },
+    { key: 'current_value', label: 'Property Value', format: 'currency' },
+    { key: 'ltv_requested', label: 'LTV', format: 'pct' },
+    { key: 'rate_requested', label: 'Rate', format: 'pct' },
+    { key: 'term_months', label: 'Term', format: 'months' },
+    { key: 'exit_strategy', label: 'Exit Strategy', format: 'text' },
+    { key: 'borrower_name', label: 'Borrower', format: 'text' },
+    { key: 'security_address', label: 'Security Address', format: 'text' },
+    { key: 'asset_type', label: 'Asset Type', format: 'text' }
+  ];
+  for (const cf of compareFields) {
+    const v1 = snap1[cf.key];
+    const v2 = snap2[cf.key];
+    if (String(v1 || '') !== String(v2 || '')) {
+      variances.push({
+        field: cf.label,
+        [label1]: v1,
+        [label2]: v2,
+        format: cf.format
+      });
+    }
+  }
+  return variances;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  LIST DEALS (dashboard)
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/', authenticateToken, async (req, res) => {
@@ -570,7 +696,7 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
 router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(
-      `SELECT id, submission_id, status, deal_stage, dip_signed, credit_recommendation FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT * FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
@@ -591,16 +717,20 @@ router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => 
     const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    // Accept DIP and advance to info_gathering (credit already approved)
+    // ── SNAPSHOT: Capture DIP terms at point of acceptance ──
+    const dipSnap = captureSnapshot(deal);
+
+    // Accept DIP, capture snapshot, and advance to info_gathering
     await pool.query(
       `UPDATE deal_submissions SET
         dip_signed = true,
         dip_signed_at = NOW(),
+        dip_snapshot = $2,
         status = 'info_gathering',
         deal_stage = 'info_gathering',
         updated_at = NOW()
        WHERE id = $1`,
-      [deal.id]
+      [deal.id, JSON.stringify(dipSnap)]
     );
 
     await logAudit(deal.id, 'dip_accepted', deal.status, 'info_gathering', {
@@ -635,7 +765,7 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
     const { ai_termsheet_data } = req.body;
 
     const dealResult = await pool.query(
-      `SELECT id, status, dip_fee_confirmed, onboarding_approval FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT * FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
@@ -644,7 +774,7 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
 
     // GATE: Onboarding fee must be confirmed
     if (!deal.dip_fee_confirmed) {
-      return res.status(400).json({ error: 'Onboarding fee must be confirmed before generating AI termsheet' });
+      return res.status(400).json({ error: 'Onboarding fee must be confirmed before generating indicative termsheet' });
     }
 
     // GATE: All 6 onboarding sections must be approved by RM
@@ -653,25 +783,36 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
     const unapproved = requiredSections.filter(s => !approval[s] || !approval[s].approved);
     if (unapproved.length > 0) {
       return res.status(400).json({
-        error: `All onboarding sections must be approved before generating AI termsheet. Missing: ${unapproved.join(', ')}`,
+        error: `All onboarding sections must be approved before generating indicative termsheet. Missing: ${unapproved.join(', ')}`,
         missing_sections: unapproved
       });
     }
+
+    // ── SNAPSHOT: Capture terms at point of Indicative Termsheet generation ──
+    // Merge in the new ai_termsheet_data so the snapshot reflects final terms
+    const dealForSnap = { ...deal };
+    if (ai_termsheet_data) dealForSnap.ai_termsheet_data = ai_termsheet_data;
+    const tsSnap = captureSnapshot(dealForSnap);
+
+    // Also compute drift from DIP snapshot
+    const dipSnap = deal.dip_snapshot || null;
+    const variances = dipSnap ? compareSnapshots('DIP', dipSnap, 'Termsheet', tsSnap) : [];
 
     const result = await pool.query(
       `UPDATE deal_submissions SET
         status = 'ai_termsheet',
         ai_termsheet_data = $1,
         ai_termsheet_generated_at = NOW(),
+        termsheet_snapshot = $3,
         updated_at = NOW()
        WHERE id = $2 RETURNING submission_id, status, ai_termsheet_generated_at`,
-      [ai_termsheet_data ? JSON.stringify(ai_termsheet_data) : '{}', dealId]
+      [ai_termsheet_data ? JSON.stringify(ai_termsheet_data) : '{}', dealId, JSON.stringify(tsSnap)]
     );
 
     await logAudit(dealId, 'ai_termsheet_generated', dealResult.rows[0].status, 'ai_termsheet',
-      { generated_by: req.user.userId }, req.user.userId);
+      { generated_by: req.user.userId, variances_from_dip: variances.length > 0 ? variances : null }, req.user.userId);
 
-    res.json({ success: true, deal: result.rows[0] });
+    res.json({ success: true, deal: result.rows[0], variances });
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate termsheet' });
   }
@@ -1074,9 +1215,13 @@ router.post('/:submissionId/bank-submit', authenticateToken, authenticateInterna
   try {
     const { bank_reference } = req.validated;
 
-    const dealResult = await pool.query(`SELECT id, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-    const dealId = dealResult.rows[0].id;
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    // ── SNAPSHOT: Capture final terms at bank submission ──
+    const finalSnap = captureSnapshot(deal);
 
     const result = await pool.query(
       `UPDATE deal_submissions SET
@@ -1084,12 +1229,13 @@ router.post('/:submissionId/bank-submit', authenticateToken, authenticateInterna
         bank_submitted_at = NOW(),
         bank_submitted_by = $1,
         bank_reference = $2,
+        final_snapshot = $4,
         updated_at = NOW()
        WHERE id = $3 RETURNING submission_id, status, bank_submitted_at, bank_reference`,
-      [req.user.userId, bank_reference || null, dealId]
+      [req.user.userId, bank_reference || null, dealId, JSON.stringify(finalSnap)]
     );
 
-    await logAudit(dealId, 'bank_submitted', dealResult.rows[0].status, 'bank_submitted',
+    await logAudit(dealId, 'bank_submitted', deal.status, 'bank_submitted',
       { bank_reference }, req.user.userId);
 
     res.json({ success: true, deal: result.rows[0] });
@@ -1218,6 +1364,26 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
       return res.status(400).json({ error: 'No fields provided to update' });
     }
 
+    // ── FIELD LOCK CHECK ──
+    // Fetch deal to determine lock state
+    const dealCheck = await pool.query(
+      `SELECT id, dip_signed, ai_termsheet_generated_at, status FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealCheck.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealState = dealCheck.rows[0];
+    const { locked, reasons } = getLockedFields(dealState);
+
+    // Check if any requested fields are locked
+    const blockedFields = Object.keys(updates).filter(k => locked.includes(k));
+    if (blockedFields.length > 0) {
+      const blockedDetail = blockedFields.map(f => ({ field: f, reason: reasons[f] }));
+      return res.status(403).json({
+        error: 'Some fields are locked and cannot be amended at this stage',
+        locked_fields: blockedDetail
+      });
+    }
+
     // Whitelist of editable intake fields — only these can be changed
     const allowedFields = [
       'borrower_name', 'borrower_company', 'borrower_email', 'borrower_phone',
@@ -1284,6 +1450,107 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
   } catch (error) {
     console.error('[intake-update] Error:', error);
     res.status(500).json({ error: 'Failed to update intake fields' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TERMS TRACKER — Side-by-side DIP → Termsheet → Final comparison
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/terms-tracker', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      `SELECT id, dip_snapshot, termsheet_snapshot, final_snapshot,
+              dip_signed, ai_termsheet_generated_at, status,
+              loan_amount, current_value, ltv_requested, rate_requested,
+              term_months, exit_strategy, borrower_name, borrower_company,
+              company_name, security_address, asset_type, interest_servicing,
+              loan_purpose, ai_termsheet_data
+       FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Build current live values snapshot for comparison
+    const liveSnap = captureSnapshot(deal);
+
+    // The tracked fields with display labels
+    const trackedFields = [
+      { key: 'borrower_name', label: 'Borrower', format: 'text' },
+      { key: 'company_name', label: 'Company / SPV', format: 'text' },
+      { key: 'security_address', label: 'Security Address', format: 'text' },
+      { key: 'asset_type', label: 'Asset Type', format: 'text' },
+      { key: 'loan_amount', label: 'Loan Amount', format: 'currency' },
+      { key: 'current_value', label: 'Property Value', format: 'currency' },
+      { key: 'ltv_requested', label: 'LTV %', format: 'pct' },
+      { key: 'rate_requested', label: 'Rate (monthly)', format: 'pct' },
+      { key: 'term_months', label: 'Term (months)', format: 'number' },
+      { key: 'exit_strategy', label: 'Exit Strategy', format: 'text' },
+      { key: 'interest_servicing', label: 'Interest Servicing', format: 'text' },
+      { key: 'loan_purpose', label: 'Loan Purpose', format: 'text' }
+    ];
+
+    const dipSnap = deal.dip_snapshot || null;
+    const tsSnap = deal.termsheet_snapshot || null;
+    const finalSnap = deal.final_snapshot || null;
+
+    // Build rows: each field with value at each stage
+    const rows = trackedFields.map(tf => {
+      const row = {
+        field: tf.label,
+        key: tf.key,
+        format: tf.format,
+        current: liveSnap[tf.key] ?? null,
+        dip: dipSnap ? (dipSnap[tf.key] ?? null) : null,
+        termsheet: tsSnap ? (tsSnap[tf.key] ?? null) : null,
+        final: finalSnap ? (finalSnap[tf.key] ?? null) : null,
+        changed: false
+      };
+      // Flag if value drifted between any captured stages
+      const vals = [row.dip, row.termsheet, row.final].filter(v => v !== null);
+      if (vals.length >= 2) {
+        row.changed = new Set(vals.map(String)).size > 1;
+      }
+      return row;
+    });
+
+    // Also include DIP terms (from ai_termsheet_data) if available
+    const dipTerms = dipSnap?.dip_terms || null;
+    const tsTerms = tsSnap?.dip_terms || null;
+
+    // Compute variances
+    const dipToTs = (dipSnap && tsSnap) ? compareSnapshots('DIP', dipSnap, 'Termsheet', tsSnap) : [];
+    const tsToFinal = (tsSnap && finalSnap) ? compareSnapshots('Termsheet', tsSnap, 'Final', finalSnap) : [];
+
+    res.json({
+      stages: {
+        dip: dipSnap ? { captured_at: dipSnap.captured_at, exists: true } : { exists: false },
+        termsheet: tsSnap ? { captured_at: tsSnap.captured_at, exists: true } : { exists: false },
+        final: finalSnap ? { captured_at: finalSnap.captured_at, exists: true } : { exists: false }
+      },
+      rows,
+      variances: { dip_to_termsheet: dipToTs, termsheet_to_final: tsToFinal },
+      locks: getLockedFields(deal)
+    });
+  } catch (error) {
+    console.error('[terms-tracker] Error:', error);
+    res.status(500).json({ error: 'Failed to load terms tracker' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FIELD LOCKS — Returns which fields are currently locked
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/field-locks', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      `SELECT dip_signed, ai_termsheet_generated_at, status FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    res.json(getLockedFields(dealResult.rows[0]));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load field locks' });
   }
 });
 
@@ -1543,6 +1810,19 @@ router.post('/:submissionId/approve-onboarding-section', authenticateToken, auth
           credit: {
             recommendation: dealData.credit_recommendation || null,
             decision_notes: dealData.credit_notes || null
+          },
+
+          // Term snapshots and variances — for credit memo comparison
+          term_snapshots: {
+            dip: dealData.dip_snapshot || null,
+            termsheet: dealData.termsheet_snapshot || null,
+            final: dealData.final_snapshot || null,
+            variances: (() => {
+              const ds = dealData.dip_snapshot;
+              const ts = dealData.termsheet_snapshot;
+              if (ds && ts) return compareSnapshots('DIP', ds, 'Termsheet', ts);
+              return [];
+            })()
           },
 
           // Additional notes
