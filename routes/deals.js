@@ -1778,6 +1778,29 @@ router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  CLEAR ALL UPLOADED DOCUMENTS (admin only — for re-upload)
+// ═══════════════════════════════════════════════════════════════════════════
+router.delete('/:submissionId/clear-documents', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const deleted = await pool.query(
+      `DELETE FROM deal_documents WHERE deal_id = $1 RETURNING id`, [dealId]
+    );
+    console.log(`[clear-documents] Deleted ${deleted.rowCount} documents for deal ${req.params.submissionId}`);
+    res.json({ success: true, deleted: deleted.rowCount });
+  } catch (error) {
+    console.error('[clear-documents] Error:', error);
+    res.status(500).json({ error: 'Failed to clear documents' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  LIST DOCUMENTS BY CATEGORY
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/documents-by-category', authenticateToken, async (req, res) => {
