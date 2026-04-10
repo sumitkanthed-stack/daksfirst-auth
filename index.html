@@ -712,7 +712,8 @@
           </div>
         </div>
 
-        <div class="deal-detail-container">
+        <div class="deal-detail-layout">
+         <div class="deal-detail-container">
           <div class="breadcrumb">
             <a class="breadcrumb-link" onclick="['admin','rm','credit','compliance'].includes(currentRole) ? showAdminPanel() : showDashboard()">Dashboard</a>
             <span>/</span>
@@ -1062,6 +1063,20 @@
 
           <!-- Workflow Controls (visible to internal staff only) -->
           <div id="workflow-controls" style="display:none;margin-top:20px;"></div>
+
+         </div>
+
+         <!-- Document Repository Sidebar -->
+         <div class="deal-doc-sidebar" id="deal-doc-sidebar">
+           <div class="doc-panel-header">
+             <div class="doc-panel-title">Deal Documents</div>
+             <div class="doc-panel-summary" id="doc-panel-summary">0 files</div>
+           </div>
+           <div class="doc-panel-sections" id="doc-panel-sections">
+             <!-- Populated dynamically by JS -->
+           </div>
+           <div class="doc-panel-footer" id="doc-panel-footer"></div>
+         </div>
 
         </div>
       </div>

@@ -250,8 +250,93 @@
     .empty-state p { color: var(--text-light); margin-bottom: 30px; }
 
     /* ═══ DEAL DETAIL STYLES ═══ */
+    .deal-detail-layout {
+      display: flex; gap: 0; max-width: 1340px; margin: 0 auto; align-items: flex-start;
+    }
     .deal-detail-container {
-      max-width: 1000px; margin: 0 auto; padding: 0;
+      flex: 1; min-width: 0; padding: 0;
+    }
+
+    /* ── Document Repository Sidebar ── */
+    .deal-doc-sidebar {
+      width: 300px; flex-shrink: 0; position: sticky; top: 0;
+      background: #fff; border-left: 1px solid var(--border);
+      max-height: 100vh; overflow-y: auto;
+      display: none; flex-direction: column;
+    }
+    .doc-panel-header {
+      background: var(--primary); color: #fff; padding: 14px 16px;
+      position: sticky; top: 0; z-index: 2;
+    }
+    .doc-panel-title { font-weight: 700; font-size: 14px; }
+    .doc-panel-summary { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+
+    .doc-panel-sections { flex: 1; overflow-y: auto; }
+
+    .doc-section { border-bottom: 1px solid #f1f5f9; }
+    .doc-section.greyed { opacity: 0.3; pointer-events: none; }
+    .doc-section-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 14px; cursor: pointer; font-size: 13px; transition: background 0.1s;
+      border-left: 3px solid #e2e8f0;
+    }
+    .doc-section-header:hover { background: #f8fafc; }
+    .doc-section-header.expanded { background: #f0f4ff; border-left-color: var(--primary); }
+    .doc-section-header.approved { border-left-color: #22c55e; }
+    .doc-section-header.pending { border-left-color: #f59e0b; }
+    .doc-section-header.system { border-left-color: #94a3b8; }
+
+    .doc-section-label { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--primary); }
+    .doc-section-badge {
+      font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 600;
+    }
+    .doc-section-badge.ok { background: #dcfce7; color: #15803d; }
+    .doc-section-badge.pend { background: #fef3c7; color: #92400e; }
+
+    .doc-count-pill {
+      background: var(--primary); color: #fff; font-size: 10px; font-weight: 700;
+      border-radius: 50%; width: 18px; height: 18px;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+
+    .doc-section-body {
+      padding: 4px 14px 10px; background: #fafbfc; border-left: 3px solid var(--primary);
+    }
+    .doc-file-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px;
+    }
+    .doc-file-row:last-child { border-bottom: none; }
+    .doc-file-name { color: #1e293b; font-weight: 500; }
+    .doc-file-meta { color: #9ca3af; font-size: 10px; }
+    .doc-file-dl {
+      background: none; border: 1px solid #e2e8f0; border-radius: 4px;
+      padding: 2px 8px; font-size: 11px; cursor: pointer; color: var(--primary);
+    }
+    .doc-file-dl:hover { background: #f0f4ff; }
+
+    .doc-upload-zone {
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      margin-top: 8px; padding: 6px; border: 1px dashed #cbd5e1; border-radius: 6px;
+      font-size: 11px; color: #64748b; cursor: pointer; background: #fff;
+    }
+    .doc-upload-zone:hover { border-color: var(--primary); color: var(--primary); }
+
+    .doc-empty { color: #9ca3af; font-size: 12px; padding: 8px 0; text-align: center; font-style: italic; }
+
+    .doc-panel-footer {
+      border-top: 1px solid var(--border); padding: 8px 14px;
+      font-size: 11px; color: #64748b;
+      display: flex; justify-content: space-between;
+      position: sticky; bottom: 0; background: #fff;
+    }
+
+    @media (max-width: 1100px) {
+      .deal-detail-layout { flex-direction: column; }
+      .deal-doc-sidebar {
+        width: 100%; position: static; max-height: none;
+        border-left: none; border-top: 1px solid var(--border);
+      }
     }
     .breadcrumb {
       padding: 20px; background: white; border-bottom: 1px solid var(--border);

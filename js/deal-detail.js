@@ -4,6 +4,7 @@ import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
 import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
+import { renderDocPanel } from './doc-panel.js';
 
 /**
  * Show deal detail screen
@@ -36,6 +37,9 @@ export async function showDealDetail(dealId) {
     setCurrentDealData(deal);
     window.currentDealId = dealId;
     window.currentDealData = deal;
+
+    // Render document sidebar
+    renderDocPanel(deal);
 
     // Set logged-in user info in header
     document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;

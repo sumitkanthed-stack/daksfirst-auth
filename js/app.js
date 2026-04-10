@@ -89,6 +89,10 @@ window.requestFee = () => import('./dip.js').then(m => m.requestFee());
 window.confirmFeeAndAdvance = () => import('./dip.js').then(m => m.confirmFeeAndAdvance());
 window.updateFees = () => import('./dip.js').then(m => m.updateFees());
 
+// Document panel
+window.toggleDocSection = (key) => import('./doc-panel.js').then(m => m.toggleDocSection(key));
+window.uploadToDocPanel = (cat, files) => import('./doc-panel.js').then(m => m.uploadToDocPanel(cat, files));
+
 // Onboarding workflow
 window.confirmOnboardingFee = () => import('./onboarding.js').then(m => m.confirmOnboardingFee());
 window.approveOnboardingSection = (section, approved) => import('./onboarding.js').then(m => m.approveOnboardingSection(section, approved));
