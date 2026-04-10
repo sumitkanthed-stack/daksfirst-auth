@@ -15,7 +15,7 @@ export function showDealForm() {
 
   if (currentUser) {
     document.getElementById('deal-user-info').textContent =
-      `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)} (${sanitizeHtml(currentRole)})`;
+      `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)} (${sanitizeHtml(currentRole || 'user')})`;
   }
   currentDealTab = 0;
   updateDealTabs();
@@ -263,8 +263,6 @@ export async function showDashboard() {
  * Load all deals for the current user
  */
 export async function loadUserDeals() {
-  const authToken = getAuthToken();
-
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/deals`, {
       method: 'GET'
@@ -320,4 +318,14 @@ export async function loadUserDeals() {
   } catch (err) {
     console.error('Error loading deals:', err);
   }
+}
+
+/**
+ * Export to handle module chaining for window.selectLawFirm
+ */
+export function selectLawFirm(firm, email, contact) {
+  document.getElementById('lawyer-firm').value = firm;
+  document.getElementById('lawyer-email').value = email;
+  document.getElementById('lawyer-contact').value = contact;
+  document.getElementById('law-firms-dropdown').style.display = 'none';
 }

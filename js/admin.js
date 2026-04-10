@@ -345,7 +345,7 @@ export async function createInternalUser() {
   if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
 
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/admin/create-user`, {
+    const resp = await fetchWithAuth(`${API_BASE}/api/admin/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, phone, password })

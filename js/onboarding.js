@@ -93,7 +93,7 @@ export async function checkBrokerOnboardingStatus() {
   if (!dealId) return;
 
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/broker/onboarding-status`, {
+    const resp = await fetchWithAuth(`${API_BASE}/api/broker/onboarding`, {
       method: 'GET'
     });
 
@@ -132,15 +132,15 @@ export function hideBrokerOnboarding() {
  * Toggle broker company fields
  */
 export function toggleBrokerCompanyFields() {
-  const brokerType = document.getElementById('broker-type').value;
+  const isCompany = document.getElementById('bonb-is-company')?.checked;
   const companyFields = document.getElementById('broker-company-fields');
   if (companyFields) {
-    companyFields.style.display = brokerType === 'company' ? 'block' : 'none';
+    companyFields.style.display = isCompany ? 'block' : 'none';
   }
 }
 
 /**
- * Load broker onboarding form
+ * Load broker onboarding form (pre-fill from saved data)
  */
 export async function loadBrokerOnboarding() {
   try {
@@ -149,8 +149,38 @@ export async function loadBrokerOnboarding() {
     });
 
     const data = await resp.json();
-    if (resp.ok && data.onboarding_data) {
-      populateBrokerOnboardingForm(data.onboarding_data);
+    if (resp.ok && data.onboarding) {
+      const o = data.onboarding;
+      if (o.individual_name) {
+        document.getElementById('bonb-name').value = sanitizeHtml(o.individual_name);
+      }
+      if (o.date_of_birth) {
+        document.getElementById('bonb-dob').value = o.date_of_birth.substring(0, 10);
+      }
+      if (o.is_company) {
+        const checkbox = document.getElementById('bonb-is-company');
+        if (checkbox) checkbox.checked = true;
+        const companyFields = document.getElementById('broker-company-fields');
+        if (companyFields) companyFields.style.display = 'block';
+        if (o.company_name) {
+          document.getElementById('bonb-company-name').value = sanitizeHtml(o.company_name);
+        }
+        if (o.company_number) {
+          document.getElementById('bonb-company-number').value = sanitizeHtml(o.company_number);
+        }
+      }
+      if (o.bank_name) {
+        document.getElementById('bonb-bank-name').value = sanitizeHtml(o.bank_name);
+      }
+      if (o.bank_account_name) {
+        document.getElementById('bonb-account-name').value = sanitizeHtml(o.bank_account_name);
+      }
+      if (o.bank_sort_code) {
+        document.getElementById('bonb-sort-code').value = sanitizeHtml(o.bank_sort_code);
+      }
+      if (o.bank_account_no) {
+        document.getElementById('bonb-account-no').value = sanitizeHtml(o.bank_account_no);
+      }
     }
   } catch (err) {
     console.error('Error loading broker onboarding:', err);
@@ -158,72 +188,61 @@ export async function loadBrokerOnboarding() {
 }
 
 /**
- * Populate broker onboarding form
- */
-function populateBrokerOnboardingForm(data) {
-  const fields = {
-    'broker-type': 'broker_type',
-    'broker-company-name': 'company_name',
-    'broker-company-reg': 'company_registration',
-    'broker-fca': 'fca_number',
-    'broker-address': 'address',
-    'broker-phone': 'phone'
-  };
-
-  Object.keys(fields).forEach(inputId => {
-    const el = document.getElementById(inputId);
-    if (el && data[fields[inputId]]) {
-      el.value = sanitizeHtml(data[fields[inputId]]);
-    }
-  });
-
-  // Toggle company fields
-  toggleBrokerCompanyFields();
-}
-
-/**
- * Save broker onboarding
+ * Save broker onboarding (KYC + bank details)
  */
 export async function saveBrokerOnboarding() {
-  const brokerType = document.getElementById('broker-type').value;
-  const companyName = document.getElementById('broker-company-name').value.trim();
-  const companyReg = document.getElementById('broker-company-reg').value.trim();
-  const fca = document.getElementById('broker-fca').value.trim();
-  const address = document.getElementById('broker-address').value.trim();
-  const phone = document.getElementById('broker-phone').value.trim();
+  const name = document.getElementById('bonb-name')?.value.trim();
+  const dob = document.getElementById('bonb-dob')?.value;
+  const isCompany = document.getElementById('bonb-is-company')?.checked;
+  const companyName = document.getElementById('bonb-company-name')?.value.trim();
+  const companyNumber = document.getElementById('bonb-company-number')?.value.trim();
+  const bankName = document.getElementById('bonb-bank-name')?.value.trim();
+  const accountName = document.getElementById('bonb-account-name')?.value.trim();
+  const sortCode = document.getElementById('bonb-sort-code')?.value.trim();
+  const accountNo = document.getElementById('bonb-account-no')?.value.trim();
 
-  if (!brokerType || !address || !phone) {
-    showToast('Please fill in all required fields', true);
+  if (!name || !bankName || !accountName || !sortCode || !accountNo) {
+    showToast('Please fill in all required fields (name, bank details)', true);
     return;
   }
 
-  if (brokerType === 'company' && (!companyName || !fca)) {
-    showToast('Company details required', true);
-    return;
+  const btn = document.getElementById('bonb-submit-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
   }
 
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/broker/onboarding`, {
-      method: 'POST',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        broker_type: brokerType,
+        individual_name: name,
+        date_of_birth: dob || null,
+        is_company: isCompany || false,
         company_name: companyName || null,
-        company_registration: companyReg || null,
-        fca_number: fca || null,
-        address,
-        phone
+        company_number: companyNumber || null,
+        bank_name: bankName,
+        bank_sort_code: sortCode,
+        bank_account_no: accountNo,
+        bank_account_name: accountName
       })
     });
 
     const data = await resp.json();
     if (resp.ok) {
-      showToast('Broker information saved successfully');
-      hideBrokerOnboarding();
+      const successEl = document.getElementById('bonb-success');
+      if (successEl) successEl.style.display = 'block';
+      showToast('Broker onboarding submitted for review');
     } else {
       showToast(data.error || 'Failed to save', true);
     }
   } catch (err) {
     showToast('Network error', true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save & Submit for Review';
+    }
   }
 }

@@ -6,7 +6,7 @@ import { showScreen } from './utils.js';
 import { initAuthAndRouting, logoutUser, loginUser, registerUser, handleEmailVerification } from './auth.js';
 import { showDealForm, submitDeal, switchDealTab, dealTabNext, dealTabBack, showDashboard } from './deals.js';
 import { showAdminPanel, switchAdminTab, updateAdminDealsFilter, loadAdminUsers } from './admin.js';
-import { switchDetailTab, saveOnboardingTab } from './onboarding.js';
+import { switchDetailTab, saveOnboardingTab, toggleBrokerCompanyFields, loadBrokerOnboarding, showBrokerOnboarding, hideBrokerOnboarding, saveBrokerOnboarding } from './onboarding.js';
 import { handleSmartDrop, handleSmartFileSelect, toggleWhatsappPaste, handleWhatsappSubmit, confirmSmartParse, cancelSmartParse, toggleExistingDealSelect } from './smart-parse.js';
 import { handleDocumentDragOver, handleDocumentDragLeave, handleDocumentDrop, handleFileSelect, downloadDocumentById, viewDocumentInline } from './documents.js';
 import { showToast } from './utils.js';
@@ -26,6 +26,11 @@ window.updateAdminDealsFilter = updateAdminDealsFilter;
 window.loadAdminUsers = loadAdminUsers;
 window.switchDetailTab = switchDetailTab;
 window.saveOnboardingTab = saveOnboardingTab;
+window.toggleBrokerCompanyFields = toggleBrokerCompanyFields;
+window.loadBrokerOnboarding = loadBrokerOnboarding;
+window.showBrokerOnboarding = showBrokerOnboarding;
+window.hideBrokerOnboarding = hideBrokerOnboarding;
+window.saveBrokerOnboarding = saveBrokerOnboarding;
 window.logoutUser = logoutUser;
 window.loginUser = loginUser;
 window.registerUser = registerUser;
@@ -74,12 +79,12 @@ window.confirmFeeAndAdvance = () => import('./dip.js').then(m => m.confirmFeeAnd
  * Wrap traditional form submission handlers
  */
 window.startRegistration = async function(role) {
-  const firstNameEl = document.getElementById('reg-firstname');
-  const lastNameEl = document.getElementById('reg-lastname');
-  const emailEl = document.getElementById('reg-email');
-  const passwordEl = document.getElementById('reg-password');
-  const phoneEl = document.getElementById('reg-phone');
-  const companyEl = document.getElementById('reg-company');
+  const firstNameEl = document.getElementById('first-name');
+  const lastNameEl = document.getElementById('last-name');
+  const emailEl = document.getElementById('email');
+  const passwordEl = document.getElementById('password');
+  const phoneEl = document.getElementById('phone');
+  const companyEl = document.getElementById('company');
 
   const formData = {
     firstName: firstNameEl?.value.trim(),
@@ -141,8 +146,9 @@ window.doLogin = async function() {
 
   if (success) {
     const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
-    const currentRole = localStorage.getItem('daksfirst_role') || '';
-    if (internalRoles.includes(currentRole)) {
+    const { getCurrentRole } = await import('./state.js');
+    const role = getCurrentRole();
+    if (internalRoles.includes(role)) {
       showAdminPanel();
     } else {
       showDashboard();
