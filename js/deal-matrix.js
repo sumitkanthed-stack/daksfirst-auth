@@ -88,9 +88,9 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
  */
 function renderSectionHeader(sectionId, icon, title, subtitle, statusDots) {
   return `
-    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid #f1f5f9" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" id="sec-${sectionId}">
+    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid #f1f5f9" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
-        <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;border-radius:5px;font-size:9px;color:#64748b;transition:transform .2s,background .2s;flex-shrink:0">▸</div>
+        <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:#dbeafe;border-radius:5px;font-size:9px;color:#2563eb;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(90deg)">▸</div>
         <span style="font-size:14px">${icon}</span>
         <span style="font-size:12px;font-weight:700;color:#1e293b">${sanitizeHtml(title)}</span>
         <span style="font-size:9px;color:#94a3b8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
@@ -287,7 +287,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s1">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s1', '👤', 'Borrower / KYC', 'Comprehensive identity verification', [
         renderStatusDot(1, 'approved'),
         renderStatusDot(0, 'not-started'),
@@ -295,7 +295,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s1" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Primary Borrower -->
         ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
           ['approved', 'not-started', 'locked', 'locked'])}
@@ -345,7 +345,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s2">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s2', '💰', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
         renderStatusDot(2, 'under-review'),
         renderStatusDot(0, 'not-started'),
@@ -353,7 +353,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s2" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Assets -->
         ${renderFieldRow('assets', 'Assets', 'Real estate, investments, cash, vehicles',
           ['under-review', 'not-started', 'not-started', 'not-started'])}
@@ -382,7 +382,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s3">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s3', '🏘️', 'Property / Security', 'Property details and valuation', [
         renderStatusDot(1, 'approved'),
         renderStatusDot(0, 'not-started'),
@@ -390,7 +390,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s3" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Property Details -->
         ${renderFieldRow('property-details', 'Property Details', 'Address, tenure, bedrooms, square footage',
           ['approved', 'not-started', 'not-started', 'not-started'])}
@@ -407,7 +407,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s4">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s4', '📋', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
         renderStatusDot(2, 'approved'),
         renderStatusDot(0, 'not-started'),
@@ -415,7 +415,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s4" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
         ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '12'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
           ['approved', 'not-started', 'not-started', 'not-started'])}
@@ -432,7 +432,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s5">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s5', '🚪', 'Exit Strategy', 'Refinance or sale plan', [
         renderStatusDot(1, 'submitted'),
         renderStatusDot(0, 'not-started'),
@@ -440,7 +440,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s5" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Exit Strategy -->
         ${renderFieldRow('exit-strategy', 'Exit Strategy', 'Refinance, sale, hold',
           ['submitted', 'not-started', 'not-started', 'not-started'])}
@@ -458,7 +458,7 @@ export async function renderDealMatrix(deal) {
 
   const isDIPStage = currentStageIdx === 0;
   html += `
-    <div style="border-bottom:1px solid #f1f5f9;${isDIPStage ? 'opacity:.45' : ''}" id="sec-s6">
+    <div style="border-bottom:1px solid #f1f5f9;${isDIPStage ? 'opacity:.45' : ''}">
       ${renderSectionHeader('s6', '⚖️', 'Legal & Insurance', 'Security and insurance requirements', [
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required'),
@@ -466,7 +466,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-required')
       ])}
 
-      <div style="max-height:${isDIPStage ? '0' : '8000'}px;overflow:hidden;transition:max-height .35s ease;${isDIPStage ? 'display:none' : ''}">
+      <div id="content-s6" style="max-height:${isDIPStage ? '0' : '8000'}px;overflow:hidden;transition:max-height .35s ease">
         <!-- Legal / Security -->
         ${renderFieldRow('legal-security', 'Legal / Security', 'Title deeds, searches, mortgage deed',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
@@ -491,7 +491,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s7">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s7', '💼', 'Commercial', 'Fees and credit approval', [
         renderStatusDot(2, 'approved'),
         renderStatusDot(0, 'not-started'),
@@ -499,7 +499,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s7" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
         ${renderFieldRow('fees', 'Fees', 'DIP: £0, Arrangement: £0, Broker: £0, Legal: £0, Valuation: £0',
           ['approved', 'not-started', 'not-started', 'not-started'])}
@@ -516,7 +516,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9" id="sec-s8">
+    <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s8', '📄', 'Documents Issued', 'Deal documentation status', [
         renderStatusDot(deal.dip_signed ? 1 : 0, deal.dip_signed ? 'signed' : 'not-started'),
         renderStatusDot(deal.ts_signed ? 1 : 0, deal.ts_signed ? 'signed' : 'not-started'),
@@ -524,7 +524,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s8" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- DIP -->
         ${renderFieldRow('dip-document', 'Data Information Package (DIP)', 'Initial deal summary and requirements',
           [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
@@ -623,14 +623,16 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   window.matrixToggleSection = function(sectionId) {
-    const section = document.getElementById(`sec-${sectionId}`);
-    if (section) {
-      section.classList.toggle('open');
-      const chevron = section.querySelector('.sc');
+    const content = document.getElementById(`content-${sectionId}`);
+    const chevron = document.getElementById(`chevron-${sectionId}`);
+    if (content) {
+      const isOpen = content.style.maxHeight !== '0px';
+      content.style.maxHeight = isOpen ? '0px' : '8000px';
+      content.style.overflow = 'hidden';
       if (chevron) {
-        chevron.style.transform = section.classList.contains('open') ? 'rotate(90deg)' : 'rotate(0)';
-        chevron.style.background = section.classList.contains('open') ? '#dbeafe' : '#f1f5f9';
-        chevron.style.color = section.classList.contains('open') ? '#2563eb' : '#64748b';
+        chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+        chevron.style.background = isOpen ? '#f1f5f9' : '#dbeafe';
+        chevron.style.color = isOpen ? '#64748b' : '#2563eb';
       }
     }
   };
@@ -638,8 +640,9 @@ export async function renderDealMatrix(deal) {
   window.matrixToggleDetail = function(detailId) {
     const detail = document.getElementById(detailId);
     if (detail) {
-      detail.classList.toggle('open');
-      detail.style.maxHeight = detail.classList.contains('open') ? '1200px' : '0';
+      const isOpen = detail.style.maxHeight !== '0px';
+      detail.style.maxHeight = isOpen ? '0px' : '1200px';
+      detail.style.overflow = 'hidden';
     }
   };
 
