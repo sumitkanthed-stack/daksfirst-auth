@@ -1213,7 +1213,6 @@ export function renderInternalWorkflowControls(deal) {
 
   // ── Audit Trail (enriched with stage transitions, elapsed time) ──
   if (deal.audit && deal.audit.length > 0) {
-    // Build stage labels for audit display
     const auditStageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
       info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
@@ -1223,59 +1222,66 @@ export function renderInternalWorkflowControls(deal) {
       completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
     };
 
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Audit Trail</h4>
-      <div style="max-height:400px;overflow-y:auto;">
-        ${deal.audit.map((a, idx) => {
-          const details = a.details ? (typeof a.details === 'string' ? JSON.parse(a.details) : a.details) : {};
-          const isStageChange = a.action === 'stage_change' || (a.from_value && a.to_value && auditStageLabels[a.to_value]);
-          const fromLabel = auditStageLabels[a.from_value] || a.from_value;
-          const toLabel = auditStageLabels[a.to_value] || a.to_value;
+    let auditHtml = '';
+    deal.audit.forEach((a, idx) => {
+      let details = {};
+      try { details = a.details ? (typeof a.details === 'string' ? JSON.parse(a.details) : a.details) : {}; } catch(e) { details = {}; }
+      const isStageChange = a.action === 'stage_change' || (a.from_value && a.to_value && auditStageLabels[a.to_value]);
+      const fromLabel = auditStageLabels[a.from_value] || a.from_value || '';
+      const toLabel = auditStageLabels[a.to_value] || a.to_value || '';
 
-          // Calculate elapsed time from previous audit entry
-          let elapsedStr = '';
-          if (idx > 0) {
-            const prevTime = new Date(deal.audit[idx - 1].created_at).getTime();
-            const thisTime = new Date(a.created_at).getTime();
-            const diffMs = thisTime - prevTime;
-            if (diffMs > 0) {
-              const diffMins = Math.floor(diffMs / 60000);
-              const diffHrs = Math.floor(diffMins / 60);
-              const diffDays = Math.floor(diffHrs / 24);
-              if (diffDays > 0) elapsedStr = diffDays + 'd ' + (diffHrs % 24) + 'h later';
-              else if (diffHrs > 0) elapsedStr = diffHrs + 'h ' + (diffMins % 60) + 'm later';
-              else elapsedStr = diffMins + 'm later';
-            }
-          }
+      let elapsedStr = '';
+      if (idx > 0) {
+        const prevTime = new Date(deal.audit[idx - 1].created_at).getTime();
+        const thisTime = new Date(a.created_at).getTime();
+        const diffMs = thisTime - prevTime;
+        if (diffMs > 0) {
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHrs = Math.floor(diffMins / 60);
+          const diffDays = Math.floor(diffHrs / 24);
+          if (diffDays > 0) elapsedStr = diffDays + 'd ' + (diffHrs % 24) + 'h later';
+          else if (diffHrs > 0) elapsedStr = diffHrs + 'h ' + (diffMins % 60) + 'm later';
+          else elapsedStr = diffMins + 'm later';
+        }
+      }
 
-          // Stage change gets special styling
-          const dotColor = isStageChange ? '#3b82f6' : a.action.includes('decline') || a.action.includes('remove') ? '#e53e3e' : a.action.includes('approve') || a.action.includes('confirm') ? '#15803d' : '#c9a84c';
+      const dotColor = isStageChange ? '#3b82f6' : a.action.includes('decline') || a.action.includes('remove') ? '#e53e3e' : a.action.includes('approve') || a.action.includes('confirm') ? '#15803d' : '#c9a84c';
+      const roleBg = a.role === 'admin' ? '#fee2e2' : a.role === 'rm' ? '#dbeafe' : a.role === 'credit' ? '#f5f3ff' : a.role === 'compliance' ? '#fef3c7' : '#f3f4f6';
+      const roleColor = a.role === 'admin' ? '#991b1b' : a.role === 'rm' ? '#1e40af' : a.role === 'credit' ? '#6b21a8' : a.role === 'compliance' ? '#92400e' : '#374151';
 
-          return \`<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;">
-              <div style="width:10px;height:10px;border-radius:50%;background:\${dotColor};margin-top:4px;\${isStageChange ? 'box-shadow:0 0 0 3px ' + dotColor + '33;' : ''}"></div>
-              \${idx < deal.audit.length - 1 ? '<div style="width:1px;flex:1;background:#e5e7eb;min-height:20px;"></div>' : ''}
-            </div>
-            <div style="flex:1;">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
-                  \${isStageChange ? \`<span style="display:inline-block;padding:2px 8px;background:#eff6ff;color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-bottom:4px;">STAGE CHANGE</span>\` : ''}
-                  <strong>\${sanitizeHtml(a.action.replace(/_/g, ' '))}</strong>
-                  \${a.from_value && a.to_value ? \`<span style="color:#666;"> \${sanitizeHtml(fromLabel)} <span style="color:#3b82f6;font-weight:600;">&rarr;</span> \${sanitizeHtml(toLabel)}</span>\` : a.to_value ? \`<span style="color:#666;">&rarr; \${sanitizeHtml(toLabel)}</span>\` : ''}
-                </div>
-                \${elapsedStr ? \`<span style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:2px 6px;border-radius:3px;white-space:nowrap;">\${elapsedStr}</span>\` : ''}
-              </div>
-              \${details.comments ? \`<div style="color:#666;margin-top:4px;padding:6px 8px;background:#f9fafb;border-radius:4px;border-left:3px solid #e5e7eb;font-size:12px;">\${sanitizeHtml(details.comments)}</div>\` : ''}
-              <div style="color:#999;margin-top:4px;font-size:12px;">
-                <strong>\${sanitizeHtml(a.first_name)} \${sanitizeHtml(a.last_name)}</strong>
-                <span style="padding:1px 6px;background:\${a.role === 'admin' ? '#fee2e2' : a.role === 'rm' ? '#dbeafe' : a.role === 'credit' ? '#f5f3ff' : a.role === 'compliance' ? '#fef3c7' : '#f3f4f6'};color:\${a.role === 'admin' ? '#991b1b' : a.role === 'rm' ? '#1e40af' : a.role === 'credit' ? '#6b21a8' : a.role === 'compliance' ? '#92400e' : '#374151'};border-radius:3px;font-size:10px;font-weight:600;margin-left:4px;">\${sanitizeHtml(a.role.toUpperCase())}</span>
-                &middot; <strong>\${formatDateTime(a.created_at)}</strong>
-              </div>
-            </div>
-          </div>\`;
-        }).join('')}
-      </div>
-    </div>`;
+      let transitionHtml = '';
+      if (a.from_value && a.to_value) {
+        transitionHtml = '<span style="color:#666;"> ' + sanitizeHtml(fromLabel) + ' <span style="color:#3b82f6;font-weight:600;">&rarr;</span> ' + sanitizeHtml(toLabel) + '</span>';
+      } else if (a.to_value) {
+        transitionHtml = '<span style="color:#666;">&rarr; ' + sanitizeHtml(toLabel) + '</span>';
+      }
+
+      const connectorLine = idx < deal.audit.length - 1 ? '<div style="width:1px;flex:1;background:#e5e7eb;min-height:20px;"></div>' : '';
+      const stageBadge = isStageChange ? '<span style="display:inline-block;padding:2px 8px;background:#eff6ff;color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-bottom:4px;">STAGE CHANGE</span> ' : '';
+      const elapsedBadge = elapsedStr ? '<span style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:2px 6px;border-radius:3px;white-space:nowrap;">' + elapsedStr + '</span>' : '';
+      const commentHtml = details.comments ? '<div style="color:#666;margin-top:4px;padding:6px 8px;background:#f9fafb;border-radius:4px;border-left:3px solid #e5e7eb;font-size:12px;">' + sanitizeHtml(details.comments) + '</div>' : '';
+
+      auditHtml += '<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">'
+        + '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;">'
+        + '<div style="width:10px;height:10px;border-radius:50%;background:' + dotColor + ';margin-top:4px;' + (isStageChange ? 'box-shadow:0 0 0 3px ' + dotColor + '33;' : '') + '"></div>'
+        + connectorLine
+        + '</div>'
+        + '<div style="flex:1;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>' + stageBadge + '<strong>' + sanitizeHtml(a.action.replace(/_/g, ' ')) + '</strong> ' + transitionHtml + '</div>'
+        + elapsedBadge
+        + '</div>'
+        + commentHtml
+        + '<div style="color:#999;margin-top:4px;font-size:12px;">'
+        + '<strong>' + sanitizeHtml(a.first_name) + ' ' + sanitizeHtml(a.last_name) + '</strong>'
+        + ' <span style="padding:1px 6px;background:' + roleBg + ';color:' + roleColor + ';border-radius:3px;font-size:10px;font-weight:600;margin-left:4px;">' + sanitizeHtml(a.role.toUpperCase()) + '</span>'
+        + ' &middot; <strong>' + formatDateTime(a.created_at) + '</strong>'
+        + '</div></div></div>';
+    });
+
+    html += '<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">'
+      + '<h4 style="margin:0 0 12px;">Audit Trail</h4>'
+      + '<div style="max-height:400px;overflow-y:auto;">' + auditHtml + '</div></div>';
   }
 
   panel.innerHTML = html;

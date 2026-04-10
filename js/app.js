@@ -66,6 +66,12 @@ window.completeDeal = () => import('./workflow-actions.js').then(m => m.complete
 window.declineDeal = () => import('./workflow-actions.js').then(m => m.declineDeal());
 window.withdrawDeal = () => import('./workflow-actions.js').then(m => m.withdrawDeal());
 window.advanceStageSimple = (newStage) => import('./workflow-actions.js').then(m => m.advanceStageSimple(newStage));
+window.addBorrower = () => import('./workflow-actions.js').then(m => m.addBorrower());
+window.removeBorrower = (id) => import('./workflow-actions.js').then(m => m.removeBorrower(id));
+window.addProperty = () => import('./workflow-actions.js').then(m => m.addProperty());
+window.removeProperty = (id) => import('./workflow-actions.js').then(m => m.removeProperty(id));
+window.loadLawFirms = () => import('./workflow-actions.js').then(m => m.loadLawFirms());
+window.selectLawFirm = (firm, email, contact) => import('./workflow-actions.js').then(m => m.selectLawFirm(firm, email, contact));
 
 window.removeDipProperty = (idx) => import('./dip.js').then(m => m.removeDipProperty(idx));
 window.approveDipProperty = (idx) => import('./dip.js').then(m => m.approveDipProperty(idx));
