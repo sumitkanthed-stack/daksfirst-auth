@@ -5,6 +5,9 @@ import {
   restoreSessionFromStorage, clearSession, getCurrentUser, getCurrentRole
 } from './state.js';
 
+// Re-export state getters so other modules can import them from auth.js
+export { getAuthToken, getCurrentUser, getCurrentRole } from './state.js';
+
 /**
  * Fetch wrapper that adds Authorization header and handles token refresh
  */
@@ -42,7 +45,7 @@ export async function refreshAccessToken() {
   if (!refreshTok) return false;
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const res = await fetch(`${API_BASE}/api/auth/refresh-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshTok })

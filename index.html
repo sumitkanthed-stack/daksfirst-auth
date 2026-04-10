@@ -8,13 +8,17 @@
 </head>
 <body>
     <div id="screen-landing" class="screen active">
+      <div class="portal-logo" style="text-align:center;margin-bottom:30px;">
+        <img src="/logo.PNG" alt="Daksfirst" style="height:60px;" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <div style="display:none;font-size:28px;font-weight:700;color:#fff;letter-spacing:1px;">Daksfirst</div>
+      </div>
       <div class="role-selection">
-        <div class="role-card" onclick="startRegistration('broker')">
+        <div class="role-card" onclick="goToRegister('broker')">
           <div class="role-icon">&#x1F4BC;</div>
           <h3>I'm a Broker</h3>
           <p>Register to submit deals and track your pipeline with clients</p>
         </div>
-        <div class="role-card" onclick="startRegistration('borrower')">
+        <div class="role-card" onclick="goToRegister('borrower')">
           <div class="role-icon">&#x1F464;</div>
           <h3>I'm a Borrower</h3>
           <p>Submit your financing directly and track its progress</p>
@@ -29,6 +33,9 @@
     <div id="screen-login" class="screen">
       <div class="form-container">
         <div class="form-header">
+          <div style="text-align:center;margin-bottom:15px;">
+            <img src="/logo.PNG" alt="Daksfirst" style="height:50px;" onerror="this.style.display='none'">
+          </div>
           <h2>Sign In</h2>
           <p>Welcome back</p>
         </div>
@@ -42,7 +49,7 @@
             <label for="login-password">Password</label>
             <input type="password" id="login-password" required>
           </div>
-          <button type="button" class="btn btn-primary" id="login-btn" onclick="loginUser()" style="width:100%;justify-content:center;">Sign In</button>
+          <button type="button" class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%;justify-content:center;">Sign In</button>
           <div class="login-link">
             Don't have an account? <a href="#" onclick="showScreen('screen-landing');return false;">Register</a>
           </div>
@@ -54,6 +61,9 @@
     <div id="screen-register" class="screen">
       <div class="form-container">
         <div class="form-header">
+          <div style="text-align:center;margin-bottom:15px;">
+            <img src="/logo.PNG" alt="Daksfirst" style="height:50px;" onerror="this.style.display='none'">
+          </div>
           <h2 id="form-title">Create Account</h2>
           <p id="form-subtitle">Register to get started</p>
           <div class="progress-indicator">
@@ -105,7 +115,7 @@
                 <input type="text" id="company" required>
               </div>
               <div class="form-group">
-                <label for="fca-number">FCA Number (optional)</label>
+                <label for="fca-number">Company Number (optional)</label>
                 <input type="text" id="fca-number">
               </div>
             </div>
@@ -702,7 +712,8 @@
           </div>
         </div>
 
-        <div class="deal-detail-container">
+        <div class="deal-detail-layout">
+         <div class="deal-detail-container">
           <div class="breadcrumb">
             <a class="breadcrumb-link" onclick="['admin','rm','credit','compliance'].includes(currentRole) ? showAdminPanel() : showDashboard()">Dashboard</a>
             <span>/</span>
@@ -754,12 +765,11 @@
             <div class="detail-tabs-group phase2-group">
               <span class="detail-tabs-label">Full Onboarding <span id="phase2-lock" class="lock-icon">&#128274;</span></span>
               <button class="detail-tab phase2-tab" data-dtab="dtab-kyc" onclick="switchDetailTab(this)">KYC</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-financials" onclick="switchDetailTab(this)">Financials</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-financials-aml" onclick="switchDetailTab(this)">Financials / AML</button>
               <button class="detail-tab phase2-tab" data-dtab="dtab-valuation" onclick="switchDetailTab(this)">Valuation</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-refurb" onclick="switchDetailTab(this)">Refurb</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-use-of-funds" onclick="switchDetailTab(this)">Use of Funds</button>
               <button class="detail-tab phase2-tab" data-dtab="dtab-exit" onclick="switchDetailTab(this)">Exit Evidence</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-aml" onclick="switchDetailTab(this)">AML</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-insurance" onclick="switchDetailTab(this)">Insurance</button>
+              <button class="detail-tab phase2-tab" data-dtab="dtab-other-conditions" onclick="switchDetailTab(this)">Other Conditions</button>
             </div>
           </div>
 
@@ -901,15 +911,15 @@
             </div></div>
           </div>
 
-          <!-- TAB: Financials -->
-          <div id="dtab-financials" class="detail-tab-panel phase2-panel">
+          <!-- TAB: Financials / AML -->
+          <div id="dtab-financials-aml" class="detail-tab-panel phase2-panel">
             <div class="detail-panel"><div class="detail-content">
-              <div class="phase2-notice" id="financials-lock-notice">
+              <div class="phase2-notice" id="financials-aml-lock-notice">
                 <span class="lock-icon-large">&#128274;</span>
-                <h3>Financial Information — Locked</h3>
-                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+                <h3>Financials / AML — Locked</h3>
+                <p>This section unlocks after the onboarding fee is confirmed.</p>
               </div>
-              <div id="financials-form" class="onboarding-form" style="display:none;">
+              <div id="financials-aml-form" class="onboarding-form" style="display:none;">
                 <div class="section-title">Individual Borrower Financials</div>
                 <div class="form-group"><label>Last 3 Months Personal Bank Statements *</label><input type="file" id="fin-bank-statements" class="onboarding-file" multiple></div>
                 <div class="form-group"><label>Evidence of Income</label><input type="file" id="fin-income-evidence" class="onboarding-file" multiple><p class="form-hint">Last 3 months payslips or last 2 years SA302 + tax year overview</p></div>
@@ -923,7 +933,19 @@
                 <div class="form-group"><label>Management Accounts (current year)</label><input type="file" id="fin-mgmt-accounts" class="onboarding-file"></div>
                 <div class="form-group"><label>Last 3 Months Business Bank Statements</label><input type="file" id="fin-biz-bank" class="onboarding-file" multiple></div>
                 <div class="form-group"><label>Director's Loan Account Schedule</label><input type="file" id="fin-dla" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('financials')">Save Financial Data</button>
+                <hr class="section-divider">
+                <div class="section-title">Anti-Money Laundering</div>
+                <div class="form-group"><label>Source of Funds Evidence *</label><input type="file" id="aml-source-funds" class="onboarding-file" multiple><p class="form-hint">Bank statements, solicitor client account statements, gift letters with donor KYC</p></div>
+                <div class="form-group"><label>Source of Wealth Narrative *</label><textarea id="aml-source-wealth" rows="3" placeholder="Employment history, business background, inheritance, investment returns"></textarea></div>
+                <div class="form-group"><label>PEP &amp; Sanctions Self-Declaration *</label><select id="aml-pep"><option value="">Select</option><option value="clear">No PEP or sanctions flags</option><option value="pep_domestic">Domestic PEP</option><option value="pep_foreign">Foreign PEP</option></select></div>
+                <div class="form-group"><div class="form-row"><div><label>HMRC UTR Number</label><input type="text" id="aml-utr" placeholder="For UK tax resident borrowers"></div><div><label>UK Tax Residency</label><select id="aml-tax-residency"><option value="">Select</option><option value="uk_resident">UK Tax Resident</option><option value="non_uk">Non-UK Tax Resident</option></select></div></div></div>
+                <div class="form-group"><label>Trust Deed (if borrower is a trust)</label><input type="file" id="aml-trust-deed" class="onboarding-file"></div>
+                <div class="form-group"><label>Overseas Entity Documentation (if non-UK)</label><input type="file" id="aml-overseas-docs" class="onboarding-file" multiple></div>
+                <hr class="section-divider">
+                <div class="section-title">Broker Compliance</div>
+                <div class="form-group"><label>AML Policy Acknowledgement *</label><select id="aml-broker-ack"><option value="">Select</option><option value="confirmed">Confirmed — AML checks completed</option><option value="pending">Pending</option></select></div>
+                <div class="form-group"><label>Declaration of Conflicts of Interest *</label><textarea id="aml-conflicts" rows="2" placeholder="Any relationship between broker and borrower/property beyond this transaction, or 'None'"></textarea></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('financials_aml')">Save Financials &amp; AML Data</button>
               </div>
             </div></div>
           </div>
@@ -955,26 +977,30 @@
             </div></div>
           </div>
 
-          <!-- TAB: Refurbishment (conditional) -->
-          <div id="dtab-refurb" class="detail-tab-panel phase2-panel">
+          <!-- TAB: Use of Funds (Redemption, Refurb, Schedule of Costs) -->
+          <div id="dtab-use-of-funds" class="detail-tab-panel phase2-panel">
             <div class="detail-panel"><div class="detail-content">
-              <div class="phase2-notice" id="refurb-lock-notice">
+              <div class="phase2-notice" id="use-of-funds-lock-notice">
                 <span class="lock-icon-large">&#128274;</span>
-                <h3>Refurbishment — Locked</h3>
-                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+                <h3>Use of Funds — Locked</h3>
+                <p>This section unlocks after the onboarding fee is confirmed.</p>
               </div>
-              <div id="refurbishment-form" class="onboarding-form" style="display:none;">
-                <div class="section-title">Refurbishment / Development Exit</div>
-                <div class="form-group"><label>Schedule of Works (itemised) *</label><input type="file" id="refurb-schedule" class="onboarding-file"></div>
-                <div class="form-group"><div class="form-row"><div><label>Contractor Name *</label><input type="text" id="refurb-contractor-name"></div><div><label>Contractor Accreditations</label><input type="text" id="refurb-contractor-accred" placeholder="NICEIC, Gas Safe, etc."></div></div></div>
-                <div class="form-group"><label>Contractor Quote(s) *</label><input type="file" id="refurb-quotes" class="onboarding-file" multiple></div>
+              <div id="use-of-funds-form" class="onboarding-form" style="display:none;">
+                <div class="section-title">Redemption &amp; Existing Charges</div>
+                <div class="form-group"><label>Redemption Statement(s) *</label><input type="file" id="uof-redemption-statement" class="onboarding-file" multiple><p class="form-hint">Current lender redemption figures for all existing charges on the property</p></div>
+                <div class="form-group"><label>Schedule of Costs / Use of Funds Breakdown *</label><textarea id="uof-schedule-costs" rows="4" placeholder="Itemised breakdown: purchase price, stamp duty, legal fees, broker fees, refurb costs, retained interest, etc."></textarea></div>
+                <hr class="section-divider">
+                <div class="section-title">Refurbishment / Works (if applicable)</div>
+                <div class="form-group"><label>Schedule of Works (itemised)</label><input type="file" id="refurb-schedule" class="onboarding-file"></div>
+                <div class="form-group"><div class="form-row"><div><label>Contractor Name</label><input type="text" id="refurb-contractor-name"></div><div><label>Contractor Accreditations</label><input type="text" id="refurb-contractor-accred" placeholder="NICEIC, Gas Safe, etc."></div></div></div>
+                <div class="form-group"><label>Contractor Quote(s)</label><input type="file" id="refurb-quotes" class="onboarding-file" multiple></div>
                 <div class="form-group"><label>Planning Consent (if required)</label><input type="file" id="refurb-planning" class="onboarding-file"></div>
-                <div class="form-group"><div class="form-row"><div><label>Pre-Works Day 1 Value (RICS) *</label><input type="number" id="refurb-day1" placeholder="GBP"></div><div><label>Post-Works GDV (RICS) *</label><input type="number" id="refurb-gdv" placeholder="GBP"></div></div></div>
+                <div class="form-group"><div class="form-row"><div><label>Pre-Works Day 1 Value (RICS)</label><input type="number" id="refurb-day1" placeholder="GBP"></div><div><label>Post-Works GDV (RICS)</label><input type="number" id="refurb-gdv" placeholder="GBP"></div></div></div>
                 <div class="form-group"><label>Build Programme / Timeline</label><input type="file" id="refurb-timeline" class="onboarding-file"></div>
                 <div class="form-group"><label>Monitoring Surveyor (if loan &gt; £500k or works &gt; 3 months)</label><input type="text" id="refurb-monitoring" placeholder="Surveyor name and firm"></div>
                 <div class="form-group"><label>PI Insurance for Contractors</label><input type="file" id="refurb-pi-insurance" class="onboarding-file"></div>
                 <div class="form-group"><label>Structural Engineer Report (if structural works)</label><input type="file" id="refurb-structural" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('refurbishment')">Save Refurbishment Data</button>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('use_of_funds')">Save Use of Funds Data</button>
               </div>
             </div></div>
           </div>
@@ -1006,52 +1032,49 @@
             </div></div>
           </div>
 
-          <!-- TAB: AML & Compliance -->
-          <div id="dtab-aml" class="detail-tab-panel phase2-panel">
+          <!-- TAB: Other Conditions (Insurance, Sec106, Planning, etc.) -->
+          <div id="dtab-other-conditions" class="detail-tab-panel phase2-panel">
             <div class="detail-panel"><div class="detail-content">
-              <div class="phase2-notice" id="aml-lock-notice">
+              <div class="phase2-notice" id="other-conditions-lock-notice">
                 <span class="lock-icon-large">&#128274;</span>
-                <h3>AML &amp; Compliance — Locked</h3>
-                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
+                <h3>Other Conditions — Locked</h3>
+                <p>This section unlocks after the onboarding fee is confirmed.</p>
               </div>
-              <div id="aml-form" class="onboarding-form" style="display:none;">
-                <div class="section-title">Anti-Money Laundering</div>
-                <div class="form-group"><label>Source of Funds Evidence *</label><input type="file" id="aml-source-funds" class="onboarding-file" multiple><p class="form-hint">Bank statements, solicitor client account statements, gift letters with donor KYC</p></div>
-                <div class="form-group"><label>Source of Wealth Narrative *</label><textarea id="aml-source-wealth" rows="3" placeholder="Employment history, business background, inheritance, investment returns"></textarea></div>
-                <div class="form-group"><label>PEP &amp; Sanctions Self-Declaration *</label><select id="aml-pep"><option value="">Select</option><option value="clear">No PEP or sanctions flags</option><option value="pep_domestic">Domestic PEP</option><option value="pep_foreign">Foreign PEP</option></select></div>
-                <div class="form-group"><div class="form-row"><div><label>HMRC UTR Number</label><input type="text" id="aml-utr" placeholder="For UK tax resident borrowers"></div><div><label>UK Tax Residency</label><select id="aml-tax-residency"><option value="">Select</option><option value="uk_resident">UK Tax Resident</option><option value="non_uk">Non-UK Tax Resident</option></select></div></div></div>
-                <div class="form-group"><label>Trust Deed (if borrower is a trust)</label><input type="file" id="aml-trust-deed" class="onboarding-file"></div>
-                <div class="form-group"><label>Overseas Entity Documentation (if non-UK)</label><input type="file" id="aml-overseas-docs" class="onboarding-file" multiple></div>
-                <hr class="section-divider">
-                <div class="section-title">Broker Compliance</div>
-                <div class="form-group"><label>AML Policy Acknowledgement *</label><select id="aml-broker-ack"><option value="">Select</option><option value="confirmed">Confirmed — AML checks completed</option><option value="pending">Pending</option></select></div>
-                <div class="form-group"><label>Declaration of Conflicts of Interest *</label><textarea id="aml-conflicts" rows="2" placeholder="Any relationship between broker and borrower/property beyond this transaction, or 'None'"></textarea></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('aml')">Save AML Data</button>
-              </div>
-            </div></div>
-          </div>
-
-          <!-- TAB: Insurance -->
-          <div id="dtab-insurance" class="detail-tab-panel phase2-panel">
-            <div class="detail-panel"><div class="detail-content">
-              <div class="phase2-notice" id="insurance-lock-notice">
-                <span class="lock-icon-large">&#128274;</span>
-                <h3>Insurance — Locked</h3>
-                <p>This section unlocks after the termsheet is signed and commitment fee received.</p>
-              </div>
-              <div id="insurance-form" class="onboarding-form" style="display:none;">
+              <div id="other-conditions-form" class="onboarding-form" style="display:none;">
                 <div class="section-title">Insurance Requirements</div>
                 <div class="form-group"><label>Buildings Insurance Schedule *</label><input type="file" id="ins-buildings" class="onboarding-file"><p class="form-hint">Daksfirst / Century Investcorp must be noted as interested party</p></div>
                 <div class="form-group"><label>Minimum Sum Insured (must equal or exceed reinstatement value)</label><input type="number" id="ins-sum-insured" placeholder="GBP"></div>
                 <div class="form-group"><label>Vacant Property Insurance (if applicable)</label><input type="file" id="ins-vacant" class="onboarding-file"></div>
                 <div class="form-group"><label>Development / Works Insurance (if refurbishment)</label><input type="file" id="ins-works" class="onboarding-file"></div>
-                <button class="btn btn-primary" onclick="saveOnboardingTab('insurance')">Save Insurance Data</button>
+                <hr class="section-divider">
+                <div class="section-title">Planning &amp; Section 106</div>
+                <div class="form-group"><label>Section 106 Agreement (if applicable)</label><input type="file" id="oc-sec106" class="onboarding-file"><p class="form-hint">Copy of any Sec106 obligations attached to the property or planning consent</p></div>
+                <div class="form-group"><label>Planning Conditions &amp; Compliance Evidence</label><input type="file" id="oc-planning-conditions" class="onboarding-file" multiple><p class="form-hint">Discharge of conditions, building control sign-off, fire safety, party wall awards</p></div>
+                <hr class="section-divider">
+                <div class="section-title">Other</div>
+                <div class="form-group"><label>Additional Notes / Conditions</label><textarea id="oc-other-notes" rows="3" placeholder="Any other conditions, warranties, or requirements specific to this deal"></textarea></div>
+                <div class="form-group"><label>Supporting Documents</label><input type="file" id="oc-other-docs" class="onboarding-file" multiple></div>
+                <button class="btn btn-primary" onclick="saveOnboardingTab('other_conditions')">Save Other Conditions</button>
               </div>
             </div></div>
           </div>
 
           <!-- Workflow Controls (visible to internal staff only) -->
           <div id="workflow-controls" style="display:none;margin-top:20px;"></div>
+
+         </div>
+
+         <!-- Document Repository Sidebar -->
+         <div class="deal-doc-sidebar" id="deal-doc-sidebar">
+           <div class="doc-panel-header">
+             <div class="doc-panel-title">Deal Documents</div>
+             <div class="doc-panel-summary" id="doc-panel-summary">0 files</div>
+           </div>
+           <div class="doc-panel-sections" id="doc-panel-sections">
+             <!-- Populated dynamically by JS -->
+           </div>
+           <div class="doc-panel-footer" id="doc-panel-footer"></div>
+         </div>
 
         </div>
       </div>
@@ -1167,7 +1190,7 @@
                     <th>Email</th>
                     <th>Company</th>
                     <th>Role</th>
-                    <th>FCA Number</th>
+                    <th>Co. Number</th>
                     <th>Deals</th>
                     <th>Registered</th>
                   </tr>
