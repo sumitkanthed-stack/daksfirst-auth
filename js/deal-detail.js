@@ -1135,6 +1135,7 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   // DIP_ISSUED — Acceptance status banner for all internal users
+  const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(currentRole);
   if (stage === 'dip_issued' && isInternal) {
     const dipAccepted = deal.dip_signed;
     let dsBannerBg, dsBorderCol, dsIcon, dsLabel;
