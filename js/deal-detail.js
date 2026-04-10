@@ -5,7 +5,6 @@ import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, g
 import { renderDocumentsList } from './documents.js';
 import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
 import { renderDocPanel } from './doc-panel.js';
-import { renderDealMatrix } from './deal-matrix.js';
 
 /**
  * Show deal detail screen
@@ -234,8 +233,14 @@ export async function showDealDetail(dealId) {
     // ── TAB: Documents ──
     renderDocumentsList(deal.documents || []);
 
-    // ── TAB: Deal Matrix ──
-    renderDealMatrix(deal);
+    // ── TAB: Deal Matrix (lazy-loaded to avoid breaking deal-detail if file missing) ──
+    import('./deal-matrix.js').then(mod => {
+      mod.renderDealMatrix(deal);
+    }).catch(err => {
+      console.warn('[matrix] Could not load deal-matrix.js:', err.message);
+      const mc = document.getElementById('dtab-matrix-content');
+      if (mc) mc.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:40px;">Deal Matrix module not available.</p>';
+    });
 
     // ── TAB: Analysis ──
     if (deal.status === 'completed' && deal.analysis_results) {
