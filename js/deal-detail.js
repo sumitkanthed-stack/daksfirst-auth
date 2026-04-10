@@ -3,7 +3,7 @@ import { showScreen, showToast, formatNumber, formatPct, formatDate, formatDateT
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
-import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
+import { switchDetailTab } from './onboarding.js';
 import { renderDocPanel } from './doc-panel.js';
 
 /**
@@ -274,49 +274,7 @@ export async function showDealDetail(dealId) {
       }
     }
 
-    // ── PHASE 2: Lock/Unlock ──
-    // Phase 2 unlocks when onboarding fee is confirmed (not stage-based)
-    const isPhase2Unlocked = !!deal.dip_fee_confirmed;
-    const phase2LockEl = document.getElementById('phase2-lock');
-    if (phase2LockEl) {
-      phase2LockEl.textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
-    }
-
-    document.querySelectorAll('.phase2-tab').forEach(tab => {
-      if (isPhase2Unlocked) {
-        tab.classList.remove('locked');
-        tab.classList.add('unlocked');
-      } else {
-        tab.classList.add('locked');
-        tab.classList.remove('unlocked');
-      }
-    });
-
-    // Show/hide Phase 2 forms vs lock notices
-    const phase2Tabs = ['kyc', 'financials-aml', 'valuation', 'use-of-funds', 'exit', 'other-conditions'];
-    phase2Tabs.forEach(t => {
-      const lockNotice = document.getElementById(`${t}-lock-notice`);
-      const form = document.getElementById(`${t}-form`);
-      if (lockNotice) {
-        lockNotice.style.display = isPhase2Unlocked ? 'none' : 'block';
-        if (!isPhase2Unlocked) {
-          lockNotice.innerHTML = `<span class="lock-icon-large">&#128274;</span>
-            <h3>${t.charAt(0).toUpperCase() + t.slice(1)} — Locked</h3>
-            <p>This section unlocks after the onboarding fee is confirmed by the RM.</p>`;
-        }
-      }
-      if (form) form.style.display = isPhase2Unlocked ? 'block' : 'none';
-    });
-
-    // Pre-fill Phase 2 forms from onboarding_data if it exists
-    if (isPhase2Unlocked && deal.onboarding_data) {
-      populateOnboardingData(deal.onboarding_data);
-    }
-
-    // Inject RM section approval controls and doc upload summaries into each Phase 2 tab
-    if (isPhase2Unlocked) {
-      injectOnboardingSectionControls(deal);
-    }
+    // Phase 2 tabs removed — replaced by Deal Matrix
 
     // ── WORKFLOW CONTROLS ──
     const workflowPanel = document.getElementById('workflow-controls');

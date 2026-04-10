@@ -766,15 +766,7 @@
               <span class="detail-tabs-label" style="color:#2563eb;font-weight:700;">Deal Matrix</span>
               <button class="detail-tab" data-dtab="dtab-matrix" onclick="switchDetailTab(this)" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;border:none;">&#128202; Matrix</button>
             </div>
-            <div class="detail-tabs-group phase2-group">
-              <span class="detail-tabs-label">Full Onboarding <span id="phase2-lock" class="lock-icon">&#128274;</span></span>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-kyc" onclick="switchDetailTab(this)">KYC</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-financials-aml" onclick="switchDetailTab(this)">Financials / AML</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-valuation" onclick="switchDetailTab(this)">Valuation</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-use-of-funds" onclick="switchDetailTab(this)">Use of Funds</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-exit" onclick="switchDetailTab(this)">Exit Evidence</button>
-              <button class="detail-tab phase2-tab" data-dtab="dtab-other-conditions" onclick="switchDetailTab(this)">Other Conditions</button>
-            </div>
+            <!-- Full Onboarding tabs removed — replaced by Deal Matrix -->
           </div>
 
           <!-- TAB: Overview -->
@@ -886,9 +878,8 @@
             </div>
           </div>
 
-          <!-- ═══ PHASE 2 TABS (Locked until termsheet signed) ═══ -->
-
-          <!-- TAB: KYC / Identity -->
+          <!-- Phase 2 tabs removed from UI — replaced by Deal Matrix. Hidden so JS references don't error. -->
+          <div style="display:none!important">
           <div id="dtab-kyc" class="detail-tab-panel phase2-panel">
             <div class="detail-panel"><div class="detail-content">
               <div class="phase2-notice" id="kyc-lock-notice">
@@ -1087,6 +1078,8 @@
               </div>
             </div></div>
           </div>
+
+          </div><!-- /hidden Phase 2 wrapper -->
 
           <!-- Workflow Controls (visible to internal staff only) -->
           <div id="workflow-controls" style="display:none;margin-top:20px;"></div>
