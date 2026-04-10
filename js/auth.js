@@ -5,6 +5,9 @@ import {
   restoreSessionFromStorage, clearSession, getCurrentUser, getCurrentRole
 } from './state.js';
 
+// Re-export state getters so other modules can import them from auth.js
+export { getAuthToken, getCurrentUser, getCurrentRole } from './state.js';
+
 /**
  * Fetch wrapper that adds Authorization header and handles token refresh
  */
