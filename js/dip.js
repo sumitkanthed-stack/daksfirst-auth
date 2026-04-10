@@ -336,6 +336,21 @@ export async function requestFee() {
 /**
  * Accept DIP — borrower/broker clicks Accept in-portal
  */
+export async function viewDipPdf(submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-pdf`, { method: 'GET' });
+    if (!resp.ok) {
+      showToast('Failed to load DIP PDF', true);
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  } catch (err) {
+    showToast('Network error loading DIP PDF', true);
+  }
+}
+
 export async function acceptDip(submissionId) {
   if (!confirm('By accepting this DIP, you confirm your intention to proceed on the terms outlined. Continue?')) return;
 

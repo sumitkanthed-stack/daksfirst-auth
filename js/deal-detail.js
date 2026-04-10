@@ -1137,8 +1137,6 @@ export function renderInternalWorkflowControls(deal) {
   // DIP_ISSUED — Acceptance status banner for all internal users
   if (stage === 'dip_issued' && isInternal) {
     const dipAccepted = deal.dip_signed;
-    const dipPdfLink = deal.dip_pdf_url;
-
     let dsBannerBg, dsBorderCol, dsIcon, dsLabel;
     if (dipAccepted) {
       dsBannerBg = '#f0fff4'; dsBorderCol = '#48bb78'; dsIcon = '✅'; dsLabel = 'DIP Accepted by Borrower';
@@ -1150,7 +1148,7 @@ export function renderInternalWorkflowControls(deal) {
       '<div><span style="font-size:16px;margin-right:8px;">' + dsIcon + '</span><strong style="font-size:13px;">' + dsLabel + '</strong>' +
       (deal.dip_signed_at ? '<span style="font-size:10px;color:#999;margin-left:10px;">Accepted: ' + new Date(deal.dip_signed_at).toLocaleDateString('en-GB') + '</span>' : '') +
       '</div><div style="display:flex;gap:8px;">' +
-      (dipPdfLink ? '<a href="' + sanitizeHtml(dipPdfLink) + '" target="_blank" style="padding:4px 12px;background:#1a365d;color:white;text-decoration:none;border-radius:4px;font-size:11px;font-weight:600;">View DIP PDF</a>' : '') +
+      '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">View DIP PDF</button>' +
       '</div></div>';
   }
 
@@ -1450,27 +1448,42 @@ export function renderExternalWorkflowControls(deal) {
   const panel = document.getElementById('workflow-controls');
   if (!panel) return;
 
-  const stageLabels = {
-    received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-    info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
-    fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
-    bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
-    borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
-    completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
+  // Borrower/broker sees simplified stages — internal steps are hidden
+  const extStageLabels = {
+    submitted: 'Submitted',
+    dip_issued: 'DIP Issued',
+    fee_required: 'Fee Required',
+    processing: 'Processing',
+    approved: 'Approved',
+    legal: 'Legal',
+    completed: 'Completed'
   };
-  const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
-  const currentIdx = stageOrder.indexOf(stage);
+  const extStageOrder = ['submitted', 'dip_issued', 'fee_required', 'processing', 'approved', 'legal', 'completed'];
+
+  // Map internal stages → simplified borrower stage
+  const stageMap = {
+    received: 'submitted', assigned: 'submitted',
+    dip_issued: 'dip_issued',
+    info_gathering: 'dip_issued', ai_termsheet: 'dip_issued',
+    fee_pending: 'fee_required', fee_paid: 'processing',
+    underwriting: 'processing', bank_submitted: 'processing',
+    bank_approved: 'approved', borrower_accepted: 'approved',
+    legal_instructed: 'legal',
+    completed: 'completed'
+  };
+  const extStage = stageMap[stage] || 'submitted';
+  const currentIdx = extStageOrder.indexOf(extStage);
 
   let html = `<h3 style="margin:0 0 16px;color:var(--primary);">Deal Progress</h3>`;
 
-  // Stage pipeline (read-only)
+  // Stage pipeline (read-only, simplified)
   html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
-  stageOrder.forEach((s, i) => {
-    const isActive = s === stage;
+  extStageOrder.forEach((s, i) => {
+    const isActive = s === extStage;
     const isDone = i < currentIdx;
     const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
     const color = (isActive || isDone) ? '#fff' : '#666';
-    html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${stageLabels[s]}</span>`;
+    html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${extStageLabels[s]}</span>`;
   });
   html += `</div>`;
 
@@ -1479,20 +1492,21 @@ export function renderExternalWorkflowControls(deal) {
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
   } else if (stage === 'dip_issued') {
     const dipAccepted = deal.dip_signed;
-    const dipPdfUrl = deal.dip_pdf_url;
+
+    const viewDipBtn = '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-right:8px;">View DIP PDF</button>';
 
     if (dipAccepted) {
       // DIP has been accepted in-portal
       html += '<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;">' +
         '<p style="font-size:14px;margin-bottom:12px;"><strong>DIP Accepted</strong> — You have accepted the Decision in Principle. Our team is now proceeding with your application.</p>' +
-        (dipPdfUrl ? '<a href="' + sanitizeHtml(dipPdfUrl) + '" target="_blank" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">View DIP PDF</a>' : '') +
+        viewDipBtn +
         '</div>';
     } else {
       // DIP issued — show PDF and Accept button
       html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
         '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Issued — Please Review & Accept</strong></p>' +
         '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been issued. Please review the DIP document below and click Accept to proceed with your application.</p>' +
-        (dipPdfUrl ? '<a href="' + sanitizeHtml(dipPdfUrl) + '" target="_blank" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;margin-right:8px;">View DIP PDF</a>' : '') +
+        viewDipBtn +
         '<button onclick="acceptDip(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#047857;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Accept DIP</button>' +
         '<div style="margin-top:12px;padding:10px;background:#f7fafc;border-radius:6px;font-size:12px;color:#4a5568;">By clicking Accept, you confirm your intention to proceed on the terms outlined in the DIP. This is valid for 14 days from the date of issue.</div>' +
         '</div>';

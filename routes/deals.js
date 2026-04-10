@@ -608,6 +608,52 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  VIEW DIP PDF — On-the-fly generation (works even if OneDrive URL is missing)
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    // Access control: borrower (deal owner), broker (submitter), or internal
+    const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+    const isInternal = internalRoles.includes(req.user.role);
+    const isOwner = deal.user_id === req.user.userId;
+    const isBorrower = deal.borrower_email === req.user.email || deal.borrower_invite_email === req.user.email;
+    if (!isInternal && !isOwner && !isBorrower) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get DIP data from the stored ai_termsheet_data (which holds dip_data at this stage)
+    const dipData = typeof deal.ai_termsheet_data === 'string'
+      ? JSON.parse(deal.ai_termsheet_data) : (deal.ai_termsheet_data || {});
+
+    // Get borrowers
+    const borrowersResult = await pool.query(
+      `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`, [dealId]
+    );
+    const dipDataWithBorrowers = {
+      ...dipData,
+      borrowers: borrowersResult.rows.map(b => ({ name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified' }))
+    };
+
+    const pdfBuffer = await generateDipPdf(deal, dipDataWithBorrowers, {
+      issuedBy: deal.dip_issued_by || 'System',
+      issuedAt: deal.dip_issued_at || new Date().toISOString()
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="DIP_${req.params.submissionId}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[dip-pdf] Error:', error);
+    res.status(500).json({ error: 'Failed to generate DIP PDF' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ACCEPT DIP — Borrower/broker accepts the DIP in-portal (no DocuSign)
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/accept-dip', authenticateToken, async (req, res) => {
