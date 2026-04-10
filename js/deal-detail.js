@@ -1368,8 +1368,8 @@ export function renderInternalWorkflowControls(deal) {
         </div>`;
       }
 
-      // Step 4: RM Sign-off on AI Termsheet
-      if (deal.ai_termsheet_generated_at && !rmSignedOff) {
+      // Step 4: RM Sign-off on AI Termsheet (only if all sections approved AND AI generated)
+      if (allApproved && deal.ai_termsheet_generated_at && !rmSignedOff) {
         if (['rm', 'admin'].includes(currentRole)) {
           html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #3b82f6;">
             <h4 style="margin:0 0 8px;color:#1e40af;">Step 4: RM Sign-off</h4>
@@ -1385,7 +1385,7 @@ export function renderInternalWorkflowControls(deal) {
       }
 
       // Step 4 done indicator
-      if (rmSignedOff) {
+      if (allApproved && rmSignedOff) {
         html += `<div style="background:#dcfce7;padding:12px 16px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">&#10003;</span>
           <div><strong style="color:#15803d;">RM Signed Off</strong>
@@ -1393,8 +1393,8 @@ export function renderInternalWorkflowControls(deal) {
         </div>`;
       }
 
-      // Step 5: Credit Sign-off
-      if (rmSignedOff && !creditSignedOff) {
+      // Step 5: Credit Sign-off (only if all prior steps complete)
+      if (allApproved && deal.ai_termsheet_generated_at && rmSignedOff && !creditSignedOff) {
         if (['credit', 'admin'].includes(currentRole)) {
           html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
             <h4 style="margin:0 0 8px;color:#7c3aed;">Step 5: Credit Sign-off</h4>
@@ -1414,7 +1414,7 @@ export function renderInternalWorkflowControls(deal) {
       }
 
       // Step 5 done indicator
-      if (creditSignedOff) {
+      if (allApproved && creditSignedOff) {
         const csDecColor = creditSignoffDecision === 'approve' ? '#15803d' : creditSignoffDecision === 'decline' ? '#ef4444' : '#f59e0b';
         const csDecLabel = creditSignoffDecision === 'approve' ? 'APPROVED' : creditSignoffDecision === 'decline' ? 'DECLINED' : 'MORE INFO REQUESTED';
         html += `<div style="background:${creditSignoffDecision === 'approve' ? '#dcfce7' : creditSignoffDecision === 'decline' ? '#fee2e2' : '#fef3c7'};padding:12px 16px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
