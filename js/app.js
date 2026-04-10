@@ -72,6 +72,7 @@ window.addProperty = () => import('./workflow-actions.js').then(m => m.addProper
 window.removeProperty = (id) => import('./workflow-actions.js').then(m => m.removeProperty(id));
 window.loadLawFirms = () => import('./workflow-actions.js').then(m => m.loadLawFirms());
 window.selectLawFirm = (firm, email, contact) => import('./workflow-actions.js').then(m => m.selectLawFirm(firm, email, contact));
+window.saveIntakeChanges = () => import('./workflow-actions.js').then(m => m.saveIntakeChanges());
 
 window.removeDipProperty = (idx) => import('./dip.js').then(m => m.removeDipProperty(idx));
 window.approveDipProperty = (idx) => import('./dip.js').then(m => m.approveDipProperty(idx));

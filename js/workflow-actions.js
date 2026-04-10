@@ -638,6 +638,52 @@ export async function removeProperty(propertyId) {
       showToast(data.error || 'Failed to remove', true);
     }
   } catch (err) {
-    showToast('Network error', true);
+    showToast('Network error - removeProperty', true);
+  }
+}
+
+/**
+ * Save intake field changes made by RM/admin
+ * Collects all .intake-editable fields and PUTs to the deal update endpoint
+ */
+export async function saveIntakeChanges() {
+  const dealId = getCurrentDealId();
+  if (!dealId) return;
+
+  const fields = document.querySelectorAll('.intake-editable');
+  if (fields.length === 0) {
+    showToast('No editable fields found', true);
+    return;
+  }
+
+  const updates = {};
+  fields.forEach(el => {
+    const field = el.getAttribute('data-field');
+    if (field) {
+      updates[field] = el.value.trim();
+    }
+  });
+
+  if (Object.keys(updates).length === 0) {
+    showToast('No changes to save', true);
+    return;
+  }
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('Intake fields updated successfully');
+      saveDipFormState();
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to save changes', true);
+    }
+  } catch (err) {
+    showToast('Network error - saveIntake', true);
   }
 }

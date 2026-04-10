@@ -68,6 +68,36 @@ export async function showDealDetail(dealId) {
     stageEl.textContent = stageLabels[stage] || sanitizeHtml(stage);
     stageEl.className = `stage-badge stage-${stage}`;
 
+    // ── Helper: make a field editable for internal users or read-only for external ──
+    const canEdit = isInternal; // RM, admin, credit, compliance can edit intake fields
+    const inputStyle = 'width:100%;padding:5px 8px;border-radius:4px;font-size:13px;font-family:inherit;';
+    const editableStyle = inputStyle + 'border:1px solid #c9a84c;background:#fffdf5;';
+    const readonlyStyle = inputStyle + 'border:1px solid #e5e7eb;background:#f9fafb;color:#374151;';
+
+    function setField(elId, value, opts) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      const v = value || '';
+      if (canEdit) {
+        const fieldName = opts?.field || elId.replace('detail-', '');
+        const type = opts?.type || 'text';
+        if (type === 'select' && opts?.options) {
+          let selectHtml = '<select data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + '">';
+          opts.options.forEach(o => {
+            selectHtml += '<option value="' + o.value + '"' + (o.value === v ? ' selected' : '') + '>' + sanitizeHtml(o.label) + '</option>';
+          });
+          selectHtml += '</select>';
+          el.innerHTML = selectHtml;
+        } else if (type === 'textarea') {
+          el.innerHTML = '<textarea data-field="' + fieldName + '" class="intake-editable" style="' + editableStyle + 'min-height:50px;resize:vertical;">' + sanitizeHtml(v) + '</textarea>';
+        } else {
+          el.innerHTML = '<input type="' + type + '" data-field="' + fieldName + '" class="intake-editable" value="' + sanitizeHtml(v) + '" style="' + editableStyle + '">';
+        }
+      } else {
+        el.textContent = opts?.display || v || 'N/A';
+      }
+    }
+
     // ── TAB: Overview ──
     // Auto-calculate indicative loan & LTV
     const dVal = deal.current_value ? Number(deal.current_value) : null;
@@ -94,53 +124,95 @@ export async function showDealDetail(dealId) {
       ltvIndicative = true;
     }
 
-    const loanEl = document.getElementById('detail-loan-amount');
-    loanEl.innerHTML = dLoan
-      ? `£${formatNumber(dLoan)}${loanIndicative ? ' <span style="font-size:0.75em;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:4px;margin-left:6px;">INDICATIVE MAX</span>' : ''}`
-      : '£0';
-
-    const ltvEl = document.getElementById('detail-ltv');
-    ltvEl.innerHTML = dLtv
-      ? `${formatPct(dLtv)}%${ltvIndicative ? ' <span style="font-size:0.75em;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:4px;margin-left:6px;">INDICATIVE</span>' : ''}`
-      : 'N/A';
-
-    document.getElementById('detail-property-value').textContent = `£${formatNumber(deal.current_value || 0)}`;
-    document.getElementById('detail-loan-purpose').textContent = sanitizeHtml(deal.loan_purpose || 'N/A');
-    document.getElementById('detail-term').textContent = deal.term_months ? deal.term_months + ' months' : 'N/A';
-    document.getElementById('detail-interest-servicing').textContent = sanitizeHtml(deal.interest_servicing || 'N/A');
-    document.getElementById('detail-drawdown-date').textContent = deal.drawdown_date ? formatDate(deal.drawdown_date) : 'N/A';
-    document.getElementById('detail-asset-type').textContent = sanitizeHtml(deal.asset_type || 'N/A');
-    document.getElementById('detail-exit-strategy').textContent = sanitizeHtml(deal.exit_strategy || 'N/A');
-    document.getElementById('detail-existing-charges').textContent = sanitizeHtml(deal.existing_charges || 'None disclosed');
-    document.getElementById('detail-notes').textContent = sanitizeHtml(deal.additional_notes || 'No notes');
+    setField('detail-loan-amount', String(dLoan || ''), { field: 'loan_amount', display: dLoan ? '£' + formatNumber(dLoan) + (loanIndicative ? ' (INDICATIVE)' : '') : '£0' });
+    setField('detail-ltv', String(dLtv || ''), { field: 'ltv_requested', display: dLtv ? formatPct(dLtv) + '%' + (ltvIndicative ? ' (INDICATIVE)' : '') : 'N/A' });
+    setField('detail-property-value', String(deal.current_value || ''), { field: 'current_value', display: '£' + formatNumber(deal.current_value || 0) });
+    setField('detail-loan-purpose', deal.loan_purpose || '', { field: 'loan_purpose', type: 'textarea' });
+    setField('detail-term', String(deal.term_months || ''), { field: 'term_months', display: deal.term_months ? deal.term_months + ' months' : 'N/A' });
+    setField('detail-interest-servicing', deal.interest_servicing || '', { field: 'interest_servicing', type: 'select', options: [
+      { value: 'retained', label: 'Retained' }, { value: 'serviced', label: 'Serviced' }, { value: 'rolled_up', label: 'Rolled Up' }
+    ]});
+    setField('detail-drawdown-date', deal.drawdown_date ? deal.drawdown_date.substring(0, 10) : '', { field: 'drawdown_date', type: 'date', display: deal.drawdown_date ? formatDate(deal.drawdown_date) : 'N/A' });
+    setField('detail-asset-type', deal.asset_type || '', { field: 'asset_type', type: 'select', options: [
+      { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' }, { value: 'mixed_use', label: 'Mixed Use' },
+      { value: 'land', label: 'Land' }, { value: 'hmo', label: 'HMO' }, { value: 'mufb', label: 'MUFB' }
+    ]});
+    setField('detail-exit-strategy', deal.exit_strategy || '', { field: 'exit_strategy', type: 'textarea' });
+    setField('detail-existing-charges', deal.existing_charges || '', { field: 'existing_charges', type: 'textarea' });
+    setField('detail-notes', deal.additional_notes || '', { field: 'additional_notes', type: 'textarea' });
 
     // ── TAB: Borrower ──
-    document.getElementById('detail-borrower-name').textContent = sanitizeHtml(deal.borrower_name || 'N/A');
-    document.getElementById('detail-borrower-dob').textContent = deal.borrower_dob ? formatDate(deal.borrower_dob) : 'N/A';
-    document.getElementById('detail-borrower-nationality').textContent = sanitizeHtml(deal.borrower_nationality || 'N/A');
-    document.getElementById('detail-borrower-jurisdiction').textContent = sanitizeHtml(deal.borrower_jurisdiction || 'N/A');
-    document.getElementById('detail-borrower-type').textContent = sanitizeHtml(deal.borrower_type || 'N/A');
-    document.getElementById('detail-company-name').textContent = sanitizeHtml(deal.company_name || 'N/A');
-    document.getElementById('detail-company-number').textContent = sanitizeHtml(deal.company_number || 'N/A');
-    document.getElementById('detail-borrower-email').textContent = sanitizeHtml(deal.borrower_email || 'N/A');
-    document.getElementById('detail-borrower-phone').textContent = sanitizeHtml(deal.borrower_phone || 'N/A');
+    // Corporate borrower banner
+    const bType = (deal.borrower_type || 'individual').toLowerCase();
+    const isCorporateDeal = bType === 'corporate' || bType === 'spv' || bType === 'ltd' || bType === 'llp';
+    const borrowerTab = document.getElementById('dtab-borrower');
+    if (borrowerTab && isCorporateDeal) {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'margin:0 0 12px;padding:10px 14px;background:#dbeafe;border:1px solid #3b82f6;border-radius:6px;display:flex;justify-content:space-between;align-items:center;';
+      banner.innerHTML = '<div><strong style="color:#1e40af;font-size:14px;">CORPORATE BORROWER</strong><br><span style="font-size:13px;">' + sanitizeHtml(deal.company_name || deal.borrower_company || '') + (deal.company_number ? ' &middot; Co. ' + sanitizeHtml(deal.company_number) : '') + '</span></div><div style="text-align:right;"><span style="font-size:11px;color:#6b7280;">UBO / Director</span><br><strong>' + sanitizeHtml(deal.borrower_name || '') + '</strong></div>';
+      const panel = borrowerTab.querySelector('.detail-panel');
+      if (panel) panel.insertBefore(banner, panel.firstChild);
+    }
+
+    setField('detail-borrower-name', deal.borrower_name || '', { field: 'borrower_name' });
+    setField('detail-borrower-dob', deal.borrower_dob ? deal.borrower_dob.substring(0, 10) : '', { field: 'borrower_dob', type: 'date', display: deal.borrower_dob ? formatDate(deal.borrower_dob) : 'N/A' });
+    setField('detail-borrower-nationality', deal.borrower_nationality || '', { field: 'borrower_nationality' });
+    setField('detail-borrower-jurisdiction', deal.borrower_jurisdiction || '', { field: 'borrower_jurisdiction' });
+    setField('detail-borrower-type', deal.borrower_type || 'individual', { field: 'borrower_type', type: 'select', options: [
+      { value: 'individual', label: 'Individual' }, { value: 'corporate', label: 'Corporate' }, { value: 'spv', label: 'SPV' }, { value: 'llp', label: 'LLP' }
+    ]});
+    setField('detail-company-name', deal.company_name || '', { field: 'company_name' });
+    setField('detail-company-number', deal.company_number || '', { field: 'company_number' });
+    setField('detail-borrower-email', deal.borrower_email || '', { field: 'borrower_email', type: 'email' });
+    setField('detail-borrower-phone', deal.borrower_phone || '', { field: 'borrower_phone', type: 'tel' });
 
     // ── TAB: Property ──
-    document.getElementById('detail-prop-address').textContent = sanitizeHtml(deal.security_address || 'N/A');
-    document.getElementById('detail-prop-postcode').textContent = sanitizeHtml(deal.security_postcode || 'N/A');
-    document.getElementById('detail-prop-type').textContent = sanitizeHtml(deal.asset_type || 'N/A');
-    document.getElementById('detail-prop-value').textContent = deal.current_value ? `£${formatNumber(deal.current_value)}` : 'N/A';
-    document.getElementById('detail-prop-purchase').textContent = deal.purchase_price ? `£${formatNumber(deal.purchase_price)}` : 'N/A';
-    document.getElementById('detail-prop-tenure').textContent = sanitizeHtml(deal.property_tenure || 'N/A');
-    document.getElementById('detail-prop-occupancy').textContent = sanitizeHtml(deal.occupancy_status || 'N/A');
-    document.getElementById('detail-prop-use').textContent = sanitizeHtml(deal.current_use || 'N/A');
+    setField('detail-prop-address', deal.security_address || '', { field: 'security_address', type: 'textarea' });
+    setField('detail-prop-postcode', deal.security_postcode || '', { field: 'security_postcode' });
+    setField('detail-prop-type', deal.asset_type || '', { field: 'asset_type', type: 'select', options: [
+      { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' }, { value: 'mixed_use', label: 'Mixed Use' },
+      { value: 'land', label: 'Land' }, { value: 'hmo', label: 'HMO' }, { value: 'mufb', label: 'MUFB' }
+    ]});
+    setField('detail-prop-value', String(deal.current_value || ''), { field: 'current_value', display: deal.current_value ? '£' + formatNumber(deal.current_value) : 'N/A' });
+    setField('detail-prop-purchase', String(deal.purchase_price || ''), { field: 'purchase_price', display: deal.purchase_price ? '£' + formatNumber(deal.purchase_price) : 'N/A' });
+    setField('detail-prop-tenure', deal.property_tenure || '', { field: 'property_tenure', type: 'select', options: [
+      { value: 'freehold', label: 'Freehold' }, { value: 'leasehold', label: 'Leasehold' }
+    ]});
+    setField('detail-prop-occupancy', deal.occupancy_status || '', { field: 'occupancy_status', type: 'select', options: [
+      { value: 'vacant', label: 'Vacant' }, { value: 'tenanted', label: 'Tenanted' }, { value: 'owner_occupied', label: 'Owner Occupied' }
+    ]});
+    setField('detail-prop-use', deal.current_use || '', { field: 'current_use' });
 
     // ── TAB: Use of Funds ──
-    document.getElementById('detail-use-of-funds').textContent = sanitizeHtml(deal.use_of_funds || 'N/A');
-    document.getElementById('detail-refurb-scope').textContent = sanitizeHtml(deal.refurb_scope || 'N/A');
-    document.getElementById('detail-refurb-cost').textContent = deal.refurb_cost ? `£${formatNumber(deal.refurb_cost)}` : 'N/A';
-    document.getElementById('detail-deposit-source').textContent = sanitizeHtml(deal.deposit_source || 'N/A');
-    document.getElementById('detail-concurrent').textContent = sanitizeHtml(deal.concurrent_transactions || 'None');
+    setField('detail-use-of-funds', deal.use_of_funds || '', { field: 'use_of_funds', type: 'textarea' });
+    setField('detail-refurb-scope', deal.refurb_scope || '', { field: 'refurb_scope', type: 'textarea' });
+    setField('detail-refurb-cost', String(deal.refurb_cost || ''), { field: 'refurb_cost', display: deal.refurb_cost ? '£' + formatNumber(deal.refurb_cost) : 'N/A' });
+    setField('detail-deposit-source', deal.deposit_source || '', { field: 'deposit_source' });
+    setField('detail-concurrent', deal.concurrent_transactions || '', { field: 'concurrent_transactions', type: 'textarea' });
+
+    // ── Save Intake Changes button (internal users only) ──
+    if (canEdit) {
+      const overviewPanel = document.getElementById('dtab-overview');
+      if (overviewPanel) {
+        const existingSaveBtn = overviewPanel.querySelector('.intake-save-btn');
+        if (!existingSaveBtn) {
+          const saveDiv = document.createElement('div');
+          saveDiv.style.cssText = 'padding:12px 16px;border-top:2px solid var(--primary);margin-top:16px;display:flex;justify-content:space-between;align-items:center;';
+          saveDiv.innerHTML = '<span style="font-size:11px;color:#c9a84c;font-weight:600;">Fields highlighted in amber are editable by RM</span><button class="intake-save-btn" onclick="window.saveIntakeChanges && window.saveIntakeChanges()" style="padding:8px 20px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;">Save Changes</button>';
+          overviewPanel.appendChild(saveDiv);
+        }
+      }
+      // Add save button to each other tab too
+      ['dtab-borrower', 'dtab-property', 'dtab-use-of-funds'].forEach(tabId => {
+        const tab = document.getElementById(tabId);
+        if (tab && !tab.querySelector('.intake-save-btn')) {
+          const saveDiv = document.createElement('div');
+          saveDiv.style.cssText = 'padding:12px 16px;border-top:2px solid var(--primary);margin-top:16px;text-align:right;';
+          saveDiv.innerHTML = '<button class="intake-save-btn" onclick="window.saveIntakeChanges && window.saveIntakeChanges()" style="padding:8px 20px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;">Save Changes</button>';
+          tab.appendChild(saveDiv);
+        }
+      });
+    }
 
     // ── TAB: Documents ──
     renderDocumentsList(deal.documents || []);
