@@ -15,8 +15,10 @@ export async function showAdminPanel() {
     return;
   }
 
-  document.getElementById('user-name-display').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
-  document.getElementById('user-role-display').textContent = currentRole.toUpperCase();
+  const nameEl = document.getElementById('admin-user-name') || document.getElementById('user-name-display');
+  const roleEl = document.getElementById('admin-role-badge') || document.getElementById('user-role-display');
+  if (nameEl) nameEl.textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+  if (roleEl) roleEl.textContent = currentRole.toUpperCase();
 
   showScreen('screen-admin');
 
@@ -39,8 +41,11 @@ export function switchAdminTab(tabName) {
   const activeBtn = document.querySelector(`.admin-nav-item[onclick*="${tabName}"]`);
   if (activeBtn) activeBtn.classList.add('active');
 
-  const activeTab = document.getElementById(`tab-${tabName}`);
+  const activeTab = document.getElementById(`admin-${tabName}`) || document.getElementById(`tab-${tabName}`);
   if (activeTab) activeTab.classList.add('active');
+
+  // Load data for specific tabs
+  if (tabName === 'clients') loadAdminUsers();
 }
 
 /**
@@ -244,11 +249,15 @@ export async function loadAdminStats() {
 
     const stats = data.stats || {};
 
-    // Update stat cards
-    document.getElementById('stat-total').textContent = stats.total_deals || 0;
-    document.getElementById('stat-processing').textContent = stats.processing || 0;
-    document.getElementById('stat-completed').textContent = stats.completed || 0;
-    document.getElementById('stat-declined').textContent = stats.declined || 0;
+    // Update stat cards (try both old and new IDs)
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('analytics-total-deals', stats.total_deals || 0);
+    setEl('analytics-approval-rate', stats.approval_rate ? stats.approval_rate + '%' : '0%');
+    setEl('analytics-avg-ltv', stats.avg_ltv ? stats.avg_ltv + '%' : '0%');
+    setEl('stat-total', stats.total_deals || 0);
+    setEl('stat-processing', stats.processing || 0);
+    setEl('stat-completed', stats.completed || 0);
+    setEl('stat-declined', stats.declined || 0);
   } catch (err) {
     console.error('Error loading stats:', err);
   }
@@ -258,32 +267,42 @@ export async function loadAdminStats() {
  * Create a new internal user (admin only)
  */
 export async function createInternalUser() {
-  const firstName = document.getElementById('new-user-firstname').value.trim();
-  const lastName = document.getElementById('new-user-lastname').value.trim();
-  const email = document.getElementById('new-user-email').value.trim();
-  const role = document.getElementById('new-user-role').value;
-  const password = document.getElementById('new-user-password').value.trim();
+  const firstName = document.getElementById('cu-first-name')?.value.trim();
+  const lastName = document.getElementById('cu-last-name')?.value.trim();
+  const email = document.getElementById('cu-email')?.value.trim();
+  const role = document.getElementById('cu-role')?.value;
+  const phone = document.getElementById('cu-phone')?.value.trim();
+  const password = document.getElementById('cu-password')?.value.trim();
 
   if (!firstName || !lastName || !email || !role || !password) {
-    showToast('Please fill in all fields', true);
+    showToast('Please fill in all required fields', true);
     return;
   }
+
+  const btn = document.getElementById('cu-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
 
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/admin/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, password })
+      body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, phone, password })
     });
 
     const data = await resp.json();
     if (resp.ok) {
       showToast('User created successfully');
+      // Show success message
+      const successEl = document.getElementById('cu-success');
+      const detailEl = document.getElementById('cu-success-detail');
+      if (successEl) successEl.style.display = 'block';
+      if (detailEl) detailEl.textContent = `${firstName} ${lastName} (${role}) — ${email}`;
       // Clear form
-      document.getElementById('new-user-firstname').value = '';
-      document.getElementById('new-user-lastname').value = '';
-      document.getElementById('new-user-email').value = '';
-      document.getElementById('new-user-password').value = '';
+      document.getElementById('cu-first-name').value = '';
+      document.getElementById('cu-last-name').value = '';
+      document.getElementById('cu-email').value = '';
+      document.getElementById('cu-phone').value = '';
+      document.getElementById('cu-password').value = '';
       // Reload users list
       await loadAdminUsers();
     } else {
@@ -291,6 +310,8 @@ export async function createInternalUser() {
     }
   } catch (err) {
     showToast('Error creating user', true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
   }
 }
 
