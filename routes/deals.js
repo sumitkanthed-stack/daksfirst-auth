@@ -173,8 +173,8 @@ router.put('/:submissionId/onboarding', authenticateToken, validate('dealOnboard
     const { tab, data } = req.validated;
     if (!tab || !data) return res.status(400).json({ error: 'Tab name and data are required' });
 
-    // Valid Phase 2 tabs
-    const validTabs = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    // Valid Phase 2 tabs (6 onboarding sections)
+    const validTabs = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions'];
     if (!validTabs.includes(tab)) return res.status(400).json({ error: 'Invalid onboarding tab' });
 
     // Get the deal
@@ -647,8 +647,8 @@ router.post('/:submissionId/generate-ai-termsheet', authenticateToken, authentic
       return res.status(400).json({ error: 'Onboarding fee must be confirmed before generating AI termsheet' });
     }
 
-    // GATE: All 7 onboarding sections must be approved by RM
-    const requiredSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    // GATE: All 6 onboarding sections must be approved by RM
+    const requiredSections = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions'];
     const approval = deal.onboarding_approval || {};
     const unapproved = requiredSections.filter(s => !approval[s] || !approval[s].approved);
     if (unapproved.length > 0) {
@@ -1372,7 +1372,7 @@ router.post('/:submissionId/approve-onboarding-section', authenticateToken, auth
   try {
     const { section, approved, notes } = req.body;
 
-    const validSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    const validSections = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions'];
     if (!validSections.includes(section)) {
       return res.status(400).json({ error: `Invalid section. Must be one of: ${validSections.join(', ')}` });
     }
@@ -1444,8 +1444,8 @@ router.post('/:submissionId/rm-signoff', authenticateToken, authenticateInternal
       return res.status(400).json({ error: 'Onboarding fee must be confirmed first' });
     }
 
-    // GATE: All 7 onboarding sections must be approved
-    const requiredSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    // GATE: All 6 onboarding sections must be approved
+    const requiredSections = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions'];
     const approval = deal.onboarding_approval || {};
     const unapproved = requiredSections.filter(s => !approval[s] || !approval[s].approved);
     if (unapproved.length > 0) {
@@ -1574,7 +1574,7 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
       }
 
       const { category } = req.body;
-      const validCategories = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance', 'general'];
+      const validCategories = ['kyc', 'financials_aml', 'valuation', 'use_of_funds', 'exit_evidence', 'other_conditions', 'general', 'post_completion'];
       if (category && !validCategories.includes(category)) {
         return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` });
       }

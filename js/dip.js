@@ -30,142 +30,44 @@ export function approveAllDipProperties() {
   if (!table) return;
   const rows = table.querySelectorAll('tbody tr');
   rows.forEach((row, i) => {
-    // Only approve if not removed (check if valuation input is disabled)
-    const valInput = document.getElementById(`dip-prop-val-${i}`);
-    if (!valInput || !valInput.disabled) {
+    // Only approve if not already removed
+    if (row.style.opacity !== '0.5') {
       approveDipProperty(i);
     }
   });
 }
 
 /**
- * Remove a property from DIP security schedule
+ * Remove a property from DIP
  */
 export function removeDipProperty(idx) {
   const row = document.getElementById(`dip-prop-${idx}`);
   if (!row) return;
 
   const addr = row.querySelectorAll('td')[1].textContent;
-  if (!confirm('Remove "' + addr.substring(0, 50) + '..." from the security package?')) return;
+  if (!confirm('Remove "' + addr.substring(0, 50) + '..." from this DIP?')) return;
 
-  // Visual: strike-through, faded
+  // Apply visual styling to show removal
   row.style.background = '#fee2e2';
-  row.style.opacity = '0.4';
-  row.querySelectorAll('td').forEach(td => td.style.textDecoration = 'line-through');
-
-  // Status → Removed
-  const statusEl = document.getElementById(`dip-prop-status-${idx}`);
-  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fee2e2;color:#991b1b;border-radius:10px;font-size:10px;font-weight:600;">Removed</span>';
-
-  // Buttons → replace with "Add Back"
-  const actionCell = row.querySelector('td:last-child');
-  if (actionCell) {
-    actionCell.innerHTML = `<button onclick="window.addBackDipProperty && window.addBackDipProperty(${idx})" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:600;">Add Back</button>`;
-  }
-
-  // Zero out valuation input for this property
-  const valInput = document.getElementById(`dip-prop-val-${idx}`);
-  if (valInput) { valInput.dataset.removedVal = valInput.value; valInput.value = '0'; valInput.disabled = true; }
+  row.style.textDecoration = 'line-through';
+  row.style.opacity = '0.5';
+  row.querySelector('button').disabled = true;
+  row.querySelector('button').textContent = 'Removed';
 
   // Track removal in state
   addDipRemovedProperty({ index: idx, address: addr });
 
-  // Update removed display + header + totals
-  updatePropertyScheduleUI();
-  calcDipLtv();
-  if (window.validateDipChecklist) window.validateDipChecklist();
-}
-
-/**
- * Add back a previously removed property
- */
-export function addBackDipProperty(idx) {
-  const row = document.getElementById(`dip-prop-${idx}`);
-  if (!row) return;
-
-  // Restore visual
-  row.style.background = '';
-  row.style.opacity = '1';
-  row.querySelectorAll('td').forEach(td => td.style.textDecoration = 'none');
-
-  // Status → Pending
-  const statusEl = document.getElementById(`dip-prop-status-${idx}`);
-  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span>';
-
-  // Restore buttons
-  const actionCell = row.querySelector('td:last-child');
-  if (actionCell) {
-    actionCell.innerHTML = `<button id="dip-prop-approve-${idx}" onclick="window.approveDipProperty && window.approveDipProperty(${idx})" style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-right:4px;">Approve</button><button id="dip-prop-remove-${idx}" onclick="window.removeDipProperty && window.removeDipProperty(${idx})" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;">Remove</button>`;
-  }
-
-  // Restore valuation
-  const valInput = document.getElementById(`dip-prop-val-${idx}`);
-  if (valInput) { valInput.value = valInput.dataset.removedVal || '0'; valInput.disabled = false; delete valInput.dataset.removedVal; }
-
-  // Remove from state
+  // Update display
   const removed = getDipRemovedProperties();
-  const newRemoved = removed.filter(p => p.index !== idx);
-  setDipRemovedProperties(newRemoved);
-
-  // Update UI + totals
-  updatePropertyScheduleUI();
-  calcDipLtv();
-  if (window.validateDipChecklist) window.validateDipChecklist();
-}
-
-/**
- * Update the security schedule header, removed summary, and total valuation
- */
-function updatePropertyScheduleUI() {
-  const table = document.getElementById('dip-property-table');
-  if (!table) return;
-  const allRows = table.querySelectorAll('tbody tr');
-  const totalProps = allRows.length;
-  const removed = getDipRemovedProperties();
-  const removedCount = removed.length;
-  const activeCount = totalProps - removedCount;
-
-  // Update header text
-  const headerEl = document.getElementById('dip-schedule-header');
-  if (headerEl) {
-    if (removedCount > 0) {
-      headerEl.innerHTML = `Security Schedule &mdash; <span style="color:#15803d;font-weight:700;">${activeCount}</span> of ${totalProps} Accepted`;
-    } else {
-      headerEl.innerHTML = `Security Schedule &mdash; ${totalProps} ${totalProps === 1 ? 'Property' : 'Properties'}`;
-    }
-  }
-
-  // Update removed properties display
   const removedDiv = document.getElementById('dip-removed-props');
   if (removedDiv) {
-    if (removedCount > 0) {
-      removedDiv.style.display = 'block';
-      removedDiv.innerHTML = '<strong style="color:#991b1b;">Removed from security:</strong> ' + removed.map(p => sanitizeHtml(p.address.substring(0, 40)) + '...').join('; ');
-    } else {
-      removedDiv.style.display = 'none';
-      removedDiv.innerHTML = '';
-    }
+    removedDiv.style.display = 'block';
+    removedDiv.innerHTML = '<strong>Removed:</strong> ' + removed.map(p => p.address.substring(0, 40) + '...').join('; ');
   }
 
-  // Update total valuation (only active properties)
-  let total = 0;
-  allRows.forEach((row, i) => {
-    const isRemoved = removed.some(p => p.index === i);
-    if (!isRemoved) {
-      const valInput = document.getElementById(`dip-prop-val-${i}`);
-      if (valInput) total += parseFormattedNumber(valInput.value) || 0;
-    }
-  });
-  const totalEl = document.getElementById('dip-prop-val-total');
-  if (totalEl) totalEl.textContent = '£' + formatNumber(total);
-
-  // Update the auto-summed property value field
-  const propValueInput = document.getElementById('dip-property-value');
-  if (propValueInput) propValueInput.value = formatNumber(total);
-
-  // Update number of properties field
-  const numPropsInput = document.getElementById('dip-num-properties');
-  if (numPropsInput) numPropsInput.value = removedCount > 0 ? `${activeCount} of ${totalProps}` : totalProps;
+  calcDipLtv();
+  // Re-validate checklist after property removal
+  if (window.validateDipChecklist) window.validateDipChecklist();
 }
 
 /**
@@ -213,7 +115,10 @@ export function calcDipLtv() {
   if (arrDisplay) arrDisplay.textContent = '£' + formatNumber(arrangementFee);
   const brokerDisplay = document.getElementById('dip-fee-broker-display');
   if (brokerDisplay) brokerDisplay.textContent = '£' + formatNumber(brokerFee);
-  // Valuation and Legal fees are now direct inputs in the Fee Schedule — no display sync needed
+  const valDisplay = document.getElementById('dip-fee-val-display');
+  if (valDisplay) valDisplay.textContent = '£' + formatNumber(valuationCost);
+  const legalDisplay = document.getElementById('dip-fee-legal-display');
+  if (legalDisplay) legalDisplay.textContent = '£' + formatNumber(legalCost);
 
   const summaryEl = document.getElementById('dip-summary');
   if (summaryEl) {
@@ -336,129 +241,37 @@ export async function issueDip() {
 }
 
 /**
- * Submit credit decision (approve/decline only — moreinfo uses submitMoreInfo)
+ * Submit credit decision (approve/decline/moreinfo)
  */
 export async function creditDecision(decision) {
   const dealId = getCurrentDealId();
   const notes = document.getElementById('credit-notes')?.value || '';
   const conditions = document.getElementById('credit-conditions')?.value || '';
-  const retainedMonths = document.getElementById('credit-retained-months')?.value;
-  const overrideRate = document.getElementById('credit-override-rate')?.value;
-  const overrideLtv = document.getElementById('credit-override-ltv')?.value;
-  const overrideArrFee = document.getElementById('credit-override-arr-fee')?.value;
 
-  // ── Decline: require a reason ──
-  if (decision === 'decline') {
-    if (!notes) {
-      showToast('Please provide a reason for declining in the Credit Assessment Notes', true);
-      return;
-    }
-    if (!confirm('Decline this deal? This decision will be final.\n\nReason: ' + notes.substring(0, 200))) return;
+  if (!notes && decision !== 'moreinfo') {
+    showToast('Please provide credit assessment notes', true);
+    return;
   }
 
-  // ── Approve: require notes ──
-  if (decision === 'approve') {
-    if (!notes) {
-      showToast('Please provide credit assessment notes before approving', true);
-      return;
-    }
-    if (!confirm('Issue In-Principle Approval?\n\nThis will be visible to the borrower once approved.')) return;
-  }
+  const confirmMsg = decision === 'approve' ? 'Issue In-Principle Approval? This will be visible to the broker/borrower.' :
+                     decision === 'decline' ? 'Decline this deal?' : 'Request more information?';
+  if (!confirm(confirmMsg)) return;
 
   try {
-    const body = { decision, notes, conditions };
-    if (retainedMonths !== undefined && retainedMonths !== null) {
-      body.retained_months = parseInt(retainedMonths, 10);
-    }
-    // Credit overrides — only send if fields exist (credit view)
-    if (overrideRate) body.override_rate = parseFloat(overrideRate);
-    if (overrideLtv) body.override_ltv = parseFloat(overrideLtv);
-    if (overrideArrFee) body.override_arr_fee = parseFloat(overrideArrFee);
+    const nextStage = decision === 'approve' ? 'info_gathering' : decision === 'decline' ? 'declined' : 'assigned';
 
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ decision, notes, conditions, next_stage: nextStage })
     });
     const data = await resp.json();
     if (resp.ok) {
-      const msgs = {
-        approve: 'In-Principle Approval issued — awaiting borrower acceptance',
-        decline: 'Deal declined',
-      };
+      const msgs = { approve: 'In-Principle Approval issued', decline: 'Deal declined', moreinfo: 'Sent back for more information' };
       showToast(msgs[decision] || 'Decision recorded');
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to record decision', true);
-    }
-  } catch (err) {
-    showToast('Network error', true);
-  }
-}
-
-/**
- * Submit More Info request — credit sends a query back to the RM
- * Called from the More Info modal (not browser prompt)
- */
-export async function submitMoreInfo() {
-  const dealId = getCurrentDealId();
-  const question = document.getElementById('moreinfo-question')?.value || '';
-  const creditNotes = document.getElementById('credit-notes')?.value || '';
-
-  if (!question.trim()) {
-    showToast('Please describe what information you need from the RM', true);
-    return;
-  }
-
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        decision: 'moreinfo',
-        notes: question,
-        conditions: creditNotes
-      })
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      // Close modal
-      const modal = document.getElementById('moreinfo-modal');
-      if (modal) modal.style.display = 'none';
-      showToast('Query sent to RM — deal returned to their queue');
-      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
-    } else {
-      showToast(data.error || 'Failed to send query', true);
-    }
-  } catch (err) {
-    showToast('Network error', true);
-  }
-}
-
-/**
- * RM responds to a credit query and can then re-issue DIP
- */
-export async function respondToCreditQuery() {
-  const dealId = getCurrentDealId();
-  const response = document.getElementById('rm-query-response')?.value || '';
-
-  if (!response.trim()) {
-    showToast('Please provide a response to the credit query', true);
-    return;
-  }
-
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/respond-credit-query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ response })
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      showToast('Response recorded — you can now re-issue the DIP');
-      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
-    } else {
-      showToast(data.error || 'Failed to submit response', true);
     }
   } catch (err) {
     showToast('Network error', true);
@@ -486,39 +299,6 @@ export async function generateAiTermsheet() {
     }
   } catch (err) {
     showToast('Network error', true);
-  }
-}
-
-/**
- * Issue formal Termsheet DOCX — generates DOCX, uploads to OneDrive, sends via DocuSign
- */
-export async function issueTermsheet() {
-  const dealId = getCurrentDealId();
-  if (!confirm('This will generate the formal Termsheet DOCX, upload it to OneDrive, and send it via DocuSign to the borrower for signing. Continue?')) return;
-  try {
-    showToast('Generating termsheet document...');
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/issue-termsheet`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      let msg = 'Termsheet issued successfully!';
-      if (data.docusign && data.docusign.envelope_id) {
-        msg += ' DocuSign envelope sent.';
-      }
-      if (data.doc_url) {
-        msg += ' Document uploaded to OneDrive.';
-      }
-      showToast(msg);
-      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
-    } else {
-      showToast(data.error || 'Failed to issue termsheet', true);
-    }
-  } catch (err) {
-    console.error('[issueTermsheet] Error:', err);
-    showToast('Network error issuing termsheet', true);
   }
 }
 
@@ -565,7 +345,7 @@ export async function viewDipPdf(submissionId) {
     }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');  // Opens PDF in browser viewer
+    window.open(url, '_blank');
   } catch (err) {
     showToast('Network error loading DIP PDF', true);
   }
@@ -628,41 +408,5 @@ export async function confirmFeeAndAdvance() {
     import('./deal-detail.js').then(m => m.showDealDetail(dealId));
   } catch (err) {
     showToast('Network error', true);
-  }
-}
-
-/**
- * Save Fee Tracker changes — persists editable fee amounts to ai_termsheet_data
- */
-export async function updateFees() {
-  const dealId = getCurrentDealId();
-  if (!dealId) { showToast('No deal selected', true); return; }
-
-  const onboarding = parseFormattedNumber(document.getElementById('ft-onboarding')?.value || '0');
-  const commitment = parseFormattedNumber(document.getElementById('ft-commitment')?.value || '0');
-  const valuation  = parseFormattedNumber(document.getElementById('ft-valuation')?.value || '0');
-  const legal      = parseFormattedNumber(document.getElementById('ft-legal')?.value || '0');
-
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/update-fees`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fee_onboarding: onboarding,
-        fee_commitment: commitment,
-        valuation_cost: valuation,
-        legal_cost: legal
-      })
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      showToast(data.error || 'Failed to save fees', true);
-      return;
-    }
-    showToast('Fees saved successfully');
-    // Refresh deal detail to reflect changes
-    import('./deal-detail.js').then(m => m.showDealDetail(dealId));
-  } catch (err) {
-    showToast('Network error saving fees', true);
   }
 }

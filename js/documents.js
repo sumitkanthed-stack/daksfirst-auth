@@ -118,7 +118,7 @@ export async function uploadDealFiles(files) {
       formData.append('files', files[i]);
     }
 
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/upload`, {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/upload-documents`, {
       method: 'POST',
       body: formData
     });

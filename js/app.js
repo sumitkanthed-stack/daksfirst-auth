@@ -26,6 +26,7 @@ window.updateAdminDealsFilter = updateAdminDealsFilter;
 window.loadAdminUsers = loadAdminUsers;
 window.switchDetailTab = switchDetailTab;
 window.saveOnboardingTab = saveOnboardingTab;
+window.toggleBrokerCompanyFields = toggleBrokerCompanyFields;
 window.loadBrokerOnboarding = loadBrokerOnboarding;
 window.showBrokerOnboarding = showBrokerOnboarding;
 window.hideBrokerOnboarding = hideBrokerOnboarding;
@@ -52,6 +53,7 @@ window.handleEmailVerification = handleEmailVerification;
 window.assignRM = () => import('./workflow-actions.js').then(m => m.assignRM());
 window.assignRMAndAdvance = () => import('./workflow-actions.js').then(m => m.assignRMAndAdvance());
 window.assignReviewer = (type) => import('./workflow-actions.js').then(m => m.assignReviewer(type));
+window.advanceStage = (newStage) => import('./workflow-actions.js').then(m => m.advanceStage(newStage));
 window.confirmFee = () => import('./workflow-actions.js').then(m => m.confirmFee());
 window.submitRecommendation = (decision) => import('./workflow-actions.js').then(m => m.submitRecommendation(decision));
 window.acceptDipExternal = () => import('./workflow-actions.js').then(m => m.acceptDipExternal());
@@ -74,31 +76,15 @@ window.saveIntakeChanges = () => import('./workflow-actions.js').then(m => m.sav
 
 window.removeDipProperty = (idx) => import('./dip.js').then(m => m.removeDipProperty(idx));
 window.approveDipProperty = (idx) => import('./dip.js').then(m => m.approveDipProperty(idx));
-window.addBackDipProperty = (idx) => import('./dip.js').then(m => m.addBackDipProperty(idx));
 window.approveAllDipProperties = () => import('./dip.js').then(m => m.approveAllDipProperties());
 window.calcDipLtv = () => import('./dip.js').then(m => m.calcDipLtv());
 window.issueDip = () => import('./dip.js').then(m => m.issueDip());
 window.creditDecision = (decision) => import('./dip.js').then(m => m.creditDecision(decision));
-window.submitMoreInfo = () => import('./dip.js').then(m => m.submitMoreInfo());
-window.respondToCreditQuery = () => import('./dip.js').then(m => m.respondToCreditQuery());
 window.generateAiTermsheet = () => import('./dip.js').then(m => m.generateAiTermsheet());
-window.issueTermsheet = () => import('./dip.js').then(m => m.issueTermsheet());
 window.acceptDip = (submissionId) => import('./dip.js').then(m => m.acceptDip(submissionId));
 window.viewDipPdf = (submissionId) => import('./dip.js').then(m => m.viewDipPdf(submissionId));
 window.requestFee = () => import('./dip.js').then(m => m.requestFee());
 window.confirmFeeAndAdvance = () => import('./dip.js').then(m => m.confirmFeeAndAdvance());
-window.updateFees = () => import('./dip.js').then(m => m.updateFees());
-
-// Document panel
-window.toggleDocSection = (key) => import('./doc-panel.js').then(m => m.toggleDocSection(key));
-window.uploadToDocPanel = (cat, files) => import('./doc-panel.js').then(m => m.uploadToDocPanel(cat, files));
-
-// Onboarding workflow
-window.confirmOnboardingFee = () => import('./onboarding.js').then(m => m.confirmOnboardingFee());
-window.approveOnboardingSection = (section, approved) => import('./onboarding.js').then(m => m.approveOnboardingSection(section, approved));
-window.uploadSectionDocs = (section, files) => import('./onboarding.js').then(m => m.uploadSectionDocs(section, files));
-window.rmSignoff = () => import('./onboarding.js').then(m => m.rmSignoff());
-window.creditSignoff = (decision) => import('./onboarding.js').then(m => m.creditSignoff(decision));
 
 /**
  * Wrap traditional form submission handlers
@@ -181,6 +167,10 @@ window.doLogin = async function() {
   }
 };
 
+window.startLogin = function() {
+  showScreen('screen-login');
+};
+
 window.goToRegister = function(role) {
   window.selectedRole = role;
   // Show registration form
@@ -191,6 +181,10 @@ window.goToRegister = function(role) {
     if (nextPanel) nextPanel.classList.add('active');
   }
   showScreen('screen-register');
+};
+
+window.showRoleSelection = function() {
+  showScreen('screen-landing');
 };
 
 window.createInternalUser = () => import('./admin.js').then(m => m.createInternalUser?.());
