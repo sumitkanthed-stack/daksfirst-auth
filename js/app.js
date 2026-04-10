@@ -82,11 +82,19 @@ window.creditDecision = (decision) => import('./dip.js').then(m => m.creditDecis
 window.submitMoreInfo = () => import('./dip.js').then(m => m.submitMoreInfo());
 window.respondToCreditQuery = () => import('./dip.js').then(m => m.respondToCreditQuery());
 window.generateAiTermsheet = () => import('./dip.js').then(m => m.generateAiTermsheet());
+window.issueTermsheet = () => import('./dip.js').then(m => m.issueTermsheet());
 window.acceptDip = (submissionId) => import('./dip.js').then(m => m.acceptDip(submissionId));
 window.viewDipPdf = (submissionId) => import('./dip.js').then(m => m.viewDipPdf(submissionId));
 window.requestFee = () => import('./dip.js').then(m => m.requestFee());
 window.confirmFeeAndAdvance = () => import('./dip.js').then(m => m.confirmFeeAndAdvance());
 window.updateFees = () => import('./dip.js').then(m => m.updateFees());
+
+// Onboarding workflow
+window.confirmOnboardingFee = () => import('./onboarding.js').then(m => m.confirmOnboardingFee());
+window.approveOnboardingSection = (section, approved) => import('./onboarding.js').then(m => m.approveOnboardingSection(section, approved));
+window.uploadSectionDocs = (section, files) => import('./onboarding.js').then(m => m.uploadSectionDocs(section, files));
+window.rmSignoff = () => import('./onboarding.js').then(m => m.rmSignoff());
+window.creditSignoff = (decision) => import('./onboarding.js').then(m => m.creditSignoff(decision));
 
 /**
  * Wrap traditional form submission handlers

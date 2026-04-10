@@ -3,7 +3,7 @@ import { showScreen, showToast, formatNumber, formatPct, formatDate, formatDateT
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
-import { populateOnboardingData, switchDetailTab } from './onboarding.js';
+import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
 
 /**
  * Show deal detail screen
@@ -256,10 +256,12 @@ export async function showDealDetail(dealId) {
     }
 
     // ── PHASE 2: Lock/Unlock ──
-    const unlockedStages = ['ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
-    const isPhase2Unlocked = unlockedStages.includes(stage);
-
-    document.getElementById('phase2-lock').textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
+    // Phase 2 unlocks when onboarding fee is confirmed (not stage-based)
+    const isPhase2Unlocked = !!deal.dip_fee_confirmed;
+    const phase2LockEl = document.getElementById('phase2-lock');
+    if (phase2LockEl) {
+      phase2LockEl.textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
+    }
 
     document.querySelectorAll('.phase2-tab').forEach(tab => {
       if (isPhase2Unlocked) {
@@ -276,13 +278,25 @@ export async function showDealDetail(dealId) {
     phase2Tabs.forEach(t => {
       const lockNotice = document.getElementById(`${t}-lock-notice`);
       const form = document.getElementById(`${t}-form`) || document.getElementById(`${t === 'refurbishment' ? 'refurbishment' : t}-form`);
-      if (lockNotice) lockNotice.style.display = isPhase2Unlocked ? 'none' : 'block';
+      if (lockNotice) {
+        lockNotice.style.display = isPhase2Unlocked ? 'none' : 'block';
+        if (!isPhase2Unlocked) {
+          lockNotice.innerHTML = `<span class="lock-icon-large">&#128274;</span>
+            <h3>${t.charAt(0).toUpperCase() + t.slice(1)} — Locked</h3>
+            <p>This section unlocks after the onboarding fee is confirmed by the RM.</p>`;
+        }
+      }
       if (form) form.style.display = isPhase2Unlocked ? 'block' : 'none';
     });
 
     // Pre-fill Phase 2 forms from onboarding_data if it exists
     if (isPhase2Unlocked && deal.onboarding_data) {
       populateOnboardingData(deal.onboarding_data);
+    }
+
+    // Inject RM section approval controls and doc upload summaries into each Phase 2 tab
+    if (isPhase2Unlocked) {
+      injectOnboardingSectionControls(deal);
     }
 
     // ── WORKFLOW CONTROLS ──
@@ -1302,13 +1316,142 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
-  // INFO_GATHERING (Credit or Admin) - Generate AI Termsheet
-  if (stage === 'info_gathering' && ['credit', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Generate AI Termsheet</h4>
-      <textarea id="ai-termsheet-data" placeholder="AI termsheet data / notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:80px;margin-bottom:8px;"></textarea>
-      <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Generate Termsheet</button>
-    </div>`;
+  // INFO_GATHERING — Onboarding Fee Gate + Section Approval Summary + AI Termsheet generation
+  if (stage === 'info_gathering' && isInternal) {
+    const dipFeeConfirmed = !!deal.dip_fee_confirmed;
+    const obApproval = deal.onboarding_approval || {};
+    const allSections = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    const approvedCount = allSections.filter(s => obApproval[s] && obApproval[s].approved).length;
+    const allApproved = approvedCount === allSections.length;
+    const rmSignedOff = !!deal.rm_signoff_at;
+    const creditSignedOff = !!deal.credit_signoff_at;
+    const aiData = deal.ai_termsheet_data || {};
+    const creditSignoffDecision = aiData.credit_signoff ? aiData.credit_signoff.decision : null;
+
+    // Step 1: Onboarding Fee
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${dipFeeConfirmed ? '#22c55e' : '#f59e0b'};">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h4 style="margin:0;color:${dipFeeConfirmed ? '#15803d' : '#92400e'};">Step 1: Onboarding Fee</h4>
+          <p style="margin:4px 0 0;font-size:12px;color:#666;">${dipFeeConfirmed ? 'Fee confirmed — full onboarding is unlocked.' : 'The onboarding fee must be confirmed before the borrower/broker can complete full onboarding.'}</p>
+        </div>`;
+    if (!dipFeeConfirmed && ['rm', 'admin'].includes(currentRole)) {
+      html += `<button onclick="window.confirmOnboardingFee()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm Fee Received</button>`;
+    } else if (dipFeeConfirmed) {
+      html += `<span style="font-size:20px;">&#10003;</span>`;
+    }
+    html += `</div></div>`;
+
+    // Step 2: Onboarding Section Approval Summary
+    if (dipFeeConfirmed) {
+      const sectionLabels = { kyc: 'KYC', financials: 'Financials', valuation: 'Valuation', refurbishment: 'Refurb', exit_evidence: 'Exit Evidence', aml: 'AML', insurance: 'Insurance' };
+      html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${allApproved ? '#22c55e' : '#3b82f6'};">
+        <h4 style="margin:0 0 12px;color:${allApproved ? '#15803d' : '#1e40af'};">Step 2: Onboarding Sections (${approvedCount}/${allSections.length} approved)</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;">`;
+      allSections.forEach(s => {
+        const isOK = obApproval[s] && obApproval[s].approved;
+        html += `<div style="padding:6px 10px;border-radius:6px;font-size:12px;font-weight:600;text-align:center;
+          background:${isOK ? '#dcfce7' : '#fef3c7'};color:${isOK ? '#15803d' : '#92400e'};">
+          ${isOK ? '&#10003;' : '&#9711;'} ${sectionLabels[s] || s}</div>`;
+      });
+      html += `</div>
+        <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">Review and approve each section in the Full Onboarding tabs above. All 7 must be approved before AI analysis.</p>
+      </div>`;
+
+      // Step 3: Generate AI Termsheet (only when all sections approved)
+      if (allApproved && !deal.ai_termsheet_generated_at) {
+        html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+          <h4 style="margin:0 0 8px;color:var(--primary);">Step 3: Generate AI Termsheet</h4>
+          <p style="margin:0 0 12px;font-size:12px;color:#666;">All onboarding sections are approved. Submit the deal to the AI engine for analysis. It will review all uploaded documents and data to generate a draft termsheet with proposed terms.</p>
+          <textarea id="ai-termsheet-data" placeholder="Additional notes for AI analysis (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+          <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Generate AI Termsheet</button>
+        </div>`;
+      }
+
+      // Step 4: RM Sign-off on AI Termsheet
+      if (deal.ai_termsheet_generated_at && !rmSignedOff) {
+        if (['rm', 'admin'].includes(currentRole)) {
+          html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #3b82f6;">
+            <h4 style="margin:0 0 8px;color:#1e40af;">Step 4: RM Sign-off</h4>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">AI analysis complete. Review the proposed terms and sign off to send to Credit for final approval.</p>
+            <textarea id="rm-signoff-notes" placeholder="RM comments / adjustments (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+            <button onclick="window.rmSignoff()" style="padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">RM Sign-off — Send to Credit</button>
+          </div>`;
+        } else {
+          html += `<div style="background:#fef3c7;padding:12px 16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #f59e0b;">
+            <strong>Awaiting RM Sign-off</strong> — The RM needs to review and sign off on the AI termsheet before Credit can review.
+          </div>`;
+        }
+      }
+
+      // Step 4 done indicator
+      if (rmSignedOff) {
+        html += `<div style="background:#dcfce7;padding:12px 16px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">&#10003;</span>
+          <div><strong style="color:#15803d;">RM Signed Off</strong>
+          <span style="font-size:11px;color:#666;"> — ${new Date(deal.rm_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</span></div>
+        </div>`;
+      }
+
+      // Step 5: Credit Sign-off
+      if (rmSignedOff && !creditSignedOff) {
+        if (['credit', 'admin'].includes(currentRole)) {
+          html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+            <h4 style="margin:0 0 8px;color:#7c3aed;">Step 5: Credit Sign-off</h4>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">RM has signed off. Review the AI termsheet and the full onboarding pack. Approve, decline, or request more info.</p>
+            <textarea id="credit-signoff-notes" placeholder="Credit comments / conditions (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+            <div style="display:flex;gap:8px;">
+              <button onclick="window.creditSignoff('approve')" style="padding:8px 16px;background:#22c55e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Approve</button>
+              <button onclick="window.creditSignoff('moreinfo')" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">More Info</button>
+              <button onclick="window.creditSignoff('decline')" style="padding:8px 16px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Decline</button>
+            </div>
+          </div>`;
+        } else {
+          html += `<div style="background:#f5f3ff;padding:12px 16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #7c3aed;">
+            <strong>Awaiting Credit Sign-off</strong> — RM has signed off. Credit team is reviewing.
+          </div>`;
+        }
+      }
+
+      // Step 5 done indicator
+      if (creditSignedOff) {
+        const csDecColor = creditSignoffDecision === 'approve' ? '#15803d' : creditSignoffDecision === 'decline' ? '#ef4444' : '#f59e0b';
+        const csDecLabel = creditSignoffDecision === 'approve' ? 'APPROVED' : creditSignoffDecision === 'decline' ? 'DECLINED' : 'MORE INFO REQUESTED';
+        html += `<div style="background:${creditSignoffDecision === 'approve' ? '#dcfce7' : creditSignoffDecision === 'decline' ? '#fee2e2' : '#fef3c7'};padding:12px 16px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;color:${csDecColor};">${creditSignoffDecision === 'approve' ? '&#10003;' : creditSignoffDecision === 'decline' ? '&#10007;' : '&#9888;'}</span>
+          <div><strong style="color:${csDecColor};">Credit ${csDecLabel}</strong>
+          <span style="font-size:11px;color:#666;"> — ${new Date(deal.credit_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</span></div>
+        </div>`;
+      }
+    }
+  }
+
+  // AI_TERMSHEET — Issue Termsheet DOCX + Download
+  if (stage === 'ai_termsheet' && ['rm', 'credit', 'admin'].includes(currentRole)) {
+    const tsIssuedAt = deal.ts_issued_at;
+    const tsDocUrl = deal.ts_pdf_url;
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+      <h4 style="margin:0 0 12px;color:var(--primary);">Termsheet Document</h4>`;
+
+    if (tsIssuedAt) {
+      // Already issued — show download link
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span style="font-size:20px;">✅</span>
+        <div>
+          <div style="font-weight:600;color:#15803d;">Termsheet Issued</div>
+          <div style="font-size:12px;color:#666;">Issued on ${new Date(tsIssuedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+        </div>
+      </div>`;
+      if (tsDocUrl) {
+        html += `<a href="${sanitizeHtml(tsDocUrl)}" target="_blank" style="display:inline-block;padding:8px 16px;background:#047857;color:white;border-radius:4px;text-decoration:none;font-weight:600;font-size:13px;margin-right:8px;">Download Termsheet DOCX</a>`;
+      }
+      html += `<button onclick="window.issueTermsheet && window.issueTermsheet()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;">Re-generate Termsheet</button>`;
+    } else {
+      // Not yet issued — show generate button
+      html += `<p style="margin:0 0 12px;font-size:13px;color:#666;">Generate the formal termsheet document (DOCX). This will be uploaded to OneDrive and sent via DocuSign to the borrower for signing.</p>
+        <button onclick="window.issueTermsheet && window.issueTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Issue Termsheet DOCX</button>`;
+    }
+    html += `</div>`;
   }
 
   // AI_TERMSHEET (RM or Admin) - Request Fee

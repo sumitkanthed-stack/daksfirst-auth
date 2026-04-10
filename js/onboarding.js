@@ -74,7 +74,7 @@ export function switchDetailTab(btn) {
 
   // Block locked Phase 2 tabs
   if (btn.classList.contains('locked')) {
-    showToast('This section unlocks after the termsheet is signed.', true);
+    showToast('This section unlocks after the onboarding fee is confirmed.', true);
     return;
   }
 
@@ -190,6 +190,287 @@ export async function loadBrokerOnboarding() {
 /**
  * Save broker onboarding (KYC + bank details)
  */
+/**
+ * Inject RM approval controls, doc upload zones, and status badges into each Phase 2 tab
+ */
+export function injectOnboardingSectionControls(deal) {
+  const approval = deal.onboarding_approval || {};
+  const currentRole = window.currentRole || 'broker';
+  const isRM = ['rm', 'admin'].includes(currentRole);
+  const isInternal = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole);
+
+  // Section config: key → { tabFormId, label, category }
+  const sections = {
+    kyc:            { formId: 'kyc-form',            label: 'KYC / Identity',     category: 'kyc' },
+    financials:     { formId: 'financials-form',     label: 'Financials (ALIE)',  category: 'financials' },
+    valuation:      { formId: 'valuation-form',      label: 'Valuation',          category: 'valuation' },
+    refurbishment:  { formId: 'refurbishment-form',  label: 'Refurbishment',      category: 'refurbishment' },
+    exit_evidence:  { formId: 'exit-form',           label: 'Exit Evidence',      category: 'exit_evidence' },
+    aml:            { formId: 'aml-form',            label: 'AML',               category: 'aml' },
+    insurance:      { formId: 'insurance-form',      label: 'Insurance',          category: 'insurance' }
+  };
+
+  Object.entries(sections).forEach(([key, cfg]) => {
+    const form = document.getElementById(cfg.formId);
+    if (!form) return;
+
+    // Remove any previously injected controls
+    form.querySelectorAll('.onboarding-section-controls').forEach(el => el.remove());
+
+    const sectionApproval = approval[key];
+    const isApproved = sectionApproval && sectionApproval.approved;
+
+    // Build the control bar
+    const controlBar = document.createElement('div');
+    controlBar.className = 'onboarding-section-controls';
+    controlBar.style.cssText = 'background:#f8fafc;border:2px solid ' + (isApproved ? '#22c55e' : '#e2e8f0') + ';border-radius:8px;padding:12px 16px;margin-bottom:16px;';
+
+    let controlHtml = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">`;
+    controlHtml += `<div style="display:flex;align-items:center;gap:8px;">`;
+
+    if (isApproved) {
+      const approvedDate = new Date(sectionApproval.approved_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
+        <span style="font-size:14px;">&#10003;</span> RM Approved — ${approvedDate}</span>`;
+      if (sectionApproval.notes) {
+        controlHtml += `<span style="font-size:11px;color:#666;">Note: ${sanitizeHtml(sectionApproval.notes)}</span>`;
+      }
+    } else {
+      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
+        <span style="font-size:14px;">&#9711;</span> Pending RM Review</span>`;
+    }
+    controlHtml += `</div>`;
+
+    // RM can approve/unapprove sections
+    if (isRM && !isApproved) {
+      controlHtml += `<button onclick="window.approveOnboardingSection('${key}')"
+        style="padding:6px 14px;background:#22c55e;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
+        Approve ${cfg.label}</button>`;
+    } else if (isRM && isApproved) {
+      controlHtml += `<button onclick="window.approveOnboardingSection('${key}', false)"
+        style="padding:6px 14px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
+        Revoke Approval</button>`;
+    }
+    controlHtml += `</div>`;
+
+    // Document upload zone
+    controlHtml += `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:600;color:#374151;">Uploaded Documents — ${cfg.label}</span>
+        <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary);color:white;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
+          <input type="file" multiple style="display:none;" onchange="window.uploadSectionDocs('${key}', this.files)">
+          + Upload Files
+        </label>
+      </div>
+      <div id="section-docs-${key}" style="font-size:12px;color:#6b7280;">Loading...</div>
+    </div>`;
+
+    controlBar.innerHTML = controlHtml;
+    form.insertBefore(controlBar, form.firstChild);
+  });
+
+  // Load document counts for each section
+  loadSectionDocuments(deal.submission_id);
+}
+
+/**
+ * Load and display documents per onboarding section
+ */
+async function loadSectionDocuments(submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/documents-by-category`, { method: 'GET' });
+    const data = await resp.json();
+    if (!resp.ok) return;
+
+    const docsByCategory = {};
+    (data.documents || []).forEach(doc => {
+      const cat = doc.doc_category || 'general';
+      if (!docsByCategory[cat]) docsByCategory[cat] = [];
+      docsByCategory[cat].push(doc);
+    });
+
+    const sectionKeys = ['kyc', 'financials', 'valuation', 'refurbishment', 'exit_evidence', 'aml', 'insurance'];
+    sectionKeys.forEach(key => {
+      const container = document.getElementById(`section-docs-${key}`);
+      if (!container) return;
+
+      const docs = docsByCategory[key] || [];
+      if (docs.length === 0) {
+        container.innerHTML = '<span style="color:#9ca3af;">No documents uploaded yet</span>';
+        return;
+      }
+
+      container.innerHTML = docs.map(doc => {
+        const size = doc.file_size ? `(${(doc.file_size / 1024).toFixed(0)} KB)` : '';
+        const date = new Date(doc.uploaded_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+        const downloadLink = doc.onedrive_download_url
+          ? `<a href="${sanitizeHtml(doc.onedrive_download_url)}" target="_blank" style="color:var(--primary);text-decoration:none;">&#8595;</a>`
+          : '';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f1f5f9;">
+          <span style="color:#374151;">${sanitizeHtml(doc.filename)} <span style="color:#9ca3af;">${size}</span></span>
+          <span style="color:#9ca3af;font-size:11px;">${date} ${downloadLink}</span>
+        </div>`;
+      }).join('');
+    });
+  } catch (err) {
+    console.error('[loadSectionDocuments] Error:', err);
+  }
+}
+
+/**
+ * Upload documents with category for an onboarding section
+ */
+export async function uploadSectionDocs(sectionKey, files) {
+  const dealId = getCurrentDealId();
+  if (!dealId || !files || files.length === 0) return;
+
+  const formData = new FormData();
+  formData.append('category', sectionKey);
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  try {
+    showToast(`Uploading ${files.length} file(s) to ${sectionKey.replace(/_/g, ' ')}...`);
+    const token = getAuthToken();
+    const resp = await fetch(`${API_BASE}/api/deals/${dealId}/upload-categorised`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(`${data.documents.length} file(s) uploaded successfully`);
+      // Reload deal to refresh doc list
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Upload failed', true);
+    }
+  } catch (err) {
+    showToast('Network error uploading files', true);
+  }
+}
+
+/**
+ * Approve (or revoke) an onboarding section
+ */
+export async function approveOnboardingSection(sectionKey, approved = true) {
+  const dealId = getCurrentDealId();
+  if (!dealId) return;
+
+  const action = approved ? 'approve' : 'revoke approval for';
+  if (!confirm(`Are you sure you want to ${action} the ${sectionKey.replace(/_/g, ' ')} section?`)) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/approve-onboarding-section`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: sectionKey, approved })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(`${sectionKey.replace(/_/g, ' ')} ${approved ? 'approved' : 'approval revoked'}`);
+      if (data.all_sections_approved) {
+        showToast('All onboarding sections approved! You can now generate the AI termsheet.', false);
+      }
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to update approval', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
+/**
+ * Confirm onboarding fee (RM action — unlocks Phase 2)
+ */
+export async function confirmOnboardingFee() {
+  const dealId = getCurrentDealId();
+  if (!dealId) return;
+
+  if (!confirm('Confirm that the onboarding fee has been received? This will unlock the full onboarding section for the deal.')) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/confirm-onboarding-fee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('Onboarding fee confirmed — Full Onboarding is now unlocked!');
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to confirm fee', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
+/**
+ * RM sign-off on AI termsheet
+ */
+export async function rmSignoff() {
+  const dealId = getCurrentDealId();
+  if (!dealId) return;
+
+  const notes = document.getElementById('rm-signoff-notes')?.value || '';
+  if (!confirm('Sign off on the AI-generated termsheet? This will send it to Credit for final review.')) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/rm-signoff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('RM sign-off recorded. Termsheet sent to Credit for review.');
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to sign off', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
+/**
+ * Credit sign-off on AI termsheet
+ */
+export async function creditSignoff(decision) {
+  const dealId = getCurrentDealId();
+  if (!dealId) return;
+
+  const notes = document.getElementById('credit-signoff-notes')?.value || '';
+  const labels = { approve: 'approve', decline: 'decline', moreinfo: 'request more information on' };
+  if (!confirm(`Are you sure you want to ${labels[decision] || decision} this termsheet?`)) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-signoff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, notes })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      const msg = decision === 'approve'
+        ? 'Credit approved — termsheet ready for formal issuance!'
+        : decision === 'decline'
+          ? 'Credit declined the termsheet.'
+          : 'More info requested — RM will need to address queries.';
+      showToast(msg);
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to record decision', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
 export async function saveBrokerOnboarding() {
   const name = document.getElementById('bonb-name')?.value.trim();
   const dob = document.getElementById('bonb-dob')?.value;

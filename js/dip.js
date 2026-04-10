@@ -490,6 +490,39 @@ export async function generateAiTermsheet() {
 }
 
 /**
+ * Issue formal Termsheet DOCX — generates DOCX, uploads to OneDrive, sends via DocuSign
+ */
+export async function issueTermsheet() {
+  const dealId = getCurrentDealId();
+  if (!confirm('This will generate the formal Termsheet DOCX, upload it to OneDrive, and send it via DocuSign to the borrower for signing. Continue?')) return;
+  try {
+    showToast('Generating termsheet document...');
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/issue-termsheet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      let msg = 'Termsheet issued successfully!';
+      if (data.docusign && data.docusign.envelope_id) {
+        msg += ' DocuSign envelope sent.';
+      }
+      if (data.doc_url) {
+        msg += ' Document uploaded to OneDrive.';
+      }
+      showToast(msg);
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to issue termsheet', true);
+    }
+  } catch (err) {
+    console.error('[issueTermsheet] Error:', err);
+    showToast('Network error issuing termsheet', true);
+  }
+}
+
+/**
  * Request fee
  */
 export async function requestFee() {
