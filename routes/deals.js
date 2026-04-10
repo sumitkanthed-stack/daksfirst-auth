@@ -1412,11 +1412,169 @@ router.post('/:submissionId/approve-onboarding-section', authenticateToken, auth
       approved !== false ? 'approved' : 'rejected', 'by', req.user.userId,
       allApproved ? '(ALL SECTIONS APPROVED)' : '');
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  AUTO-TRIGGER: When all 6 sections approved → fire n8n analysis
+    // ═══════════════════════════════════════════════════════════════════
+    let n8nTriggered = false;
+    if (allApproved) {
+      try {
+        console.log('[approve-section] ALL SECTIONS APPROVED — assembling full deal pack for n8n...');
+
+        // 1. Fetch complete deal data
+        const fullDeal = await pool.query(
+          `SELECT * FROM deal_submissions WHERE id = $1`, [deal.id]
+        );
+        const dealData = fullDeal.rows[0];
+
+        // 2. Fetch all onboarding form data
+        const onboardingData = dealData.onboarding_data || {};
+
+        // 3. Fetch all uploaded documents (metadata only — n8n gets file names + categories)
+        const docsResult = await pool.query(
+          `SELECT filename, file_type, file_size, doc_category, uploaded_at, onedrive_download_url
+           FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at`,
+          [deal.id]
+        );
+
+        // 4. Fetch submitter (broker) info
+        const brokerResult = await pool.query(
+          `SELECT first_name, last_name, email, phone FROM users WHERE id = $1`, [dealData.user_id]
+        );
+        const broker = brokerResult.rows[0] || {};
+
+        // 5. Build comprehensive deal pack payload for n8n
+        const dealPack = {
+          // Metadata
+          trigger: 'onboarding_complete',
+          submissionId: req.params.submissionId,
+          dealId: deal.id,
+          timestamp: new Date().toISOString(),
+          approvedBy: req.user.userId,
+
+          // Borrower & Broker
+          borrower: {
+            name: dealData.borrower_name,
+            company: dealData.borrower_company,
+            email: dealData.borrower_email,
+            phone: dealData.borrower_phone,
+            type: dealData.borrower_type,
+            nationality: dealData.borrower_nationality,
+            company_name: dealData.company_name,
+            company_number: dealData.company_number
+          },
+          broker: {
+            name: dealData.broker_name || `${broker.first_name || ''} ${broker.last_name || ''}`.trim(),
+            company: dealData.broker_company,
+            fca_number: dealData.broker_fca,
+            email: broker.email,
+            phone: broker.phone
+          },
+
+          // Security / Property
+          security: {
+            address: dealData.security_address,
+            postcode: dealData.security_postcode,
+            asset_type: dealData.asset_type,
+            current_value: dealData.current_value,
+            purchase_price: dealData.purchase_price,
+            tenure: dealData.property_tenure,
+            occupancy_status: dealData.occupancy_status,
+            current_use: dealData.current_use
+          },
+
+          // Loan Details
+          loan: {
+            amount: dealData.loan_amount,
+            ltv_requested: dealData.ltv_requested,
+            purpose: dealData.loan_purpose,
+            exit_strategy: dealData.exit_strategy,
+            term_months: dealData.term_months,
+            rate_requested: dealData.rate_requested,
+            interest_servicing: dealData.interest_servicing,
+            existing_charges: dealData.existing_charges,
+            use_of_funds: dealData.use_of_funds,
+            refurb_scope: dealData.refurb_scope,
+            refurb_cost: dealData.refurb_cost,
+            deposit_source: dealData.deposit_source
+          },
+
+          // Onboarding form data (all 6 sections as filled by borrower/broker)
+          onboarding: onboardingData,
+
+          // Section approval summary
+          approvals: approval,
+
+          // All uploaded documents (metadata + download URLs)
+          documents: docsResult.rows.map(d => ({
+            filename: d.filename,
+            category: d.doc_category,
+            type: d.file_type,
+            size: d.file_size,
+            uploaded_at: d.uploaded_at,
+            download_url: d.onedrive_download_url || null
+          })),
+
+          // Document counts by category
+          documentSummary: docsResult.rows.reduce((acc, d) => {
+            acc[d.doc_category] = (acc[d.doc_category] || 0) + 1;
+            return acc;
+          }, {}),
+
+          // Additional notes
+          additional_notes: dealData.additional_notes,
+
+          // Callback URL for n8n to send results back
+          callbackUrl: 'https://daksfirst-auth.onrender.com/api/webhooks/analysis-complete'
+        };
+
+        // 6. Fire n8n webhook
+        const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
+        if (N8N_WEBHOOK_URL) {
+          const webhookResp = await fetch(N8N_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
+            },
+            body: JSON.stringify(dealPack),
+            signal: AbortSignal.timeout(30000)
+          });
+
+          console.log(`[approve-section] n8n webhook fired: ${webhookResp.status}`);
+          n8nTriggered = webhookResp.ok;
+
+          // Log webhook attempt
+          try {
+            await pool.query(
+              `INSERT INTO webhook_log (deal_id, attempt, status_code, response_body) VALUES ($1, 1, $2, $3)`,
+              [deal.id, webhookResp.status, (await webhookResp.text()).substring(0, 500)]
+            );
+          } catch (logErr) {}
+
+          // Update deal stage to show analysis is in progress
+          if (webhookResp.ok) {
+            await pool.query(
+              `UPDATE deal_submissions SET deal_stage = 'ai_termsheet', webhook_status = 'sent', updated_at = NOW() WHERE id = $1`,
+              [deal.id]
+            );
+            await logAudit(deal.id, 'n8n_analysis_triggered', deal.deal_stage, 'ai_termsheet',
+              { triggered_by: 'auto_on_all_approved', approved_by: req.user.userId }, req.user.userId);
+          }
+        } else {
+          console.warn('[approve-section] N8N_WEBHOOK_URL not configured — analysis not triggered');
+        }
+      } catch (n8nErr) {
+        console.error('[approve-section] n8n trigger failed (non-blocking):', n8nErr.message);
+        // Non-blocking — section approval still succeeds
+      }
+    }
+
     res.json({
       success: true,
       section,
       approved: approved !== false,
       all_sections_approved: allApproved,
+      n8n_triggered: n8nTriggered,
       onboarding_approval: approval
     });
   } catch (error) {
@@ -1776,30 +1934,62 @@ router.post('/:submissionId/ai-extract/:section', authenticateToken, async (req,
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const dealId = dealResult.rows[0].id;
 
-    // Fetch documents for this section (with file content)
-    let docs;
+    // Step 1: Check how many docs exist for this section (with and without content)
+    const countAll = await pool.query(
+      `SELECT COUNT(*) as total FROM deal_documents WHERE deal_id = $1 AND doc_category = $2`,
+      [dealId, section]
+    );
+
+    let countWithContent = { rows: [{ total: '0' }] };
     try {
-      docs = await pool.query(
-        `SELECT filename, file_type, file_content as buffer FROM deal_documents
-         WHERE deal_id = $1 AND doc_category = $2 AND file_content IS NOT NULL
-         ORDER BY uploaded_at DESC LIMIT 10`,
+      countWithContent = await pool.query(
+        `SELECT COUNT(*) as total FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 AND file_content IS NOT NULL`,
         [dealId, section]
       );
-    } catch (colErr) {
-      // file_content column might not exist
-      console.log('[ai-extract] file_content column issue:', colErr.message);
-      return res.status(400).json({ error: 'No document content available for extraction. Documents may need to be re-uploaded.' });
+    } catch (e) {
+      // file_content column doesn't exist at all
+      console.log('[ai-extract] file_content column missing:', e.message);
+      return res.status(400).json({
+        error: 'Documents were uploaded without file content. Please clear documents and re-upload via the Smart Upload zone.',
+        debug: { totalDocs: parseInt(countAll.rows[0].total), docsWithContent: 0 }
+      });
     }
 
-    if (docs.rows.length === 0) {
-      return res.status(400).json({ error: `No documents with extractable content found in ${section}. Upload documents first.` });
+    const totalDocs = parseInt(countAll.rows[0].total);
+    const docsWithContent = parseInt(countWithContent.rows[0].total);
+
+    console.log(`[ai-extract] Section ${section}: ${totalDocs} total docs, ${docsWithContent} with file_content`);
+
+    if (totalDocs === 0) {
+      return res.status(400).json({ error: `No documents found in ${section.replace(/_/g, ' ')}. Upload documents first.`, debug: { totalDocs, docsWithContent } });
     }
+
+    if (docsWithContent === 0) {
+      return res.status(400).json({
+        error: 'Documents exist but have no stored content. Please clear all documents and re-upload via Smart Upload.',
+        debug: { totalDocs, docsWithContent }
+      });
+    }
+
+    // Step 2: Fetch documents with content
+    const docs = await pool.query(
+      `SELECT filename, file_type, file_content as buffer FROM deal_documents
+       WHERE deal_id = $1 AND doc_category = $2 AND file_content IS NOT NULL
+       ORDER BY uploaded_at DESC LIMIT 10`,
+      [dealId, section]
+    );
 
     console.log(`[ai-extract] Extracting from ${docs.rows.length} docs for section: ${section}, deal: ${submissionId}`);
+
+    // Step 3: Check buffer sizes
+    for (const doc of docs.rows) {
+      console.log(`[ai-extract]  - ${doc.filename}: buffer=${doc.buffer ? doc.buffer.length + ' bytes' : 'NULL'}, type=${doc.file_type}`);
+    }
+
     const extracted = await extractSectionData(section, docs.rows);
 
     if (!extracted || Object.keys(extracted).length === 0) {
-      return res.json({ success: true, extracted: {}, message: 'AI could not extract data from the uploaded documents. Try uploading clearer documents.' });
+      return res.json({ success: true, extracted: {}, message: 'AI could not extract structured data from these documents. The PDFs may be image-based (scanned) rather than text-based.' });
     }
 
     res.json({ success: true, extracted, fieldsFound: Object.keys(extracted).length });
