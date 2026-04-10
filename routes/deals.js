@@ -8,7 +8,7 @@ const { authenticateInternal } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { notifyDealEvent } = require('../services/notifications');
-const { generateDipDocx } = require('../services/dip-doc');
+const { generateDipPdf } = require('../services/dip-pdf');
 // const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 
@@ -519,21 +519,21 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       }))
     };
 
-    // 3. Generate DIP DOCX (branded template)
-    console.log('[issue-dip] Generating DIP DOCX for', req.params.submissionId);
-    const docxBuffer = await generateDipDocx(deal, dipDataWithBorrowers, {
+    // 3. Generate DIP PDF (branded)
+    console.log('[issue-dip] Generating DIP PDF for', req.params.submissionId);
+    const pdfBuffer = await generateDipPdf(deal, dipDataWithBorrowers, {
       issuedBy: req.user.userId,
       issuedAt: new Date().toISOString()
     });
-    const pdfFilename = `DIP_${req.params.submissionId}.docx`;
+    const pdfFilename = `DIP_${req.params.submissionId}.pdf`;
 
-    // 4. Upload DIP DOCX to OneDrive
+    // 4. Upload DIP PDF to OneDrive
     let dipPdfUrl = null;
     try {
       const graphToken = await getGraphToken();
-      const uploadResult = await uploadFileToOneDrive(graphToken, req.params.submissionId, pdfFilename, docxBuffer);
+      const uploadResult = await uploadFileToOneDrive(graphToken, req.params.submissionId, pdfFilename, pdfBuffer);
       dipPdfUrl = uploadResult.downloadUrl;
-      console.log('[issue-dip] DIP DOCX uploaded to OneDrive:', dipPdfUrl);
+      console.log('[issue-dip] DIP PDF uploaded to OneDrive:', dipPdfUrl);
     } catch (uploadErr) {
       console.error('[issue-dip] OneDrive upload failed (non-blocking):', uploadErr.message);
     }
@@ -608,7 +608,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VIEW DIP DOCUMENT — On-the-fly DOCX generation (works even if OneDrive URL is missing)
+//  VIEW DIP PDF — On-the-fly generation (works even if OneDrive URL is missing)
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
   try {
@@ -639,17 +639,17 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
       borrowers: borrowersResult.rows.map(b => ({ name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified' }))
     };
 
-    const docxBuffer = await generateDipDocx(deal, dipDataWithBorrowers, {
+    const pdfBuffer = await generateDipPdf(deal, dipDataWithBorrowers, {
       issuedBy: deal.dip_issued_by || 'System',
       issuedAt: deal.dip_issued_at || new Date().toISOString()
     });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `inline; filename="DIP_${req.params.submissionId}.docx"`);
-    res.send(docxBuffer);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="DIP_${req.params.submissionId}.pdf"`);
+    res.send(pdfBuffer);
   } catch (error) {
-    console.error('[dip-doc] Error:', error);
-    res.status(500).json({ error: 'Failed to generate DIP document' });
+    console.error('[dip-pdf] Error:', error);
+    res.status(500).json({ error: 'Failed to generate DIP PDF' });
   }
 });
 

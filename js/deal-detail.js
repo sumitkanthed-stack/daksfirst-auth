@@ -1164,7 +1164,7 @@ export function renderInternalWorkflowControls(deal) {
       '<div><span style="font-size:16px;margin-right:8px;">' + dsIcon + '</span><strong style="font-size:13px;">' + dsLabel + '</strong>' +
       (deal.dip_signed_at ? '<span style="font-size:10px;color:#999;margin-left:10px;">Accepted: ' + new Date(deal.dip_signed_at).toLocaleDateString('en-GB') + '</span>' : '') +
       '</div><div style="display:flex;gap:8px;">' +
-      '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Download DIP</button>' +
+      '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">View DIP</button>' +
       '</div></div>';
   }
 
@@ -1512,7 +1512,7 @@ export function renderExternalWorkflowControls(deal) {
     const dipAccepted = deal.dip_signed;
     const creditApproved = deal.credit_recommendation === 'approve';
 
-    const viewDipBtn = '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-right:8px;">Download DIP</button>';
+    const viewDipBtn = '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#1a365d;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-right:8px;">View DIP</button>';
 
     if (dipAccepted) {
       // DIP has been accepted in-portal

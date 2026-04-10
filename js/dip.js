@@ -365,22 +365,14 @@ export async function viewDipPdf(submissionId) {
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-pdf`, { method: 'GET' });
     if (!resp.ok) {
-      showToast('Failed to load DIP document', true);
+      showToast('Failed to load DIP PDF', true);
       return;
     }
     const blob = await resp.blob();
-    // DOCX blob — trigger download with proper filename
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `DIP_${submissionId}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('DIP document downloaded');
+    window.open(url, '_blank');  // Opens PDF in browser viewer
   } catch (err) {
-    showToast('Network error loading DIP document', true);
+    showToast('Network error loading DIP PDF', true);
   }
 }
 
