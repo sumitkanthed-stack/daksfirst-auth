@@ -976,8 +976,23 @@ router.post('/:submissionId/credit-decision', authenticateToken, authenticateInt
       values
     );
 
-    await logAudit(deal.id, 'credit_decision', deal.status, decision === 'approve' ? 'info_gathering' : decision === 'decline' ? 'declined' : 'assigned',
-      { decision, notes: (notes || '').substring(0, 200), conditions: (conditions || '').substring(0, 200) }, req.user.userId);
+    // Detailed audit logging per decision type
+    const auditAction = decision === 'moreinfo' ? 'credit_moreinfo_requested' : `credit_${decision}`;
+    const newStage = decision === 'approve' ? (currentStatus === 'dip_issued' ? 'dip_issued' : 'info_gathering') : decision === 'decline' ? 'declined' : 'assigned';
+    const auditMeta = { decision, decided_by: req.user.userId };
+    if (decision === 'moreinfo') {
+      auditMeta.query = (notes || '').substring(0, 500);
+      auditMeta.description = 'Credit requested more information from RM';
+    } else if (decision === 'decline') {
+      auditMeta.reason = (notes || '').substring(0, 500);
+      auditMeta.description = 'Credit declined the deal';
+    } else if (decision === 'approve') {
+      auditMeta.notes = (notes || '').substring(0, 500);
+      auditMeta.conditions = (conditions || '').substring(0, 200);
+      if (retained_months !== undefined) auditMeta.retained_months_override = retained_months;
+      auditMeta.description = 'Credit approved in-principle';
+    }
+    await logAudit(deal.id, auditAction, deal.status, newStage, auditMeta, req.user.userId);
 
     // Notify broker if approved
     if (decision === 'approve') {
@@ -991,6 +1006,66 @@ router.post('/:submissionId/credit-decision', authenticateToken, authenticateInt
   } catch (error) {
     console.error('[credit-decision] Error:', error);
     res.status(500).json({ error: 'Failed to record credit decision' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RESPOND TO CREDIT QUERY — RM answers credit team's question
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/respond-credit-query', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { response } = req.body;
+    if (!response || !response.trim()) {
+      return res.status(400).json({ error: 'Response text is required' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, status, ai_termsheet_data FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    const existingData = deal.ai_termsheet_data || {};
+    if (!existingData.credit_query || existingData.credit_query.resolved) {
+      return res.status(400).json({ error: 'No pending credit query to respond to' });
+    }
+
+    // Move current query to history
+    if (!existingData.credit_query_history) existingData.credit_query_history = [];
+    existingData.credit_query_history.push({
+      question: existingData.credit_query.question,
+      asked_by: existingData.credit_query.asked_by,
+      asked_at: existingData.credit_query.asked_at,
+      response: response.trim(),
+      responded_by: req.user.userId,
+      responded_at: new Date().toISOString()
+    });
+
+    // Mark current query as resolved
+    existingData.credit_query.resolved = true;
+    existingData.credit_query.response = response.trim();
+    existingData.credit_query.responded_by = req.user.userId;
+    existingData.credit_query.responded_at = new Date().toISOString();
+
+    await pool.query(
+      `UPDATE deal_submissions SET ai_termsheet_data = $1, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(existingData), deal.id]
+    );
+
+    // Audit log
+    await logAudit(deal.id, 'credit_query_responded', deal.status, deal.status, {
+      query: existingData.credit_query.question.substring(0, 200),
+      response: response.trim().substring(0, 500),
+      responded_by: req.user.userId,
+      description: 'RM responded to credit query'
+    }, req.user.userId);
+
+    console.log(`[respond-credit-query] RM responded to credit query for ${req.params.submissionId}`);
+    res.json({ success: true, message: 'Response recorded' });
+  } catch (error) {
+    console.error('[respond-credit-query] Error:', error);
+    res.status(500).json({ error: 'Failed to record response' });
   }
 });
 

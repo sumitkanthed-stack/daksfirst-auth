@@ -241,21 +241,13 @@ export async function issueDip() {
 }
 
 /**
- * Submit credit decision (approve/decline/moreinfo)
+ * Submit credit decision (approve/decline only — moreinfo uses submitMoreInfo)
  */
 export async function creditDecision(decision) {
   const dealId = getCurrentDealId();
-  let notes = document.getElementById('credit-notes')?.value || '';
+  const notes = document.getElementById('credit-notes')?.value || '';
   const conditions = document.getElementById('credit-conditions')?.value || '';
   const retainedMonths = document.getElementById('credit-retained-months')?.value;
-
-  // ── More Info Needed: prompt credit to explain what they need ──
-  if (decision === 'moreinfo') {
-    const question = prompt('What information do you need from the RM?\n\nThis will be sent back to the RM as a query.');
-    if (!question) return; // cancelled
-    notes = question;
-    if (!confirm('Send this back to the RM for more information?\n\n"' + question + '"')) return;
-  }
 
   // ── Decline: require a reason ──
   if (decision === 'decline') {
@@ -291,12 +283,80 @@ export async function creditDecision(decision) {
       const msgs = {
         approve: 'In-Principle Approval issued — awaiting borrower acceptance',
         decline: 'Deal declined',
-        moreinfo: 'Sent back to RM for more information'
       };
       showToast(msgs[decision] || 'Decision recorded');
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to record decision', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
+/**
+ * Submit More Info request — credit sends a query back to the RM
+ * Called from the More Info modal (not browser prompt)
+ */
+export async function submitMoreInfo() {
+  const dealId = getCurrentDealId();
+  const question = document.getElementById('moreinfo-question')?.value || '';
+  const creditNotes = document.getElementById('credit-notes')?.value || '';
+
+  if (!question.trim()) {
+    showToast('Please describe what information you need from the RM', true);
+    return;
+  }
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/credit-decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        decision: 'moreinfo',
+        notes: question,
+        conditions: creditNotes
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      // Close modal
+      const modal = document.getElementById('moreinfo-modal');
+      if (modal) modal.style.display = 'none';
+      showToast('Query sent to RM — deal returned to their queue');
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to send query', true);
+    }
+  } catch (err) {
+    showToast('Network error', true);
+  }
+}
+
+/**
+ * RM responds to a credit query and can then re-issue DIP
+ */
+export async function respondToCreditQuery() {
+  const dealId = getCurrentDealId();
+  const response = document.getElementById('rm-query-response')?.value || '';
+
+  if (!response.trim()) {
+    showToast('Please provide a response to the credit query', true);
+    return;
+  }
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/respond-credit-query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('Response recorded — you can now re-issue the DIP');
+      import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else {
+      showToast(data.error || 'Failed to submit response', true);
     }
   } catch (err) {
     showToast('Network error', true);

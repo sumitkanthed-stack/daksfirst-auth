@@ -80,6 +80,8 @@ window.approveAllDipProperties = () => import('./dip.js').then(m => m.approveAll
 window.calcDipLtv = () => import('./dip.js').then(m => m.calcDipLtv());
 window.issueDip = () => import('./dip.js').then(m => m.issueDip());
 window.creditDecision = (decision) => import('./dip.js').then(m => m.creditDecision(decision));
+window.submitMoreInfo = () => import('./dip.js').then(m => m.submitMoreInfo());
+window.respondToCreditQuery = () => import('./dip.js').then(m => m.respondToCreditQuery());
 window.generateAiTermsheet = () => import('./dip.js').then(m => m.generateAiTermsheet());
 window.acceptDip = (submissionId) => import('./dip.js').then(m => m.acceptDip(submissionId));
 window.viewDipPdf = (submissionId) => import('./dip.js').then(m => m.viewDipPdf(submissionId));

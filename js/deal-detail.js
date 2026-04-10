@@ -588,10 +588,21 @@ export function renderInternalWorkflowControls(deal) {
   if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
     const tsData = deal.ai_termsheet_data || {};
     if (tsData.credit_query && !tsData.credit_query.resolved) {
-      html += `<div style="background:#fef3c7;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #f59e0b;">
-        <h4 style="margin:0 0 8px;color:#92400e;">Credit Team Query</h4>
-        <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#78350f;">"${sanitizeHtml(tsData.credit_query.question)}"</p>
-        <p style="margin:0;font-size:11px;color:#92400e;">Asked ${tsData.credit_query.asked_at ? new Date(tsData.credit_query.asked_at).toLocaleDateString('en-GB') : ''} — Please address this before re-issuing the DIP.</p>
+      html += `<div style="background:#fef3c7;padding:20px;border-radius:8px;margin-bottom:16px;border:2px solid #f59e0b;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:24px;">⚠️</span>
+          <h4 style="margin:0;color:#92400e;font-size:16px;">Credit Team Query — Action Required</h4>
+        </div>
+        <div style="background:#fff;padding:14px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:14px;">
+          <p style="margin:0 0 6px;font-size:14px;font-weight:600;color:#78350f;">"${sanitizeHtml(tsData.credit_query.question)}"</p>
+          <p style="margin:0;font-size:11px;color:#92400e;">— Credit Team, ${tsData.credit_query.asked_at ? new Date(tsData.credit_query.asked_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+        </div>
+        <label style="font-size:12px;color:#92400e;display:block;margin-bottom:6px;font-weight:600;">Your Response</label>
+        <textarea id="rm-query-response" placeholder="Respond to credit's query here. This will be logged and visible to the credit team when you re-issue the DIP..." style="width:100%;padding:10px;border-radius:6px;border:2px solid #f59e0b;font-size:13px;min-height:100px;resize:vertical;"></textarea>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button onclick="window.respondToCreditQuery && window.respondToCreditQuery()" style="padding:10px 20px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Submit Response & Continue to DIP</button>
+        </div>
+        ${tsData.credit_query_history && tsData.credit_query_history.length > 0 ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #fcd34d;"><h5 style="margin:0 0 8px;font-size:11px;color:#92400e;text-transform:uppercase;">Previous Queries</h5>' + tsData.credit_query_history.map(q => '<div style="background:#fff;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:12px;"><strong style="color:#92400e;">Q:</strong> ' + sanitizeHtml(q.question) + '<br><strong style="color:#15803d;">A:</strong> ' + sanitizeHtml(q.response || 'No response') + '<br><span style="font-size:10px;color:#999;">' + (q.asked_at ? new Date(q.asked_at).toLocaleDateString('en-GB') : '') + '</span></div>').join('') + '</div>' : ''}
       </div>`;
     }
   }
@@ -1215,7 +1226,23 @@ export function renderInternalWorkflowControls(deal) {
       <div style="display:flex;gap:12px;">
         <button onclick="window.creditDecision && window.creditDecision('approve')" style="padding:10px 24px;background:#15803d;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Approve In-Principle</button>
         <button onclick="window.creditDecision && window.creditDecision('decline')" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline</button>
-        <button onclick="window.creditDecision && window.creditDecision('moreinfo')" style="padding:10px 24px;background:#c9a84c;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">More Info Needed</button>
+        <button id="btn-moreinfo" onclick="document.getElementById('moreinfo-modal').style.display='flex'" style="padding:10px 24px;background:#c9a84c;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">More Info Needed</button>
+      </div>
+
+      <!-- ═══ MORE INFO MODAL ═══ -->
+      <div id="moreinfo-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:28px;max-width:560px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;color:#92400e;font-size:18px;">Request More Information</h3>
+            <button onclick="document.getElementById('moreinfo-modal').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button>
+          </div>
+          <p style="margin:0 0 12px;font-size:13px;color:#666;">Describe what additional information you need from the RM. This will be sent back to them as a query and the deal will return to their queue.</p>
+          <textarea id="moreinfo-question" placeholder="e.g. Please clarify the exit strategy timeline. What is the expected completion date for the refinance?&#10;&#10;Also need confirmation on the company structure and UBO details..." style="width:100%;padding:12px;border-radius:6px;border:2px solid #f59e0b;font-size:13px;min-height:140px;resize:vertical;"></textarea>
+          <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
+            <button onclick="document.getElementById('moreinfo-modal').style.display='none'" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>
+            <button onclick="window.submitMoreInfo && window.submitMoreInfo()" style="padding:10px 20px;background:#c9a84c;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Send Query to RM</button>
+          </div>
+        </div>
       </div>
     </div>`;
   }
