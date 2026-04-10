@@ -1,7 +1,7 @@
 import { API_BASE } from './config.js';
 import { showScreen, showToast, formatNumber, formatPct, formatDate, formatDateTime, sanitizeHtml, attachMoneyFormat, getMoneyValue, parseFormattedNumber } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
-import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId } from './state.js';
+import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
 import { populateOnboardingData, switchDetailTab } from './onboarding.js';
 
@@ -1036,6 +1036,14 @@ export function renderInternalWorkflowControls(deal) {
         inp.addEventListener('input', validateDipChecklist);
         inp.addEventListener('change', validateDipChecklist);
       });
+
+      // Restore DIP form state if saved (e.g. after add/remove borrower)
+      if (hasDipFormState()) {
+        restoreDipFormState();
+        // Re-trigger calculations with restored values
+        if (window.calcDipLtv) window.calcDipLtv();
+        updatePropValTotal();
+      }
 
       // Run initial checklist validation
       validateDipChecklist();

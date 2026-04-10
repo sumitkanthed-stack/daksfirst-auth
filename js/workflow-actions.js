@@ -1,7 +1,7 @@
 import { API_BASE } from './config.js';
 import { showToast, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
-import { getCurrentDealId, getDipRemovedProperties, setDipRemovedProperties } from './state.js';
+import { getCurrentDealId, getDipRemovedProperties, setDipRemovedProperties, saveDipFormState } from './state.js';
 
 /**
  * Assign RM to a deal
@@ -142,6 +142,7 @@ export async function confirmFee() {
     const data = await resp.json();
     if (resp.ok) {
       showToast(data.message || 'Fee confirmed successfully');
+      saveDipFormState();
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to confirm fee', true);
@@ -544,6 +545,7 @@ export async function addBorrower() {
     const data = await resp.json();
     if (resp.ok) {
       showToast(`Borrower ${fullName} added`);
+      saveDipFormState();
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to add borrower', true);
@@ -568,6 +570,7 @@ export async function removeBorrower(borrowerId) {
     const data = await resp.json();
     if (resp.ok) {
       showToast(data.message || 'Borrower removed');
+      saveDipFormState();
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to remove', true);
@@ -604,6 +607,7 @@ export async function addProperty() {
     const data = await resp.json();
     if (resp.ok) {
       showToast('Property added');
+      saveDipFormState();
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to add property', true);
@@ -628,6 +632,7 @@ export async function removeProperty(propertyId) {
     const data = await resp.json();
     if (resp.ok) {
       showToast(data.message || 'Property removed');
+      saveDipFormState();
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
     } else {
       showToast(data.error || 'Failed to remove', true);

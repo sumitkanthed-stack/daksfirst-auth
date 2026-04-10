@@ -167,3 +167,69 @@ export function setCurrentDealId(id) {
 export function getCurrentDealId() {
   return window.currentDealId;
 }
+
+/**
+ * DIP Form State — save/restore across page reloads (e.g. after add/remove borrower)
+ * Prevents RM losing typed values when the page re-renders
+ */
+let _dipFormState = null;
+
+export function saveDipFormState() {
+  const ids = [
+    'dip-loan-amount', 'dip-term', 'dip-rate', 'dip-interest', 'dip-arrangement-fee',
+    'dip-retained-months', 'dip-valuation-cost', 'dip-legal-cost', 'dip-broker-fee',
+    'dip-notes', 'dip-pg-ubo', 'dip-fixed-charge', 'dip-ubo-names', 'dip-additional-security',
+    'dip-fee-onboarding', 'dip-fee-commitment'
+  ];
+  const state = {};
+  let hasValues = false;
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      state[id] = el.value;
+      if (el.value && el.value !== '0' && el.value !== '') hasValues = true;
+    }
+  });
+  // Also save per-property valuations
+  const propVals = document.querySelectorAll('.dip-prop-valuation');
+  state._propVals = [];
+  propVals.forEach(inp => {
+    state._propVals.push(inp.value);
+    if (inp.value && inp.value !== '0') hasValues = true;
+  });
+  // Also save property approval statuses
+  const propStatuses = document.querySelectorAll('[id^="dip-prop-status-"]');
+  state._propStatuses = [];
+  propStatuses.forEach(el => { state._propStatuses.push(el.innerHTML); });
+
+  _dipFormState = hasValues ? state : null;
+}
+
+export function restoreDipFormState() {
+  if (!_dipFormState) return;
+  const state = _dipFormState;
+  Object.keys(state).forEach(id => {
+    if (id.startsWith('_')) return; // skip internal keys
+    const el = document.getElementById(id);
+    if (el && state[id] !== undefined) el.value = state[id];
+  });
+  // Restore per-property valuations
+  if (state._propVals) {
+    const propVals = document.querySelectorAll('.dip-prop-valuation');
+    propVals.forEach((inp, i) => {
+      if (state._propVals[i] !== undefined) inp.value = state._propVals[i];
+    });
+  }
+  // Restore property approval statuses
+  if (state._propStatuses) {
+    state._propStatuses.forEach((html, i) => {
+      const el = document.getElementById('dip-prop-status-' + i);
+      if (el && html) el.innerHTML = html;
+    });
+  }
+  _dipFormState = null; // Clear after restore
+}
+
+export function hasDipFormState() {
+  return _dipFormState !== null;
+}
