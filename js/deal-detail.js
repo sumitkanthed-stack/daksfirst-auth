@@ -1205,14 +1205,14 @@ export function renderInternalWorkflowControls(deal) {
       <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the DIP terms submitted by the RM and provide your in-principle decision.</p>
 
       <div style="background:#f5f3ff;padding:12px;border-radius:6px;margin-bottom:16px;">
-        <h5 style="margin:0 0 8px;font-size:12px;color:#7c3aed;text-transform:uppercase;">DIP Terms Under Review</h5>
+        <h5 style="margin:0 0 8px;font-size:12px;color:#7c3aed;text-transform:uppercase;">DIP Terms — RM Proposed</h5>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
           <div>Loan: <strong>£${formatNumber(dipData.loan_amount || deal.loan_amount || 0)}</strong></div>
-          <div>LTV: <strong>${formatPct(dipData.ltv || deal.ltv_requested || 0)}%</strong></div>
+          <div>LTV: <strong>${formatPct(dipData.ltv || deal.ltv_requested || 0)}%</strong> ${dipData.credit_override_ltv ? '<span style="color:#7c3aed;font-size:11px;">(Credit: ' + formatPct(dipData.credit_override_ltv) + '%)</span>' : ''}</div>
           <div>Term: <strong>${dipData.term_months || deal.term_months || 'N/A'} months</strong></div>
-          <div>Rate: <strong>${formatPct(dipData.rate_monthly || deal.rate_requested || 0)}%/m</strong></div>
+          <div>Rate: <strong>${formatPct(dipData.rate_monthly || deal.rate_requested || 0)}%/m</strong> ${dipData.credit_override_rate ? '<span style="color:#7c3aed;font-size:11px;">(Credit: ' + formatPct(dipData.credit_override_rate) + '%/m)</span>' : ''}</div>
           <div>Interest: <strong>${sanitizeHtml(dipData.interest_servicing || deal.interest_servicing || 'N/A')}</strong></div>
-          <div>Arr. Fee: <strong>${formatPct(dipData.arrangement_fee_pct || 2)}%</strong></div>
+          <div>Arr. Fee: <strong>${formatPct(dipData.arrangement_fee_pct || 2)}%</strong> ${dipData.credit_override_arr_fee ? '<span style="color:#7c3aed;font-size:11px;">(Credit: ' + formatPct(dipData.credit_override_arr_fee) + '%)</span>' : ''}</div>
         </div>
         ${dipData.retained_months ? `<div style="margin-top:4px;">Retained Interest: <strong>${dipData.retained_months} months</strong></div>` : ''}
         ${dipData.removed_properties && dipData.removed_properties.length > 0 ? '<div style="margin-top:8px;font-size:12px;color:#991b1b;">Properties removed by RM: ' + dipData.removed_properties.map(p => sanitizeHtml(p.address.substring(0, 40))).join('; ') + '</div>' : ''}
@@ -1226,15 +1226,15 @@ export function renderInternalWorkflowControls(deal) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
           <div>
             <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month)</label>
-            <input type="number" id="credit-override-rate" value="${dipData.rate_monthly || deal.rate_requested || 0.95}" min="0" max="5" step="0.05" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+            <input type="number" id="credit-override-rate" value="${dipData.credit_override_rate || dipData.rate_monthly || deal.rate_requested || 0.95}" min="0" max="5" step="0.05" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
           </div>
           <div>
             <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Max LTV (%)</label>
-            <input type="number" id="credit-override-ltv" value="${dipData.ltv || deal.ltv_requested || 70}" min="0" max="80" step="1" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+            <input type="number" id="credit-override-ltv" value="${dipData.credit_override_ltv || dipData.ltv || deal.ltv_requested || 70}" min="0" max="80" step="1" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
           </div>
           <div>
             <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
-            <input type="number" id="credit-override-arr-fee" value="${dipData.arrangement_fee_pct || dipData.arrangement_fee || 2}" min="0" max="10" step="0.25" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
+            <input type="number" id="credit-override-arr-fee" value="${dipData.credit_override_arr_fee || dipData.arrangement_fee_pct || dipData.arrangement_fee || 2}" min="0" max="10" step="0.25" style="width:100%;padding:8px;border-radius:4px;border:2px solid #7c3aed;font-size:13px;">
           </div>
           <div>
             <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Retained Months</label>
