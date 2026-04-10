@@ -630,6 +630,18 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     const dipData = typeof deal.ai_termsheet_data === 'string'
       ? JSON.parse(deal.ai_termsheet_data) : (deal.ai_termsheet_data || {});
 
+    // Apply credit overrides (if credit has reviewed and overridden values)
+    if (dipData.credit_override_rate !== undefined) {
+      dipData.rate_monthly = dipData.credit_override_rate;
+    }
+    if (dipData.credit_override_ltv !== undefined) {
+      dipData.ltv = dipData.credit_override_ltv;
+    }
+    if (dipData.credit_override_arr_fee !== undefined) {
+      dipData.arrangement_fee = dipData.credit_override_arr_fee;
+      dipData.arrangement_fee_pct = dipData.credit_override_arr_fee;
+    }
+
     // Get borrowers
     const borrowersResult = await pool.query(
       `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`, [dealId]
@@ -765,10 +777,25 @@ router.post('/:submissionId/issue-termsheet', authenticateToken, authenticateInt
       return res.status(400).json({ error: 'AI termsheet data not found. Generate the AI analysis first.' });
     }
 
+    // Apply credit overrides to termsheet data (if credit adjusted terms)
+    const ts = aiData.termsheet;
+    if (aiData.credit_override_rate !== undefined && ts) {
+      ts.interestRate = aiData.credit_override_rate + '% per month';
+      console.log('[issue-termsheet] Applied credit override: rate', aiData.credit_override_rate);
+    }
+    if (aiData.credit_override_ltv !== undefined && ts) {
+      ts.gltv = aiData.credit_override_ltv + '%';
+      console.log('[issue-termsheet] Applied credit override: LTV', aiData.credit_override_ltv);
+    }
+    if (aiData.credit_override_arr_fee !== undefined && ts) {
+      ts.arrangementFee = aiData.credit_override_arr_fee + '% of the Facility';
+      console.log('[issue-termsheet] Applied credit override: arrangement fee', aiData.credit_override_arr_fee);
+    }
+
     // 2. Generate Termsheet DOCX (branded with VML letterhead)
     const { generateTermsheetDocx } = require('../services/termsheet-doc');
     console.log('[issue-termsheet] Generating Termsheet DOCX for', req.params.submissionId);
-    const docxBuffer = await generateTermsheetDocx(aiData.termsheet);
+    const docxBuffer = await generateTermsheetDocx(ts);
     const docxFilename = `Termsheet_${req.params.submissionId}.docx`;
 
     // 3. Upload DOCX to OneDrive
