@@ -1637,13 +1637,35 @@ router.post('/:submissionId/upload-categorised', authenticateToken, async (req, 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SMART UPLOAD — auto-categorise files by filename patterns
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) => {
-  try {
-    const multer = require('multer');
-    const upload = multer({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 20);
+const smartUploadMulter = require('multer')({ limits: { fileSize: 25 * 1024 * 1024 } }).array('files', 20);
 
-    upload(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+// Filename pattern → category mapping
+const categoryPatterns = [
+  { pattern: /passport|driving.?licen|photo.?id|identity|national.?id/i, category: 'kyc' },
+  { pattern: /proof.?of.?address|poa|utility.?bill|council.?tax|bank.?letter/i, category: 'kyc' },
+  { pattern: /certificate.?of.?incorp|mem.?art|articles.?of.?assoc|companies.?house|board.?resolution|ubo/i, category: 'kyc' },
+  { pattern: /bank.?statement|sa302|tax.?return|payslip|income|p60|accounts|balance.?sheet|profit.?loss|assets?.?liab|mortgage.?schedule/i, category: 'financials_aml' },
+  { pattern: /aml|anti.?money|source.?of.?fund|source.?of.?wealth|pep|sanction|kyc.?check|compliance/i, category: 'financials_aml' },
+  { pattern: /valuation|rics|survey|title.?register|land.?registry|title.?plan|charges.?register|search.?result|local.?authority/i, category: 'valuation' },
+  { pattern: /solicitor|sra|legal.?opinion|purchase.?contract|transfer.?deed/i, category: 'valuation' },
+  { pattern: /redemption|redeem|use.?of.?fund|schedule.?of.?cost|refurb|renovation|contractor|quote|works|build.?programme|structural|planning.?consent/i, category: 'use_of_funds' },
+  { pattern: /exit|refinance|sale.?contract|agent.?val|estate.?agent|aip|agreement.?in.?principle|rental|tenancy|ast/i, category: 'exit_evidence' },
+  { pattern: /insurance|buildings?.?ins|vacant.?prop|sec.?106|section.?106|planning.?condition|fire.?safety|party.?wall|building.?control/i, category: 'other_conditions' },
+];
+
+function categoriseFile(filename) {
+  const lower = filename.toLowerCase();
+  for (const { pattern, category } of categoryPatterns) {
+    if (pattern.test(lower)) return category;
+  }
+  return 'general';
+}
+
+router.post('/:submissionId/smart-upload', authenticateToken, (req, res) => {
+  smartUploadMulter(req, res, async (multerErr) => {
+    try {
+      if (multerErr) return res.status(400).json({ error: multerErr.message || 'Upload failed' });
+      if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files provided' });
 
       const dealResult = await pool.query(
         `SELECT id, dip_fee_confirmed FROM deal_submissions WHERE submission_id = $1`,
@@ -1657,33 +1679,11 @@ router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) =
         await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50)`);
         await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT`);
       } catch (migErr) {
-        console.log('[smart-upload] Column check note:', migErr.message.substring(0, 60));
-      }
-
-      // Filename pattern → category mapping
-      const categoryPatterns = [
-        { pattern: /passport|driving.?licen|photo.?id|identity|national.?id/i, category: 'kyc' },
-        { pattern: /proof.?of.?address|poa|utility.?bill|council.?tax|bank.?letter/i, category: 'kyc' },
-        { pattern: /certificate.?of.?incorp|mem.?art|articles.?of.?assoc|companies.?house|board.?resolution|ubo/i, category: 'kyc' },
-        { pattern: /bank.?statement|sa302|tax.?return|payslip|income|p60|accounts|balance.?sheet|profit.?loss|assets?.?liab|mortgage.?schedule/i, category: 'financials_aml' },
-        { pattern: /aml|anti.?money|source.?of.?fund|source.?of.?wealth|pep|sanction|kyc.?check|compliance/i, category: 'financials_aml' },
-        { pattern: /valuation|rics|survey|title.?register|land.?registry|title.?plan|charges.?register|search.?result|local.?authority/i, category: 'valuation' },
-        { pattern: /solicitor|sra|legal.?opinion|purchase.?contract|transfer.?deed/i, category: 'valuation' },
-        { pattern: /redemption|redeem|use.?of.?fund|schedule.?of.?cost|refurb|renovation|contractor|quote|works|build.?programme|structural|planning.?consent/i, category: 'use_of_funds' },
-        { pattern: /exit|refinance|sale.?contract|agent.?val|estate.?agent|aip|agreement.?in.?principle|rental|tenancy|ast/i, category: 'exit_evidence' },
-        { pattern: /insurance|buildings?.?ins|vacant.?prop|sec.?106|section.?106|planning.?condition|fire.?safety|party.?wall|building.?control/i, category: 'other_conditions' },
-      ];
-
-      function categoriseFile(filename) {
-        const lower = filename.toLowerCase();
-        for (const { pattern, category } of categoryPatterns) {
-          if (pattern.test(lower)) return category;
-        }
-        return 'general';
+        console.log('[smart-upload] Column migration note:', migErr.message.substring(0, 80));
       }
 
       const results = [];
-      for (const file of (req.files || [])) {
+      for (const file of req.files) {
         const category = categoriseFile(file.originalname);
 
         const result = await pool.query(
@@ -1704,7 +1704,7 @@ router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) =
             [uploadResult.id, uploadResult.name, uploadResult.downloadUrl, result.rows[0].id]
           );
         } catch (odErr) {
-          console.error('[smart-upload] OneDrive upload failed (non-blocking):', odErr.message);
+          console.error('[smart-upload] OneDrive failed (non-blocking):', odErr.message);
         }
       }
 
@@ -1713,11 +1713,11 @@ router.post('/:submissionId/smart-upload', authenticateToken, async (req, res) =
 
       console.log('[smart-upload]', results.length, 'files categorised for deal', req.params.submissionId);
       res.json({ success: true, results });
-    });
-  } catch (error) {
-    console.error('[smart-upload] Error:', error);
-    res.status(500).json({ error: 'Smart upload failed' });
-  }
+    } catch (error) {
+      console.error('[smart-upload] Error:', error);
+      res.status(500).json({ error: 'Smart upload failed: ' + error.message });
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
