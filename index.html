@@ -8,6 +8,10 @@
 </head>
 <body>
     <div id="screen-landing" class="screen active">
+      <div class="portal-logo" style="text-align:center;margin-bottom:30px;">
+        <img src="/logo.PNG" alt="Daksfirst" style="height:60px;" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <div style="display:none;font-size:28px;font-weight:700;color:#fff;letter-spacing:1px;">Daksfirst</div>
+      </div>
       <div class="role-selection">
         <div class="role-card" onclick="goToRegister('broker')">
           <div class="role-icon">&#x1F4BC;</div>
@@ -29,6 +33,9 @@
     <div id="screen-login" class="screen">
       <div class="form-container">
         <div class="form-header">
+          <div style="text-align:center;margin-bottom:15px;">
+            <img src="/logo.PNG" alt="Daksfirst" style="height:50px;" onerror="this.style.display='none'">
+          </div>
           <h2>Sign In</h2>
           <p>Welcome back</p>
         </div>
@@ -42,7 +49,7 @@
             <label for="login-password">Password</label>
             <input type="password" id="login-password" required>
           </div>
-          <button type="button" class="btn btn-primary" id="login-btn" onclick="loginUser()" style="width:100%;justify-content:center;">Sign In</button>
+          <button type="button" class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%;justify-content:center;">Sign In</button>
           <div class="login-link">
             Don't have an account? <a href="#" onclick="showScreen('screen-landing');return false;">Register</a>
           </div>
@@ -54,6 +61,9 @@
     <div id="screen-register" class="screen">
       <div class="form-container">
         <div class="form-header">
+          <div style="text-align:center;margin-bottom:15px;">
+            <img src="/logo.PNG" alt="Daksfirst" style="height:50px;" onerror="this.style.display='none'">
+          </div>
           <h2 id="form-title">Create Account</h2>
           <p id="form-subtitle">Register to get started</p>
           <div class="progress-indicator">
