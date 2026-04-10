@@ -374,7 +374,25 @@ async function runMigrations() {
       { col: 'dip_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_signed_at TIMESTAMPTZ;' },
       { col: 'dip_signed_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_signed_pdf_url TEXT;' },
       { col: 'docusign_envelope_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS docusign_envelope_id VARCHAR(100);' },
-      { col: 'docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS docusign_status VARCHAR(30) DEFAULT 'none';" }
+      { col: 'docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS docusign_status VARCHAR(30) DEFAULT 'none';" },
+      // Termsheet DocuSign columns
+      { col: 'ts_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_pdf_url TEXT;' },
+      { col: 'ts_issued_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_issued_at TIMESTAMPTZ;' },
+      { col: 'ts_issued_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_issued_by INT REFERENCES users(id);' },
+      { col: 'ts_signed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_signed BOOLEAN DEFAULT false;' },
+      { col: 'ts_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_signed_at TIMESTAMPTZ;' },
+      { col: 'ts_signed_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_signed_pdf_url TEXT;' },
+      { col: 'ts_docusign_envelope_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_docusign_envelope_id VARCHAR(100);' },
+      { col: 'ts_docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS ts_docusign_status VARCHAR(30) DEFAULT 'none';" },
+      // Facility Letter DocuSign columns
+      { col: 'fl_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_pdf_url TEXT;' },
+      { col: 'fl_issued_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_issued_at TIMESTAMPTZ;' },
+      { col: 'fl_issued_by', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_issued_by INT REFERENCES users(id);' },
+      { col: 'fl_signed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_signed BOOLEAN DEFAULT false;' },
+      { col: 'fl_signed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_signed_at TIMESTAMPTZ;' },
+      { col: 'fl_signed_pdf_url', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_signed_pdf_url TEXT;' },
+      { col: 'fl_docusign_envelope_id', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_docusign_envelope_id VARCHAR(100);' },
+      { col: 'fl_docusign_status', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS fl_docusign_status VARCHAR(30) DEFAULT 'none';" }
     ];
 
     for (const check of columnChecks) {

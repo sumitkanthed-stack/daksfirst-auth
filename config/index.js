@@ -46,7 +46,6 @@ module.exports = {
 
   // DocuSign
   DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',
-  DOCUSIGN_SECRET_KEY: process.env.DOCUSIGN_SECRET_KEY || '',
   DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID || '',
   DOCUSIGN_USER_ID: process.env.DOCUSIGN_USER_ID || '',
   DOCUSIGN_PRIVATE_KEY: (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n'),

@@ -1,21 +1,21 @@
 /**
  * DocuSign Integration Service
- * Handles JWT authentication, envelope creation, and signed document retrieval
+ * JWT authentication, multi-signer envelopes for Termsheet & Facility Letter
+ *
+ * NOT LIVE — Parked for Termsheet/Facility Letter stage.
+ * Enable by uncommenting the require() in routes/deals.js and server.js
  */
 const config = require('../config');
 
 // ─── JWT Authentication ─────────────────────────────────────────
-// DocuSign JWT Grant flow — no user interaction needed
-
 let _cachedToken = null;
 let _tokenExpiry = 0;
 
 /**
  * Get a DocuSign access token via JWT Grant
- * Caches the token until it expires
+ * Caches the token until it expires (with 5 min buffer)
  */
 async function getAccessToken() {
-  // Return cached token if still valid (with 5 min buffer)
   if (_cachedToken && Date.now() < _tokenExpiry - 300000) {
     return _cachedToken;
   }
@@ -32,7 +32,6 @@ async function getAccessToken() {
     scope: 'signature impersonation'
   };
 
-  // Sign with RSA private key
   const assertion = jwt.sign(payload, config.DOCUSIGN_PRIVATE_KEY, { algorithm: 'RS256' });
 
   const resp = await fetch(`${config.DOCUSIGN_AUTH_SERVER}/oauth/token`, {
@@ -53,73 +52,99 @@ async function getAccessToken() {
   const data = await resp.json();
   _cachedToken = data.access_token;
   _tokenExpiry = Date.now() + (data.expires_in * 1000);
-
   console.log('[docusign] Token acquired, expires in', data.expires_in, 'seconds');
   return _cachedToken;
 }
 
+// ─── Envelope Creation ──────────────────────────────────────────
+
 /**
- * Send DIP for signing via DocuSign
+ * Send a document for signing via DocuSign
+ * Supports multiple signers (Borrower + Guarantor) and CC recipients (Broker)
+ *
  * @param {Object} params
- * @param {Buffer} params.pdfBuffer - The DIP PDF as a buffer
- * @param {string} params.pdfName - Filename for the PDF
- * @param {string} params.borrowerName - Signer's name
- * @param {string} params.borrowerEmail - Signer's email
- * @param {string} params.brokerName - CC recipient name (optional)
- * @param {string} params.brokerEmail - CC recipient email (optional)
- * @param {string} params.dealRef - Deal submission_id for reference
- * @param {string} params.callbackUrl - Webhook URL for status updates
+ * @param {Buffer}   params.pdfBuffer     - The PDF as a buffer
+ * @param {string}   params.pdfName       - Filename for the PDF
+ * @param {string}   params.docType       - 'termsheet' | 'facility_letter'
+ * @param {string}   params.dealRef       - Deal submission_id
+ * @param {Array}    params.signers       - Array of { name, email, role } — role is 'borrower' or 'guarantor'
+ * @param {Array}    [params.ccRecipients] - Array of { name, email } — e.g. broker, RM
+ * @param {string}   [params.callbackUrl] - Webhook URL for status events
  * @returns {Object} { envelopeId, status, sentAt }
  */
-async function sendForSigning({ pdfBuffer, pdfName, borrowerName, borrowerEmail, brokerName, brokerEmail, dealRef, callbackUrl }) {
+async function sendForSigning({ pdfBuffer, pdfName, docType, dealRef, signers, ccRecipients = [], callbackUrl }) {
   const token = await getAccessToken();
 
-  // Build the envelope definition
+  // Document type labels
+  const docLabels = {
+    termsheet: { subject: 'Termsheet', blurb: 'Please review and sign the attached Termsheet from Daksfirst Limited.' },
+    facility_letter: { subject: 'Facility Letter', blurb: 'Please review and sign the attached Facility Letter from Daksfirst Limited.' }
+  };
+  const label = docLabels[docType] || docLabels.termsheet;
+
+  // Build signer objects with anchor-based tab placement
+  // Each signer gets their own signature line based on their role text in the PDF
+  const signerRecipients = signers.map((s, idx) => {
+    const recipientId = String(idx + 1);
+    const routingOrder = String(idx + 1); // Sequential signing: borrower first, then guarantor
+
+    // Anchor strings should match text in the PDF template
+    // e.g. "Borrower Signature ___" and "Guarantor Signature ___"
+    const anchorLabel = s.role === 'guarantor' ? 'Guarantor Signature' : 'Borrower Signature';
+
+    return {
+      email: s.email,
+      name: s.name,
+      recipientId,
+      routingOrder,
+      roleName: s.role,
+      tabs: {
+        signHereTabs: [
+          {
+            documentId: '1',
+            anchorString: anchorLabel,
+            anchorUnits: 'pixels',
+            anchorXOffset: '0',
+            anchorYOffset: '20'
+          }
+        ],
+        dateSignedTabs: [
+          {
+            documentId: '1',
+            anchorString: anchorLabel,
+            anchorUnits: 'pixels',
+            anchorXOffset: '300',
+            anchorYOffset: '20'
+          }
+        ]
+      }
+    };
+  });
+
+  // CC recipients (broker, RM, etc.) — they receive a copy after signing is complete
+  const ccList = ccRecipients.map((cc, idx) => ({
+    email: cc.email,
+    name: cc.name,
+    recipientId: String(signers.length + idx + 1),
+    routingOrder: String(signers.length + 1) // All CCs share the same routing order (after all signers)
+  }));
+
   const envelope = {
-    emailSubject: `Daksfirst DIP — Please sign (Ref: ${dealRef})`,
-    emailBlurb: 'Please review and sign the attached Decision in Principle from Daksfirst Limited.',
+    emailSubject: `Daksfirst ${label.subject} — Please sign (Ref: ${dealRef})`,
+    emailBlurb: label.blurb,
     documents: [
       {
         documentBase64: pdfBuffer.toString('base64'),
-        name: pdfName || `DIP_${dealRef}.pdf`,
+        name: pdfName || `${docType}_${dealRef}.pdf`,
         fileExtension: 'pdf',
         documentId: '1'
       }
     ],
     recipients: {
-      signers: [
-        {
-          email: borrowerEmail,
-          name: borrowerName,
-          recipientId: '1',
-          routingOrder: '1',
-          tabs: {
-            signHereTabs: [
-              {
-                documentId: '1',
-                pageNumber: '1',
-                anchorString: 'Borrower Signature',
-                anchorUnits: 'pixels',
-                anchorXOffset: '0',
-                anchorYOffset: '-30'
-              }
-            ],
-            dateSignedTabs: [
-              {
-                documentId: '1',
-                pageNumber: '1',
-                anchorString: 'Date',
-                anchorUnits: 'pixels',
-                anchorXOffset: '0',
-                anchorYOffset: '-30'
-              }
-            ]
-          }
-        }
-      ],
-      carbonCopies: []
+      signers: signerRecipients,
+      carbonCopies: ccList
     },
-    status: 'sent', // Send immediately
+    status: 'sent',
     eventNotification: callbackUrl ? {
       url: callbackUrl,
       loggingEnabled: true,
@@ -136,17 +161,14 @@ async function sendForSigning({ pdfBuffer, pdfName, borrowerName, borrowerEmail,
     } : undefined
   };
 
-  // Add broker as CC if provided
-  if (brokerEmail && brokerName) {
-    envelope.recipients.carbonCopies.push({
-      email: brokerEmail,
-      name: brokerName,
-      recipientId: '2',
-      routingOrder: '2'
-    });
-  }
+  // Custom fields to store metadata on the envelope (helps webhook identify what it's for)
+  envelope.customFields = {
+    textCustomFields: [
+      { name: 'dealRef', value: dealRef, show: 'false' },
+      { name: 'docType', value: docType, show: 'false' }
+    ]
+  };
 
-  // Send to DocuSign
   const resp = await fetch(`${config.DOCUSIGN_BASE_URL}/v2.1/accounts/${config.DOCUSIGN_ACCOUNT_ID}/envelopes`, {
     method: 'POST',
     headers: {
@@ -163,7 +185,7 @@ async function sendForSigning({ pdfBuffer, pdfName, borrowerName, borrowerEmail,
   }
 
   const result = await resp.json();
-  console.log('[docusign] Envelope created:', result.envelopeId, 'status:', result.status);
+  console.log(`[docusign] ${docType} envelope created:`, result.envelopeId, 'status:', result.status, 'signers:', signers.length);
 
   return {
     envelopeId: result.envelopeId,
@@ -171,6 +193,8 @@ async function sendForSigning({ pdfBuffer, pdfName, borrowerName, borrowerEmail,
     sentAt: result.statusDateTime || new Date().toISOString()
   };
 }
+
+// ─── Document Retrieval ─────────────────────────────────────────
 
 /**
  * Download the signed (completed) document from DocuSign
@@ -182,9 +206,7 @@ async function downloadSignedDocument(envelopeId) {
 
   const resp = await fetch(
     `${config.DOCUSIGN_BASE_URL}/v2.1/accounts/${config.DOCUSIGN_ACCOUNT_ID}/envelopes/${envelopeId}/documents/combined`,
-    {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }
+    { headers: { 'Authorization': `Bearer ${token}` } }
   );
 
   if (!resp.ok) {
@@ -205,9 +227,7 @@ async function getEnvelopeStatus(envelopeId) {
 
   const resp = await fetch(
     `${config.DOCUSIGN_BASE_URL}/v2.1/accounts/${config.DOCUSIGN_ACCOUNT_ID}/envelopes/${envelopeId}`,
-    {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }
+    { headers: { 'Authorization': `Bearer ${token}` } }
   );
 
   if (!resp.ok) {
