@@ -347,6 +347,22 @@ export function renderInternalWorkflowControls(deal) {
     completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
   };
 
+  // ── Accordion helper functions ──
+  const accordion = (id, title, icon, defaultOpen = false) => {
+    return `<div class="wf-section" style="background:#fff;border-radius:8px;margin-bottom:12px;border:1px solid #e5e7eb;overflow:hidden;">
+    <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.wf-chevron').textContent=this.nextElementSibling.style.display==='none'?'▸':'▾'"
+         style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border-bottom:1px solid #e5e7eb;user-select:none;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;">${icon}</span>
+        <h4 style="margin:0;font-size:14px;color:#1e293b;">${title}</h4>
+      </div>
+      <span class="wf-chevron" style="color:#94a3b8;font-size:14px;">${defaultOpen ? '▾' : '▸'}</span>
+    </div>
+    <div id="${id}" style="display:${defaultOpen ? 'block' : 'none'};padding:16px;">`;
+  };
+  const accordionEnd = () => `</div></div>`;
+
+
   // Map each stage to who is responsible for the next action
   const stageResponsibility = {
     received: { who: 'Admin', action: 'Assign to RM' },
@@ -389,16 +405,32 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
-  // ── Stage Pipeline Visual ──
+  // ── Stage Pipeline Visual (Grouped Phases) ──
   const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
-  html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
-  stageOrder.forEach((s, i) => {
-    const isActive = s === stage;
-    const isDone = i < currentIdx;
-    const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
-    const color = (isActive || isDone) ? '#fff' : '#666';
-    html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${stageLabels[s]}</span>`;
+  const phases = [
+    { label: 'Pre-DIP', stages: ['received', 'assigned', 'dip_issued'] },
+    { label: 'Onboarding', stages: ['info_gathering', 'ai_termsheet'] },
+    { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
+  ];
+
+  html += `<div style="display:flex;gap:16px;margin-bottom:20px;">`;
+  phases.forEach(phase => {
+    const phaseActive = phase.stages.includes(stage);
+    const phaseDone = phase.stages.every((s) => stageOrder.indexOf(s) < currentIdx);
+    const phaseBg = phaseDone ? '#dcfce7' : phaseActive ? '#eff6ff' : '#f8fafc';
+    const phaseBorder = phaseDone ? '#86efac' : phaseActive ? '#93c5fd' : '#e5e7eb';
+    html += `<div style="flex:1;padding:10px;border-radius:8px;background:${phaseBg};border:1px solid ${phaseBorder};">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">${phase.label}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;">`;
+    phase.stages.forEach((s, i) => {
+      const isActive = s === stage;
+      const isDone = stageOrder.indexOf(s) < currentIdx;
+      const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
+      const color = (isActive || isDone) ? '#fff' : '#666';
+      html += `<span style="padding:3px 8px;border-radius:10px;font-size:10px;background:${bg};color:${color};white-space:nowrap;">${stageLabels[s]}</span>`;
+    });
+    html += `</div></div>`;
   });
   html += `</div>`;
 
@@ -412,9 +444,8 @@ export function renderInternalWorkflowControls(deal) {
       ? `<span style="display:inline-block;padding:3px 10px;background:#dcfce7;color:#166534;border-radius:12px;font-size:12px;font-weight:600;border:1px solid #86efac;">${name}</span>`
       : `<span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#991b1b;border-radius:12px;font-size:12px;font-weight:600;border:1px solid #fca5a5;">Unassigned</span>`;
 
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Assignments</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    html += accordion('wf-assignments', 'Assignments', '👥', false);
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">Relationship Manager</label>
           <div style="display:flex;gap:8px;">
@@ -447,6 +478,7 @@ export function renderInternalWorkflowControls(deal) {
         </div>
       </div>
     </div>`;
+    html += accordionEnd();
 
     // Populate staff dropdowns
     setTimeout(async () => {
@@ -468,64 +500,10 @@ export function renderInternalWorkflowControls(deal) {
     }, 100);
   }
 
-  // ── Fee Tracker (RM / Admin — must be filled BEFORE issuing DIP) ──
-  if (['admin', 'rm'].includes(currentRole)) {
-    const dipFee = deal.dip_fee_confirmed ? 'Confirmed' : 'Not confirmed';
-    const commitFee = deal.commitment_fee_received ? 'Confirmed' : 'Not confirmed';
-
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #7c3aed;">
-      <h4 style="margin:0 0 4px;color:#7c3aed;">Fee Tracker</h4>
-      <p style="margin:0 0 12px;font-size:11px;color:#666;">Enter fee details here first. These will flow into the DIP fee schedule below.</p>
-      <div style="display:flex;gap:20px;margin-bottom:12px;">
-        <span style="font-size:13px;">DIP Fee: <strong style="color:${deal.dip_fee_confirmed ? '#48bb78' : '#e53e3e'}">${dipFee}</strong></span>
-        <span style="font-size:13px;">Commitment Fee: <strong style="color:${deal.commitment_fee_received ? '#48bb78' : '#e53e3e'}">${commitFee}</strong></span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
-        <div>
-          <label style="font-size:11px;color:#666;">Fee Type</label>
-          <select id="fee-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
-            <option value="dip_fee">DIP Fee</option>
-            <option value="commitment_fee">Commitment Fee</option>
-            <option value="arrangement_fee">Arrangement Fee</option>
-            <option value="valuation_fee">Valuation Fee</option>
-            <option value="legal_fee">Legal Fee</option>
-            <option value="broker_fee">Broker Fee</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#666;">Amount (£)</label>
-          <input type="text" id="fee-amount" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
-        </div>
-        <div>
-          <label style="font-size:11px;color:#666;">Payment Date</label>
-          <input type="date" id="fee-date" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
-        </div>
-        <div>
-          <label style="font-size:11px;color:#666;">Reference</label>
-          <input type="text" id="fee-ref" placeholder="Payment ref" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
-        </div>
-        <button onclick="window.confirmFee && window.confirmFee()" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm</button>
-      </div>
-    </div>`;
-
-    // Show existing fees
-    if (deal.fees && deal.fees.length > 0) {
-      html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-        <h4 style="margin:0 0 12px;">Fee History</h4>
-        <table style="width:100%;font-size:13px;border-collapse:collapse;">
-          <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Amount</th><th style="text-align:left;padding:6px;">Date</th><th style="text-align:left;padding:6px;">Reference</th><th style="text-align:left;padding:6px;">Confirmed By</th></tr>
-          ${deal.fees.map(f => `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:6px;">${f.fee_type.replace(/_/g, ' ')}</td><td style="padding:6px;">£${formatNumber(f.amount)}</td><td style="padding:6px;">${formatDate(f.payment_date)}</td><td style="padding:6px;">${sanitizeHtml(f.payment_ref || '-')}</td><td style="padding:6px;">${sanitizeHtml(f.first_name)} ${sanitizeHtml(f.last_name)}</td></tr>`).join('')}
-        </table>
-      </div>`;
-    }
-  }
-
   // ── Borrowers (verify before DIP) ──
   const borrowers = deal.borrowers || [];
   const canEditBorrowers = ['admin', 'rm'].includes(currentRole);
-  html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-    <h4 style="margin:0 0 12px;">Borrowers (${borrowers.length}) ${!canEditBorrowers ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages borrower data</span>' : ''}</h4>`;
+  html += accordion('wf-borrowers', `Borrowers (${borrowers.length})`, '👤', false);
 
   if (borrowers.length > 0) {
     html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
@@ -553,14 +531,13 @@ export function renderInternalWorkflowControls(deal) {
       </div>
     </div>`;
   }
-  html += `</div>`;
+  html += accordionEnd();
 
   // ── Properties / Portfolio (verify before DIP) ──
   const properties = deal.properties || [];
   const summary = deal.portfolio_summary || {};
   const canEditProperties = ['admin', 'rm'].includes(currentRole);
-  html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-    <h4 style="margin:0 0 12px;">Properties / Portfolio (${properties.length}) ${!canEditProperties ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages property data</span>' : ''}</h4>`;
+  html += accordion('wf-properties', `Properties / Portfolio (${properties.length})`, '🏠', false);
 
   if (properties.length > 0) {
     html += `<div style="display:flex;gap:16px;margin-bottom:12px;font-size:13px;">
@@ -594,7 +571,7 @@ export function renderInternalWorkflowControls(deal) {
       </div>
     </div>`;
   }
-  html += `</div>`;
+  html += accordionEnd();
 
   // ── Stage-Specific Actions ──
 
@@ -689,7 +666,8 @@ export function renderInternalWorkflowControls(deal) {
       </svg>
     </div>`;
 
-    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+    html += accordion('wf-dip-form', 'DIP Form', '📋', true);
+    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid var(--primary);">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">
@@ -1010,6 +988,7 @@ export function renderInternalWorkflowControls(deal) {
         </p>
       </div>
     </div>`;
+    html += accordionEnd();
 
     // Auto-calculate DIP summary after render + attach money formatting
     setTimeout(() => {
@@ -1220,7 +1199,8 @@ export function renderInternalWorkflowControls(deal) {
   const creditAlreadyDecided = ['approve', 'decline'].includes(deal.credit_recommendation);
   if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole) && !creditAlreadyDecided) {
     const dipData = deal.ai_termsheet_data || {};
-    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+    html += accordion('wf-credit-review', 'Credit Review', '👁️', true);
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;border:2px solid #7c3aed;">
       <h4 style="margin:0 0 4px;color:#7c3aed;">Credit Review — In-Principle Decision</h4>
       <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the DIP terms submitted by the RM and provide your in-principle decision.</p>
 
@@ -1295,6 +1275,7 @@ export function renderInternalWorkflowControls(deal) {
         </div>
       </div>
     </div>`;
+    html += accordionEnd();
   }
 
   // DIP_ISSUED — Credit has already decided: show read-only summary
@@ -1303,7 +1284,8 @@ export function renderInternalWorkflowControls(deal) {
     const cd = dipData.credit_decision || {};
     const decColor = deal.credit_recommendation === 'approve' ? '#15803d' : '#e53e3e';
     const decLabel = deal.credit_recommendation === 'approve' ? 'APPROVED' : 'DECLINED';
-    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${decColor};">
+    html += accordion('wf-credit-decision', 'Credit Decision (read-only)', '📋', false);
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;border:2px solid ${decColor};">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h4 style="margin:0;color:${decColor};">Credit Decision: ${decLabel}</h4>
         <span style="font-size:11px;color:#6b7280;">${cd.decided_at ? new Date(cd.decided_at).toLocaleDateString('en-GB') + ' ' + new Date(cd.decided_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'}) : ''}</span>
@@ -1318,6 +1300,7 @@ export function renderInternalWorkflowControls(deal) {
       </div>
       <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;">Awaiting borrower acceptance. Credit decision is final — no further action required.</p>
     </div>`;
+    html += accordionEnd();
   }
 
   // INFO_GATHERING — Onboarding Fee Gate + Section Approval Summary + AI Termsheet generation
@@ -1331,6 +1314,8 @@ export function renderInternalWorkflowControls(deal) {
     const creditSignedOff = !!deal.credit_signoff_at;
     const aiData = deal.ai_termsheet_data || {};
     const creditSignoffDecision = aiData.credit_signoff ? aiData.credit_signoff.decision : null;
+
+    html += accordion('wf-info-gathering', 'Info Gathering Steps', '✓', true);
 
     // Step 1: Onboarding Fee
     html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${dipFeeConfirmed ? '#22c55e' : '#f59e0b'};">
@@ -1428,12 +1413,14 @@ export function renderInternalWorkflowControls(deal) {
         </div>`;
       }
     }
+    html += accordionEnd();
   }
 
   // AI_TERMSHEET — Show AI analysis summary
   if (stage === 'ai_termsheet' && ['rm', 'credit', 'admin'].includes(currentRole)) {
     const aiGenAt = deal.ai_termsheet_generated_at;
     const aiData = deal.ai_termsheet_data || {};
+    html += accordion('wf-ai-termsheet', 'AI Termsheet', '🤖', true);
     html += `<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #22c55e;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <span style="font-size:22px;">🤖</span>
@@ -1488,6 +1475,7 @@ export function renderInternalWorkflowControls(deal) {
         <button onclick="window.requestFee && window.requestFee()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Request Fee</button>
       </div>
     </div>`;
+    html += accordionEnd();
   }
 
   // FEE_PENDING (RM or Admin) - Confirm Fee
@@ -1597,12 +1585,11 @@ export function renderInternalWorkflowControls(deal) {
   // Credit team uses Decline, not Withdraw. Final stages excluded.
   if (!['completed', 'declined', 'withdrawn'].includes(stage) && ['admin', 'rm', 'broker', 'borrower'].includes(currentRole)) {
     const withdrawLabel = ['broker', 'borrower'].includes(currentRole) ? 'Withdraw Application' : 'Withdraw Deal';
-    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
-      <h4 style="margin:0 0 12px;">Deal Status</h4>
-      <div style="display:flex;gap:8px;">
+    html += accordion('wf-withdraw', withdrawLabel, '🚫', false);
+    html += `<div style="display:flex;gap:8px;">
         <button onclick="window.withdrawDeal && window.withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">${withdrawLabel}</button>
-      </div>
-    </div>`;
+      </div>`;
+    html += accordionEnd();
   }
 
   // ── Fee Tracker (visible to internal users at all stages from dip_issued onwards) ──
@@ -1623,6 +1610,7 @@ export function renderInternalWorkflowControls(deal) {
       : 'width:90px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;font-size:12px;text-align:right;background:#f9fafb;color:#374151;cursor:not-allowed;';
     const feeReadonly = feesEditable ? '' : 'readonly';
 
+    html += accordion('wf-fee-tracker', 'Fee Tracker', '💷', true);
     html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker ${dipFeesLocked ? '<span style="font-size:10px;color:#f59e0b;font-weight:400;margin-left:8px;">Locked — DIP issued to borrower with these terms</span>' : !canEditFees ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages fees</span>' : ''}</h4>
@@ -1677,6 +1665,7 @@ export function renderInternalWorkflowControls(deal) {
         </tbody>
       </table>
     </div>`;
+    html += accordionEnd();
   }
 
   // ── Recommendation Status & Actions ──
@@ -1688,6 +1677,7 @@ export function renderInternalWorkflowControls(deal) {
 
   if (['credit', 'compliance', 'admin'].includes(currentRole)) {
     // Always show the status summary
+    html += accordion('wf-decision-status', 'Decision Status', '✔️', true);
     html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Decision Status</h4>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px;">
@@ -1711,7 +1701,7 @@ export function renderInternalWorkflowControls(deal) {
     } else {
       html += `<p style="margin:0;font-size:11px;color:#9ca3af;">No further action required at this stage.</p>`;
     }
-    html += `</div>`;
+    html += accordionEnd();
   }
 
   // ── Audit Trail (enriched with stage transitions, elapsed time) ──
@@ -1725,8 +1715,20 @@ export function renderInternalWorkflowControls(deal) {
       completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
     };
 
-    let auditHtml = '';
+    // Group consecutive identical actions
+    const groupedAudit = [];
     deal.audit.forEach((a, idx) => {
+      const prev = groupedAudit[groupedAudit.length - 1];
+      if (prev && prev.action === a.action && prev.to_value === a.to_value && prev.first_name === a.first_name) {
+        prev.count = (prev.count || 1) + 1;
+        prev.last_at = a.created_at;
+      } else {
+        groupedAudit.push({ ...a, count: 1, last_at: a.created_at });
+      }
+    });
+
+    let auditHtml = '';
+    groupedAudit.forEach((a, idx) => {
       let details = {};
       try { details = a.details ? (typeof a.details === 'string' ? JSON.parse(a.details) : a.details) : {}; } catch(e) { details = {}; }
       const isStageChange = a.action === 'stage_change' || (a.from_value && a.to_value && auditStageLabels[a.to_value]);
@@ -1771,7 +1773,7 @@ export function renderInternalWorkflowControls(deal) {
         + '</div>'
         + '<div style="flex:1;">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-        + '<div>' + stageBadge + '<strong>' + sanitizeHtml(a.action.replace(/_/g, ' ')) + '</strong> ' + transitionHtml + '</div>'
+        + '<div>' + stageBadge + '<strong>' + sanitizeHtml(a.action.replace(/_/g, ' ')) + '</strong>' + (a.count > 1 ? ' <span style="display:inline-block;padding:1px 6px;background:#f3f4f6;border-radius:3px;font-size:11px;color:#666;margin-left:4px;">×' + a.count + '</span>' : '') + ' ' + transitionHtml + '</div>'
         + elapsedBadge
         + '</div>'
         + commentHtml
@@ -1782,9 +1784,9 @@ export function renderInternalWorkflowControls(deal) {
         + '</div></div></div>';
     });
 
-    html += '<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">'
-      + '<h4 style="margin:0 0 12px;">Audit Trail</h4>'
-      + '<div style="max-height:400px;overflow-y:auto;">' + auditHtml + '</div></div>';
+    html += accordion('wf-audit-trail', 'Audit Trail', '📜', false);
+    html += '<div style="max-height:400px;overflow-y:auto;">' + auditHtml + '</div>';
+    html += accordionEnd();
   }
 
   panel.innerHTML = html;
