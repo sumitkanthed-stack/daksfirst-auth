@@ -1,61 +1,62 @@
 /**
  * DIP PDF Generator — Daksfirst
  *
- * v3 — Polished layout matching the portal HTML rendering.
- * Generous spacing, larger cells, better visual hierarchy.
- * Fully dynamic, handles any deal shape.
+ * v4 — Puppeteer-based HTML-to-PDF.
+ * Renders the same HTML/CSS the portal uses, so the PDF is pixel-perfect.
+ * No more manual X/Y positioning — the browser does all the layout.
  */
 
-const PDFDocument = require('pdfkit');
+const puppeteer = require('puppeteer');
+
+// ── Keep a browser instance alive to avoid cold-start on every PDF ──
+let _browser = null;
+async function getBrowser() {
+  if (_browser && _browser.isConnected()) return _browser;
+  _browser = await puppeteer.launch({
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--font-render-hinting=none'
+    ]
+  });
+  return _browser;
+}
 
 // ── Embedded white DF hexagon logo (PNG, base64) ──
-const LOGO_B64 = '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';
+const LOGO_B64 = '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';
 
-// ── Brand Colours ──
-const NAVY    = '#1F3864';
-const GOLD    = '#C9A227';
-const WHITE   = '#FFFFFF';
-const LGREY   = '#F8FAFC';
-const LGREY2  = '#F3F4F6';
-const MGREY   = '#6b7280';
-const DGREY   = '#E5E7EB';
-const RED     = '#991b1b';
-const REDBG   = '#fef2f2';
-const AMBER   = '#fffbeb';
-const AMBERTXT= '#92400e';
-const BLUE    = '#eff6ff';
-const TXT     = '#1a1a2e';
-const GREEN   = '#166534';
-const GREENBG = '#f0fdf4';
-const BLUEBG  = '#eff6ff';
-const PURPLEBG= '#faf5ff';
-
-// ── Helper Functions ──
+// ── Helpers ──
 
 function money(val) {
-  if (val === null || val === undefined || val === '') return '—';
+  if (val === null || val === undefined || val === '') return '\u2014';
   const num = typeof val === 'string' ? parseFloat(val.replace(/,/g, '')) : val;
-  if (isNaN(num)) return '—';
-  return '£' + num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  if (isNaN(num)) return '\u2014';
+  return '\u00A3' + num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 function pct(val) {
-  if (val === null || val === undefined || val === '') return '—';
+  if (val === null || val === undefined || val === '') return '\u2014';
   const num = typeof val === 'string' ? parseFloat(val) : val;
-  if (isNaN(num)) return '—';
+  if (isNaN(num)) return '\u2014';
   return num.toFixed(2) + '%';
 }
 
 function clean(val) {
-  if (val === null || val === undefined || val === '') return '—';
-  return String(val).trim() || '—';
+  if (val === null || val === undefined || val === '') return '\u2014';
+  return String(val).trim() || '\u2014';
 }
 
 function humanize(val) {
-  if (!val) return '—';
-  return String(val)
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
+  if (!val) return '\u2014';
+  return String(val).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function dealRefFromId(submissionId, createdAt) {
@@ -69,623 +70,769 @@ function dealRefFromId(submissionId, createdAt) {
 
 function feeLine(raw, loanAmt) {
   const v = parseFloat(raw || 0);
-  if (isNaN(v) || v === 0) return '—';
+  if (isNaN(v) || v === 0) return '\u2014';
   if (v > 0 && v < 50) return money(Math.round(loanAmt * v / 100)) + ' (' + v.toFixed(2) + '%)';
   return money(v);
 }
 
 
 // ═══════════════════════════════════════════════════════════════════
-// GENERATE DIP PDF
+// BUILD HTML
+// ═══════════════════════════════════════════════════════════════════
+
+function buildDipHtml(deal, dipData, options) {
+  const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
+  const bType = (deal.borrower_type || 'individual').toLowerCase();
+  const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
+  const addresses = (deal.security_address || '').split(';').filter(a => a.trim());
+  const postcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
+  const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
+  const arrFee = parseFloat(dipData.arrangement_fee || deal.arrangement_fee || 2);
+  const brkFee = parseFloat(dipData.broker_fee || deal.broker_fee || 1);
+  const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
+
+  const issueDate = options.issuedAt
+    ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Build property rows
+  let propRowsHtml = '';
+  let totalVal = 0;
+  if (addresses.length > 0) {
+    addresses.forEach((addr, idx) => {
+      const pc = postcodes[idx] || '\u2014';
+      let val;
+      if (dipData.property_values && dipData.property_values[idx]) {
+        val = parseFloat(dipData.property_values[idx]);
+      } else if (addresses.length === 1) {
+        val = totalPropertyVal;
+      } else {
+        const perProp = Math.floor(totalPropertyVal / addresses.length);
+        val = (idx === addresses.length - 1) ? totalPropertyVal - perProp * (addresses.length - 1) : perProp;
+      }
+      totalVal += val;
+      propRowsHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:6px 8px;font-weight:600;">${idx + 1}</td>
+        <td style="padding:6px 8px;">${esc(addr.trim())}</td>
+        <td style="padding:6px 8px;">${esc(pc.trim())}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(val)}</td>
+      </tr>`;
+    });
+  } else {
+    totalVal = totalPropertyVal;
+    propRowsHtml = `<tr style="border-bottom:1px solid #f0f0f0;">
+      <td style="padding:6px 8px;font-weight:600;">1</td>
+      <td style="padding:6px 8px;">${esc(deal.security_address || 'TBC')}</td>
+      <td style="padding:6px 8px;">${esc(deal.security_postcode || '\u2014')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(totalPropertyVal)}</td>
+    </tr>`;
+  }
+  if (!totalVal) totalVal = totalPropertyVal;
+
+  // Borrower type badge
+  const borrowerTypeBadge = isCorp
+    ? `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dbeafe;color:#1e3a5f;">${esc(bType.toUpperCase())}</span>`
+    : `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;">INDIVIDUAL</span>`;
+
+  // Parties table
+  let partiesHtml = '';
+  if (dipData.borrowers && dipData.borrowers.length > 0) {
+    partiesHtml = `
+    <div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
+      <h5 style="margin:0 0 8px;color:#374151;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the DIP (${dipData.borrowers.length})</h5>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <tr style="background:#f3f4f6;">
+          <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Name</th>
+          <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Role</th>
+          <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;">KYC Status</th>
+        </tr>
+        ${dipData.borrowers.map(b => {
+          const roleBg = (b.role || '').toLowerCase() === 'primary' ? '#bee3f8' : (b.role || '').toLowerCase() === 'guarantor' ? '#fef3c7' : '#e5e7eb';
+          const roleColor = (b.role || '').toLowerCase() === 'primary' ? '#2a4365' : (b.role || '').toLowerCase() === 'guarantor' ? '#744210' : '#374151';
+          const kycOk = b.kyc_verified || b.kyc_status === 'verified';
+          return `<tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:5px 8px;font-weight:600;">${esc(b.name || b.full_name || '')}</td>
+            <td style="padding:5px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;background:${roleBg};color:${roleColor};">${esc(b.role || 'primary')}</span></td>
+            <td style="padding:5px 8px;text-align:center;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${kycOk ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'};">${kycOk ? 'Verified' : 'KYC Pending'}</span></td>
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>`;
+  }
+
+  // Security items
+  const securityCharge = esc(humanize(dipData.security_charge || 'first_and_debenture'));
+  const personalGuarantee = isCorp ? 'Required from UBO' : 'N/A';
+  const debenture = isCorp ? 'Required (corporate borrower)' : 'N/A';
+
+  // Conditions precedent
+  const cpItems = [
+    'Satisfactory independent valuation',
+    'Clear title search \u2014 no encumbrances',
+    'Legal due diligence by Lender\u2019s solicitors',
+    'First legal charge in favour of Lender',
+    'Buildings insurance \u2014 Lender\u2019s interest noted'
+  ];
+  if (isCorp) {
+    cpItems.push('Personal guarantee from UBO');
+    cpItems.push('Debenture over corporate assets');
+  }
+  cpItems.push('KYC/AML documentation for all parties');
+  cpItems.push('Evidence of source of deposit & funds');
+  cpItems.push('Payment of all applicable fees');
+
+  const cpHtml = cpItems.map((c, i) => `<div style="padding:4px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:6px;">
+    <span style="color:#1e3a5f;font-weight:600;min-width:18px;">${i + 1}.</span>
+    <span>${esc(c)}</span>
+  </div>`).join('');
+
+  // Fee rows
+  const feeRows = [
+    { name: 'Onboarding / DIP Fee', amount: money(dipData.fee_onboarding || 0), when: 'After DIP acceptance', trigger: 'Before Credit Review' },
+    { name: 'Commitment Fee', amount: money(dipData.fee_commitment || 0), when: 'After Termsheet acceptance', trigger: 'Before Underwriting' },
+    { name: 'Arrangement Fee', amount: feeLine(arrFee, loanAmt), when: 'On completion', trigger: 'Deducted from advance', highlight: true },
+    { name: '\u21B3 of which Broker Fee', amount: feeLine(brkFee, loanAmt), when: 'On completion', trigger: 'From arrangement fee', highlight: true, sub: true },
+    { name: 'Exit Fee', amount: '1.00% of loan', when: 'On redemption', trigger: 'Payable on exit' },
+    { name: 'Extension Fee', amount: '1.00% of loan', when: 'If term extended', trigger: 'Per extension period agreed' }
+  ];
+
+  const feeRowsHtml = feeRows.map(f => `<tr style="border-bottom:1px solid #f3f4f6;${f.highlight ? 'background:#fefce8;' : ''}">
+    <td style="padding:8px;${f.sub ? 'padding-left:24px;color:#92400e;' : 'font-weight:600;'}">${esc(f.name)}</td>
+    <td style="padding:8px;text-align:right;font-weight:600;${f.sub ? 'color:#92400e;' : ''}">${f.amount}</td>
+    <td style="padding:8px;font-size:11px;color:#60A5FA;">${esc(f.when)}</td>
+    <td style="padding:8px;font-size:11px;">${esc(f.trigger)}</td>
+  </tr>`).join('');
+
+  // DIP conditions / notes
+  const dipNotes = dipData.conditions || dipData.notes || '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a2e;
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .page-wrapper {
+    width: 210mm;
+    padding: 0;
+  }
+
+  /* ── HEADER BAR ── */
+  .header-bar {
+    background: #1F3864;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .header-bar img { width: 42px; height: 42px; }
+  .header-bar .title-area { flex: 1; }
+  .header-bar h1 { color: #fff; font-size: 20px; margin: 0; letter-spacing: 1px; }
+  .header-bar .tagline { color: #C9A227; font-size: 9px; font-style: italic; margin-top: 2px; }
+  .header-bar .info-right { text-align: right; font-size: 8px; }
+  .header-bar .info-right .addr { color: #fff; }
+  .header-bar .info-right .fca { color: #C9A227; margin-top: 3px; }
+
+  .gold-bar { height: 3px; background: #C9A227; }
+
+  /* ── DIP BODY ── */
+  .dip-body {
+    background: #f0f5ff;
+    padding: 20px 28px;
+  }
+
+  .dip-title {
+    text-align: center;
+    margin-bottom: 6px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #2563eb;
+  }
+  .dip-title h2 { font-size: 18px; color: #1e3a5f; margin: 0 0 2px; }
+  .dip-title .subtitle { font-size: 11px; color: #4b5563; }
+
+  /* Reference strip */
+  .ref-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 12px;
+  }
+  .ref-strip .deal-ref {
+    font-weight: 700;
+    font-size: 13px;
+    color: #1e3a5f;
+    padding: 4px 12px;
+    border: 2px solid #1e3a5f;
+    border-radius: 4px;
+  }
+  .ref-strip .date { color: #6b7280; }
+
+  .intro-text { margin: 0 0 16px; font-size: 12px; color: #4b5563; }
+
+  /* ── SECTION BLOCKS ── */
+  .section {
+    background: #f9fafb;
+    padding: 14px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    border: 1px solid #e5e7eb;
+  }
+  .section.blue {
+    background: #f0f5ff;
+    border: 2px solid #2563eb;
+  }
+  .section.purple {
+    background: #faf5ff;
+    border: 2px solid #7c3aed;
+  }
+  .section.amber {
+    background: #fffbeb;
+    border: 1px solid #f59e0b;
+  }
+  .section.green-border {
+    background: #f0fdf4;
+    border: 2px solid #16a34a;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .section-header h5 {
+    margin: 0;
+    color: #374151;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .section-header.navy h5 { color: #1e3a5f; }
+  .section-header.purple h5 { color: #7c3aed; }
+  .section-header.amber h5 { color: #92400e; }
+  .section-header.grey h5 { color: #6b7280; }
+
+  /* ── GRID ── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .field-box {
+    padding: 10px;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+  }
+  .field-box.blue { background: #eff6ff; border-color: #bfdbfe; }
+  .field-box.amber { background: #fef3c7; border-color: #fbbf24; }
+  .field-box.green { background: #f0fff4; border-color: #86efac; }
+
+  .field-label {
+    font-size: 10px;
+    color: #6b7280;
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .field-label.blue { color: #1e40af; }
+  .field-label.amber { color: #92400e; }
+  .field-label.navy { color: #374151; font-weight: 600; }
+  .field-label.green { color: #15803d; }
+
+  .field-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  .field-value.navy { color: #1e3a5f; }
+  .field-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+  /* ── TABLES ── */
+  table.dip-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.dip-table thead tr { background: #f3f4f6; }
+  table.dip-table th {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    font-size: 11px;
+    color: #6b7280;
+  }
+  table.dip-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  /* ── BADGES ── */
+  .badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-block;
+  }
+
+  /* ── BOTTOM BLOCK ── */
+  .red-notice {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .red-notice p {
+    font-size: 10px;
+    color: #991b1b;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .sig-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 16px;
+  }
+  .sig-block {
+    border-top: 1px solid #6b7280;
+    padding-top: 6px;
+  }
+  .sig-block .label { font-size: 10px; font-weight: 700; color: #1e3a5f; }
+  .sig-block .name { font-size: 11px; color: #374151; margin-top: 2px; }
+
+  /* ── FOOTER ── */
+  .footer-bar {
+    border-top: 2px solid #C9A227;
+    padding: 8px 28px;
+    text-align: center;
+    font-size: 8px;
+    color: #6b7280;
+    line-height: 1.6;
+    margin-top: 12px;
+  }
+
+  .disclaimer {
+    margin-top: 16px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+  }
+  .disclaimer p {
+    margin: 0;
+    font-size: 10px;
+    color: #6b7280;
+    line-height: 1.5;
+  }
+
+  /* Ensure colour-printing on all browsers */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <!-- ═══ HEADER ═══ -->
+  <div class="header-bar">
+    <img src="data:image/png;base64,${LOGO_B64}" alt="DF">
+    <div class="title-area">
+      <h1>DAKSFIRST</h1>
+      <div class="tagline">Bridging Finance, Built for Professionals</div>
+    </div>
+    <div class="info-right">
+      <div class="addr">8 Hill Street, Mayfair, London W1J 5NG</div>
+      <div class="fca">FCA 937220 &nbsp;|&nbsp; portal@daksfirst.com</div>
+    </div>
+  </div>
+  <div class="gold-bar"></div>
+
+  <!-- ═══ BODY ═══ -->
+  <div class="dip-body">
+
+    <div class="dip-title">
+      <h2>Decision In Principle (DIP)</h2>
+      <div class="subtitle">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG</div>
+    </div>
+
+    <div class="ref-strip">
+      <span class="deal-ref">${esc(dealRef)}</span>
+      <span class="date">Issued: ${esc(issueDate)}</span>
+      ${borrowerTypeBadge}
+    </div>
+
+    <p class="intro-text">This Decision in Principle sets out the indicative terms under which Daksfirst Limited may provide senior secured finance. All terms are subject to full underwriting, valuation, and credit approval.</p>
+
+    <!-- ═══ BORROWER DETAILS ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <h5>Borrower &mdash; ${isCorp ? 'Corporate' : 'Individual'}</h5>
+        ${borrowerTypeBadge}
+      </div>
+
+      ${isCorp ? `
+      <div class="grid-2">
+        <div class="field-box blue">
+          <span class="field-label blue">Corporate Entity</span>
+          <div class="field-value">${esc(clean(deal.borrower_company || deal.company_name))}</div>
+          ${deal.company_number ? `<div class="field-sub">Co. No: ${esc(deal.company_number)}</div>` : ''}
+        </div>
+        <div class="field-box amber">
+          <span class="field-label amber">Ultimate Beneficial Owner (UBO)</span>
+          <div class="field-value">${esc(clean(deal.borrower_name))}</div>
+          <div class="field-sub">${esc(clean(deal.borrower_email))} ${deal.borrower_phone ? '&middot; ' + esc(deal.borrower_phone) : ''}</div>
+        </div>
+      </div>
+      ` : `
+      <div class="grid-3">
+        <div class="field-box">
+          <span class="field-label">Name</span>
+          <div class="field-value">${esc(clean(deal.borrower_name))}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label">Email</span>
+          <div class="field-value" style="font-size:12px;">${esc(clean(deal.borrower_email))}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label">Phone</span>
+          <div class="field-value">${esc(clean(deal.borrower_phone))}</div>
+        </div>
+      </div>
+      `}
+
+      ${partiesHtml}
+
+      <!-- Security & Guarantee Structure -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+        <h5 style="margin:0 0 8px;color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security &amp; Guarantee Structure</h5>
+        <div class="grid-3">
+          <div class="field-box">
+            <span class="field-label navy">Security Charge</span>
+            <div class="field-value" style="font-size:13px;">${securityCharge}</div>
+          </div>
+          <div class="field-box">
+            <span class="field-label navy">Personal Guarantee</span>
+            <div class="field-value" style="font-size:13px;">${esc(personalGuarantee)}</div>
+          </div>
+          <div class="field-box">
+            <span class="field-label navy">Additional Security</span>
+            <div class="field-value" style="font-size:13px;">${esc(clean(dipData.additional_security || '\u2014'))}</div>
+          </div>
+        </div>
+        ${isCorp ? `<div class="field-box" style="margin-top:8px;">
+          <span class="field-label navy">UBO / Guarantor Name(s)</span>
+          <div class="field-value" style="font-size:13px;">${esc(clean(deal.borrower_name))}</div>
+        </div>` : ''}
+      </div>
+    </div>
+
+    <!-- ═══ SECURITY SCHEDULE ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <h5>Security Schedule &mdash; ${addresses.length || 1} ${(addresses.length || 1) === 1 ? 'Property' : 'Properties'}</h5>
+      </div>
+      <table class="dip-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Address</th>
+            <th>Postcode</th>
+            <th style="text-align:right;">Valuation (&pound;)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${propRowsHtml}
+        </tbody>
+        <tfoot>
+          <tr style="background:#f0f5ff;font-weight:600;">
+            <td colspan="3" style="padding:8px;text-align:right;font-size:12px;">Total Portfolio Valuation:</td>
+            <td style="padding:8px;text-align:right;font-size:13px;color:#1e3a5f;font-weight:700;">${money(totalVal || totalPropertyVal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:8px;font-size:12px;color:#6b7280;">Asset Type: <strong>${esc(humanize(deal.asset_type))}</strong> &nbsp;|&nbsp; Tenure: <strong>${esc(humanize(deal.property_tenure))}</strong></div>
+    </div>
+
+    <!-- ═══ VALUATION SUMMARY ═══ -->
+    <div class="section">
+      <div class="section-header grey"><h5>Valuation Summary</h5></div>
+      <div class="grid-3">
+        <div class="field-box green">
+          <span class="field-label green">Total Property Value (&pound;)</span>
+          <div class="field-value">${money(totalVal || totalPropertyVal)}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label">Purchase Price (&pound;)</span>
+          <div class="field-value">${money(deal.purchase_price)}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label">Number of Properties</span>
+          <div class="field-value">${addresses.length || 1}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ LOAN TERMS ═══ -->
+    <div class="section blue">
+      <div class="section-header navy"><h5>Indicative Loan Terms</h5></div>
+      <div class="grid-3">
+        <div class="field-box blue">
+          <span class="field-label navy">Loan Amount (&pound;)</span>
+          <div class="field-value navy">${money(dipData.loan_amount || deal.loan_amount)}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label navy">Term (months)</span>
+          <div class="field-value">${esc(clean(dipData.term_months || deal.term_months))}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label navy">Rate (%/month)</span>
+          <div class="field-value">${pct(dipData.rate_monthly || deal.rate_requested)}</div>
+          <div class="field-sub" style="color:#92400e;">Min 0.85%</div>
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="field-box">
+          <span class="field-label navy">Interest Servicing</span>
+          <div class="field-value">${esc(humanize(dipData.interest_servicing || 'retained'))}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label navy">Arrangement Fee (%)</span>
+          <div class="field-value">${arrFee.toFixed(2)}%</div>
+        </div>
+        <div class="field-box green">
+          <span class="field-label green">LTV (%)</span>
+          <div class="field-value">${pct(dipData.ltv || deal.ltv_requested)}</div>
+          <div class="field-sub" style="color:#15803d;">Auto-calculated &middot; Max 75%</div>
+        </div>
+      </div>
+
+      <!-- Day Zero Calculation -->
+      <div class="section amber" style="margin-top:8px;margin-bottom:0;">
+        <div class="section-header amber"><h5>Day Zero Calculation</h5></div>
+        <div class="grid-2">
+          <div class="field-box">
+            <span class="field-label amber">Retained Interest (months)</span>
+            <div class="field-value">${esc(clean(dipData.retained_months || '6'))}</div>
+          </div>
+          <div class="field-box">
+            <span class="field-label amber">Broker Fee (%)</span>
+            <div class="field-value">${brkFee.toFixed(2)}%</div>
+            <div class="field-sub" style="color:#b45309;font-weight:600;">Paid from Arrangement Fee (not additional)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ FEE SCHEDULE ═══ -->
+    <div class="section purple">
+      <div class="section-header purple"><h5>Fee Schedule</h5></div>
+      <p style="margin:0 0 12px;font-size:11px;color:#4b5563;">All fees disclosed to borrower. No fee required before DIP issuance.</p>
+      <table class="dip-table">
+        <thead>
+          <tr style="background:#f5f3ff;">
+            <th style="border-bottom:2px solid #7c3aed;">Fee Type</th>
+            <th style="text-align:right;border-bottom:2px solid #7c3aed;">Amount (&pound;)</th>
+            <th style="border-bottom:2px solid #7c3aed;">When Due</th>
+            <th style="border-bottom:2px solid #7c3aed;">Payment Trigger</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${feeRowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══ THIRD-PARTY COSTS ═══ -->
+    <div class="section">
+      <div class="section-header grey"><h5>Estimated Third-Party Costs</h5></div>
+      <p style="margin:0 0 12px;font-size:11px;color:#6b7280;font-style:italic;">These are not Daksfirst fees. Third-party costs borne directly by the borrower, disclosed for budgeting purposes only.</p>
+      <table class="dip-table">
+        <thead>
+          <tr>
+            <th>Cost</th>
+            <th style="text-align:right;">Estimated (&pound;)</th>
+            <th>Payable To</th>
+            <th>Payment Method</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;font-weight:600;">Valuation</td>
+            <td style="padding:8px;text-align:right;">${money(dipData.valuation_cost || 0)}</td>
+            <td style="padding:8px;font-size:11px;">Independent valuer</td>
+            <td style="padding:8px;font-size:11px;">Paid directly by client to valuer</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px;font-weight:600;">Legal (Lender&rsquo;s solicitors)</td>
+            <td style="padding:8px;text-align:right;">${money(dipData.legal_cost || 0)}</td>
+            <td style="padding:8px;font-size:11px;">Daksfirst&rsquo;s appointed solicitors</td>
+            <td style="padding:8px;font-size:11px;">Via undertaking from client&rsquo;s solicitors</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══ PURPOSE & EXIT ═══ -->
+    <div class="grid-2" style="margin-bottom:16px;">
+      <div class="field-box">
+        <span class="field-label">Loan Purpose</span>
+        <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(clean(dipData.loan_purpose || deal.loan_purpose))}</div>
+      </div>
+      <div class="field-box">
+        <span class="field-label">Exit Strategy</span>
+        <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(clean(dipData.exit_strategy || deal.exit_strategy))}</div>
+      </div>
+    </div>
+
+    ${dipNotes ? `
+    <div class="field-box" style="margin-bottom:16px;">
+      <span class="field-label navy">DIP Conditions / RM Notes</span>
+      <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(dipNotes)}</div>
+    </div>
+    ` : ''}
+
+    <!-- ═══ SECURITY & GUARANTEES + CONDITIONS PRECEDENT (side by side) ═══ -->
+    <div class="grid-2" style="margin-bottom:16px;">
+      <div class="section" style="margin-bottom:0;">
+        <div class="section-header navy"><h5>Security &amp; Guarantees</h5></div>
+        <div class="field-box" style="margin-bottom:8px;">
+          <span class="field-label">First Legal Charge</span>
+          <div style="font-size:12px;font-weight:600;">${addresses.length > 1 ? 'Over all ' + addresses.length + ' security properties' : 'Over the security property'}</div>
+        </div>
+        <div class="field-box" style="margin-bottom:8px;">
+          <span class="field-label">Debenture</span>
+          <div style="font-size:12px;font-weight:600;">${esc(debenture)}</div>
+        </div>
+        <div class="field-box">
+          <span class="field-label">Personal Guarantee</span>
+          <div style="font-size:12px;font-weight:600;">${esc(personalGuarantee)}</div>
+        </div>
+      </div>
+      <div class="section" style="margin-bottom:0;">
+        <div class="section-header navy"><h5>Conditions Precedent</h5></div>
+        <div style="font-size:12px;">${cpHtml}</div>
+      </div>
+    </div>
+
+    <!-- ═══ HOW TO PROCEED — PAYMENT DETAILS ═══ -->
+    <div class="section green-border">
+      <div class="section-header" style="margin-bottom:12px;">
+        <h5 style="color:#166534;">How to Proceed &mdash; Payment Details</h5>
+      </div>
+      <div class="grid-2">
+        <div class="field-box">
+          <p style="font-size:12px;color:#374151;margin:0;line-height:1.6;">To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference <strong>${esc(dealRef)}</strong> as payment reference.</p>
+          <p style="font-size:11px;color:#6b7280;margin-top:6px;font-style:italic;">Upon receipt, Daksfirst will commence credit review.</p>
+        </div>
+        <div style="background:#f8fafc;padding:10px;border-radius:6px;border:1px solid #e5e7eb;">
+          <table style="width:100%;font-size:12px;">
+            <tr><td style="color:#6b7280;padding:2px 0;width:110px;">Account Name:</td><td style="font-weight:600;color:#1e3a5f;">Daksfirst Limited</td></tr>
+            <tr><td style="color:#6b7280;padding:2px 0;">Bank:</td><td style="font-weight:600;color:#1e3a5f;">HSBC</td></tr>
+            <tr><td style="color:#6b7280;padding:2px 0;">Account No:</td><td style="font-weight:600;color:#1e3a5f;">90300721</td></tr>
+            <tr><td style="color:#6b7280;padding:2px 0;">Sort Code:</td><td style="font-weight:600;color:#1e3a5f;">40-02-45</td></tr>
+            <tr><td style="color:#6b7280;padding:2px 0;">IBAN:</td><td style="font-weight:600;color:#1e3a5f;">GB64HBUK40024590300721</td></tr>
+            <tr><td style="color:#6b7280;padding:2px 0;">Reference:</td><td style="font-weight:600;color:#1e3a5f;">${esc(dealRef)}</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RED NOTICE ═══ -->
+    <div class="red-notice">
+      <p>IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.</p>
+    </div>
+
+    <!-- ═══ ACKNOWLEDGEMENT ═══ -->
+    <div style="margin-bottom:12px;">
+      <h5 style="margin:0 0 6px;color:#1e3a5f;font-size:13px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
+      <p style="font-size:12px;color:#374151;line-height:1.5;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
+    </div>
+
+    <!-- ═══ SIGNATURES ═══ -->
+    <div class="sig-row">
+      <div class="sig-block">
+        <div class="label">Borrower Signature</div>
+        <div class="name">${esc(clean(deal.borrower_name))}</div>
+        ${isCorp ? `<div class="name" style="font-size:10px;color:#6b7280;">${esc(clean(deal.borrower_company || deal.company_name))}</div>` : ''}
+      </div>
+      <div class="sig-block">
+        <div class="label">For and on behalf of the Lender</div>
+        <div class="name">Daksfirst Bridging 1 Ltd</div>
+      </div>
+    </div>
+
+    <!-- ═══ DISCLAIMER ═══ -->
+    <div class="disclaimer">
+      <p><strong>Disclaimer:</strong> This Decision In Principle (DIP) is issued by Daksfirst Limited and is indicative only. It does not constitute a formal offer of finance and is subject to satisfactory due diligence, valuation, legal review, and final credit approval. All terms stated herein are subject to change. Daksfirst Limited reserves the right to withdraw or amend this DIP at any time prior to the issuance of a formal facility letter. The borrower should not rely on this DIP as a guarantee of funding. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA No. 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.</p>
+    </div>
+
+  </div><!-- .dip-body -->
+
+  <!-- ═══ FOOTER ═══ -->
+  <div class="footer-bar">
+    Daksfirst Limited &nbsp;|&nbsp; 8 Hill Street, Mayfair, London W1J 5NG &nbsp;|&nbsp; FCA Reg: 937220 &nbsp;|&nbsp; portal@daksfirst.com<br>
+    This DIP is indicative only and does not constitute a formal offer. Subject to full underwriting, valuation &amp; legal due diligence.
+  </div>
+
+</div>
+</body>
+</html>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// GENERATE DIP PDF — Puppeteer HTML-to-PDF
 // ═══════════════════════════════════════════════════════════════════
 
 async function generateDipPdf(deal, dipData = {}, options = {}) {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: 'A4',
-        margins: { top: 0, bottom: 0, left: 0, right: 0 },
-        autoFirstPage: false,
-        info: {
-          Title: 'Decision in Principle - ' + (deal.submission_id || 'Daksfirst'),
-          Author: 'Daksfirst Limited',
-          Subject: 'Decision in Principle',
-          Creator: 'Daksfirst Portal'
-        }
-      });
-
-      const buffers = [];
-      doc.on('data', chunk => buffers.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
-      doc.on('error', reject);
-
-      doc.addPage();
-
-      // ── Dimensions ──
-      const pw = doc.page.width;   // 595
-      const ph = doc.page.height;  // 842
-      const M = 32;                // side margin (slightly tighter for more content width)
-      const W = pw - M * 2;       // ~531
-      const FOOTER_ZONE = 52;
-      let y = 0;
-      let pageNum = 1;
-
-      // ── Derived data ──
-      const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
-      const bType = (deal.borrower_type || 'individual').toLowerCase();
-      const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
-      const addresses = (deal.security_address || '').split(';').filter(a => a.trim());
-      const postcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
-      const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
-      const halfW = (W - 6) / 2;
-
-      // ────────────────────────────────────────────────────
-      // REUSABLE DRAWING HELPERS
-      // ────────────────────────────────────────────────────
-
-      function checkPage(needed) {
-        if (y + needed > ph - FOOTER_ZONE) {
-          addFooter();
-          doc.addPage();
-          pageNum++;
-          y = 20;
-        }
-      }
-
-      function addFooter() {
-        const fy = ph - 46;
-        doc.moveTo(M, fy).lineTo(M + W, fy).strokeColor(GOLD).lineWidth(1.5).stroke();
-        doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-        doc.text(
-          'Daksfirst Limited  |  8 Hill Street, Mayfair, London W1J 5NG  |  FCA Reg: 937220  |  portal@daksfirst.com',
-          M, fy + 3, { width: W, align: 'center' }
-        );
-        doc.text(
-          'This DIP is indicative only and does not constitute a formal offer. Subject to full underwriting, valuation & legal due diligence.',
-          M, fy + 10, { width: W, align: 'center' }
-        );
-      }
-
-      /** Full-width section bar — taller, more prominent */
-      function sectionBar(text, bgColor) {
-        bgColor = bgColor || NAVY;
-        checkPage(18);
-        doc.rect(M, y, W, 16).fill(bgColor);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(WHITE);
-        doc.text(text.toUpperCase(), M + 8, y + 3.5, { width: W - 16 });
-        y += 18;
-      }
-
-      /** Half-width section bar at a specific X */
-      function sectionBarAt(text, xPos, width, bgColor) {
-        bgColor = bgColor || NAVY;
-        doc.rect(xPos, y, width, 16).fill(bgColor);
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE);
-        doc.text(text.toUpperCase(), xPos + 8, y + 3.5, { width: width - 16 });
-      }
-
-      /** Draw a 2-column grid with generous cell heights matching HTML style */
-      function drawGrid(items, opts) {
-        opts = opts || {};
-        const cellH = opts.cellH || 22;
-        const rows = Math.ceil(items.length / 2);
-        checkPage(rows * cellH + 6);
-
-        items.forEach((item, idx) => {
-          const row = Math.floor(idx / 2);
-          const col = idx % 2;
-          const cx = M + col * (halfW + 6);
-          const cy = y + row * cellH;
-          const highlight = item[2] === true;
-          const bg = highlight ? BLUE : (col === 0 ? WHITE : LGREY);
-
-          doc.rect(cx, cy, halfW, cellH).fill(bg);
-          // Thin border on bottom only for cleaner look
-          doc.moveTo(cx, cy + cellH).lineTo(cx + halfW, cy + cellH).strokeColor(DGREY).lineWidth(0.5).stroke();
-
-          // Label
-          doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-          doc.text(item[0], cx + 8, cy + 3, { width: halfW - 16 });
-
-          // Value — larger, bolder
-          const valSize = highlight ? 11 : 9;
-          doc.font('Helvetica-Bold').fontSize(valSize).fillColor(highlight ? NAVY : TXT);
-          doc.text(clean(item[1]), cx + 8, cy + 11, { width: halfW - 16 });
-        });
-
-        y += rows * cellH + 6;
-      }
-
-      /** Draw a data table with header and dynamic rows */
-      function drawTable(cols, rows, opts) {
-        opts = opts || {};
-        const rowH = opts.rowH || 11;
-        const headerH = opts.headerH || 11;
-
-        // Header
-        checkPage(headerH + rowH * Math.min(rows.length, 2));
-        doc.rect(M, y, W, headerH).fill(LGREY2);
-        doc.moveTo(M, y + headerH).lineTo(M + W, y + headerH).strokeColor(DGREY).lineWidth(0.5).stroke();
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
-        let cx = M;
-        cols.forEach(col => {
-          doc.text(col.label, cx + 6, y + 3, { width: col.width - 12, align: col.align || 'left' });
-          cx += col.width;
-        });
-        y += headerH;
-
-        // Rows
-        rows.forEach((row, ridx) => {
-          checkPage(rowH);
-          const highlight = opts.highlightFn ? opts.highlightFn(ridx, row) : false;
-          const bg = highlight ? AMBER : (ridx % 2 === 0 ? WHITE : LGREY2);
-          doc.rect(M, y, W, rowH).fill(bg);
-          doc.moveTo(M, y + rowH).lineTo(M + W, y + rowH).strokeColor(DGREY).lineWidth(0.3).stroke();
-
-          cx = M;
-          row.forEach((val, cidx) => {
-            const col = cols[cidx];
-            const isFirst = cidx === 0;
-            doc.font(isFirst && !highlight ? 'Helvetica-Bold' : 'Helvetica').fontSize(7).fillColor(TXT);
-            doc.text(String(val), cx + 6, y + 2.5, { width: col.width - 12, align: col.align || 'left' });
-            cx += col.width;
-          });
-          y += rowH;
-        });
-      }
-
-      /** Small coloured badge (for role/status) */
-      function drawBadge(text, x, bY, bgColor, textColor) {
-        doc.font('Helvetica-Bold').fontSize(6);
-        const badgeW = doc.widthOfString(text) + 12;
-        doc.rect(x, bY, badgeW, 10).fill(bgColor);
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(textColor);
-        doc.text(text, x + 6, bY + 2, { width: badgeW - 12 });
-        return badgeW;
-      }
-
-
-      // ════════════════════════════════════════════════════
-      //  HEADER — Taller, prominent logo
-      // ════════════════════════════════════════════════════
-      const headerH = 52;
-      doc.rect(0, 0, pw, headerH).fill(NAVY);
-
-      // Logo
-      try {
-        const logoBuf = Buffer.from(LOGO_B64, 'base64');
-        doc.image(logoBuf, M, 8, { width: 36, height: 36 });
-      } catch (e) { /* continue without logo */ }
-
-      // Company name + tagline
-      doc.font('Helvetica-Bold').fontSize(16).fillColor(WHITE);
-      doc.text('DAKSFIRST', M + 44, 10, { width: 200 });
-      doc.font('Helvetica-Oblique').fontSize(8).fillColor(GOLD);
-      doc.text('Bridging Finance, Built for Professionals', M + 44, 30, { width: 220 });
-
-      // Right side info
-      doc.font('Helvetica').fontSize(7).fillColor(WHITE);
-      doc.text('8 Hill Street, Mayfair, London W1J 5NG', M + W - 155, 12, { width: 150, align: 'right' });
-      doc.fontSize(7).fillColor(GOLD);
-      doc.text('FCA 937220  |  portal@daksfirst.com', M + W - 155, 30, { width: 150, align: 'right' });
-
-      y = headerH;
-
-      // ── Gold divider ──
-      doc.rect(0, y, pw, 3).fill(GOLD);
-      y += 6;
-
-      // ── Title block ──
-      doc.font('Helvetica-Bold').fontSize(20).fillColor(NAVY);
-      doc.text('DECISION IN PRINCIPLE', M, y, { width: W, align: 'center' });
-      y += 18;
-      doc.font('Helvetica-Oblique').fontSize(8).fillColor(MGREY);
-      doc.text('Senior Secured Real Estate Credit & Structured Finance', M, y, { width: W, align: 'center' });
-      y += 14;
-
-      // ── Reference strip ──
-      checkPage(18);
-      doc.rect(M, y, W, 16).fill(LGREY);
-      doc.moveTo(M, y).lineTo(M + W, y).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(M, y + 16).lineTo(M + W, y + 16).strokeColor(DGREY).lineWidth(0.5).stroke();
-
-      // Ref (left, in a box)
-      doc.rect(M + 6, y + 2, 95, 12).lineWidth(1).strokeColor(NAVY).stroke();
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(NAVY);
-      doc.text(dealRef, M + 10, y + 3, { width: 87, align: 'center' });
-
-      // Date (center)
-      doc.font('Helvetica').fontSize(8).fillColor(MGREY);
-      const issueDate = options.issuedAt
-        ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-        : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      doc.text('Issued: ' + issueDate, M + W / 2 - 55, y + 3, { width: 110, align: 'center' });
-
-      // Badge (right)
-      const badgeText = isCorp ? 'CORPORATE SPV' : 'INDIVIDUAL';
-      const badgeBg = isCorp ? '#dbeafe' : GREENBG;
-      const badgeColor = isCorp ? NAVY : GREEN;
-      const btW = doc.widthOfString(badgeText, { font: 'Helvetica-Bold', fontSize: 7 }) + 14;
-      doc.rect(M + W - btW - 4, y + 2, btW, 12).fill(badgeBg);
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(badgeColor);
-      doc.text(badgeText, M + W - btW + 3, y + 4, { width: btW - 14 });
-
-      y += 20;
-
-
-      // ══════════════════════════════════════════════
-      //  1. BORROWER DETAILS
-      // ══════════════════════════════════════════════
-      sectionBar('BORROWER DETAILS');
-
-      const bCellH = 36;
-      checkPage(bCellH + 8);
-
-      if (isCorp) {
-        // Left: Corporate entity
-        doc.rect(M, y, halfW, bCellH).fill(BLUEBG);
-        doc.moveTo(M, y + bCellH).lineTo(M + halfW, y + bCellH).strokeColor(DGREY).lineWidth(0.5).stroke();
-        doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-        doc.text('CORPORATE ENTITY', M + 8, y + 4, { width: halfW - 16 });
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(NAVY);
-        doc.text(clean(deal.borrower_company || deal.company_name), M + 8, y + 13, { width: halfW - 16 });
-        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
-        doc.text('Co. No: ' + clean(deal.company_number), M + 8, y + 25, { width: halfW - 16 });
-
-        // Right: UBO
-        doc.rect(M + halfW + 6, y, halfW, bCellH).fill(AMBER);
-        doc.moveTo(M + halfW + 6, y + bCellH).lineTo(M + halfW + 6 + halfW, y + bCellH).strokeColor(DGREY).lineWidth(0.5).stroke();
-        doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-        doc.text('ULTIMATE BENEFICIAL OWNER (UBO)', M + halfW + 14, y + 4, { width: halfW - 16 });
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(NAVY);
-        doc.text(clean(deal.borrower_name), M + halfW + 14, y + 13, { width: halfW - 16 });
-        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
-        const contact = [clean(deal.borrower_email), clean(deal.borrower_phone)].filter(v => v !== '—').join(' \u2022 ') || '—';
-        doc.text(contact, M + halfW + 14, y + 25, { width: halfW - 16 });
-      } else {
-        // Individual — full width
-        doc.rect(M, y, W, bCellH).fill(BLUEBG);
-        doc.moveTo(M, y + bCellH).lineTo(M + W, y + bCellH).strokeColor(DGREY).lineWidth(0.5).stroke();
-        doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-        doc.text('BORROWER', M + 8, y + 4, { width: W - 16 });
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(NAVY);
-        doc.text(clean(deal.borrower_name), M + 8, y + 13, { width: W - 16 });
-        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
-        const contact = [clean(deal.borrower_email), clean(deal.borrower_phone)].filter(v => v !== '—').join(' \u2022 ') || '—';
-        doc.text(contact, M + 8, y + 25, { width: W - 16 });
-      }
-      y += bCellH + 4;
-
-      // Parties sub-table with role badges
-      if (dipData.borrowers && dipData.borrowers.length > 1) {
-        checkPage(14 + dipData.borrowers.length * 12);
-        doc.font('Helvetica-Bold').fontSize(7).fillColor(MGREY);
-        doc.text('PARTIES TO THE DIP', M + 8, y, { width: W - 16 });
-        y += 11;
-
-        // Mini header
-        doc.rect(M, y, W, 10).fill(LGREY2);
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
-        doc.text('Name', M + 8, y + 2, { width: W * 0.4 });
-        doc.text('Role', M + W * 0.4 + 8, y + 2, { width: W * 0.3 });
-        doc.text('KYC', M + W * 0.7 + 8, y + 2, { width: W * 0.3 - 16 });
-        y += 10;
-
-        dipData.borrowers.forEach((bor, idx) => {
-          checkPage(12);
-          doc.rect(M, y, W, 11).fill(idx % 2 === 0 ? WHITE : LGREY2);
-          doc.font('Helvetica').fontSize(7).fillColor(TXT);
-          doc.text(clean(bor.name), M + 8, y + 2, { width: W * 0.4 });
-
-          // Role badge
-          const roleText = bor.role || '—';
-          const roleBg = roleText.toLowerCase() === 'primary' ? GREENBG : (roleText.toLowerCase() === 'guarantor' ? BLUEBG : LGREY2);
-          const roleColor = roleText.toLowerCase() === 'primary' ? GREEN : (roleText.toLowerCase() === 'guarantor' ? NAVY : TXT);
-          drawBadge(roleText, M + W * 0.4 + 8, y + 1, roleBg, roleColor);
-
-          // KYC badge
-          const kycText = bor.kyc_verified ? 'Verified' : 'Pending';
-          const kycBg = bor.kyc_verified ? GREENBG : AMBER;
-          const kycColor = bor.kyc_verified ? GREEN : AMBERTXT;
-          drawBadge(kycText, M + W * 0.7 + 8, y + 1, kycBg, kycColor);
-
-          y += 11;
-        });
-        y += 4;
-      }
-
-
-      // ══════════════════════════════════════════════
-      //  2. SECURITY SCHEDULE
-      // ══════════════════════════════════════════════
-      const propCount = addresses.length || 1;
-      sectionBar('SECURITY SCHEDULE \u2014 ' + propCount + ' PROPERT' + (propCount === 1 ? 'Y' : 'IES'));
-
-      // Property table
-      const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
-      const propCols = [
-        { label: '#', width: 24 },
-        { label: 'ADDRESS', width: W * 0.50 },
-        { label: 'POSTCODE', width: 65 },
-        { label: 'VALUATION (\u00A3)', width: W - 24 - W * 0.50 - 65, align: 'right' }
-      ];
-
-      const propRows = [];
-      let totalVal = 0;
-      if (addresses.length > 0) {
-        addresses.forEach((addr, idx) => {
-          const pc = postcodes[idx] || '—';
-          let val;
-          if (dipData.property_values && dipData.property_values[idx]) {
-            val = parseFloat(dipData.property_values[idx]);
-          } else if (addresses.length === 1) {
-            val = totalPropertyVal;
-          } else {
-            const perProp = Math.floor(totalPropertyVal / addresses.length);
-            val = (idx === addresses.length - 1) ? totalPropertyVal - perProp * (addresses.length - 1) : perProp;
-          }
-          totalVal += val;
-          propRows.push([String(idx + 1), clean(addr.trim()), clean(pc.trim()), money(val)]);
-        });
-      } else {
-        totalVal = totalPropertyVal;
-        propRows.push(['1', clean(deal.security_address || 'TBC'), clean(deal.security_postcode || '—'), money(totalPropertyVal)]);
-      }
-
-      drawTable(propCols, propRows, { rowH: 12 });
-
-      // Total row — prominent
-      checkPage(14);
-      doc.rect(M, y, W, 13).fill(BLUE);
-      doc.moveTo(M, y).lineTo(M + W, y).strokeColor(NAVY).lineWidth(0.5).stroke();
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY);
-      doc.text('Total Portfolio Valuation', M + 8, y + 3, { width: W * 0.6 });
-      doc.text(money(totalVal || totalPropertyVal), M + W * 0.6, y + 3, { width: W * 0.4 - 8, align: 'right' });
-      y += 16;
-
-      // Asset details grid
-      const assetItems = [
-        ['ASSET TYPE', humanize(deal.asset_type)],
-        ['TENURE', humanize(deal.property_tenure)],
-        ['PURCHASE PRICE', money(deal.purchase_price)],
-        ['CURRENT USE / OCCUPANCY', clean(deal.current_use || deal.occupancy_status)]
-      ].filter(item => item[1] !== '—');
-
-      if (assetItems.length > 0) drawGrid(assetItems, { cellH: 22 });
-
-
-      // ══════════════════════════════════════════════
-      //  3. INDICATIVE LOAN TERMS
-      // ══════════════════════════════════════════════
-      sectionBar('INDICATIVE LOAN TERMS');
-
-      const loanTermItems = [
-        ['GROSS LOAN AMOUNT', money(dipData.loan_amount || deal.loan_amount), true],
-        ['LOAN TO VALUE (LTV)', pct(dipData.ltv || deal.ltv_requested), true],
-        ['TERM', clean(dipData.term_months || deal.term_months) + ' months', false],
-        ['INTEREST RATE', pct(dipData.rate_monthly || deal.rate_requested) + ' per month', false],
-        ['INTEREST SERVICING', clean(dipData.interest_servicing || 'Retained'), false],
-        ['RETAINED INTEREST PERIOD', clean(dipData.retained_months || '—') + ' months', false],
-        ['EXIT STRATEGY', clean(dipData.exit_strategy || deal.exit_strategy), false],
-        ['LOAN PURPOSE', clean(deal.loan_purpose), false]
-      ];
-
-      drawGrid(loanTermItems, { cellH: 22 });
-
-
-      // ══════════════════════════════════════════════
-      //  4. SECURITY & GUARANTEES | CONDITIONS PRECEDENT
-      // ══════════════════════════════════════════════
-      const secItems = [
-        ['FIRST LEGAL CHARGE', addresses.length > 1 ? 'Over all ' + addresses.length + ' security properties' : 'Over the security property'],
-        ['DEBENTURE', isCorp ? 'Required (corporate borrower)' : 'N/A'],
-        ['PERSONAL GUARANTEE', isCorp ? 'Required from UBO' : 'N/A']
-      ];
-
-      const cpItems = [
-        'Satisfactory independent valuation',
-        'Clear title search \u2014 no encumbrances',
-        'Legal due diligence by Lender\'s solicitors',
-        'First legal charge in favour of Lender',
-        'Buildings insurance \u2014 Lender\'s interest noted'
-      ];
-      if (isCorp) {
-        cpItems.push('Personal guarantee from UBO');
-        cpItems.push('Debenture over corporate assets');
-      }
-      cpItems.push('KYC/AML documentation for all parties');
-      cpItems.push('Evidence of source of deposit & funds');
-      cpItems.push('Payment of all applicable fees');
-
-      const secRowH = 14;
-      const cpRowH = 11;
-      const leftH = 16 + secItems.length * secRowH;
-      const rightH = 16 + cpItems.length * cpRowH;
-      const sideH = Math.max(leftH, rightH);
-
-      checkPage(sideH + 6);
-      const sby = y;
-
-      // LEFT column
-      sectionBarAt('SECURITY & GUARANTEES', M, halfW);
-      let ly = sby + 18;
-      secItems.forEach((item, idx) => {
-        doc.rect(M, ly, halfW, secRowH).fill(idx % 2 === 0 ? WHITE : LGREY2);
-        doc.moveTo(M, ly + secRowH).lineTo(M + halfW, ly + secRowH).strokeColor(DGREY).lineWidth(0.3).stroke();
-        doc.font('Helvetica').fontSize(5.5).fillColor(MGREY);
-        doc.text(item[0], M + 8, ly + 1, { width: halfW - 16 });
-        doc.font('Helvetica-Bold').fontSize(7).fillColor(TXT);
-        doc.text(clean(item[1]), M + 8, ly + 7, { width: halfW - 16 });
-        ly += secRowH;
-      });
-
-      // RIGHT column
-      sectionBarAt('CONDITIONS PRECEDENT', M + halfW + 6, halfW);
-      let ry = sby + 18;
-      cpItems.forEach((c, idx) => {
-        doc.rect(M + halfW + 6, ry, halfW, cpRowH).fill(idx % 2 === 0 ? WHITE : LGREY2);
-        doc.moveTo(M + halfW + 6, ry + cpRowH).lineTo(M + halfW + 6 + halfW, ry + cpRowH).strokeColor(DGREY).lineWidth(0.3).stroke();
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(NAVY);
-        doc.text((idx + 1) + '.', M + halfW + 10, ry + 2.5, { width: 14 });
-        doc.font('Helvetica').fontSize(7).fillColor(TXT);
-        doc.text(c, M + halfW + 24, ry + 2.5, { width: halfW - 26 });
-        ry += cpRowH;
-      });
-
-      y = Math.max(ly, ry) + 6;
-
-
-      // ══════════════════════════════════════════════
-      //  5. FEE SCHEDULE
-      // ══════════════════════════════════════════════
-      sectionBar('FEE SCHEDULE');
-
-      const arrFee = parseFloat(dipData.arrangement_fee || deal.arrangement_fee || 2);
-      const brkFee = parseFloat(dipData.broker_fee || deal.broker_fee || 1);
-
-      const feeCols = [
-        { label: 'FEE', width: 115 },
-        { label: 'AMOUNT', width: 100 },
-        { label: 'WHEN DUE', width: 110 },
-        { label: 'PAYMENT', width: W - 325 }
-      ];
-      const feeRows = [
-        ['Onboarding Fee',   money(dipData.fee_onboarding || 0), 'After DIP acceptance', 'Before Credit Review'],
-        ['Commitment Fee',   money(dipData.fee_commitment || 0), 'After Termsheet',      'Before Underwriting'],
-        ['Arrangement Fee',  feeLine(arrFee, loanAmt),           'On completion',         'Deducted from advance'],
-        ['    of which Broker', feeLine(brkFee, loanAmt),        'On completion',         'From arrangement fee'],
-        ['Exit Fee',         pct(1.00) + ' of loan',             'On redemption',         'Payable on exit'],
-        ['Extension Fee',    pct(1.00) + ' of loan',             'If term extended',      'Per extension period']
-      ];
-
-      drawTable(feeCols, feeRows, {
-        rowH: 11,
-        highlightFn: (idx) => idx === 2 || idx === 3
-      });
-      y += 4;
-
-
-      // ══════════════════════════════════════════════
-      //  6. THIRD-PARTY COSTS
-      // ══════════════════════════════════════════════
-      sectionBar('ESTIMATED THIRD-PARTY COSTS', MGREY);
-
-      doc.font('Helvetica-Oblique').fontSize(6.5).fillColor(MGREY);
-      doc.text('These are not Daksfirst fees. Third-party costs borne by borrower, disclosed for budgeting only.', M + 8, y, { width: W - 16 });
-      y += 12;
-
-      const tpCols = [
-        { label: 'COST', width: 115 },
-        { label: 'EST. AMOUNT', width: 100 },
-        { label: 'NOTE', width: W - 215 }
-      ];
-      const tpRows = [
-        ['Valuation Fee', money(dipData.valuation_cost || 0), 'Paid directly by client to valuer'],
-        ['Legal Fee',     money(dipData.legal_cost || 0),     'Via undertaking from client\'s solicitors']
-      ];
-      drawTable(tpCols, tpRows, { rowH: 11 });
-      y += 4;
-
-
-      // ══════════════════════════════════════════════
-      //  7-9. BOTTOM BLOCK: Payment + Notice + Ack + Signatures
-      //  Treated as one unit so it never splits across pages
-      // ══════════════════════════════════════════════
-      const bankLines = [
-        ['Account Name:', 'Daksfirst Limited'],
-        ['Bank:', 'HSBC'],
-        ['Account No:', '90300721'],
-        ['Sort Code:', '40-02-45'],
-        ['IBAN:', 'GB64HBUK40024590300721'],
-        ['Reference:', dealRef]
-      ];
-      const payBoxH = Math.max(40, bankLines.length * 6 + 10);
-      // Total height: section bar(18) + payBox + gap(6) + notice(22) + ack(26) + sigs(40) + fca(14) ≈ 170
-      const bottomBlockH = 18 + payBoxH + 6 + 22 + 28 + 42 + 14;
-      checkPage(bottomBlockH);
-
-      // ── PAYMENT DETAILS ──
-      sectionBar('HOW TO PROCEED \u2014 PAYMENT DETAILS', GREEN);
-
-      // Left: instructions
-      doc.rect(M, y, halfW, payBoxH).fill(WHITE);
-      doc.moveTo(M, y).lineTo(M + halfW, y).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(M, y + payBoxH).lineTo(M + halfW, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(M, y).lineTo(M, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(M + halfW, y).lineTo(M + halfW, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text('To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference as payment reference.', M + 8, y + 5, { width: halfW - 16 });
-      doc.font('Helvetica-Oblique').fontSize(6).fillColor(MGREY);
-      doc.text('Upon receipt, Daksfirst will commence credit review.', M + 8, y + 24, { width: halfW - 16 });
-
-      // Right: bank details
-      const bankX = M + halfW + 6;
-      doc.rect(bankX, y, halfW, payBoxH).fill(LGREY);
-      doc.moveTo(bankX, y).lineTo(bankX + halfW, y).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(bankX, y + payBoxH).lineTo(bankX + halfW, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(bankX, y).lineTo(bankX, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      doc.moveTo(bankX + halfW, y).lineTo(bankX + halfW, y + payBoxH).strokeColor(DGREY).lineWidth(0.5).stroke();
-      let bankY = y + 5;
-      bankLines.forEach(line => {
-        doc.font('Helvetica').fontSize(6.5).fillColor(MGREY);
-        doc.text(line[0], bankX + 8, bankY, { width: 70 });
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(NAVY);
-        doc.text(line[1], bankX + 80, bankY, { width: halfW - 90 });
-        bankY += 5.5;
-      });
-      y += payBoxH + 6;
-
-      // ── RED NOTICE ──
-      doc.rect(M, y, W, 18).fill(REDBG);
-      doc.moveTo(M, y).lineTo(M + W, y).strokeColor('#fca5a5').lineWidth(1).stroke();
-      doc.moveTo(M, y + 18).lineTo(M + W, y + 18).strokeColor('#fca5a5').lineWidth(1).stroke();
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(RED);
-      doc.text(
-        'IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.',
-        M + 8, y + 3, { width: W - 16, align: 'center' }
-      );
-      y += 22;
-
-      // ── ACKNOWLEDGEMENT ──
-      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
-      doc.text('BORROWER ACKNOWLEDGEMENT', M, y, { width: W });
-      y += 10;
-      doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text('By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.', M, y, { width: W });
-      y += 16;
-
-      // ── SIGNATURES ──
-      const sigW = (W - 6) / 2;
-
-      doc.moveTo(M, y + 16).lineTo(M + sigW, y + 16).strokeColor(MGREY).lineWidth(0.5).stroke();
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
-      doc.text('Borrower Signature', M, y + 18);
-      doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text(clean(deal.borrower_name), M, y + 25);
-      if (isCorp) doc.text(clean(deal.borrower_company || deal.company_name), M, y + 31);
-
-      const sigX2 = M + sigW + 6;
-      doc.moveTo(sigX2, y + 16).lineTo(sigX2 + sigW, y + 16).strokeColor(MGREY).lineWidth(0.5).stroke();
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
-      doc.text('For and on behalf of the Lender', sigX2, y + 18);
-      doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text('Daksfirst Bridging 1 Ltd', sigX2, y + 25);
-      y += 40;
-
-      // ── FCA ──
-      y += 4;
-      doc.font('Helvetica-Oblique').fontSize(5.5).fillColor(MGREY);
-      doc.text('Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.', M, y, { width: W, align: 'center' });
-
-      // Footer
-      addFooter();
-
-      doc.end();
-
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const html = buildDipHtml(deal, dipData, options);
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+
+  try {
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: '0', right: '0', bottom: '0', left: '0' }
+    });
+
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await page.close();
+  }
 }
 
 module.exports = { generateDipPdf };
