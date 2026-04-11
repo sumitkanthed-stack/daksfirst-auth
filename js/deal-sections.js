@@ -149,10 +149,18 @@ export function renderSnapshot(deal) {
 // ═══════════════════════════════════════════════════════════════
 // DOCUMENT REPOSITORY — Fetch from API and populate table
 // ═══════════════════════════════════════════════════════════════
+// Store last-used submissionId and role so global handlers can re-render
+let _docRepoSubId = null;
+let _docRepoRole = null;
+
 export async function renderDocRepo(submissionId, role) {
   const tbody = document.getElementById('doc-repo-tbody');
   const countEl = document.getElementById('doc-repo-count');
   if (!tbody) return;
+
+  // Cache for global handlers
+  _docRepoSubId = submissionId;
+  _docRepoRole = role;
 
   const canConfirm = ['broker', 'borrower', 'rm', 'admin'].includes(role);
 
@@ -173,7 +181,7 @@ export async function renderDocRepo(submissionId, role) {
   if (countEl) countEl.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : '');
 
   if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet. Upload files above or forward emails to deals@daksfirst.com</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
     return;
   }
 
@@ -191,16 +199,14 @@ export async function renderDocRepo(submissionId, role) {
     const name = sanitizeHtml(doc.filename || doc.file_name || doc.original_name || 'Document');
     const size = doc.file_size ? (doc.file_size / 1024 < 1024 ? Math.round(doc.file_size / 1024) + ' KB' : (doc.file_size / 1048576).toFixed(1) + ' MB') : '';
     const uploaded = doc.uploaded_at ? formatDate(doc.uploaded_at) : '-';
-    const parsed = doc.auto_parsed || doc.parsed ? true : false;
-    const source = doc.source || 'Upload';
     const isConfirmed = !!doc.category_confirmed_at;
     const confirmedBy = doc.category_confirmed_name || '';
     const docId = doc.id || 0;
+    const fileType = (doc.file_type || '').toLowerCase();
 
-    // Category cell: dropdown + confirm button for RM/admin, or badge + confirmed state for others
+    // Category cell: dropdown + confirm for those who can, badge for read-only
     let categoryCell;
     if (canConfirm && !isConfirmed) {
-      // RM/Admin sees dropdown to reclassify + confirm button
       const options = CATEGORIES.map(c =>
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
@@ -208,13 +214,12 @@ export async function renderDocRepo(submissionId, role) {
         <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;${catStyle}">
           ${options}
         </select>
-        <button onclick="window.confirmDocCategory(${docId}, '${submissionId}')"
+        <button onclick="window.confirmDocCategory(${docId})"
           style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;transition:background .15s;"
           onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'"
           title="Confirm this classification">&#10003; Confirm</button>
-        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting RM confirmation</div>`;
+        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting confirmation</div>`;
     } else if (canConfirm && isConfirmed) {
-      // RM/Admin sees confirmed badge + option to reclassify
       const options = CATEGORIES.map(c =>
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
@@ -222,24 +227,25 @@ export async function renderDocRepo(submissionId, role) {
         <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #d1fae5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#dcfce7;color:#166534;">
           ${options}
         </select>
-        <button onclick="window.confirmDocCategory(${docId}, '${submissionId}')"
+        <button onclick="window.confirmDocCategory(${docId})"
           style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#e2e8f0;color:#64748b;transition:background .15s;"
           onmouseover="this.style.background='#22c55e';this.style.color='#fff'" onmouseout="this.style.background='#e2e8f0';this.style.color='#64748b'"
-          title="Re-confirm with new category">&#8635; Update</button>
+          title="Re-classify">&#8635; Update</button>
         <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
     } else if (isConfirmed) {
-      // Broker/borrower/credit/compliance see confirmed badge (read-only)
       categoryCell = `
         <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
         <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
     } else {
-      // Not confirmed, non-RM view — show AI-suggested badge
       categoryCell = `
         <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
         <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested</div>`;
     }
 
-    return `<tr style="cursor:pointer;transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+    // Determine if viewable inline (images + PDFs)
+    const isViewable = fileType.includes('image') || fileType.includes('pdf') || fileType.includes('png') || fileType.includes('jpg') || fileType.includes('jpeg');
+
+    return `<tr style="transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
         <strong>${name}</strong>
         ${size ? '<br><span style="font-size:11px;color:#94a3b8;">' + size + '</span>' : ''}
@@ -247,26 +253,71 @@ export async function renderDocRepo(submissionId, role) {
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
         ${categoryCell}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;">${sanitizeHtml(source)}</td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;">${uploaded}</td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
-        ${parsed
-          ? '<span style="color:#22c55e;font-weight:700;">&#10003; Yes</span>'
-          : '<span style="color:#cbd5e1;">&#x2013; No</span>'}
+        ${isConfirmed
+          ? '<span style="color:#22c55e;font-weight:700;font-size:12px;">&#10003; Confirmed</span>'
+          : '<span style="color:#f59e0b;font-size:12px;">Pending</span>'}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
-        ${parsed
-          ? '<button onclick="window.viewParsedDoc && window.viewParsedDoc(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;">View Parsed &#8595;</button>'
-          : '<button onclick="window.parseDocument && window.parseDocument(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#be185d;">Parse Now</button>'}
-        <button onclick="window.downloadDocumentById && window.downloadDocumentById(${docId})" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;margin-left:4px;">&#128229;</button>
+      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">
+        ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#2563eb;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}
+        <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;font-weight:600;" title="Download">&#128229; Download</button>
       </td>
     </tr>`;
   }).join('');
+}
 
-  // ── Global handler for category confirmation ──
-  window.confirmDocCategory = async function(docId, subId) {
-    const sel = document.getElementById('doc-cat-' + docId);
-    if (!sel) return;
+// ── Global handlers for Doc Repo (defined ONCE, outside renderDocRepo) ──
+
+// Confirm category
+window.confirmDocCategory = async function(docId) {
+  const subId = _docRepoSubId;
+  const role = _docRepoRole;
+  if (!subId) return;
+
+  const sel = document.getElementById('doc-cat-' + docId);
+  if (!sel) return;
+  const newCat = sel.value;
+
+  // Disable button to prevent double-click
+  const btn = sel.nextElementSibling;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/confirm-category`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc_category: newCat })
+    });
+    if (resp.ok) {
+      showToast('Category confirmed: ' + newCat.toUpperCase(), 'success');
+      // Re-render to update UI state
+      await renderDocRepo(subId, role);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast(err.error || 'Failed to confirm category', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#10003; Confirm'; }
+    }
+  } catch (e) {
+    console.error('[doc-repo] Confirm category error:', e);
+    showToast('Failed to confirm category', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#10003; Confirm'; }
+  }
+};
+
+// Confirm ALL unconfirmed documents in one go
+window.confirmAllDocCategories = async function() {
+  const subId = _docRepoSubId;
+  const role = _docRepoRole;
+  if (!subId) return;
+
+  // Find all unconfirmed doc category selects
+  const selects = document.querySelectorAll('[id^="doc-cat-"]');
+  let confirmed = 0;
+  let failed = 0;
+
+  for (const sel of selects) {
+    const docId = sel.id.replace('doc-cat-', '');
     const newCat = sel.value;
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/confirm-category`, {
@@ -274,20 +325,110 @@ export async function renderDocRepo(submissionId, role) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ doc_category: newCat })
       });
-      if (resp.ok) {
-        showToast('Category confirmed: ' + newCat.toUpperCase(), 'success');
-        // Re-render to update UI state
-        await renderDocRepo(subId, role);
-      } else {
-        const err = await resp.json().catch(() => ({}));
-        showToast(err.error || 'Failed to confirm category', 'error');
-      }
+      if (resp.ok) confirmed++;
+      else failed++;
     } catch (e) {
-      console.error('[doc-repo] Confirm category error:', e);
-      showToast('Failed to confirm category', 'error');
+      failed++;
     }
-  };
-}
+  }
+
+  if (confirmed > 0) {
+    showToast(`${confirmed} document${confirmed !== 1 ? 's' : ''} confirmed${failed > 0 ? `, ${failed} failed` : ''}`, 'success');
+    await renderDocRepo(subId, role);
+  } else {
+    showToast('No documents to confirm', 'error');
+  }
+};
+
+// Download document by ID
+window.downloadDocById = async function(docId) {
+  const subId = _docRepoSubId;
+  if (!subId || !docId) {
+    showToast('Cannot download — deal or document ID missing', 'error');
+    return;
+  }
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/download`, { method: 'GET' });
+    if (!resp.ok) {
+      showToast('Download failed', 'error');
+      return;
+    }
+    const blob = await resp.blob();
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    const filenameMatch = disposition.match(/filename="(.+?)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `document-${docId}`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    console.error('[doc-repo] Download error:', err);
+    showToast('Download error', 'error');
+  }
+};
+
+// View document inline (modal preview — no new window)
+window.viewDocInline = async function(docId, filename, fileType) {
+  const subId = _docRepoSubId;
+  if (!subId || !docId) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/download`, { method: 'GET' });
+    if (!resp.ok) { showToast('Could not load document', 'error'); return; }
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    // Create modal overlay
+    const modal = document.createElement('div');
+    modal.id = 'doc-preview-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+    // Header bar
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:90%;max-width:900px;padding:12px 0;';
+    header.innerHTML = `
+      <div style="color:#fff;font-size:14px;font-weight:600;">${filename || 'Document Preview'}</div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="window.downloadDocById(${docId})" style="padding:6px 14px;border:1px solid #fff;border-radius:6px;font-size:12px;cursor:pointer;background:transparent;color:#fff;font-weight:600;">&#128229; Download</button>
+        <button onclick="document.getElementById('doc-preview-modal').remove()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;background:#dc2626;color:#fff;font-weight:600;">&#10005; Close</button>
+      </div>`;
+    modal.appendChild(header);
+
+    // Content area
+    const content = document.createElement('div');
+    content.style.cssText = 'width:90%;max-width:900px;max-height:80vh;background:#fff;border-radius:10px;overflow:auto;';
+
+    const ft = (fileType || '').toLowerCase();
+    if (ft.includes('pdf')) {
+      content.innerHTML = `<iframe src="${blobUrl}" style="width:100%;height:80vh;border:none;border-radius:10px;"></iframe>`;
+    } else if (ft.includes('image') || ft.includes('png') || ft.includes('jpg') || ft.includes('jpeg')) {
+      content.innerHTML = `<img src="${blobUrl}" style="width:100%;max-height:80vh;object-fit:contain;border-radius:10px;" />`;
+    } else {
+      content.innerHTML = `<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">Preview not available for this file type. Use the Download button above.</div>`;
+    }
+
+    modal.appendChild(content);
+
+    // Close on backdrop click
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) { modal.remove(); URL.revokeObjectURL(blobUrl); }
+    });
+
+    // Close on Escape key
+    const escHandler = function(e) {
+      if (e.key === 'Escape') { modal.remove(); URL.revokeObjectURL(blobUrl); document.removeEventListener('keydown', escHandler); }
+    };
+    document.addEventListener('keydown', escHandler);
+
+    document.body.appendChild(modal);
+  } catch (err) {
+    console.error('[doc-repo] View error:', err);
+    showToast('Could not preview document', 'error');
+  }
+};
 
 // ═══════════════════════════════════════════════════════════════
 // FEE SECTION — Populate fee table from deal data
