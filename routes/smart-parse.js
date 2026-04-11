@@ -329,13 +329,23 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
         parsedData = merged;
         extractionConflicts = conflicts || {};
 
-        // Store per-document parsed data in DB
+        // Store per-document parsed data in DB (including extracted dates)
         for (const [docId, docParsed] of perDoc) {
           try {
+            // Extract document dates from parsed data (check both deal-level and section-level field names)
+            const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
+            const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
             await pool.query(
-              `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
-              [JSON.stringify(docParsed), docId]
+              `UPDATE deal_documents
+               SET parsed_data = $1, parsed_at = NOW(),
+                   doc_issue_date = COALESCE($2::DATE, doc_issue_date),
+                   doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
+               WHERE id = $4`,
+              [JSON.stringify(docParsed), issueDate, expiryDate, docId]
             );
+            if (issueDate || expiryDate) {
+              console.log(`[parse-confirmed] Doc ${docId}: issue=${issueDate || 'N/A'}, expiry=${expiryDate || 'N/A'}`);
+            }
           } catch (pdErr) {
             console.warn(`[parse-confirmed] Could not store parsed_data for doc ${docId}:`, pdErr.message);
           }
@@ -431,12 +441,21 @@ router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
       doc.file_content, doc.file_type, doc.filename, doc.doc_category
     );
 
-    // Store result and mark as parsed
+    // Store result, mark as parsed, and persist extracted dates
     try {
+      const issueDate = parsedData ? (parsedData['doc_issue_date'] || parsedData['doc-issue-date'] || null) : null;
+      const expiryDate = parsedData ? (parsedData['doc_expiry_date'] || parsedData['doc-expiry-date'] || null) : null;
       await pool.query(
-        `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
-        [parsedData ? JSON.stringify(parsedData) : null, docId]
+        `UPDATE deal_documents
+         SET parsed_data = $1, parsed_at = NOW(),
+             doc_issue_date = COALESCE($2::DATE, doc_issue_date),
+             doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
+         WHERE id = $4`,
+        [parsedData ? JSON.stringify(parsedData) : null, issueDate, expiryDate, docId]
       );
+      if (issueDate || expiryDate) {
+        console.log(`[parse-document] Doc ${docId}: issue=${issueDate || 'N/A'}, expiry=${expiryDate || 'N/A'}`);
+      }
     } catch (storeErr) {
       console.warn(`[parse-document] Could not store parsed_data:`, storeErr.message);
     }

@@ -41,7 +41,9 @@ const SECTION_SCHEMAS = {
       'kyc-pep': 'PEP status: "no" if not a PEP, "yes" if PEP or connected to PEP. Default to empty string if not stated.',
       'kyc-source-wealth': 'Source of wealth narrative — how wealth was accumulated',
       'kyc-source-deposit': 'Source of deposit / equity for this transaction',
-      'kyc-ubo-declaration': 'UBO details — names and percentage holdings of individuals with 25%+ interest'
+      'kyc-ubo-declaration': 'UBO details — names and percentage holdings of individuals with 25%+ interest',
+      'doc-issue-date': 'Issue date of the passport or ID document in YYYY-MM-DD format. Use null if not found.',
+      'doc-expiry-date': 'Expiry date of the passport or ID document in YYYY-MM-DD format. Use null if not found.'
     }
   },
 
@@ -56,7 +58,9 @@ const SECTION_SCHEMAS = {
       'aml-utr': 'HMRC Unique Taxpayer Reference number if found',
       'aml-tax-residency': 'Tax residency: "uk_resident" or "non_uk". Default empty string.',
       'aml-broker-ack': 'AML acknowledgement status. Default empty string.',
-      'aml-conflicts': 'Any conflicts of interest declared, or "None"'
+      'aml-conflicts': 'Any conflicts of interest declared, or "None"',
+      'doc-issue-date': 'Statement date, period end date, or tax return year-end date in YYYY-MM-DD format. For bank statements use the most recent statement date. Use null if not found.',
+      'doc-expiry-date': 'Date after which this document is considered stale (e.g. bank statements older than 3 months). If not explicitly stated, use null.'
     }
   },
 
@@ -70,7 +74,9 @@ const SECTION_SCHEMAS = {
       'val-180day': '180-day forced sale value if stated — number only',
       'val-solicitor-firm': 'Borrower solicitor firm name',
       'val-sra-number': 'SRA number of the solicitor firm',
-      'val-solicitor-partner': 'Name of the supervising partner at the solicitor firm'
+      'val-solicitor-partner': 'Name of the supervising partner at the solicitor firm',
+      'doc-issue-date': 'Date of the valuation report or inspection date in YYYY-MM-DD format. Use null if not found.',
+      'doc-expiry-date': 'Valuation validity expiry date in YYYY-MM-DD format. RICS valuations are typically valid for 3-6 months from the report date. If an explicit expiry is stated use that, otherwise use null.'
     }
   },
 
@@ -97,7 +103,9 @@ const SECTION_SCHEMAS = {
     systemPrompt: `You are a conditions data extraction specialist for a UK bridging loan lender. Extract insurance details, Section 106 information, and planning conditions from the provided documents. Return ONLY a JSON object with the following field IDs as keys. Use null for any field you cannot find. Monetary values should be numbers only.`,
     fields: {
       'ins-sum-insured': 'Sum insured on buildings insurance policy — number only',
-      'oc-other-notes': 'Any notable conditions, restrictions, or requirements found in the documents'
+      'oc-other-notes': 'Any notable conditions, restrictions, or requirements found in the documents',
+      'doc-issue-date': 'Issue date or effective date of the document (e.g. insurance policy start date) in YYYY-MM-DD format. Use null if not found.',
+      'doc-expiry-date': 'Expiry or renewal date of the document (e.g. insurance policy expiry) in YYYY-MM-DD format. Use null if not found.'
     }
   }
 };
@@ -227,6 +235,8 @@ Extract every deal-relevant field you can find and return ONLY a JSON object wit
   "broker_name": "broker name",
   "broker_company": "broker company name",
   "broker_fca": "broker FCA number",
+  "doc_issue_date": "issue date or effective date of this document in YYYY-MM-DD format (e.g. passport issue date, valuation date, statement date, policy start date)",
+  "doc_expiry_date": "expiry date of this document in YYYY-MM-DD format (e.g. passport expiry, valuation validity, insurance renewal date). Use null if no expiry applies.",
   "confidence": 0.85
 }
 
