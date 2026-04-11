@@ -678,7 +678,7 @@ export async function renderDealMatrix(deal) {
               <!-- ── Raw address fields (no deal_properties rows yet) ── -->
               <div style="margin-bottom:8px;padding:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:6px;">
                 <span style="font-size:10px;color:#FBBF24;font-weight:600;">⚠ Awaiting AI property parsing — showing raw data</span>
-                ${isInternalUser ? `<button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="margin-left:8px;padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Ask Claude to Parse</button>` : ''}
+                `<button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="margin-left:8px;padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Ask Claude to Parse</button>`
               </div>
               `}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">

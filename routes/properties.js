@@ -116,7 +116,7 @@ router.delete('/:submissionId/properties/:propertyId', authenticateToken, authen
 //  REPARSE PROPERTIES — Triggers n8n/Claude to re-parse properties (admin/RM only)
 //  For existing deals where Claude hasn't parsed properties yet
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/:submissionId/reparse', authenticateToken, authenticateInternal, async (req, res) => {
+router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(
       `SELECT id, security_address, security_postcode, current_value, asset_type, property_tenure
