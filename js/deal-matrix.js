@@ -1032,10 +1032,16 @@ export async function renderDealMatrix(deal) {
     <!-- ACTION BUTTONS BAR -->
     <div style="padding:12px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#111827;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">Upload Documents</button>
+        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Upload supporting documents">Upload Documents</button>
+        ${isInternalUser || currentStage === 'received' ? `
         <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
         <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">Parse Confirmed Docs</button>
+        ` : ''}
+        ${currentStage === 'received' ? `
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
+        ` : `
+        <button id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:rgba(52,211,153,0.2);color:#34D399;cursor:default;transition:all .12s" disabled>✅ Submitted for Review</button>
+        `}
         <button onclick="window.matrixOpenIncomplete && window.matrixOpenIncomplete()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(96,165,250,0.3);background:rgba(96,165,250,0.1);color:#60A5FA;cursor:pointer;transition:all .12s" title="Expand only sections that have incomplete fields">Open Incomplete</button>
       </div>
       <div style="display:flex;gap:12px;font-size:8px;color:rgba(255,255,255,0.06)">
