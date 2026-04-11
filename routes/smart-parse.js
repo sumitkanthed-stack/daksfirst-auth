@@ -14,7 +14,7 @@ const config = require('../config');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024, files: 10 }
+  limits: { fileSize: 25 * 1024 * 1024, files: 30 }
 });
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
