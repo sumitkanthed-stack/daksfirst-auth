@@ -181,7 +181,7 @@ export async function renderDocRepo(submissionId, role) {
   if (countEl) countEl.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : '');
 
   if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
     return;
   }
 
@@ -201,6 +201,7 @@ export async function renderDocRepo(submissionId, role) {
     const uploaded = doc.uploaded_at ? formatDate(doc.uploaded_at) : '-';
     const isConfirmed = !!doc.category_confirmed_at;
     const confirmedBy = doc.category_confirmed_name || '';
+    const isParsed = !!doc.parsed_at;
     const docId = doc.id || 0;
     const fileType = (doc.file_type || '').toLowerCase();
 
@@ -258,6 +259,11 @@ export async function renderDocRepo(submissionId, role) {
         ${isConfirmed
           ? '<span style="color:#22c55e;font-weight:700;font-size:12px;">&#10003; Confirmed</span>'
           : '<span style="color:#f59e0b;font-size:12px;">Pending</span>'}
+      </td>
+      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
+        ${isParsed
+          ? '<span style="color:#22c55e;font-weight:700;font-size:12px;">&#10003; Parsed</span>'
+          : '<span style="color:#cbd5e1;font-size:12px;">&#x2013; Not yet</span>'}
       </td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">
         ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#2563eb;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}

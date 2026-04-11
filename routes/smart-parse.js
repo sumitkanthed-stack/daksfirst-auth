@@ -324,6 +324,19 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
       console.log('[parse-confirmed] N8N_PARSE_WEBHOOK_URL not configured');
     }
 
+    // Mark all documents as parsed if we got data back
+    if (parsedData) {
+      try {
+        await pool.query(
+          `UPDATE deal_documents SET parsed_at = NOW() WHERE deal_id = $1 AND parsed_at IS NULL`,
+          [deal.id]
+        );
+        console.log(`[parse-confirmed] Marked ${docs.length} documents as parsed`);
+      } catch (markErr) {
+        console.warn('[parse-confirmed] Could not mark parsed_at:', markErr.message);
+      }
+    }
+
     await logAudit(deal.id, 'parse_confirmed_triggered', null, 'parse_with_categories',
       { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length }, req.user.userId);
 
