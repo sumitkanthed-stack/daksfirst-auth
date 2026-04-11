@@ -202,7 +202,7 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
   return `
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid rgba(255,255,255,0.06)" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
-        <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:rgba(212,168,83,0.15);border-radius:5px;font-size:9px;color:#D4A853;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(90deg)">▸</div>
+        <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:5px;font-size:9px;color:#94A3B8;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(0deg)">▸</div>
         <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:${style.bg};border-radius:6px;font-size:12px;font-weight:700;color:${style.color};flex-shrink:0">${iconInitial}</div>
         <span style="font-size:12px;font-weight:700;color:#F1F5F9">${sanitizeHtml(title)}</span>
         <span style="font-size:9px;color:#94A3B8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
@@ -317,15 +317,6 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   let html = `
-    <!-- Header -->
-    <div style="padding:20px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:12px">
-      <div style="width:36px;height:36px;background:linear-gradient(135deg,#D4A853,#E8C97A);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#0B1120;font-size:16px;font-weight:700">DM</div>
-      <div>
-        <h2 style="font-size:16px;font-weight:700;color:#F1F5F9">Deal Information Matrix</h2>
-        <div style="font-size:11px;color:#94A3B8;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${fmtM(deal.loan_amount)}M</div>
-      </div>
-    </div>
-
     <!-- Context Bar -->
     <div style="padding:12px 26px;background:#1a2332;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:20px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;flex-direction:column;gap:0">
@@ -350,7 +341,14 @@ export async function renderDealMatrix(deal) {
       <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
         <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Security</span>
-        <span style="font-size:12px;font-weight:600;color:#F1F5F9">${sanitizeHtml(deal.security_address || 'N/A')}</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9" title="${sanitizeHtml(deal.security_address || 'N/A')}">${(() => {
+          const addr = deal.security_address || 'N/A';
+          const pc = deal.security_postcode || '';
+          const area = pc ? pc.split(' ')[0] : '';
+          const parts = addr.split(';').map(s => s.trim()).filter(Boolean);
+          if (parts.length > 1) return sanitizeHtml(parts[0].substring(0, 40) + '... (+' + (parts.length - 1) + ' more)' + (area ? ' · ' + area : ''));
+          return sanitizeHtml(addr.length > 50 ? addr.substring(0, 47) + '...' : addr) + (area ? ' · ' + sanitizeHtml(area) : '');
+        })()}</span>
       </div>
       <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
@@ -359,36 +357,39 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
 
-    <!-- Progress Bars -->
-    <div style="padding:12px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <!-- Progress Bars — only show the current stage bar, hide future stages -->
+    <div id="matrix-tier-bars" style="padding:12px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06)">
       <div style="display:flex;align-items:center;gap:10px;margin-top:0">
         <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">DIP</span>
         <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 0 ? 75 : 0}%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
+          <div id="tier-bar-dip-fill" style="height:100%;border-radius:99px;width:0%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
         </div>
-        <span style="color:#D4A853;font-size:12px;font-weight:600">${currentStageIdx >= 0 ? 75 : 0}%</span>
+        <span id="tier-bar-dip-pct" style="color:#D4A853;font-size:12px;font-weight:600">0%</span>
       </div>
+      ${currentStageIdx >= 1 ? `
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
         <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Indicative TS</span>
         <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 1 ? 30 : 0}%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
+          <div id="tier-bar-its-fill" style="height:100%;border-radius:99px;width:0%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
         </div>
-        <span style="color:#D4A853;font-size:12px;font-weight:600">${currentStageIdx >= 1 ? 30 : 0}%</span>
-      </div>
+        <span id="tier-bar-its-pct" style="color:#D4A853;font-size:12px;font-weight:600">0%</span>
+      </div>` : ''}
+      ${currentStageIdx >= 2 ? `
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
         <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Formal Offer</span>
         <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 2 ? 0 : 0}%;background:linear-gradient(90deg,#34D399,#34D399);transition:width .5s ease"></div>
+          <div id="tier-bar-formal-fill" style="height:100%;border-radius:99px;width:0%;background:linear-gradient(90deg,#34D399,#34D399);transition:width .5s ease"></div>
         </div>
-        <span style="color:#34D399;font-size:12px;font-weight:600">${currentStageIdx >= 2 ? 0 : 0}%</span>
-      </div>
+        <span id="tier-bar-formal-pct" style="color:#34D399;font-size:12px;font-weight:600">0%</span>
+      </div>` : ''}
+      ${currentStageIdx >= 3 ? `
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
         <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Execution</span>
         <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 3 ? 0 : 0}%;background:linear-gradient(90deg,#94A3B8,#94A3B8);transition:width .5s ease"></div>
+          <div id="tier-bar-exec-fill" style="height:100%;border-radius:99px;width:0%;background:linear-gradient(90deg,#94A3B8,#94A3B8);transition:width .5s ease"></div>
         </div>
-        <span style="color:#94A3B8;font-size:12px;font-weight:600">${currentStageIdx >= 3 ? 0 : 0}%</span>
-      </div>
+        <span id="tier-bar-exec-pct" style="color:#94A3B8;font-size:12px;font-weight:600">0%</span>
+      </div>` : ''}
     </div>
 
     <!-- SUBMIT FOR REVIEW — prominent CTA for brokers -->
@@ -442,7 +443,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s1" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s1" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Primary Borrower -->
         ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
           ['not-started', 'not-started', 'locked', 'locked'])}
@@ -500,7 +501,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s2" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s2" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Financial Summary (editable at DIP) -->
         ${renderFieldRow('financial-summary', 'Financial Summary', 'Estimated net worth and source of wealth',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
@@ -616,7 +617,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s3" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s3" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Property Details -->
         ${renderFieldRow('property-details', 'Property Details', 'Address, tenure, bedrooms, square footage',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
@@ -679,7 +680,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s4" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s4" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
         ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '?'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
           ['not-started', 'not-started', 'not-started', 'not-started'])}
@@ -745,7 +746,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s5" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s5" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Exit Strategy -->
         ${renderFieldRow('exit-strategy', 'Exit Strategy', 'Refinance, sale, hold',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
@@ -846,7 +847,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s7" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s7" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
         ${renderFieldRow('fees', 'Fees', `Arrangement: ${fmtPct(deal.arrangement_fee_pct || 2)}%, Broker: ${fmtPct(deal.broker_fee_pct || 0)}%`,
           ['not-started', 'not-started', 'not-started', 'not-started'])}
@@ -897,7 +898,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started')
       ])}
 
-      <div id="content-s8" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s8" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- DIP -->
         ${renderFieldRow('dip-document', 'Data Information Package (DIP)', 'Initial deal summary and requirements',
           [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
@@ -1033,6 +1034,7 @@ export async function renderDealMatrix(deal) {
         <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
         <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">Parse Confirmed Docs</button>
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
+        <button onclick="window.matrixOpenIncomplete && window.matrixOpenIncomplete()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(96,165,250,0.3);background:rgba(96,165,250,0.1);color:#60A5FA;cursor:pointer;transition:all .12s" title="Expand only sections that have incomplete fields">Open Incomplete</button>
       </div>
       <div style="display:flex;gap:12px;font-size:8px;color:rgba(255,255,255,0.06)">
         <span>Last Parsed: <span id="matrix-last-parsed">never</span></span>
@@ -1087,6 +1089,53 @@ export async function renderDealMatrix(deal) {
       const isOpen = detail.style.maxHeight !== '0px';
       detail.style.maxHeight = isOpen ? '0px' : '1200px';
       detail.style.overflow = 'hidden';
+    }
+  };
+
+  // ── Open only sections that have incomplete fields ──
+  window.matrixOpenIncomplete = function() {
+    const readiness = calculateDipReadiness();
+    // Map readiness section names to matrix section IDs
+    const sectionMap = {
+      'Borrower / KYC': 's1',
+      'Borrower Financials': 's2',
+      'Property / Security': 's3',
+      'Loan Terms': 's4',
+      'Exit Strategy': 's5',
+      'Fees': 's7',
+      'AML & Source of Funds': 's2'
+    };
+    // First close all sections
+    for (let i = 1; i <= 8; i++) {
+      const content = document.getElementById(`content-s${i}`);
+      const chevron = document.getElementById(`chevron-s${i}`);
+      if (content) {
+        content.style.maxHeight = '0px';
+        content.style.overflow = 'hidden';
+      }
+      if (chevron) {
+        chevron.style.transform = 'rotate(0deg)';
+        chevron.style.background = 'rgba(255,255,255,0.06)';
+        chevron.style.color = '#94A3B8';
+      }
+    }
+    // Open incomplete sections and scroll to first one
+    let firstIncomplete = null;
+    const opened = new Set();
+    for (const [name, sec] of Object.entries(readiness.sections)) {
+      if (sec.status !== 'ready') {
+        const sId = sectionMap[name];
+        if (sId && !opened.has(sId)) {
+          opened.add(sId);
+          window.matrixToggleSection(sId);
+          if (!firstIncomplete) firstIncomplete = sId;
+        }
+      }
+    }
+    // Scroll to first incomplete section
+    if (firstIncomplete) {
+      const header = document.querySelector(`[data-section-header="${firstIncomplete}"]`);
+      if (header) header.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -2299,7 +2348,26 @@ export async function renderDealMatrix(deal) {
 
     if (pctEl) pctEl.textContent = pct + '%';
     if (fillEl) fillEl.style.width = pct + '%';
+    // Green completeness bar when >=75%, gold otherwise
+    if (fillEl) fillEl.style.background = pct >= 75 ? '#34D399' : '#D4A853';
+    if (pctEl) pctEl.style.color = pct >= 75 ? '#34D399' : '#D4A853';
     if (detailEl) detailEl.textContent = `${readiness.totalFilled} of ${readiness.totalRequired} required fields completed`;
+
+    // Update the DIP tier progress bar to match
+    const dipBarFill = document.getElementById('tier-bar-dip-fill');
+    const dipBarPct = document.getElementById('tier-bar-dip-pct');
+    if (dipBarFill) {
+      dipBarFill.style.width = readiness.requiredPct + '%';
+      dipBarFill.style.background = readiness.requiredPct >= 75
+        ? 'linear-gradient(90deg,#34D399,#6EE7B7)'
+        : readiness.requiredPct >= 50
+        ? 'linear-gradient(90deg,#D4A853,#E8C97A)'
+        : 'linear-gradient(90deg,#F87171,#FCA5A5)';
+    }
+    if (dipBarPct) {
+      dipBarPct.textContent = readiness.requiredPct + '%';
+      dipBarPct.style.color = readiness.requiredPct >= 75 ? '#34D399' : readiness.requiredPct >= 50 ? '#D4A853' : '#F87171';
+    }
 
     const tierLabels = { dip: 'DIP Submission', its: 'Indicative Term Sheet', formal: 'Formal Offer' };
 

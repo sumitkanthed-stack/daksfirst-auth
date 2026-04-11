@@ -53,9 +53,29 @@ export function renderSnapshot(deal) {
   const fmtMoney = (v) => num(v) ? '£' + num(v).toLocaleString() : '-';
   const fmtPctVal = (v) => num(v) ? num(v).toFixed(1) + '%' : '-';
 
-  // Address
+  // Address — truncate long multi-property addresses, emphasise location
   const addrEl = document.getElementById('detail-property-address');
-  if (addrEl) addrEl.textContent = sanitizeHtml(deal.security_address || 'N/A');
+  if (addrEl) {
+    const rawAddr = deal.security_address || 'N/A';
+    const postcode = deal.security_postcode || '';
+    // Extract area from postcode (e.g. "W6 9RH" → "W6")
+    const pcArea = postcode ? postcode.split(' ')[0] : '';
+    // If address is very long (multi-property), truncate and count
+    const parts = rawAddr.split(';').map(s => s.trim()).filter(Boolean);
+    let displayAddr;
+    if (parts.length > 1) {
+      // Show first property truncated + count + location
+      const first = parts[0].length > 60 ? parts[0].substring(0, 57) + '...' : parts[0];
+      displayAddr = `${first} (+${parts.length - 1} more)`;
+    } else {
+      displayAddr = rawAddr.length > 80 ? rawAddr.substring(0, 77) + '...' : rawAddr;
+    }
+    if (pcArea) {
+      displayAddr += ` · ${pcArea}`;
+    }
+    addrEl.textContent = sanitizeHtml(displayAddr);
+    addrEl.title = sanitizeHtml(rawAddr); // full address on hover
+  }
 
   // Stage badge
   const stageLabels = {
