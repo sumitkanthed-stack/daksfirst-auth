@@ -400,15 +400,23 @@ export function renderInternalWorkflowControls(deal) {
   // ── Stage Pipeline Visual (Grouped Phases) ──
   const stageOrder = ['received', 'assigned', 'info_gathering', 'dip_issued', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
-  const phases = [
+  // For external users, hide internal-only stages (assigned is just internal routing)
+  const phases = isInternal ? [
     { label: 'Pre-DIP', stages: ['received', 'assigned', 'info_gathering', 'dip_issued'] },
+    { label: 'Onboarding', stages: ['ai_termsheet'] },
+    { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
+  ] : [
+    { label: 'DIP', stages: ['received', 'info_gathering', 'dip_issued'] },
     { label: 'Onboarding', stages: ['ai_termsheet'] },
     { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
   ];
 
+  // For external users, map 'assigned' stage to 'received' (same thing from broker perspective)
+  const displayStage = (!isInternal && stage === 'assigned') ? 'received' : stage;
+
   html += `<div style="display:flex;gap:16px;margin-bottom:20px;">`;
   phases.forEach(phase => {
-    const phaseActive = phase.stages.includes(stage);
+    const phaseActive = phase.stages.includes(displayStage);
     const phaseDone = phase.stages.every((s) => stageOrder.indexOf(s) < currentIdx);
     const phaseBg = phaseDone ? '#dcfce7' : phaseActive ? '#eff6ff' : '#f8fafc';
     const phaseBorder = phaseDone ? '#86efac' : phaseActive ? '#93c5fd' : '#e5e7eb';
@@ -416,7 +424,7 @@ export function renderInternalWorkflowControls(deal) {
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">${phase.label}</div>
       <div style="display:flex;flex-wrap:wrap;gap:3px;">`;
     phase.stages.forEach((s, i) => {
-      const isActive = s === stage;
+      const isActive = s === displayStage;
       const isDone = stageOrder.indexOf(s) < currentIdx;
       const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : 'rgba(255,255,255,0.06)';
       const color = (isActive || isDone) ? '#fff' : '#666';

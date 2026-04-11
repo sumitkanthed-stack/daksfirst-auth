@@ -51,16 +51,18 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
   const displayVal = isMoney ? formatWithCommas(safeVal) : safeVal;
 
   if (!canEdit) {
-    // Read-only display
+    // Read-only display — include hidden input so fieldHasValue() works for readiness %
     if (inputType === 'select' && options) {
       const selected = options.find(o => o.value === value);
       return `<div style="margin-bottom:12px">
         <label style="${labelStyle}">${sanitizeHtml(label)}</label>
+        <input type="hidden" id="${id}" value="${safeVal}">
         <div style="${readonlyStyle}">${sanitizeHtml(selected ? selected.label : value || '—')}</div>
       </div>`;
     }
     return `<div style="margin-bottom:12px">
       <label style="${labelStyle}">${sanitizeHtml(label)}</label>
+      <input type="hidden" id="${id}" value="${safeVal}">
       <div style="${readonlyStyle}">${isMoney && safeVal ? '£' + formatWithCommas(safeVal) : (safeVal || '—')}</div>
     </div>`;
   }
@@ -350,10 +352,12 @@ export async function renderDealMatrix(deal) {
         <span style="font-size:12px;font-weight:600;color:#F1F5F9" title="${sanitizeHtml(deal.security_address || 'N/A')}">${(() => {
           const addr = deal.security_address || 'N/A';
           const pc = deal.security_postcode || '';
-          const area = pc ? pc.split(' ')[0] : '';
           const parts = addr.split(';').map(s => s.trim()).filter(Boolean);
-          if (parts.length > 1) return sanitizeHtml(parts[0].substring(0, 40) + '... (+' + (parts.length - 1) + ' more)' + (area ? ' · ' + area : ''));
-          return sanitizeHtml(addr.length > 50 ? addr.substring(0, 47) + '...' : addr) + (area ? ' · ' + sanitizeHtml(area) : '');
+          const count = parts.length;
+          // Extract a short location: use postcode, or last meaningful part of address
+          const shortLoc = pc || (parts[0] ? parts[0].split(',').pop().trim() : 'N/A');
+          if (count > 1) return sanitizeHtml(shortLoc + ' (' + count + ' properties)');
+          return sanitizeHtml(shortLoc);
         })()}</span>
       </div>
       <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
@@ -415,7 +419,7 @@ export async function renderDealMatrix(deal) {
     ` : ''}
     ${!isInternalUser && currentStage !== 'received' ? `
     <div style="padding:10px 26px;background:rgba(212,168,83,0.1);border-bottom:2px solid rgba(212,168,83,0.2);text-align:center;">
-      <span style="font-size:12px;font-weight:600;color:#E8C97A;">&#34D399; Deal submitted for review — Matrix is read-only</span>
+      <span style="font-size:12px;font-weight:600;color:#E8C97A;">&#x2713; Deal submitted for review — Matrix is read-only</span>
     </div>
     ` : ''}
 
