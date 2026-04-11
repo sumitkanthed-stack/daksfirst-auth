@@ -48,7 +48,7 @@ window.toggleDealSection = function(sectionId) {
 // ═══════════════════════════════════════════════════════════════
 // SNAPSHOT — Populate deal summary card
 // ═══════════════════════════════════════════════════════════════
-export function renderSnapshot(deal) {
+export function renderSnapshot(deal, role) {
   const num = (v) => v != null ? Number(v) : 0;
   const fmtMoney = (v) => num(v) ? '£' + num(v).toLocaleString() : '-';
   const fmtPctVal = (v) => num(v) ? num(v).toFixed(1) + '%' : '-';
@@ -77,10 +77,11 @@ export function renderSnapshot(deal) {
     addrEl.title = sanitizeHtml(rawAddr); // full address on hover
   }
 
-  // Stage badge
+  // Stage badge — brokers see simplified labels
+  const isExternal = ['broker', 'borrower'].includes(role);
   const stageLabels = {
-    received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-    info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
+    received: 'Received', assigned: isExternal ? 'Received' : 'Assigned', dip_issued: 'DIP Issued',
+    info_gathering: isExternal ? 'DIP Requested' : 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
     fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
     bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
     borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -806,7 +807,7 @@ export async function renderDealSections(deal, role) {
   applyRoleGating(role);
 
   // 2. Snapshot
-  renderSnapshot(deal);
+  renderSnapshot(deal, role);
 
   // 3. Matrix — handled by deal-matrix.js via dynamic import in deal-detail.js
 

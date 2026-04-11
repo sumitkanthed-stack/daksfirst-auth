@@ -64,8 +64,8 @@ export async function showDealDetail(dealId) {
     const stage = deal.deal_stage || 'received';
     const stageEl = document.getElementById('detail-stage-badge');
     const stageLabels = {
-      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
+      received: 'Received', assigned: isInternal ? 'Assigned' : 'Received', dip_issued: 'DIP Issued',
+      info_gathering: isInternal ? 'Info Gathering' : 'DIP Requested', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
