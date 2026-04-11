@@ -305,6 +305,27 @@ function buildDipHtml(deal, dipData, options) {
     border: 2px solid #16a34a;
   }
 
+  /* ── Section heading bar (full-width coloured strip) ── */
+  .section-bar {
+    background: #1F3864;
+    color: #fff;
+    padding: 5px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-radius: 4px 4px 0 0;
+    margin-bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .section-bar.purple { background: #7c3aed; }
+  .section-bar.green { background: #16a34a; }
+  .section-bar.grey { background: #6b7280; }
+  .section-bar.amber { background: #92400e; }
+  .section-bar + .section { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
+
   .section-header {
     display: flex;
     justify-content: space-between;
@@ -491,11 +512,8 @@ function buildDipHtml(deal, dipData, options) {
     <p class="intro-text">This Decision in Principle sets out the indicative terms under which Daksfirst Limited may provide senior secured finance. All terms are subject to full underwriting, valuation, and credit approval.</p>
 
     <!-- ═══ BORROWER DETAILS ═══ -->
+    <div class="section-bar"><span>Borrower Details</span>${borrowerTypeBadge}</div>
     <div class="section">
-      <div class="section-header">
-        <h5>Borrower &mdash; ${isCorp ? 'Corporate' : 'Individual'}</h5>
-        ${borrowerTypeBadge}
-      </div>
 
       ${isCorp ? `
       <div class="grid-2">
@@ -554,10 +572,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ SECURITY SCHEDULE ═══ -->
+    <div class="section-bar">Security Schedule &mdash; ${addresses.length || 1} ${(addresses.length || 1) === 1 ? 'Property' : 'Properties'}</div>
     <div class="section">
-      <div class="section-header">
-        <h5>Security Schedule &mdash; ${addresses.length || 1} ${(addresses.length || 1) === 1 ? 'Property' : 'Properties'}</h5>
-      </div>
       <table class="dip-table">
         <thead>
           <tr>
@@ -581,8 +597,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ VALUATION SUMMARY ═══ -->
+    <div class="section-bar">Valuation Summary</div>
     <div class="section">
-      <div class="section-header grey"><h5>Valuation Summary</h5></div>
       <div class="grid-3">
         <div class="field-box green">
           <span class="field-label green">Total Property Value (&pound;)</span>
@@ -600,8 +616,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ LOAN TERMS ═══ -->
+    <div class="section-bar">Indicative Loan Terms</div>
     <div class="section blue">
-      <div class="section-header navy"><h5>Indicative Loan Terms</h5></div>
       <div class="grid-3">
         <div class="field-box blue">
           <span class="field-label navy">Loan Amount (&pound;)</span>
@@ -634,8 +650,8 @@ function buildDipHtml(deal, dipData, options) {
       </div>
 
       <!-- Day Zero Calculation -->
-      <div class="section amber" style="margin-top:8px;margin-bottom:0;">
-        <div class="section-header amber"><h5>Day Zero Calculation</h5></div>
+      <div class="section-bar amber" style="margin-top:8px;">Day Zero Calculation</div>
+      <div class="section amber" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
         <div class="grid-2">
           <div class="field-box">
             <span class="field-label amber">Retained Interest (months)</span>
@@ -651,8 +667,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ FEE SCHEDULE ═══ -->
+    <div class="section-bar purple">Fee Schedule</div>
     <div class="section purple">
-      <div class="section-header purple"><h5>Fee Schedule</h5></div>
       <p style="margin:0 0 12px;font-size:11px;color:#4b5563;">All fees disclosed to borrower. No fee required before DIP issuance.</p>
       <table class="dip-table">
         <thead>
@@ -670,8 +686,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ THIRD-PARTY COSTS ═══ -->
+    <div class="section-bar grey">Estimated Third-Party Costs</div>
     <div class="section">
-      <div class="section-header grey"><h5>Estimated Third-Party Costs</h5></div>
       <p style="margin:0 0 12px;font-size:11px;color:#6b7280;font-style:italic;">These are not Daksfirst fees. Third-party costs borne directly by the borrower, disclosed for budgeting purposes only.</p>
       <table class="dip-table">
         <thead>
@@ -719,9 +735,10 @@ function buildDipHtml(deal, dipData, options) {
     ` : ''}
 
     <!-- ═══ SECURITY & GUARANTEES + CONDITIONS PRECEDENT (side by side) ═══ -->
-    <div class="grid-2" style="margin-bottom:16px;">
-      <div class="section" style="margin-bottom:0;">
-        <div class="section-header navy"><h5>Security &amp; Guarantees</h5></div>
+    <div class="grid-2" style="margin-bottom:10px;">
+      <div>
+        <div class="section-bar">Security &amp; Guarantees</div>
+        <div class="section" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
         <div class="field-box" style="margin-bottom:8px;">
           <span class="field-label">First Legal Charge</span>
           <div style="font-size:12px;font-weight:600;">${addresses.length > 1 ? 'Over all ' + addresses.length + ' security properties' : 'Over the security property'}</div>
@@ -734,18 +751,19 @@ function buildDipHtml(deal, dipData, options) {
           <span class="field-label">Personal Guarantee</span>
           <div style="font-size:12px;font-weight:600;">${esc(personalGuarantee)}</div>
         </div>
+        </div>
       </div>
-      <div class="section" style="margin-bottom:0;">
-        <div class="section-header navy"><h5>Conditions Precedent</h5></div>
+      <div>
+        <div class="section-bar">Conditions Precedent</div>
+        <div class="section" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
         <div style="font-size:12px;">${cpHtml}</div>
+        </div>
       </div>
     </div>
 
     <!-- ═══ HOW TO PROCEED — PAYMENT DETAILS ═══ -->
-    <div class="section green-border">
-      <div class="section-header" style="margin-bottom:12px;">
-        <h5 style="color:#166534;">How to Proceed &mdash; Payment Details</h5>
-      </div>
+    <div class="section-bar green">How to Proceed &mdash; Payment Details</div>
+    <div class="section green-border" style="border-top-left-radius:0;border-top-right-radius:0;">
       <div class="grid-2">
         <div class="field-box">
           <p style="font-size:12px;color:#374151;margin:0;line-height:1.6;">To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference <strong>${esc(dealRef)}</strong> as payment reference.</p>
