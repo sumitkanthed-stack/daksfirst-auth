@@ -730,7 +730,7 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     const storedDoc = await pool.query(
       `SELECT file_content, filename FROM deal_documents
        WHERE deal_id = $1 AND doc_category = 'issued' AND file_type = 'application/pdf'
-       ORDER BY created_at DESC LIMIT 1`,
+       ORDER BY id DESC LIMIT 1`,
       [dealId]
     );
 
