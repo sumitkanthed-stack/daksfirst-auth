@@ -113,9 +113,8 @@ router.delete('/:submissionId/properties/:propertyId', authenticateToken, authen
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  REPARSE — Triggers n8n/Claude to extract deal data from uploaded documents
-//  Batch processing: deduplicates files, splits into batches under 5MB each,
-//  fires each batch to n8n in parallel. Each batch callbacks independently.
+//  REPARSE — Calls Claude directly from Render to extract deal data
+//  Fire-and-forget: responds immediately, processes in background
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
   try {
@@ -128,77 +127,25 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const deal = dealResult.rows[0];
 
+    // Check we have the API key
     const config = require('../config');
-    const N8N_WEBHOOK_URL = config.N8N_DATA_PARSE_URL || config.N8N_WEBHOOK_URL;
-    if (!N8N_WEBHOOK_URL) {
-      return res.status(503).json({ error: 'n8n webhook not configured' });
+    if (!config.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'Anthropic API key not configured' });
     }
 
-    // ── Fetch all uploaded documents for this deal ──
-    const docsResult = await pool.query(
-      `SELECT id, filename, file_type, file_content, onedrive_download_url, doc_category
-       FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at ASC`,
+    // Quick check: does this deal have any documents?
+    const docCount = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM deal_documents WHERE deal_id = $1 AND file_content IS NOT NULL`,
       [deal.id]
     );
 
-    // ── Step 1: Deduplicate by filename, encode to base64 ──
-    const seenNames = new Set();
-    const allFiles = [];
-    for (const doc of docsResult.rows) {
-      if (seenNames.has(doc.filename)) continue;
-      seenNames.add(doc.filename);
-      if (!doc.file_content) continue;
-
-      allFiles.push({
-        filename: doc.filename,
-        file_type: doc.file_type || 'application/octet-stream',
-        doc_category: doc.doc_category || null,
-        content_base64: Buffer.from(doc.file_content).toString('base64')
-      });
-    }
-
-    if (allFiles.length === 0 && !deal.security_address) {
+    if (docCount.rows[0].cnt === 0 && !deal.security_address) {
       return res.json({ success: false, message: 'No documents or address data to parse' });
     }
 
-    // ── Step 2: Split into batches under 5MB base64 each ──
-    const MAX_BATCH_B64 = 5 * 1024 * 1024; // 5MB base64 per batch
-    const batches = [];
-    let currentBatch = [];
-    let currentSize = 0;
+    // ── Fire and forget: respond immediately, parse in background ──
+    const { parseDealDocuments } = require('../services/claude-parser');
 
-    for (const file of allFiles) {
-      const fileB64Size = file.content_base64.length;
-
-      // If single file exceeds batch limit, send it alone
-      if (fileB64Size > MAX_BATCH_B64) {
-        if (currentBatch.length > 0) {
-          batches.push(currentBatch);
-          currentBatch = [];
-          currentSize = 0;
-        }
-        batches.push([file]);
-        continue;
-      }
-
-      // If adding this file exceeds the batch limit, start new batch
-      if (currentSize + fileB64Size > MAX_BATCH_B64) {
-        batches.push(currentBatch);
-        currentBatch = [];
-        currentSize = 0;
-      }
-
-      currentBatch.push(file);
-      currentSize += fileB64Size;
-    }
-    if (currentBatch.length > 0) batches.push(currentBatch);
-
-    // Ensure at least one batch (even if no files, send deal context)
-    if (batches.length === 0) batches.push([]);
-
-    console.log(`[reparse] Deal ${req.params.submissionId}: ${allFiles.length} unique files → ${batches.length} batch(es)`);
-
-    // ── Step 3: Fire all batches to n8n in parallel ──
     const dealContext = {
       borrower_name: deal.borrower_name,
       loan_amount: deal.loan_amount,
@@ -214,55 +161,22 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
       tenure: deal.property_tenure
     };
 
-    const batchPromises = batches.map((batchFiles, idx) => {
-      const fileNames = batchFiles.map(f => f.filename);
-      console.log(`[reparse] Batch ${idx + 1}/${batches.length}: ${batchFiles.length} files (${fileNames.join(', ')})`);
-
-      return fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
-        },
-        body: JSON.stringify({
-          trigger: 'data_parse',
-          submissionId: req.params.submissionId,
-          dealId: deal.id,
-          deal: dealContext,
-          security: securityContext,
-          files: batchFiles,
-          batch_number: idx + 1,
-          total_batches: batches.length,
-          callbackUrl: 'https://daksfirst-auth.onrender.com/api/webhook/analysis-complete'
-        }),
-        signal: AbortSignal.timeout(60000)
-      }).then(async resp => {
-        if (!resp.ok) {
-          const errBody = await resp.text().catch(() => '');
-          console.error(`[reparse] Batch ${idx + 1} failed (${resp.status}): ${errBody}`);
-        }
-        return { batch: idx + 1, ok: resp.ok, status: resp.status };
-      }).catch(err => {
-        console.error(`[reparse] Batch ${idx + 1} error:`, err.message);
-        return { batch: idx + 1, ok: false, status: 0, error: err.message };
+    // Start background parsing — don't await
+    parseDealDocuments(req.params.submissionId, deal.id, dealContext, securityContext)
+      .then(result => {
+        console.log(`[reparse] Background parse complete for ${req.params.submissionId}:`, result);
+      })
+      .catch(err => {
+        console.error(`[reparse] Background parse failed for ${req.params.submissionId}:`, err);
       });
-    });
-
-    const results = await Promise.all(batchPromises);
-    const succeeded = results.filter(r => r.ok).length;
-    const failed = results.filter(r => !r.ok).length;
 
     await logAudit(deal.id, 'property_reparse_triggered', null, null,
-      { triggered_by: req.user.userId, file_count: allFiles.length, batches: batches.length, succeeded, failed }, req.user.userId);
+      { triggered_by: req.user.userId, doc_count: docCount.rows[0].cnt }, req.user.userId);
 
-    if (succeeded === 0) {
-      return res.status(502).json({ error: 'All batches failed — check n8n webhook configuration' });
-    }
-
-    console.log(`[reparse] Triggered for deal ${req.params.submissionId}: ${succeeded}/${batches.length} batches sent`);
+    console.log(`[reparse] Triggered for deal ${req.params.submissionId} (${docCount.rows[0].cnt} docs) — processing in background`);
     return res.json({
       success: true,
-      message: `Parsing triggered: ${allFiles.length} documents in ${batches.length} batch(es) — Claude is working on it.`
+      message: `Parsing ${docCount.rows[0].cnt} documents — Claude is working on it.`
     });
   } catch (error) {
     console.error('[reparse] Error:', error);
