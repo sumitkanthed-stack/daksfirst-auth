@@ -6,21 +6,18 @@
  * No more manual X/Y positioning — the browser does all the layout.
  */
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 // ── Keep a browser instance alive to avoid cold-start on every PDF ──
 let _browser = null;
 async function getBrowser() {
   if (_browser && _browser.isConnected()) return _browser;
   _browser = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--font-render-hinting=none'
-    ]
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless
   });
   return _browser;
 }
