@@ -251,20 +251,105 @@ async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCate
     return null;
   }
 
+  // Ensure we have a proper Buffer
+  if (!buffer) {
+    console.log(`[ai-extract] No buffer for "${filename}" — skipping`);
+    return null;
+  }
+  if (!Buffer.isBuffer(buffer)) {
+    console.log(`[ai-extract] Converting non-Buffer (${typeof buffer}) to Buffer for "${filename}"`);
+    try {
+      buffer = Buffer.from(buffer);
+    } catch (e) {
+      console.error(`[ai-extract] Cannot convert to Buffer for "${filename}":`, e.message);
+      return null;
+    }
+  }
+  console.log(`[ai-extract] Processing "${filename}" — type: ${mimetype}, size: ${buffer.length} bytes, category: ${docCategory}`);
+
+  if (buffer.length === 0) {
+    console.log(`[ai-extract] Empty buffer for "${filename}" — skipping`);
+    return null;
+  }
+
   const mime = (mimetype || '').toLowerCase();
   const name = (filename || '').toLowerCase();
   let text = null;
 
+  // PDF extraction
   if (mime === 'application/pdf' || name.endsWith('.pdf')) {
+    console.log(`[ai-extract] Attempting PDF text extraction for "${filename}"...`);
     text = await extractPdfText(buffer);
-  } else if (mime === 'text/plain' || name.endsWith('.txt') || name.endsWith('.csv')) {
+    console.log(`[ai-extract] PDF extraction result: ${text ? text.length + ' chars' : 'null'}`);
+  }
+  // Plain text / CSV
+  else if (mime === 'text/plain' || name.endsWith('.txt') || name.endsWith('.csv')) {
     text = buffer.toString('utf-8').substring(0, 6000);
   }
+  // Word docs — try to extract as UTF-8 (crude but catches some data)
+  else if (mime.includes('word') || mime.includes('openxmlformats-officedocument') || name.endsWith('.docx') || name.endsWith('.doc')) {
+    console.log(`[ai-extract] Word doc detected: "${filename}" — extracting raw text strings`);
+    // Extract readable strings from docx XML (crude but effective for data extraction)
+    const raw = buffer.toString('utf-8');
+    // Pull text between XML tags
+    const textParts = raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
+    if (textParts) {
+      text = textParts.map(t => t.replace(/<[^>]+>/g, '')).join(' ').substring(0, 6000);
+      console.log(`[ai-extract] Extracted ${text.length} chars from Word doc XML`);
+    }
+  }
+  // Images — we can't extract text without OCR, but try Claude vision if small enough
+  else if (mime.startsWith('image/')) {
+    console.log(`[ai-extract] Image file "${filename}" — will try Claude vision API`);
+    // Use Claude's vision capability to read the image directly
+    try {
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+      const base64 = buffer.toString('base64');
+      const mediaType = mime.includes('png') ? 'image/png' : mime.includes('gif') ? 'image/gif' : mime.includes('webp') ? 'image/webp' : 'image/jpeg';
 
-  if (!text || text.trim().length < 30) {
-    console.log(`[ai-extract] Not enough text from "${filename}" — skipping`);
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-5-20250514',
+        max_tokens: 2000,
+        system: DEAL_EXTRACTION_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            { type: 'text', text: `Document: "${filename}"\nCategory: ${docCategory || 'unknown'}\n\nExtract all deal-relevant fields from this document image.` }
+          ]
+        }]
+      });
+
+      const raw = (message.content[0]?.text || '').trim();
+      let jsonStr = raw;
+      if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      const parsed = JSON.parse(jsonStr);
+      console.log(`[ai-extract] Vision extracted ${Object.keys(parsed).filter(k => parsed[k] != null && parsed[k] !== '' && k !== 'confidence').length} fields from image "${filename}"`);
+      return parsed;
+    } catch (visErr) {
+      console.error(`[ai-extract] Vision extraction failed for "${filename}":`, visErr.message);
+      return null;
+    }
+  }
+
+  // If still no text, try brute-force UTF-8 extraction (catches some non-standard formats)
+  if (!text && !mime.startsWith('image/')) {
+    console.log(`[ai-extract] Trying brute-force UTF-8 extraction for "${filename}" (mime: ${mime})`);
+    const raw = buffer.toString('utf-8');
+    // Strip non-printable characters and keep only readable text
+    const cleaned = raw.replace(/[^\x20-\x7E\n\r\t£€]/g, ' ').replace(/\s{3,}/g, ' ').trim();
+    if (cleaned.length > 50) {
+      text = cleaned.substring(0, 6000);
+      console.log(`[ai-extract] Brute-force extracted ${text.length} chars`);
+    }
+  }
+
+  if (!text || text.trim().length < 20) {
+    console.log(`[ai-extract] Not enough text from "${filename}" (${text ? text.trim().length : 0} chars) — skipping`);
     return null;
   }
+
+  console.log(`[ai-extract] Sending ${text.length} chars to Claude for "${filename}"...`);
 
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -301,7 +386,12 @@ async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCate
  * Returns { merged, perDoc } where perDoc is a Map<docId, parsedData>
  */
 async function extractDealFieldsFromMultipleDocs(docs) {
-  if (!ANTHROPIC_API_KEY) return { merged: null, perDoc: new Map() };
+  if (!ANTHROPIC_API_KEY) {
+    console.log('[ai-extract] No ANTHROPIC_API_KEY set — cannot extract any documents');
+    return { merged: null, perDoc: new Map() };
+  }
+
+  console.log(`[ai-extract] Processing ${docs.length} documents for deal field extraction...`);
 
   const merged = {};
   let totalConfidence = 0;
@@ -309,7 +399,10 @@ async function extractDealFieldsFromMultipleDocs(docs) {
   const perDoc = new Map();
 
   for (const doc of docs) {
-    if (!doc.file_content) continue;
+    if (!doc.file_content) {
+      console.log(`[ai-extract] Doc ${doc.id} "${doc.filename}" has no file_content — skipping`);
+      continue;
+    }
 
     const result = await extractDealFieldsFromDocument(
       doc.file_content, doc.file_type, doc.filename, doc.doc_category
