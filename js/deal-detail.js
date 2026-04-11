@@ -1212,7 +1212,8 @@ export function renderInternalWorkflowControls(deal) {
         if (btn) {
           if (allPassed) {
             btn.disabled = false;
-            btn.style.background = 'var(--primary)';
+            btn.style.background = '#16a34a';
+            btn.style.color = '#ffffff';
             btn.style.cursor = 'pointer';
           } else {
             btn.disabled = true;
