@@ -130,9 +130,9 @@ router.post('/:submissionId/reparse', authenticateToken, authenticateInternal, a
       return res.json({ success: false, message: 'No address data to parse' });
     }
 
-    // Fire n8n webhook specifically for property parsing
+    // Fire n8n webhook for data parsing (Smart Parse — Data Parsing workflow)
     const config = require('../config');
-    const N8N_WEBHOOK_URL = config.N8N_PROPERTY_PARSE_URL || config.N8N_WEBHOOK_URL;
+    const N8N_WEBHOOK_URL = config.N8N_DATA_PARSE_URL || config.N8N_WEBHOOK_URL;
 
     if (N8N_WEBHOOK_URL) {
       const webhookResp = await fetch(N8N_WEBHOOK_URL, {

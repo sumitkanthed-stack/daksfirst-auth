@@ -47,6 +47,8 @@ module.exports = {
   // n8n webhooks
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
   N8N_PARSE_WEBHOOK_URL: process.env.N8N_PARSE_WEBHOOK_URL || '',
+  N8N_DATA_PARSE_URL: process.env.N8N_DATA_PARSE_URL || '',
+  N8N_DATA_CLASSIFY_URL: process.env.N8N_DATA_CLASSIFY_URL || '',
 
   // DocuSign
   DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',
