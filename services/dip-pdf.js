@@ -476,10 +476,7 @@ function buildDipHtml(deal, dipData, options) {
 
   /* ── PAGE BREAK CONTROL ── */
   .section-bar { break-after: avoid; }
-  .section { break-inside: avoid; }
   .section-bar + .section { break-before: avoid; }
-  .bottom-block { break-inside: avoid; }
-  .grid-2 > div { break-inside: avoid; }
 
   /* ── RUNNING FOOTER ON EVERY PAGE ── */
   @page {
