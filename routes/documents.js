@@ -64,15 +64,13 @@ router.post('/deals/:dealId/upload', authenticateToken, upload.any(), async (req
     const deal = dealResult.rows[0];
     const dealRef = deal.submission_id.substring(0, 8);
 
-    // Get OneDrive token
+    // Get OneDrive token (non-blocking — files still save to DB if OneDrive is down)
     let token;
     try {
       token = await getGraphToken();
     } catch (err) {
-      console.error('[upload] Could not get OneDrive token:', err.message);
-      return res.status(503).json({
-        error: 'OneDrive service unavailable. Files may not be uploaded to cloud storage.'
-      });
+      console.error('[upload] Could not get OneDrive token:', err.message, '— will save to DB only');
+      token = null;
     }
 
     const uploadedDocs = [];
@@ -80,9 +78,17 @@ router.post('/deals/:dealId/upload', authenticateToken, upload.any(), async (req
 
     for (const file of req.files) {
       try {
-        const oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+        // Try OneDrive upload (optional — don't block if it fails)
+        let oneDriveInfo = null;
+        if (token) {
+          try {
+            oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+          } catch (odErr) {
+            console.warn('[upload] OneDrive failed for', file.originalname, ':', odErr.message, '— saving to DB only');
+          }
+        }
 
-        // Store reference in DB with file content (use numeric deal.id, not UUID)
+        // Always save to DB with file content
         const docResult = await pool.query(
           `INSERT INTO deal_documents
            (deal_id, filename, file_type, file_size, file_content, onedrive_item_id, onedrive_path, onedrive_download_url)
@@ -94,16 +100,16 @@ router.post('/deals/:dealId/upload', authenticateToken, upload.any(), async (req
             file.mimetype,
             file.size,
             file.buffer,
-            oneDriveInfo.itemId,
-            oneDriveInfo.path,
-            oneDriveInfo.downloadUrl
+            oneDriveInfo ? oneDriveInfo.itemId : null,
+            oneDriveInfo ? oneDriveInfo.path : null,
+            oneDriveInfo ? oneDriveInfo.downloadUrl : null
           ]
         );
 
         uploadedDocs.push(docResult.rows[0]);
-        console.log('[upload] File uploaded:', file.originalname);
+        console.log('[upload] File saved:', file.originalname, oneDriveInfo ? '(+ OneDrive)' : '(DB only)');
       } catch (err) {
-        console.error('[upload] Failed to upload', file.originalname, ':', err.message);
+        console.error('[upload] Failed to save', file.originalname, ':', err.message);
         uploadErrors.push({ filename: file.originalname, error: err.message });
       }
     }
@@ -149,15 +155,13 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
     const deal = dealResult.rows[0];
     const dealRef = deal.submission_id.substring(0, 8);
 
-    // Get OneDrive token
+    // Get OneDrive token (non-blocking — files still save to DB if OneDrive is down)
     let token;
     try {
       token = await getGraphToken();
     } catch (err) {
-      console.error('[admin-upload] Could not get OneDrive token:', err.message);
-      return res.status(503).json({
-        error: 'OneDrive service unavailable. Files may not be uploaded to cloud storage.'
-      });
+      console.error('[admin-upload] Could not get OneDrive token:', err.message, '— will save to DB only');
+      token = null;
     }
 
     const uploadedDocs = [];
@@ -165,8 +169,17 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
 
     for (const file of req.files) {
       try {
-        const oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+        // Try OneDrive upload (optional — don't block if it fails)
+        let oneDriveInfo = null;
+        if (token) {
+          try {
+            oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+          } catch (odErr) {
+            console.warn('[admin-upload] OneDrive failed for', file.originalname, ':', odErr.message, '— saving to DB only');
+          }
+        }
 
+        // Always save to DB with file content
         const docResult = await pool.query(
           `INSERT INTO deal_documents
            (deal_id, filename, file_type, file_size, file_content, onedrive_item_id, onedrive_path, onedrive_download_url)
@@ -178,9 +191,9 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
             file.mimetype,
             file.size,
             file.buffer,
-            oneDriveInfo.itemId,
-            oneDriveInfo.path,
-            oneDriveInfo.downloadUrl
+            oneDriveInfo ? oneDriveInfo.itemId : null,
+            oneDriveInfo ? oneDriveInfo.path : null,
+            oneDriveInfo ? oneDriveInfo.downloadUrl : null
           ]
         );
 
@@ -188,9 +201,9 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
         await logAudit(deal.id, 'document_uploaded', null, file.originalname,
           { uploaded_by: req.user.userId, file_type: file.mimetype }, req.user.userId);
 
-        console.log('[admin-upload] File uploaded:', file.originalname);
+        console.log('[admin-upload] File saved:', file.originalname, oneDriveInfo ? '(+ OneDrive)' : '(DB only)');
       } catch (err) {
-        console.error('[admin-upload] Failed to upload', file.originalname, ':', err.message);
+        console.error('[admin-upload] Failed to save', file.originalname, ':', err.message);
         uploadErrors.push({ filename: file.originalname, error: err.message });
       }
     }
