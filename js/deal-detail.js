@@ -845,6 +845,7 @@ export function renderInternalWorkflowControls(deal) {
           </div>
         </div>
         <p style="margin:8px 0 0;font-size:10px;color:#6b7280;">Total property value is auto-calculated from individual property valuations entered above. Enter each property's valuation in the Security Schedule.</p>
+        <div id="dip-val-mismatch" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
       </div>
 
       <!-- ═══ LOAN TERMS (RM CONFIRMS) ═══ -->
@@ -1030,12 +1031,41 @@ export function renderInternalWorkflowControls(deal) {
         }
         // Trigger LTV recalculation
         if (window.calcDipLtv) window.calcDipLtv();
+
+        // ── Valuation mismatch warning ──
+        const brokerVal = parseFloat(deal.current_value) || 0;
+        const mismatchEl = document.getElementById('dip-val-mismatch');
+        if (mismatchEl && brokerVal > 0 && total > 0) {
+          const diff = total - brokerVal;
+          const pctDiff = Math.abs(diff / brokerVal) * 100;
+          // Count removed properties
+          const totalProps = propValInputs.length;
+          const removedCount = Array.from(propValInputs).filter(inp => inp.disabled).length;
+          const activeCount = totalProps - removedCount;
+          if (pctDiff > 10) {
+            const direction = diff > 0 ? 'higher' : 'lower';
+            const colour = diff > 0 ? '#dcfce7;border:1px solid #86efac;color:#166534' : '#fef2f2;border:1px solid #fca5a5;color:#991b1b';
+            const removedNote = removedCount > 0 ? ' (' + removedCount + ' of ' + totalProps + ' properties removed by RM — ' + activeCount + ' active)' : '';
+            const advice = diff < 0
+              ? (removedCount > 0 ? 'Reduced security pool — ensure LTV still within criteria.' : 'This reduces LTV headroom — verify valuation basis.')
+              : 'Confirm valuation basis before proceeding.';
+            mismatchEl.style.display = 'block';
+            mismatchEl.setAttribute('style', 'display:block;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.5;background:' + colour);
+            mismatchEl.innerHTML = '<strong>\u26A0 Valuation Mismatch</strong> — RM total (<strong>\u00A3' + formatNumber(total) + '</strong>) is <strong>' + pctDiff.toFixed(1) + '% ' + direction + '</strong> than broker-submitted value (\u00A3' + formatNumber(brokerVal) + ').' + removedNote + ' ' + advice;
+          } else {
+            mismatchEl.style.display = 'none';
+          }
+        } else if (mismatchEl) {
+          mismatchEl.style.display = 'none';
+        }
       };
       propValInputs.forEach(inp => {
         attachMoneyFormat(inp.id);
         inp.addEventListener('input', updatePropValTotal);
         inp.addEventListener('change', updatePropValTotal);
       });
+      // Run once on load to show mismatch if pre-populated values differ
+      updatePropValTotal();
 
       // ── DIP Pre-Issue Checklist Validator ──
       const validateDipChecklist = () => {
