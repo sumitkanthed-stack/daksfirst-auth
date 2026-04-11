@@ -474,6 +474,24 @@ function buildDipHtml(deal, dipData, options) {
     line-height: 1.4;
   }
 
+  /* ── PAGE BREAK CONTROL ── */
+  .section-bar { break-after: avoid; }
+  .section { break-inside: avoid; }
+  .section-bar + .section { break-before: avoid; }
+  .bottom-block { break-inside: avoid; }
+  .grid-2 > div { break-inside: avoid; }
+
+  /* ── RUNNING FOOTER ON EVERY PAGE ── */
+  @page {
+    size: A4;
+    margin: 0 0 28px 0;
+    @bottom-center {
+      content: "Daksfirst Limited | 8 Hill Street, Mayfair, London W1J 5NG | FCA 937220";
+      font-size: 7px;
+      color: #6b7280;
+    }
+  }
+
   /* Ensure colour-printing on all browsers */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 </style>
@@ -761,63 +779,62 @@ function buildDipHtml(deal, dipData, options) {
       </div>
     </div>
 
-    <!-- ═══ HOW TO PROCEED — PAYMENT DETAILS ═══ -->
-    <div class="section-bar green">How to Proceed &mdash; Payment Details</div>
-    <div class="section green-border" style="border-top-left-radius:0;border-top-right-radius:0;">
-      <div class="grid-2">
-        <div class="field-box">
-          <p style="font-size:12px;color:#374151;margin:0;line-height:1.6;">To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference <strong>${esc(dealRef)}</strong> as payment reference.</p>
-          <p style="font-size:11px;color:#6b7280;margin-top:6px;font-style:italic;">Upon receipt, Daksfirst will commence credit review.</p>
+    <!-- ═══ BOTTOM BLOCK — stays together, never splits ═══ -->
+    <div class="bottom-block">
+
+      <!-- ═══ HOW TO PROCEED — PAYMENT DETAILS ═══ -->
+      <div class="section-bar green">How to Proceed &mdash; Payment Details</div>
+      <div class="section green-border" style="border-top-left-radius:0;border-top-right-radius:0;">
+        <div class="grid-2">
+          <div class="field-box">
+            <p style="font-size:12px;color:#374151;margin:0;line-height:1.6;">To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference <strong>${esc(dealRef)}</strong> as payment reference.</p>
+            <p style="font-size:11px;color:#6b7280;margin-top:6px;font-style:italic;">Upon receipt, Daksfirst will commence credit review.</p>
+          </div>
+          <div style="background:#f8fafc;padding:10px;border-radius:6px;border:1px solid #e5e7eb;">
+            <table style="width:100%;font-size:11px;">
+              <tr><td style="color:#6b7280;padding:2px 0;width:100px;">Account Name:</td><td style="font-weight:600;color:#1e3a5f;">Daksfirst Limited</td></tr>
+              <tr><td style="color:#6b7280;padding:2px 0;">Bank:</td><td style="font-weight:600;color:#1e3a5f;">HSBC</td></tr>
+              <tr><td style="color:#6b7280;padding:2px 0;">Account No:</td><td style="font-weight:600;color:#1e3a5f;">90300721</td></tr>
+              <tr><td style="color:#6b7280;padding:2px 0;">Sort Code:</td><td style="font-weight:600;color:#1e3a5f;">40-02-45</td></tr>
+              <tr><td style="color:#6b7280;padding:2px 0;">IBAN:</td><td style="font-weight:600;color:#1e3a5f;">GB64HBUK40024590300721</td></tr>
+              <tr><td style="color:#6b7280;padding:2px 0;">Reference:</td><td style="font-weight:600;color:#1e3a5f;">${esc(dealRef)}</td></tr>
+            </table>
+          </div>
         </div>
-        <div style="background:#f8fafc;padding:10px;border-radius:6px;border:1px solid #e5e7eb;">
-          <table style="width:100%;font-size:12px;">
-            <tr><td style="color:#6b7280;padding:2px 0;width:110px;">Account Name:</td><td style="font-weight:600;color:#1e3a5f;">Daksfirst Limited</td></tr>
-            <tr><td style="color:#6b7280;padding:2px 0;">Bank:</td><td style="font-weight:600;color:#1e3a5f;">HSBC</td></tr>
-            <tr><td style="color:#6b7280;padding:2px 0;">Account No:</td><td style="font-weight:600;color:#1e3a5f;">90300721</td></tr>
-            <tr><td style="color:#6b7280;padding:2px 0;">Sort Code:</td><td style="font-weight:600;color:#1e3a5f;">40-02-45</td></tr>
-            <tr><td style="color:#6b7280;padding:2px 0;">IBAN:</td><td style="font-weight:600;color:#1e3a5f;">GB64HBUK40024590300721</td></tr>
-            <tr><td style="color:#6b7280;padding:2px 0;">Reference:</td><td style="font-weight:600;color:#1e3a5f;">${esc(dealRef)}</td></tr>
-          </table>
+      </div>
+
+      <!-- ═══ RED NOTICE ═══ -->
+      <div class="red-notice">
+        <p>IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.</p>
+      </div>
+
+      <!-- ═══ ACKNOWLEDGEMENT ═══ -->
+      <div style="margin-bottom:8px;">
+        <h5 style="margin:0 0 4px;color:#1e3a5f;font-size:11px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
+        <p style="font-size:11px;color:#374151;line-height:1.4;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
+      </div>
+
+      <!-- ═══ SIGNATURES ═══ -->
+      <div class="sig-row">
+        <div class="sig-block">
+          <div class="label">Borrower Signature</div>
+          <div class="name">${esc(clean(deal.borrower_name))}</div>
+          ${isCorp ? `<div class="name" style="font-size:10px;color:#6b7280;">${esc(clean(deal.borrower_company || deal.company_name))}</div>` : ''}
+        </div>
+        <div class="sig-block">
+          <div class="label">For and on behalf of the Lender</div>
+          <div class="name">Daksfirst Bridging 1 Ltd</div>
         </div>
       </div>
-    </div>
 
-    <!-- ═══ RED NOTICE ═══ -->
-    <div class="red-notice">
-      <p>IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.</p>
-    </div>
-
-    <!-- ═══ ACKNOWLEDGEMENT ═══ -->
-    <div style="margin-bottom:8px;">
-      <h5 style="margin:0 0 4px;color:#1e3a5f;font-size:11px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
-      <p style="font-size:11px;color:#374151;line-height:1.4;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
-    </div>
-
-    <!-- ═══ SIGNATURES ═══ -->
-    <div class="sig-row">
-      <div class="sig-block">
-        <div class="label">Borrower Signature</div>
-        <div class="name">${esc(clean(deal.borrower_name))}</div>
-        ${isCorp ? `<div class="name" style="font-size:10px;color:#6b7280;">${esc(clean(deal.borrower_company || deal.company_name))}</div>` : ''}
+      <!-- ═══ DISCLAIMER ═══ -->
+      <div class="disclaimer">
+        <p><strong>Disclaimer:</strong> This Decision In Principle (DIP) is issued by Daksfirst Limited and is indicative only. It does not constitute a formal offer of finance and is subject to satisfactory due diligence, valuation, legal review, and final credit approval. All terms stated herein are subject to change. Daksfirst Limited reserves the right to withdraw or amend this DIP at any time prior to the issuance of a formal facility letter. The borrower should not rely on this DIP as a guarantee of funding. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA No. 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.</p>
       </div>
-      <div class="sig-block">
-        <div class="label">For and on behalf of the Lender</div>
-        <div class="name">Daksfirst Bridging 1 Ltd</div>
-      </div>
-    </div>
 
-    <!-- ═══ DISCLAIMER ═══ -->
-    <div class="disclaimer">
-      <p><strong>Disclaimer:</strong> This Decision In Principle (DIP) is issued by Daksfirst Limited and is indicative only. It does not constitute a formal offer of finance and is subject to satisfactory due diligence, valuation, legal review, and final credit approval. All terms stated herein are subject to change. Daksfirst Limited reserves the right to withdraw or amend this DIP at any time prior to the issuance of a formal facility letter. The borrower should not rely on this DIP as a guarantee of funding. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA No. 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.</p>
-    </div>
+    </div><!-- .bottom-block -->
 
   </div><!-- .dip-body -->
-
-  <!-- ═══ FOOTER ═══ -->
-  <div class="footer-bar">
-    Daksfirst Limited &nbsp;|&nbsp; 8 Hill Street, Mayfair, London W1J 5NG &nbsp;|&nbsp; FCA Reg: 937220 &nbsp;|&nbsp; portal@daksfirst.com<br>
-    This DIP is indicative only and does not constitute a formal offer. Subject to full underwriting, valuation &amp; legal due diligence.
-  </div>
 
 </div>
 </body>
@@ -840,8 +857,16 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      preferCSSPageSize: true,
-      margin: { top: '0', right: '0', bottom: '0', left: '0' }
+      margin: { top: '0', right: '0', bottom: '32px', left: '0' },
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: `
+        <div style="width:100%;padding:0 24px;font-family:Arial,sans-serif;border-top:2px solid #C9A227;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px;">
+            <span style="font-size:7px;color:#6b7280;">Daksfirst Limited | 8 Hill Street, Mayfair, London W1J 5NG | FCA 937220 | portal@daksfirst.com</span>
+            <span style="font-size:7px;color:#6b7280;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+          </div>
+        </div>`
     });
 
     return Buffer.from(pdfBuffer);
