@@ -1068,10 +1068,24 @@ export async function renderDealMatrix(deal) {
   // SHOW PARSED DATA IN PARSER SECTION — review before accepting
   // ═══════════════════════════════════════════════════════════════════
   let _lastParsedData = null; // store for Accept All
+  let _lastConflicts = {};    // store conflicts from multi-doc extraction
+  let _lastCoreFields = [];   // core structure fields list from backend
 
-  function showParsedResults(parsedData) {
+  // Core structure fields (mirrored from backend — used for UI tagging)
+  const CORE_STRUCTURE_FIELDS = [
+    'borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone',
+    'borrower_dob', 'borrower_nationality',
+    'company_name', 'company_number',
+    'security_address', 'security_postcode',
+    'asset_type', 'property_tenure',
+    'loan_purpose'
+  ];
+
+  function showParsedResults(parsedData, conflicts, coreFields) {
     if (!parsedData || typeof parsedData !== 'object') return;
     _lastParsedData = parsedData;
+    _lastConflicts = conflicts || {};
+    if (coreFields) _lastCoreFields = coreFields;
 
     const confidence = parsedData.confidence != null ? Math.round(parsedData.confidence * 100) : null;
     const parserFields = document.getElementById('parser-fields');
@@ -1079,9 +1093,9 @@ export async function renderDealMatrix(deal) {
     const parserContent = document.getElementById('parser-content');
     if (!parserFields) return;
 
-    // Count extracted fields
     const extracted = ALL_FIELD_KEYS.filter(k => parsedData[k] != null && parsedData[k] !== '');
     const confColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
+    const conflictKeys = Object.keys(_lastConflicts);
 
     // Build summary header
     let html = `
@@ -1091,10 +1105,42 @@ export async function renderDealMatrix(deal) {
           <div style="font-size:12px;color:#64748b;margin-top:2px;">${extracted.length} fields extracted from your documents</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
+          ${conflictKeys.length > 0 ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#dc2626;">${conflictKeys.length}</div><div style="font-size:9px;color:#dc2626;font-weight:600;">CONFLICTS</div></div>` : ''}
           ${confidence != null ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:${confColor};">${confidence}%</div><div style="font-size:9px;color:#64748b;font-weight:600;">CONFIDENCE</div></div>` : ''}
           <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#2563eb;">${extracted.length}</div><div style="font-size:9px;color:#64748b;font-weight:600;">FIELDS</div></div>
         </div>
       </div>`;
+
+    // Show conflicts banner if any
+    if (conflictKeys.length > 0) {
+      html += `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px;">&#9888; ${conflictKeys.length} Conflicting Field${conflictKeys.length > 1 ? 's' : ''} Detected</div>
+          <div style="font-size:11px;color:#7f1d1d;margin-bottom:10px;">Different documents contain different values for these core deal fields. Please select the correct value for each.</div>`;
+
+      for (const [field, options] of Object.entries(_lastConflicts)) {
+        const label = FIELD_LABELS[field] || field;
+        html += `
+          <div style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:#1e3a5f;margin-bottom:6px;">${label}</div>`;
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i];
+          const catBadge = opt.category ? `<span style="padding:1px 6px;border-radius:4px;background:#e2e8f0;color:#475569;font-size:9px;font-weight:600;margin-left:6px;">${opt.category.toUpperCase()}</span>` : '';
+          const srcName = opt.filename ? `<span style="font-size:10px;color:#94a3b8;margin-left:6px;">from: ${opt.filename.substring(0, 40)}</span>` : '';
+          const isWinner = String(opt.value) === String(parsedData[field]);
+          html += `
+            <div style="display:flex;align-items:center;padding:5px 10px;border-radius:5px;margin-bottom:3px;background:${isWinner ? '#f0fdf4' : '#fff'};border:1px solid ${isWinner ? '#bbf7d0' : '#f1f5f9'};">
+              <div style="flex:1;font-size:13px;color:#1e293b;font-weight:${isWinner ? '600' : '400'};">
+                ${String(opt.value)}${catBadge}${srcName}
+                ${isWinner ? '<span style="font-size:10px;color:#22c55e;font-weight:700;margin-left:8px;">&#10003; SELECTED (highest priority)</span>' : ''}
+              </div>
+              ${!isWinner ? `<button onclick="window.resolveConflict('${field}', ${i})" style="padding:2px 10px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#2563eb;color:#fff;">Use This</button>` : ''}
+            </div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
 
     // Build grouped field table
     for (const [sectionName, fields] of Object.entries(FIELD_SECTIONS)) {
@@ -1108,6 +1154,9 @@ export async function renderDealMatrix(deal) {
       for (const key of sectionFields) {
         const label = FIELD_LABELS[key] || key;
         let val = String(parsedData[key]);
+        const isCore = CORE_STRUCTURE_FIELDS.includes(key);
+        const hasConflict = !!_lastConflicts[key];
+
         // Format currency values
         if (['current_value', 'purchase_price', 'loan_amount', 'refurb_cost', 'commitment_fee'].includes(key) && !isNaN(parseFloat(val.replace(/[£,]/g, '')))) {
           const num = parseFloat(val.replace(/[£,]/g, ''));
@@ -1117,10 +1166,24 @@ export async function renderDealMatrix(deal) {
           val = val + '%';
         }
 
+        // Core field badge
+        const coreBadge = isCore ? '<span style="padding:1px 5px;border-radius:3px;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;margin-left:6px;letter-spacing:.3px;">CORE</span>' : '';
+        const conflictBadge = hasConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
+        const rowBorder = hasConflict ? 'border:1px solid #fecaca;background:#fef2f2;' : 'border:1px solid #f1f5f9;background:#fff;';
+
+        // Check if Matrix already has a value for this field
+        const matrixEl = document.getElementById(`mf-${key}`);
+        const matrixVal = matrixEl ? matrixEl.value.trim() : '';
+        const matrixDiffers = matrixVal && matrixVal !== String(parsedData[key]) && isCore;
+        const matrixWarning = matrixDiffers ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
+
         html += `
-          <div style="display:flex;align-items:center;padding:7px 12px;border-radius:6px;margin-bottom:3px;background:#fff;border:1px solid #f1f5f9;" id="parsed-row-${key}">
-            <div style="width:180px;font-size:12px;color:#64748b;font-weight:600;flex-shrink:0;">${label}</div>
-            <div style="flex:1;font-size:13px;color:#1e293b;font-weight:500;">${val}</div>
+          <div style="display:flex;align-items:flex-start;padding:7px 12px;border-radius:6px;margin-bottom:3px;${rowBorder}" id="parsed-row-${key}">
+            <div style="width:180px;font-size:12px;color:#64748b;font-weight:600;flex-shrink:0;">${label}${coreBadge}${conflictBadge}</div>
+            <div style="flex:1;font-size:13px;color:#1e293b;font-weight:500;">
+              ${val}
+              ${matrixWarning}
+            </div>
             <div style="display:flex;gap:6px;flex-shrink:0;">
               <button onclick="window.acceptParsedField('${key}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;" title="Accept and fill Matrix">&#10003;</button>
               <button onclick="document.getElementById('parsed-row-${key}').style.display='none'" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#fee2e2;color:#dc2626;" title="Reject this value">&#10005;</button>
@@ -1135,7 +1198,6 @@ export async function renderDealMatrix(deal) {
     if (parserActions) parserActions.style.display = 'flex';
 
     // Remove the "Select a document" placeholder
-    const placeholder = parserContent ? parserContent.querySelector('.bg-blue') : null;
     const infoBox = parserContent ? parserContent.querySelector('div[style*="background:#eff6ff"]') : null;
     if (infoBox && infoBox.textContent.includes('Select a document')) infoBox.style.display = 'none';
 
@@ -1161,6 +1223,18 @@ export async function renderDealMatrix(deal) {
       confEl.style.color = confidence >= 80 ? '#86efac' : confidence >= 50 ? '#fde68a' : '#fca5a5';
     }
   }
+
+  // Resolve a conflict — user picks one of the conflicting values
+  window.resolveConflict = function(field, optionIndex) {
+    if (!_lastConflicts[field] || !_lastConflicts[field][optionIndex]) return;
+    const chosen = _lastConflicts[field][optionIndex];
+    _lastParsedData[field] = chosen.value;
+    // Remove the conflict since it's resolved
+    delete _lastConflicts[field];
+    // Re-render to update UI
+    showParsedResults(_lastParsedData, _lastConflicts);
+    showToast(`${FIELD_LABELS[field] || field}: selected "${String(chosen.value).substring(0,30)}" from ${chosen.filename || chosen.category}`, 'success');
+  };
 
   // ═══════════════════════════════════════════════════════════════════
   // ACCEPT PARSED FIELD(S) → push to Matrix inputs + save to DB
@@ -1210,12 +1284,18 @@ export async function renderDealMatrix(deal) {
     }
   };
 
-  // Accept ALL parsed fields at once
+  // Accept ALL parsed fields at once (skips unresolved conflicts)
   window.acceptAllParsed = function() {
     if (!_lastParsedData) return;
     let count = 0;
+    let skippedConflicts = 0;
     for (const key of ALL_FIELD_KEYS) {
       if (_lastParsedData[key] != null && _lastParsedData[key] !== '') {
+        // Skip fields that still have unresolved conflicts
+        if (_lastConflicts[key]) {
+          skippedConflicts++;
+          continue;
+        }
         if (pushFieldToMatrix(key, _lastParsedData[key])) count++;
         // Mark row
         const row = document.getElementById(`parsed-row-${key}`);
@@ -1232,7 +1312,8 @@ export async function renderDealMatrix(deal) {
       }
     }
     calculateCompleteness();
-    showToast(`${count} fields accepted and pushed to Matrix`, 'success');
+    const conflictMsg = skippedConflicts > 0 ? ` (${skippedConflicts} conflicting fields skipped — resolve them above)` : '';
+    showToast(`${count} fields accepted and pushed to Matrix${conflictMsg}`, skippedConflicts > 0 ? 'warning' : 'success');
 
     // Scroll to Matrix section
     const matrixSection = document.getElementById('section-matrix');
@@ -1242,8 +1323,8 @@ export async function renderDealMatrix(deal) {
   };
 
   // Legacy compatibility — autoPopulateMatrix now routes through Parser display
-  function autoPopulateMatrix(parsedData) {
-    showParsedResults(parsedData);
+  function autoPopulateMatrix(parsedData, conflicts, coreFields) {
+    showParsedResults(parsedData, conflicts, coreFields);
   }
 
   // ── Listen for per-document parse events from Doc Repo ──
@@ -1328,8 +1409,12 @@ export async function renderDealMatrix(deal) {
 
       const data = await resp.json();
       if (data.parsed_data) {
-        autoPopulateMatrix(data.parsed_data);
-        showToast(`Parsed ${data.total_documents} documents (${data.confirmed_documents} confirmed). Review extracted fields.`, 'success');
+        autoPopulateMatrix(data.parsed_data, data.conflicts, data.core_fields);
+        const conflictCount = Object.keys(data.conflicts || {}).length;
+        const msg = conflictCount > 0
+          ? `Parsed ${data.total_documents} documents. ${conflictCount} conflicting fields need your review.`
+          : `Parsed ${data.total_documents} documents (${data.confirmed_documents} confirmed). Review extracted fields.`;
+        showToast(msg, conflictCount > 0 ? 'warning' : 'success');
       } else {
         showToast(data.message || `${data.total_documents} documents processed. ${data.unconfirmed_documents > 0 ? data.unconfirmed_documents + ' still unconfirmed.' : ''}`, 'info');
       }

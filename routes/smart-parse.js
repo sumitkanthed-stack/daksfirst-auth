@@ -319,13 +319,15 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
     }
 
     // ── Strategy 2: Direct Claude API extraction (fallback) ──
+    let extractionConflicts = {};
     if (!parsedData) {
       console.log(`[parse-confirmed] Using direct Claude API extraction as fallback for ${docs.length} docs...`);
       console.log(`[parse-confirmed] Docs with file_content: ${docs.filter(d => d.file_content && d.file_content.length > 0).length}/${docs.length}`);
       try {
-        const { merged, perDoc } = await extractDealFieldsFromMultipleDocs(docs);
-        console.log(`[parse-confirmed] Extraction result: merged=${merged ? Object.keys(merged).length + ' fields' : 'null'}, perDoc=${perDoc.size} docs with data`);
+        const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docs);
+        console.log(`[parse-confirmed] Extraction result: merged=${merged ? Object.keys(merged).length + ' fields' : 'null'}, perDoc=${perDoc.size} docs with data, conflicts=${Object.keys(conflicts || {}).length}`);
         parsedData = merged;
+        extractionConflicts = conflicts || {};
 
         // Store per-document parsed data in DB
         for (const [docId, docParsed] of perDoc) {
@@ -362,14 +364,17 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
       { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length,
         extraction_method: N8N_PARSE_WEBHOOK_URL ? 'n8n' : 'claude_direct' }, req.user.userId);
 
+    const conflictCount = Object.keys(extractionConflicts || {}).length;
     res.json({
       success: true,
       total_documents: docs.length,
       confirmed_documents: confirmed.length,
       unconfirmed_documents: unconfirmed.length,
       parsed_data: parsedData || null,
+      conflicts: extractionConflicts || {},
+      core_fields: require('../services/ai-extract').CORE_STRUCTURE_FIELDS,
       message: parsedData
-        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted. Review below.`
+        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted.${conflictCount > 0 ? ` ⚠ ${conflictCount} conflicting fields need your review.` : ' Review below.'}`
         : `Documents marked as parsed but no text could be extracted (images/scans may need OCR).`
     });
   } catch (error) {

@@ -380,20 +380,103 @@ async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCate
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DEAL STRUCTURE vs SUPPORTING EVIDENCE
+// ═══════════════════════════════════════════════════════════════
+// Core structure fields define the deal identity — they get set once
+// from the primary deal document (broker pack, application form, legal doc)
+// and should NOT be overwritten by supporting evidence (bank statements, etc.)
+const CORE_STRUCTURE_FIELDS = [
+  'borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone',
+  'borrower_dob', 'borrower_nationality',
+  'company_name', 'company_number',
+  'security_address', 'security_postcode',
+  'asset_type', 'property_tenure',
+  'loan_purpose'
+];
+
+// Evidence fields can be refined/updated by any doc — they get better
+// with more data (valuations, statements, etc.)
+const EVIDENCE_FIELDS = [
+  'current_value', 'purchase_price', 'loan_amount', 'ltv_requested',
+  'term_months', 'rate_requested', 'interest_servicing',
+  'occupancy_status', 'current_use',
+  'use_of_funds', 'refurb_scope', 'refurb_cost',
+  'exit_strategy', 'deposit_source', 'existing_charges',
+  'additional_notes',
+  'broker_name', 'broker_company', 'broker_fca'
+];
+
+/**
+ * Category priority for field groups — higher number = higher priority.
+ * When two documents provide the same field, the one from the higher-priority
+ * category wins. This prevents bank statements from overwriting borrower
+ * identity that came from a legal or property document.
+ */
+const FIELD_CATEGORY_PRIORITY = {
+  // Borrower identity fields — prefer legal/property docs, then KYC
+  borrower_name:       { legal: 10, property: 9, kyc: 8, financial: 3, other: 2 },
+  borrower_email:      { legal: 10, property: 9, kyc: 8, financial: 5, other: 2 },
+  borrower_phone:      { legal: 10, property: 9, kyc: 8, financial: 5, other: 2 },
+  borrower_dob:        { kyc: 10, legal: 8, property: 5, financial: 3, other: 2 },
+  borrower_nationality:{ kyc: 10, legal: 8, property: 5, financial: 3, other: 2 },
+  borrower_type:       { legal: 10, property: 9, kyc: 8, financial: 3, other: 2 },
+  company_name:        { legal: 10, property: 9, kyc: 8, financial: 3, other: 2 },
+  company_number:      { legal: 10, property: 9, kyc: 8, financial: 5, other: 2 },
+  // Property fields — prefer property/valuation docs
+  security_address:    { property: 10, legal: 9, financial: 3, kyc: 2, other: 2 },
+  security_postcode:   { property: 10, legal: 9, financial: 3, kyc: 2, other: 2 },
+  asset_type:          { property: 10, legal: 8, financial: 3, kyc: 2, other: 2 },
+  property_tenure:     { property: 10, legal: 9, financial: 2, kyc: 2, other: 2 },
+  occupancy_status:    { property: 10, legal: 8, financial: 3, kyc: 2, other: 2 },
+  current_use:         { property: 10, legal: 8, financial: 3, kyc: 2, other: 2 },
+  current_value:       { property: 10, legal: 8, financial: 5, kyc: 2, other: 2 },
+  purchase_price:      { property: 10, legal: 9, financial: 5, kyc: 2, other: 2 },
+  // Loan fields — prefer legal/property, then financial
+  loan_amount:         { legal: 10, property: 9, financial: 7, kyc: 2, other: 5 },
+  ltv_requested:       { legal: 10, property: 9, financial: 7, kyc: 2, other: 5 },
+  term_months:         { legal: 10, property: 8, financial: 7, kyc: 2, other: 5 },
+  rate_requested:      { legal: 10, property: 8, financial: 7, kyc: 2, other: 5 },
+  interest_servicing:  { legal: 10, property: 8, financial: 7, kyc: 2, other: 5 },
+  loan_purpose:        { legal: 10, property: 9, financial: 6, kyc: 2, other: 5 },
+  use_of_funds:        { legal: 10, property: 8, financial: 7, kyc: 2, other: 5 },
+  refurb_scope:        { property: 10, legal: 8, financial: 5, kyc: 2, other: 5 },
+  refurb_cost:         { property: 10, legal: 8, financial: 5, kyc: 2, other: 5 },
+  exit_strategy:       { legal: 10, property: 9, financial: 6, kyc: 2, other: 5 },
+  deposit_source:      { financial: 10, legal: 8, kyc: 7, property: 5, other: 3 },
+  existing_charges:    { legal: 10, property: 9, financial: 7, kyc: 2, other: 3 },
+  additional_notes:    { legal: 5, property: 5, financial: 5, kyc: 5, other: 5 },
+  // Broker fields — any source is fine
+  broker_name:         { legal: 10, property: 8, financial: 5, kyc: 5, other: 5 },
+  broker_company:      { legal: 10, property: 8, financial: 5, kyc: 5, other: 5 },
+  broker_fca:          { legal: 10, property: 8, financial: 5, kyc: 5, other: 5 },
+};
+
+function getCategoryPriority(field, docCategory) {
+  const cat = (docCategory || 'other').toLowerCase();
+  const priorities = FIELD_CATEGORY_PRIORITY[field];
+  if (!priorities) return 5; // default medium priority
+  return priorities[cat] || priorities['other'] || 2;
+}
+
 /**
  * Extract deal fields from multiple documents and merge results.
- * Each document is parsed individually and results are merged.
+ * Uses category-aware priority: e.g. borrower name from a legal doc
+ * takes precedence over a name found in a bank statement.
  * Returns { merged, perDoc } where perDoc is a Map<docId, parsedData>
  */
 async function extractDealFieldsFromMultipleDocs(docs) {
   if (!ANTHROPIC_API_KEY) {
     console.log('[ai-extract] No ANTHROPIC_API_KEY set — cannot extract any documents');
-    return { merged: null, perDoc: new Map() };
+    return { merged: null, perDoc: new Map(), conflicts: {} };
   }
 
   console.log(`[ai-extract] Processing ${docs.length} documents for deal field extraction...`);
 
   const merged = {};
+  const mergedPriority = {}; // tracks the priority of the current value per field
+  const mergedSource = {};   // tracks which doc set each field: { docId, filename, category }
+  const conflicts = {};      // tracks conflicting values: { field: [{ value, docId, filename, category, priority }] }
   let totalConfidence = 0;
   let confCount = 0;
   const perDoc = new Map();
@@ -411,24 +494,68 @@ async function extractDealFieldsFromMultipleDocs(docs) {
     if (result) {
       perDoc.set(doc.id, result);
 
-      // Merge into combined result (non-null values overwrite)
+      const docCat = doc.doc_category || 'other';
+
       for (const [key, val] of Object.entries(result)) {
         if (key === 'confidence') {
           totalConfidence += (val || 0);
           confCount++;
           continue;
         }
-        if (val != null && val !== '') {
+        if (val == null || val === '') continue;
+
+        const newPriority = getCategoryPriority(key, docCat);
+        const existingPriority = mergedPriority[key] || 0;
+        const isCore = CORE_STRUCTURE_FIELDS.includes(key);
+
+        // If field already has a value AND it's a core structure field, track as conflict
+        if (merged[key] && isCore && String(merged[key]).toLowerCase() !== String(val).toLowerCase()) {
+          if (!conflicts[key]) {
+            conflicts[key] = [{
+              value: merged[key],
+              docId: mergedSource[key]?.docId,
+              filename: mergedSource[key]?.filename,
+              category: mergedSource[key]?.category,
+              priority: existingPriority
+            }];
+          }
+          conflicts[key].push({
+            value: val,
+            docId: doc.id,
+            filename: doc.filename,
+            category: docCat,
+            priority: newPriority
+          });
+        }
+
+        // Only overwrite if higher priority
+        if (newPriority >= existingPriority) {
+          if (merged[key] && isCore && newPriority > existingPriority) {
+            console.log(`[ai-extract] CORE field "${key}": replacing "${String(merged[key]).substring(0,40)}" (${mergedSource[key]?.category}:${existingPriority}) with "${String(val).substring(0,40)}" (${docCat}:${newPriority})`);
+          }
           merged[key] = val;
+          mergedPriority[key] = newPriority;
+          mergedSource[key] = { docId: doc.id, filename: doc.filename, category: docCat };
+        } else if (isCore) {
+          console.log(`[ai-extract] CORE field "${key}": keeping "${String(merged[key]).substring(0,40)}" over "${String(val).substring(0,40)}" from ${docCat} doc (lower priority)`);
         }
       }
     }
   }
 
-  if (Object.keys(merged).length === 0) return { merged: null, perDoc };
+  // Log conflicts summary
+  const conflictKeys = Object.keys(conflicts);
+  if (conflictKeys.length > 0) {
+    console.log(`[ai-extract] ⚠ ${conflictKeys.length} CORE FIELD CONFLICTS detected: ${conflictKeys.join(', ')}`);
+    for (const [field, options] of Object.entries(conflicts)) {
+      console.log(`  ${field}: ${options.map(o => `"${String(o.value).substring(0,30)}" (${o.category})`).join(' vs ')}`);
+    }
+  }
+
+  if (Object.keys(merged).length === 0) return { merged: null, perDoc, conflicts: {} };
 
   merged.confidence = confCount > 0 ? totalConfidence / confCount : 0.5;
-  return { merged, perDoc };
+  return { merged, perDoc, conflicts };
 }
 
-module.exports = { extractSectionData, SECTION_SCHEMAS, extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs };
+module.exports = { extractSectionData, SECTION_SCHEMAS, extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs, CORE_STRUCTURE_FIELDS, EVIDENCE_FIELDS };
