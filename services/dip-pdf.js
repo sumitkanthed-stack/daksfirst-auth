@@ -276,6 +276,7 @@ async function generateDipPdf(deal, dipData, options = {}) {
       dataRow('Loan To Value (LTV)', pct(dipData.ltv || deal.ltv_requested));
       dataRow('Term', (dipData.term_months || deal.term_months || '\u2014') + ' months');
       dataRow('Interest Rate', pct(dipData.rate_monthly || deal.rate_requested) + ' per month');
+      dataRow('Default Rate', '3.00% per month (applicable on overdue amounts)');
       dataRow('Interest Servicing', dipData.interest_servicing || deal.interest_servicing || 'Retained');
       if (dipData.retained_months) dataRow('Retained Interest Period', dipData.retained_months + ' months');
       dataRow('Exit Strategy', dipData.exit_strategy || deal.exit_strategy);
@@ -307,8 +308,20 @@ async function generateDipPdf(deal, dipData, options = {}) {
       dataRow('Commitment Fee', money(dipData.fee_commitment || 0) + ' \u2014 Before Underwriting');
       dataRow('Arrangement Fee', feeLine(dipData.arrangement_fee, loanAmt) + ' \u2014 On Completion');
       dataRow('  (of which Broker)', feeLine(dipData.broker_fee, loanAmt) + ' \u2014 From Arrangement Fee');
-      dataRow('Valuation Fee', money(dipData.valuation_cost || 0) + ' \u2014 On Instruction');
-      dataRow('Legal Fee', money(dipData.legal_cost || 0) + ' \u2014 On Completion');
+      dataRow('Exit Fee', '1.00% of gross loan amount \u2014 Payable on redemption');
+      dataRow('Extension Fee', '1.00% of gross loan amount \u2014 Per extension period');
+      y += 6;
+
+      // ═══ ESTIMATED THIRD-PARTY COSTS ═══
+      checkPage(90);
+      sectionBar('Estimated Third-Party Costs');
+      // Italic disclaimer
+      doc.font('Helvetica-Oblique').fontSize(7).fillColor(MUTED);
+      doc.text('These are not Daksfirst fees. They are third-party costs borne directly by the borrower and are disclosed here for budgeting purposes only.', M, y, { width: W });
+      y += 18;
+      rowIdx = 0;
+      dataRow('Valuation Fee', money(dipData.valuation_cost || 0) + ' \u2014 Paid directly by client to valuer');
+      dataRow('Legal Fee', money(dipData.legal_cost || 0) + ' \u2014 Via undertaking from client\u2019s solicitors');
       y += 6;
 
       // ═══ CONDITIONS PRECEDENT ═══

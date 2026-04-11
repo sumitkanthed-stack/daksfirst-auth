@@ -948,13 +948,13 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:8px;font-weight:600;">Valuation Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-valuation-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
               <td style="padding:8px;font-size:11px;color:#60A5FA;">Upfront</td>
-              <td style="padding:8px;font-size:11px;">Direct payment by client</td>
+              <td style="padding:8px;font-size:11px;">Paid directly by client to valuer</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
               <td style="padding:8px;font-weight:600;">Legal Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-legal-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
               <td style="padding:8px;font-size:11px;color:#60A5FA;">On completion</td>
-              <td style="padding:8px;font-size:11px;">Deducted from advance</td>
+              <td style="padding:8px;font-size:11px;">Via undertaking from client&rsquo;s solicitors</td>
             </tr>
           </tbody>
         </table>
