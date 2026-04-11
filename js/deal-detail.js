@@ -1027,7 +1027,7 @@ export function renderInternalWorkflowControls(deal) {
 
       <div style="display:flex;gap:12px;align-items:center;">
         ${stage !== 'dip_issued' ? `<button id="btn-issue-dip" onclick="window.issueDip && window.issueDip()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>` : ''}
-        <button onclick="window.printDipPdf && window.printDipPdf()" style="padding:10px 24px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Download PDF</button>
+        ${stage === 'dip_issued' ? `<button onclick="window.downloadDipPdf && window.downloadDipPdf('${deal.submission_id}')" style="padding:10px 24px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Download PDF</button>` : ''}
         ${stage !== 'dip_issued' ? `<button onclick="window.declineDeal && window.declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
         <span id="dip-checklist-count" style="font-size:11px;color:#9ca3af;margin-left:8px;"></span>` : ''}
       </div>
@@ -1283,7 +1283,7 @@ export function renderInternalWorkflowControls(deal) {
       (deal.dip_signed_at ? '<span style="font-size:10px;color:#999;margin-left:10px;">Accepted: ' + new Date(deal.dip_signed_at).toLocaleDateString('en-GB') + '</span>' : '') +
       '</div><div style="display:flex;gap:8px;">' +
       '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">View DIP</button>' +
-      '<button onclick="window.printDipPdf && window.printDipPdf()" style="padding:4px 12px;background:#C9A227;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Download PDF</button>' +
+      '<button onclick="window.downloadDipPdf && window.downloadDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#C9A227;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Download PDF</button>' +
       '</div></div>';
   }
 

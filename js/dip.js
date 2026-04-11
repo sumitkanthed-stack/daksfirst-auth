@@ -576,6 +576,29 @@ export async function viewDipPdf(submissionId) {
   }
 }
 
+export async function downloadDipPdf(submissionId) {
+  try {
+    showToast('Generating PDF...');
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-pdf`, { method: 'GET' });
+    if (!resp.ok) {
+      showToast('Failed to generate DIP PDF', true);
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DIP-${submissionId.substring(0, 8).toUpperCase()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('DIP PDF downloaded');
+  } catch (err) {
+    showToast('Network error downloading DIP PDF', true);
+  }
+}
+
 export async function acceptDip(submissionId) {
   if (!confirm('By accepting this DIP, you confirm your intention to proceed on the terms outlined. Continue?')) return;
 
@@ -677,10 +700,18 @@ export async function updateFees() {
  * Print DIP to PDF — opens browser print dialog on a clean copy of the DIP HTML.
  * The output is pixel-identical to the portal rendering because it IS the portal HTML.
  */
-export function printDipPdf() {
+export function printDipPdf(preOpenedWin) {
   const dipEl = document.querySelector('.dip-light-form');
   if (!dipEl) {
     showToast('No DIP form found on this page', true);
+    if (preOpenedWin) preOpenedWin.close();
+    return;
+  }
+
+  // Use pre-opened window (from app.js, opened synchronously in click handler to avoid popup blocker)
+  const printWin = preOpenedWin || window.open('', '_blank', 'width=900,height=1200');
+  if (!printWin) {
+    showToast('Popup blocked — please allow popups for this site', true);
     return;
   }
 
@@ -708,8 +739,6 @@ export function printDipPdf() {
   // Strip the pre-issue checklist and action buttons row
   const checklist = clone.querySelector('#dip-checklist');
   if (checklist) checklist.closest('div[style*="border"]')?.remove();
-  // Remove the Issue/Decline buttons row
-  clone.querySelectorAll('button').forEach(b => b.remove());
 
   // Strip the live summary (it's a calculation helper, not for print)
   const liveSummary = clone.querySelector('#dip-summary');
@@ -725,12 +754,14 @@ export function printDipPdf() {
     if (legendRow) legendRow.remove();
   });
 
-  // Open a print window
-  const printWin = window.open('', '_blank', 'width=900,height=1200');
+  // Base URL so relative assets (logo, fonts) resolve correctly in the print window
+  const baseUrl = window.location.origin;
+
   printWin.document.write(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<base href="${baseUrl}/">
 <title>DIP - Daksfirst</title>
 <style>
   @page { size: A4; margin: 12mm 10mm; }
@@ -766,9 +797,9 @@ export function printDipPdf() {
 </html>`);
   printWin.document.close();
 
-  // Wait for images/fonts to load, then print
+  // Wait for images to load, then print
   setTimeout(() => {
     printWin.focus();
     printWin.print();
-  }, 400);
+  }, 500);
 }
