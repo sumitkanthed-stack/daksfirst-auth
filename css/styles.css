@@ -384,7 +384,7 @@
       background: var(--surface); border-radius: 12px; margin-top: 14px;
       border: 1px solid var(--border); overflow: hidden;
     }
-    .deal-section.hidden-section { display: none; }
+    .deal-section.hidden-section { display: none !important; }
     .deal-section-header {
       padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
       cursor: pointer; user-select: none; transition: background 0.15s;
