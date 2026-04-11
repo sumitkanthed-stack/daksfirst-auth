@@ -2035,7 +2035,7 @@ export function renderExternalWorkflowControls(deal) {
     // Info gathering = RM collecting additional data. DIP not yet issued.
     html += `<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;margin-bottom:16px;">
       <p style="font-size:14px;margin-bottom:4px;"><strong>Additional Information Required</strong></p>
-      <p style="font-size:13px;color:#94A3B8;">Our team is reviewing your submission and may need additional documents or information. Your RM will be in touch with specific requests. Please check the Deal Matrix for any outstanding items.</p>
+      <p style="font-size:13px;color:#94A3B8;">Our team is reviewing your submission and may request additional documents or information. Your RM will be in touch if anything further is needed.</p>
     </div>`;
   } else if (stage === 'ai_termsheet') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
