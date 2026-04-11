@@ -10,12 +10,12 @@ export function approveDipProperty(idx) {
   const statusEl = document.getElementById(`dip-prop-status-${idx}`);
   const approveBtn = document.getElementById(`dip-prop-approve-${idx}`);
   if (statusEl) {
-    statusEl.innerHTML = '<span style="padding:2px 8px;background:#dcfce7;color:#166534;border-radius:10px;font-size:10px;font-weight:600;">Approved</span>';
+    statusEl.innerHTML = '<span style="padding:2px 8px;background:rgba(52,211,153,0.1);color:#34D399;border-radius:10px;font-size:10px;font-weight:600;">Approved</span>';
   }
   if (approveBtn) {
     approveBtn.disabled = true;
     approveBtn.textContent = 'Approved';
-    approveBtn.style.background = '#86efac';
+    approveBtn.style.background = '#34D399';
     approveBtn.style.cursor = 'default';
   }
   // Re-validate checklist after property approval
@@ -49,18 +49,18 @@ export function removeDipProperty(idx) {
   if (!confirm('Remove "' + addr.substring(0, 50) + '..." from the security package?')) return;
 
   // Visual: strike-through, faded
-  row.style.background = '#fee2e2';
+  row.style.background = 'rgba(248,113,113,0.1)';
   row.style.opacity = '0.4';
   row.querySelectorAll('td').forEach(td => td.style.textDecoration = 'line-through');
 
   // Status → Removed
   const statusEl = document.getElementById(`dip-prop-status-${idx}`);
-  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fee2e2;color:#991b1b;border-radius:10px;font-size:10px;font-weight:600;">Removed</span>';
+  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:rgba(248,113,113,0.1);color:#F87171;border-radius:10px;font-size:10px;font-weight:600;">Removed</span>';
 
   // Buttons → replace with "Add Back"
   const actionCell = row.querySelector('td:last-child');
   if (actionCell) {
-    actionCell.innerHTML = `<button onclick="window.addBackDipProperty && window.addBackDipProperty(${idx})" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:600;">Add Back</button>`;
+    actionCell.innerHTML = `<button onclick="window.addBackDipProperty && window.addBackDipProperty(${idx})" style="background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid #D4A853;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:600;">Add Back</button>`;
   }
 
   // Zero out valuation input for this property
@@ -90,12 +90,12 @@ export function addBackDipProperty(idx) {
 
   // Status → Pending
   const statusEl = document.getElementById(`dip-prop-status-${idx}`);
-  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span>';
+  if (statusEl) statusEl.innerHTML = '<span style="padding:2px 8px;background:rgba(251,191,36,0.1);color:#FBBF24;border-radius:10px;font-size:10px;">Pending</span>';
 
   // Restore buttons
   const actionCell = row.querySelector('td:last-child');
   if (actionCell) {
-    actionCell.innerHTML = `<button id="dip-prop-approve-${idx}" onclick="window.approveDipProperty && window.approveDipProperty(${idx})" style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-right:4px;">Approve</button><button id="dip-prop-remove-${idx}" onclick="window.removeDipProperty && window.removeDipProperty(${idx})" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;">Remove</button>`;
+    actionCell.innerHTML = `<button id="dip-prop-approve-${idx}" onclick="window.approveDipProperty && window.approveDipProperty(${idx})" style="background:rgba(52,211,153,0.1);color:#34D399;border:1px solid #34D399;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-right:4px;">Approve</button><button id="dip-prop-remove-${idx}" onclick="window.removeDipProperty && window.removeDipProperty(${idx})" style="background:rgba(248,113,113,0.1);color:#F87171;border:1px solid #F87171;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;">Remove</button>`;
   }
 
   // Restore valuation
@@ -129,7 +129,7 @@ function updatePropertyScheduleUI() {
   const headerEl = document.getElementById('dip-schedule-header');
   if (headerEl) {
     if (removedCount > 0) {
-      headerEl.innerHTML = `Security Schedule &mdash; <span style="color:#15803d;font-weight:700;">${activeCount}</span> of ${totalProps} Accepted`;
+      headerEl.innerHTML = `Security Schedule &mdash; <span style="color:#34D399;font-weight:700;">${activeCount}</span> of ${totalProps} Accepted`;
     } else {
       headerEl.innerHTML = `Security Schedule &mdash; ${totalProps} ${totalProps === 1 ? 'Property' : 'Properties'}`;
     }
@@ -140,7 +140,7 @@ function updatePropertyScheduleUI() {
   if (removedDiv) {
     if (removedCount > 0) {
       removedDiv.style.display = 'block';
-      removedDiv.innerHTML = '<strong style="color:#991b1b;">Removed from security:</strong> ' + removed.map(p => sanitizeHtml(p.address.substring(0, 40)) + '...').join('; ');
+      removedDiv.innerHTML = '<strong style="color:#F87171;">Removed from security:</strong> ' + removed.map(p => sanitizeHtml(p.address.substring(0, 40)) + '...').join('; ');
     } else {
       removedDiv.style.display = 'none';
       removedDiv.innerHTML = '';
@@ -219,25 +219,25 @@ export function calcDipLtv() {
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div>LTV: <strong style="color:${ltvOk ? '#15803d' : '#e53e3e'};">${formatPct(ltv)}%</strong> ${!ltvOk ? '<span style="color:#e53e3e;font-weight:600;">(exceeds 75% max!)</span>' : ''}</div>
-        <div>Rate: <strong style="color:${rateOk ? '#15803d' : '#e53e3e'};">${formatPct(rate)}%/m</strong> ${!rateOk ? '<span style="color:#e53e3e;font-weight:600;">(below 0.85% min!)</span>' : ''}</div>
+        <div>LTV: <strong style="color:${ltvOk ? '#34D399' : '#F87171'};">${formatPct(ltv)}%</strong> ${!ltvOk ? '<span style="color:#F87171;font-weight:600;">(exceeds 75% max!)</span>' : ''}</div>
+        <div>Rate: <strong style="color:${rateOk ? '#34D399' : '#F87171'};">${formatPct(rate)}%/m</strong> ${!rateOk ? '<span style="color:#F87171;font-weight:600;">(below 0.85% min!)</span>' : ''}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #fbbf24;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #D4A853;">
         <div>Gross Loan: <strong>£${formatNumber(loan)}</strong></div>
         <div>Total Interest (${term}m): <strong>£${formatNumber(totalInterest)}</strong></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
-        <div>Retained Interest (${retainedMonths}m): <strong style="color:#b45309;">£${formatNumber(retainedInterest)}</strong></div>
+        <div>Retained Interest (${retainedMonths}m): <strong style="color:#FBBF24;">£${formatNumber(retainedInterest)}</strong></div>
         <div>Arrangement Fee (${formatPct(arrFee)}%): <strong>£${formatNumber(arrangementFee)}</strong></div>
       </div>
-      ${brokerFeePct > 0 ? `<div style="margin-top:4px;padding:4px 8px;background:#fefce8;border-radius:4px;font-size:12px;">↳ of which Broker (${formatPct(brokerFeePct)}%): <strong>£${formatNumber(brokerFee)}</strong> <span style="color:#6b7280;">(from arrangement fee, not additional)</span> · Lender nets: <strong>£${formatNumber(lenderNetArrFee)}</strong></div>` : ''}
+      ${brokerFeePct > 0 ? `<div style="margin-top:4px;padding:4px 8px;background:rgba(251,191,36,0.1);border-radius:4px;font-size:12px;">↳ of which Broker (${formatPct(brokerFeePct)}%): <strong>£${formatNumber(brokerFee)}</strong> <span style="color:#64748B;">(from arrangement fee, not additional)</span> · Lender nets: <strong>£${formatNumber(lenderNetArrFee)}</strong></div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
         <div>Valuation Cost (client): <strong>£${formatNumber(valuationCost)}</strong></div>
         <div>Legal Cost (client): <strong>£${formatNumber(legalCost)}</strong></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:2px solid #92400e;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:2px solid #D4A853;">
         <div>Lender Day Zero: <strong style="font-size:14px;">£${formatNumber(lenderDayZero)}</strong></div>
-        <div>Client Day Zero: <strong style="font-size:14px;color:${clientDayZero > 0 ? '#15803d' : '#e53e3e'};">£${formatNumber(clientDayZero)}</strong></div>
+        <div>Client Day Zero: <strong style="font-size:14px;color:${clientDayZero > 0 ? '#34D399' : '#F87171'};">£${formatNumber(clientDayZero)}</strong></div>
       </div>
     `;
   }

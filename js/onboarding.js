@@ -86,8 +86,8 @@ export async function aiAutoFill(section) {
         if (el && value) {
           // Highlight the field to show it was AI-filled
           el.value = value;
-          el.style.borderColor = '#10b981';
-          el.style.backgroundColor = '#f0fdf4';
+          el.style.borderColor = '#34D399';
+          el.style.backgroundColor = 'rgba(52,211,153,0.1)';
           setTimeout(() => {
             el.style.borderColor = '';
             el.style.backgroundColor = '';
@@ -284,20 +284,20 @@ export function injectOnboardingSectionControls(deal) {
     // Build the control bar
     const controlBar = document.createElement('div');
     controlBar.className = 'onboarding-section-controls';
-    controlBar.style.cssText = 'background:#f8fafc;border:2px solid ' + (isApproved ? '#22c55e' : '#e2e8f0') + ';border-radius:8px;padding:12px 16px;margin-bottom:16px;';
+    controlBar.style.cssText = 'background:#111827;border:2px solid ' + (isApproved ? '#34D399' : 'rgba(255,255,255,0.06)') + ';border-radius:8px;padding:12px 16px;margin-bottom:16px;';
 
     let controlHtml = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">`;
     controlHtml += `<div style="display:flex;align-items:center;gap:8px;">`;
 
     if (isApproved) {
       const approvedDate = new Date(sectionApproval.approved_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
+      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(52,211,153,0.1);color:#34D399;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
         <span style="font-size:14px;">&#10003;</span> RM Approved — ${approvedDate}</span>`;
       if (sectionApproval.notes) {
-        controlHtml += `<span style="font-size:11px;color:#666;">Note: ${sanitizeHtml(sectionApproval.notes)}</span>`;
+        controlHtml += `<span style="font-size:11px;color:#94A3B8;">Note: ${sanitizeHtml(sectionApproval.notes)}</span>`;
       }
     } else {
-      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
+      controlHtml += `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(251,191,36,0.1);color:#FBBF24;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;">
         <span style="font-size:14px;">&#9711;</span> Pending RM Review</span>`;
     }
     controlHtml += `</div>`;
@@ -305,25 +305,25 @@ export function injectOnboardingSectionControls(deal) {
     // RM can approve/unapprove sections
     if (isRM && !isApproved) {
       controlHtml += `<button onclick="window.approveOnboardingSection('${key}')"
-        style="padding:6px 14px;background:#22c55e;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
+        style="padding:6px 14px;background:#34D399;color:#111827;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
         Approve ${cfg.label}</button>`;
     } else if (isRM && isApproved) {
       controlHtml += `<button onclick="window.approveOnboardingSection('${key}', false)"
-        style="padding:6px 14px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
+        style="padding:6px 14px;background:#F87171;color:#111827;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">
         Revoke Approval</button>`;
     }
     controlHtml += `</div>`;
 
     // Document upload zone
-    controlHtml += `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
+    controlHtml += `<div style="margin-top:10px;padding-top:10px;border-top:1px rgba(255,255,255,0.06);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-size:12px;font-weight:600;color:#374151;">Uploaded Documents — ${cfg.label}</span>
-        <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary);color:white;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9;">Uploaded Documents — ${cfg.label}</span>
+        <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#D4A853;color:#111827;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
           <input type="file" multiple style="display:none;" onchange="window.uploadSectionDocs('${key}', this.files)">
           + Upload Files
         </label>
       </div>
-      <div id="section-docs-${key}" style="font-size:12px;color:#6b7280;">Loading...</div>
+      <div id="section-docs-${key}" style="font-size:12px;color:#64748B;">Loading...</div>
     </div>`;
 
     controlBar.innerHTML = controlHtml;
@@ -357,7 +357,7 @@ async function loadSectionDocuments(submissionId) {
 
       const docs = docsByCategory[key] || [];
       if (docs.length === 0) {
-        container.innerHTML = '<span style="color:#9ca3af;">No documents uploaded yet</span>';
+        container.innerHTML = '<span style="color:#64748B;">No documents uploaded yet</span>';
         return;
       }
 
@@ -365,11 +365,11 @@ async function loadSectionDocuments(submissionId) {
         const size = doc.file_size ? `(${(doc.file_size / 1024).toFixed(0)} KB)` : '';
         const date = new Date(doc.uploaded_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
         const downloadLink = doc.onedrive_download_url
-          ? `<a href="${sanitizeHtml(doc.onedrive_download_url)}" target="_blank" style="color:var(--primary);text-decoration:none;">&#8595;</a>`
+          ? `<a href="${sanitizeHtml(doc.onedrive_download_url)}" target="_blank" style="color:#D4A853;text-decoration:none;">&#8595;</a>`
           : '';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f1f5f9;">
-          <span style="color:#374151;">${sanitizeHtml(doc.filename)} <span style="color:#9ca3af;">${size}</span></span>
-          <span style="color:#9ca3af;font-size:11px;">${date} ${downloadLink}</span>
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px rgba(255,255,255,0.06);">
+          <span style="color:#F1F5F9;">${sanitizeHtml(doc.filename)} <span style="color:#64748B;">${size}</span></span>
+          <span style="color:#64748B;font-size:11px;">${date} ${downloadLink}</span>
         </div>`;
       }).join('');
     });

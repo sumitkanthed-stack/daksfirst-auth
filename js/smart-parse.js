@@ -8,8 +8,8 @@ import { setSmartParsedData, setSmartParseSessionId, getSmartParsedData, getSmar
  */
 export function handleSmartDrop(event) {
   event.preventDefault();
-  event.currentTarget.style.borderColor = '#c9a84c';
-  event.currentTarget.style.background = '#fffdf5';
+  event.currentTarget.style.borderColor = '#D4A853';
+  event.currentTarget.style.background = 'rgba(212,168,83,0.15)';
   const files = event.dataTransfer.files;
   if (files.length > 0) processSmartFiles(files);
 }
@@ -60,16 +60,16 @@ export async function processSmartFiles(fileList) {
     const icon = f.type.includes('pdf') ? '📄' : f.type.includes('word') || f.name.endsWith('.docx') ? '📝' : f.type.includes('sheet') || f.name.endsWith('.xlsx') || f.name.endsWith('.csv') ? '📊' : f.type.includes('image') ? '🖼️' : '📎';
     const sizeStr = (f.size / 1024 / 1024).toFixed(2);
     const tooLarge = f.size > maxSize;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f0f0;">
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px rgba(255,255,255,0.06);">
       <span style="font-size:20px;">${icon}</span>
-      <div style="flex:1;"><div style="font-weight:500;font-size:0.9rem;">${f.name}</div><div style="font-size:0.8rem;color:#999;">${sizeStr} MB</div></div>
-      ${tooLarge ? '<span style="color:#e53e3e;font-size:0.8rem;">Too large (max 25MB)</span>' : '<span style="color:#48bb78;font-size:0.8rem;">Ready</span>'}
+      <div style="flex:1;"><div style="font-weight:500;font-size:0.9rem;color:#F1F5F9;">${f.name}</div><div style="font-size:0.8rem;color:#64748B;">${sizeStr} MB</div></div>
+      ${tooLarge ? '<span style="color:#F87171;font-size:0.8rem;">Too large (max 25MB)</span>' : '<span style="color:#34D399;font-size:0.8rem;">Ready</span>'}
     </div>`;
   }).join('');
 
   const validFiles = files.filter(f => f.size <= maxSize);
   if (validFiles.length === 0) {
-    statusDiv.innerHTML = '<span style="color:#e53e3e;">All files exceed the 25MB limit.</span>';
+    statusDiv.innerHTML = '<span style="color:#F87171;">All files exceed the 25MB limit.</span>';
     return;
   }
 
@@ -86,7 +86,7 @@ export async function uploadAndParse(files, whatsappText) {
   const statusDiv = document.getElementById('smart-upload-status');
   progressDiv.style.display = 'block';
 
-  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(26,54,93,0.2);border-top-color:var(--primary);width:20px;height:20px;"></span> Uploading & parsing with AI... This may take up to 2 minutes.</div>';
+  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:20px;height:20px;"></span> Uploading & parsing with AI... This may take up to 2 minutes.</div>';
 
   try {
     const formData = new FormData();
@@ -107,7 +107,7 @@ export async function uploadAndParse(files, whatsappText) {
     const data = await resp.json();
 
     if (!resp.ok) {
-      statusDiv.innerHTML = `<span style="color:#e53e3e;">${data.error || 'Upload failed'}</span>`;
+      statusDiv.innerHTML = `<span style="color:#F87171;">${data.error || 'Upload failed'}</span>`;
       return;
     }
 
@@ -117,11 +117,11 @@ export async function uploadAndParse(files, whatsappText) {
       // AI returned parsed data — show review form
       setSmartParsedData(data.parsed_data);
       populateSmartParseForm(data.parsed_data);
-      statusDiv.innerHTML = '<span style="color:#48bb78;font-weight:600;">AI parsing complete! Review the extracted data below.</span>';
+      statusDiv.innerHTML = '<span style="color:#34D399;font-weight:600;">AI parsing complete! Review the extracted data below.</span>';
     } else {
       // No AI parsing configured — show empty review form for manual entry
       setSmartParsedData({});
-      statusDiv.innerHTML = '<span style="color:#c9a84c;">Files uploaded. AI parsing not configured — please fill in details manually.</span>';
+      statusDiv.innerHTML = '<span style="color:#D4A853;">Files uploaded. AI parsing not configured — please fill in details manually.</span>';
     }
 
     // Show the review form
@@ -135,7 +135,7 @@ export async function uploadAndParse(files, whatsappText) {
 
   } catch (err) {
     console.error('Smart parse error:', err);
-    statusDiv.innerHTML = '<span style="color:#e53e3e;">Network error. Please try again.</span>';
+    statusDiv.innerHTML = '<span style="color:#F87171;">Network error. Please try again.</span>';
   }
 }
 
@@ -189,10 +189,10 @@ export function populateSmartParseForm(pd) {
   if (loanIsIndicative) {
     const loanEl = document.getElementById('sp-loan-amount');
     if (loanEl) {
-      loanEl.style.borderColor = '#c9a84c';
-      loanEl.style.background = '#fffdf5';
+      loanEl.style.borderColor = '#D4A853';
+      loanEl.style.background = 'rgba(212,168,83,0.15)';
       const hint = document.createElement('div');
-      hint.style.cssText = 'font-size:11px;color:#92400e;margin-top:2px;';
+      hint.style.cssText = 'font-size:11px;color:#FBBF24;margin-top:2px;';
       hint.textContent = 'Indicative max — 75% LTV or 90% LTC (whichever lower). RM to confirm in DIP.';
       loanEl.parentNode.appendChild(hint);
     }
@@ -200,10 +200,10 @@ export function populateSmartParseForm(pd) {
   if (ltvIsIndicative) {
     const ltvEl = document.getElementById('sp-ltv');
     if (ltvEl) {
-      ltvEl.style.borderColor = '#c9a84c';
-      ltvEl.style.background = '#fffdf5';
+      ltvEl.style.borderColor = '#D4A853';
+      ltvEl.style.background = 'rgba(212,168,83,0.15)';
       const hint = document.createElement('div');
-      hint.style.cssText = 'font-size:11px;color:#92400e;margin-top:2px;';
+      hint.style.cssText = 'font-size:11px;color:#FBBF24;margin-top:2px;';
       hint.textContent = 'Indicative — calculated from loan/value. Max 75%.';
       ltvEl.parentNode.appendChild(hint);
     }
@@ -213,9 +213,9 @@ export function populateSmartParseForm(pd) {
   if (pd.confidence) {
     const confDiv = document.getElementById('sp-confidence');
     const pct = Math.round(pd.confidence * 100);
-    const color = pct >= 80 ? '#48bb78' : pct >= 50 ? '#c9a84c' : '#e53e3e';
+    const color = pct >= 80 ? '#34D399' : pct >= 50 ? '#D4A853' : '#F87171';
     confDiv.style.display = 'block';
-    confDiv.style.background = pct >= 80 ? '#f0fff4' : pct >= 50 ? '#fffdf5' : '#fef2f2';
+    confDiv.style.background = pct >= 80 ? 'rgba(52,211,153,0.1)' : pct >= 50 ? 'rgba(212,168,83,0.15)' : 'rgba(248,113,113,0.1)';
     confDiv.style.borderLeft = `4px solid ${color}`;
     confDiv.innerHTML = `AI Confidence: <strong style="color:${color};">${pct}%</strong> — ${pct >= 80 ? 'High confidence extraction.' : pct >= 50 ? 'Some fields may need manual correction.' : 'Low confidence — please verify all fields carefully.'}`;
   }

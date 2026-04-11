@@ -451,7 +451,7 @@ export async function loadLawFirms() {
     const data = await resp.json();
     if (data.law_firms && data.law_firms.length > 0) {
       dropdown.innerHTML = data.law_firms.map(f => `
-        <div onclick="window.selectLawFirm('${sanitizeHtml(f.firm_name)}', '${sanitizeHtml(f.email)}', '${sanitizeHtml(f.contact_name || '')}')" style="padding:8px;cursor:pointer;border-bottom:1px solid #e2e8f0;font-size:13px;">
+        <div onclick="window.selectLawFirm('${sanitizeHtml(f.firm_name)}', '${sanitizeHtml(f.email)}', '${sanitizeHtml(f.contact_name || '')}')" style="padding:8px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">
           <div style="font-weight:500;">${sanitizeHtml(f.firm_name)}</div>
           <div style="font-size:11px;color:#666;">${sanitizeHtml(f.email)}</div>
         </div>

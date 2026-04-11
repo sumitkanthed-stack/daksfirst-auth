@@ -14,10 +14,10 @@ import { getCurrentRole } from './state.js';
 // ═══════════════════════════════════════════════════════════════════
 
 const EDITABLE_ROLES = ['broker', 'borrower', 'rm', 'admin'];
-const inputStyle = 'width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;color:#1e293b;background:#fff;transition:border-color .15s;outline:none;font-family:inherit;';
+const inputStyle = 'width:100%;padding:10px 14px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;font-size:14px;color:#F1F5F9;background:#0f1729;transition:border-color .15s;outline:none;font-family:inherit;';
 const inputFocusClass = 'matrix-editable';
-const readonlyStyle = 'font-size:14px;color:#1e293b;padding:8px 0;';
-const labelStyle = 'font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px';
+const readonlyStyle = 'font-size:14px;color:#F1F5F9;padding:8px 0;';
+const labelStyle = 'font-size:12px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px';
 
 // Format number with commas: 1500000 → "1,500,000"
 function formatWithCommas(val) {
@@ -91,7 +91,7 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
         oninput="this.value=this.value.replace(/[^0-9.,]/g,'')"
         onfocus="this.select()"
         onblur="window.matrixValidateAndSave('${dbField}', this.value, 'money')" />
-      <div id="err-${dbField}" style="font-size:10px;color:#dc2626;margin-top:2px;display:none;"></div>
+      <div id="err-${dbField}" style="font-size:10px;color:#F87171;margin-top:2px;display:none;"></div>
     </div>`;
   }
 
@@ -103,7 +103,7 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
     <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
     <input id="${id}" type="${typeAttr}" data-field="${dbField}" data-type="${dataType}" class="${inputFocusClass}" style="${inputStyle}" value="${safeVal}" placeholder="${placeholder}"
       onblur="window.matrixValidateAndSave('${dbField}', this.value, '${dataType}')" />
-    <div id="err-${dbField}" style="font-size:10px;color:#dc2626;margin-top:2px;display:none;"></div>
+    <div id="err-${dbField}" style="font-size:10px;color:#F87171;margin-top:2px;display:none;"></div>
   </div>`;
 }
 
@@ -112,19 +112,19 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
 // ═══════════════════════════════════════════════════════════════════
 
 const pillStyles = {
-  'not-required': 'background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0',
-  'not-started': 'background:#f8fafc;color:#64748b;border:1px solid #e2e8f0',
-  'submitted': 'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe',
-  'under-review': 'background:#fefce8;color:#a16207;border:1px solid #fde68a',
-  'approved': 'background:#f0fdf4;color:#15803d;border:1px solid #86efac',
-  'finalized': 'background:#166534;color:#fff;border:1px solid #166534',
-  'locked': 'background:#0f172a;color:#e2e8f0;border:1px solid #0f172a',
-  'evidenced': 'background:#fff7ed;color:#c2410c;border:1px solid #fed7aa',
-  'signed': 'background:#166534;color:#fff;border:1px solid #166534',
-  'awaiting-signature': 'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
-  'superseded': 'background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0;font-size:8px',
-  'overdue': 'background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;animation:prd 2s ease-in-out infinite',
-  'issued': 'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe'
+  'not-required': 'background:rgba(255,255,255,0.03);color:#64748B;border:1px solid rgba(255,255,255,0.06)',
+  'not-started': 'background:rgba(255,255,255,0.03);color:#64748B;border:1px solid rgba(255,255,255,0.06)',
+  'submitted': 'background:rgba(212,168,83,0.15);color:#E8C97A;border:1px solid rgba(212,168,83,0.25)',
+  'under-review': 'background:rgba(251,191,36,0.1);color:#FBBF24;border:1px solid rgba(251,191,36,0.2)',
+  'approved': 'background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.2)',
+  'finalized': 'background:#34D399;color:#0B1120;border:1px solid #34D399',
+  'locked': 'background:#111827;color:#64748B;border:1px solid rgba(255,255,255,0.06)',
+  'evidenced': 'background:rgba(212,168,83,0.15);color:#E8C97A;border:1px solid rgba(212,168,83,0.25)',
+  'signed': 'background:#34D399;color:#0B1120;border:1px solid #34D399',
+  'awaiting-signature': 'background:rgba(212,168,83,0.15);color:#E8C97A;border:1px solid rgba(212,168,83,0.25)',
+  'superseded': 'background:rgba(255,255,255,0.03);color:#64748B;border:1px solid rgba(255,255,255,0.06);font-size:8px',
+  'overdue': 'background:rgba(248,113,113,0.1);color:#F87171;border:1px solid rgba(248,113,113,0.2);animation:prd 2s ease-in-out infinite',
+  'issued': 'background:rgba(212,168,83,0.15);color:#E8C97A;border:1px solid rgba(212,168,83,0.25)'
 };
 
 /**
@@ -143,14 +143,14 @@ function renderPill(status, label = null, icon = '') {
  */
 function renderStatusDot(count, status, dotId) {
   const colorMap = {
-    'approved': '#dcfce7', 'complete': '#dcfce7',
-    'finalized': '#166534', 'signed': '#166534',
-    'submitted': '#bfdbfe',
-    'under-review': '#fef3c7', 'incomplete': '#fef3c7',
-    'not-started': '#f1f5f9', 'not-required': '#f8fafc'
+    'approved': 'rgba(52,211,153,0.1)', 'complete': 'rgba(52,211,153,0.1)',
+    'finalized': '#34D399', 'signed': '#34D399',
+    'submitted': 'rgba(212,168,83,0.15)',
+    'under-review': 'rgba(251,191,36,0.1)', 'incomplete': 'rgba(251,191,36,0.1)',
+    'not-started': 'rgba(255,255,255,0.03)', 'not-required': 'rgba(255,255,255,0.03)'
   };
-  const color = colorMap[status] || '#f1f5f9';
-  const textColor = status === 'finalized' || status === 'signed' ? '#fff' : (status === 'approved' || status === 'complete') ? '#166534' : status === 'incomplete' || status === 'under-review' ? '#a16207' : '#94a3b8';
+  const color = colorMap[status] || 'rgba(255,255,255,0.03)';
+  const textColor = status === 'finalized' || status === 'signed' ? '#0B1120' : (status === 'approved' || status === 'complete') ? '#34D399' : status === 'incomplete' || status === 'under-review' ? '#FBBF24' : '#64748B';
   const idAttr = dotId ? ` id="${dotId}"` : '';
   return `<div${idAttr} style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;background:${color};color:${textColor}">${count > 0 ? count : '—'}</div>`;
 }
@@ -160,20 +160,20 @@ function renderStatusDot(count, status, dotId) {
  */
 function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional = false, isActive = false, canEdit = false) {
   const conditionalClass = isConditional ? 'margin-left:16px' : '';
-  const activeBackground = isActive ? 'background:#f8fbff' : '';
+  const activeBackground = isActive ? 'background:rgba(212,168,83,0.15)' : '';
   const prefix = isConditional ? '↳ ' : '';
 
   return `
-    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-top:1px solid #f8fafc;transition:background .1s;cursor:pointer;${activeBackground}" onclick="window.matrixToggleDetail && window.matrixToggleDetail('detail-${fieldKey}')">
+    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-top:1px solid rgba(255,255,255,0.04);transition:background .1s;cursor:pointer;${activeBackground}" onclick="window.matrixToggleDetail && window.matrixToggleDetail('detail-${fieldKey}')">
       <div style="padding:8px 12px 8px 50px;display:flex;align-items:center;gap:6px;${conditionalClass}">
         <span style="font-size:12px;width:16px;text-align:center;flex-shrink:0">📋</span>
         <div>
-          <div style="font-size:11px;font-weight:500;color:#334155">${prefix}${sanitizeHtml(fieldName)}</div>
-          <span style="font-size:9px;color:#94a3b8;font-weight:400;display:block">${sanitizeHtml(fieldDesc)}</span>
+          <div style="font-size:11px;font-weight:500;color:#F1F5F9">${prefix}${sanitizeHtml(fieldName)}</div>
+          <span style="font-size:9px;color:#94A3B8;font-weight:400;display:block">${sanitizeHtml(fieldDesc)}</span>
         </div>
       </div>
       ${statuses.map((status, idx) => `
-        <div style="padding:8px 5px;display:flex;align-items:center;justify-content:center;${idx === 0 ? 'background:#f8fbff' : ''}">
+        <div style="padding:8px 5px;display:flex;align-items:center;justify-content:center;${idx === 0 ? 'background:rgba(212,168,83,0.15)' : ''}">
           <span id="${idx === 0 ? 'dip-fpill-' + fieldKey : ''}" data-dip-pill="${idx === 0 ? fieldKey : ''}">${renderPill(status)}</span>
         </div>
       `).join('')}
@@ -186,12 +186,12 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
  */
 function renderSectionHeader(sectionId, icon, title, subtitle, statusDots) {
   return `
-    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid #f1f5f9" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
+    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid rgba(255,255,255,0.06)" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
-        <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:#dbeafe;border-radius:5px;font-size:9px;color:#2563eb;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(90deg)">▸</div>
+        <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:rgba(212,168,83,0.15);border-radius:5px;font-size:9px;color:#D4A853;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(90deg)">▸</div>
         <span style="font-size:14px">${icon}</span>
-        <span style="font-size:12px;font-weight:700;color:#1e293b">${sanitizeHtml(title)}</span>
-        <span style="font-size:9px;color:#94a3b8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
+        <span style="font-size:12px;font-weight:700;color:#F1F5F9">${sanitizeHtml(title)}</span>
+        <span style="font-size:9px;color:#94A3B8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
       </div>
       ${statusDots.map(dot => `<div style="padding:11px 6px;display:flex;align-items:center;justify-content:center">${dot}</div>`).join('')}
     </div>
@@ -205,35 +205,35 @@ function renderDocumentDetailPanel(docId, docData, documentTrail = []) {
   const role = getCurrentRole();
   const canVerify = ['admin', 'rm', 'credit', 'compliance'].includes(role);
 
-  const statusBg = docData.status === 'signed' ? '#dcfce7' : 'fee2e2';
-  const statusColor = docData.status === 'signed' ? '#166534' : '#dc2626';
+  const statusBg = docData.status === 'signed' ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
+  const statusColor = docData.status === 'signed' ? '#34D399' : '#F87171';
 
   return `
     <div style="padding:8px 26px 14px 50px">
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+      <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="font-size:14px;font-weight:700;color:#334155">${sanitizeHtml(docData.name || 'Document')}</div>
-          <div style="font-size:8px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px">${docData.status || 'pending'}</div>
+          <div style="font-size:14px;font-weight:700;color:#F1F5F9">${sanitizeHtml(docData.name || 'Document')}</div>
+          <div style="font-size:8px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px">${docData.status || 'pending'}</div>
         </div>
 
         <div style="display:flex;align-items:center;gap:0;margin-bottom:12px;flex-wrap:wrap">
           ${(documentTrail || []).map((stage, idx) => `
-            <div style="display:flex;align-items:center;gap:3px;padding:4px 8px;font-size:9px;font-weight:600;border-radius:5px;${stage.completed ? 'background:#dcfce7;color:#166534' : 'background:#dbeafe;color:#1d4ed8'}">
+            <div style="display:flex;align-items:center;gap:3px;padding:4px 8px;font-size:9px;font-weight:600;border-radius:5px;${stage.completed ? 'background:rgba(52,211,153,0.1);color:#34D399' : 'background:rgba(212,168,83,0.15);color:#E8C97A'}">
               ${stage.completed ? '✓' : '●'} ${sanitizeHtml(stage.label)}
             </div>
-            ${idx < documentTrail.length - 1 ? '<span style="color:#cbd5e1;font-size:12px;margin:0 3px">→</span>' : ''}
+            ${idx < documentTrail.length - 1 ? '<span style="color:rgba(255,255,255,0.06);font-size:12px;margin:0 3px">→</span>' : ''}
           `).join('')}
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;margin-bottom:10px">
-          <div><span style="color:#94a3b8">Issued:</span> ${docData.issued_at ? new Date(docData.issued_at).toLocaleDateString() : 'N/A'}</div>
-          <div><span style="color:#94a3b8">Reference:</span> ${sanitizeHtml(docData.reference || 'N/A')}</div>
+          <div><span style="color:#94A3B8">Issued:</span> ${docData.issued_at ? new Date(docData.issued_at).toLocaleDateString() : 'N/A'}</div>
+          <div><span style="color:#94A3B8">Reference:</span> ${sanitizeHtml(docData.reference || 'N/A')}</div>
         </div>
 
         ${canVerify ? `
           <div style="display:flex;gap:6px;margin-top:10px">
-            <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;transition:all .12s" onclick="window.matrixVerifyDocument && window.matrixVerifyDocument('${docId}')">Verify</button>
-            <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid #e2e8f0;background:#f59e0b;color:#fff;cursor:pointer;transition:all .12s" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('documents')">Request Info</button>
+            <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.06);background:#111827;color:#F1F5F9;cursor:pointer;transition:all .12s" onclick="window.matrixVerifyDocument && window.matrixVerifyDocument('${docId}')">Verify</button>
+            <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.06);background:#D4A853;color:#0B1120;cursor:pointer;transition:all .12s" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('documents')">Request Info</button>
           </div>
         ` : ''}
       </div>
@@ -304,107 +304,107 @@ export async function renderDealMatrix(deal) {
 
   let html = `
     <!-- Header -->
-    <div style="padding:20px 26px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:12px">
-      <div style="width:36px;height:36px;background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px">📊</div>
+    <div style="padding:20px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,#D4A853,#E8C97A);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#0B1120;font-size:16px">📊</div>
       <div>
-        <h2 style="font-size:16px;font-weight:700;color:#0f172a">Deal Information Matrix</h2>
-        <div style="font-size:11px;color:#64748b;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${fmtM(deal.loan_amount)}M</div>
+        <h2 style="font-size:16px;font-weight:700;color:#F1F5F9">Deal Information Matrix</h2>
+        <div style="font-size:11px;color:#94A3B8;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${fmtM(deal.loan_amount)}M</div>
       </div>
     </div>
 
     <!-- Context Bar -->
-    <div style="padding:12px 26px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+    <div style="padding:12px 26px;background:#1a2332;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:20px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Borrower</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">${sanitizeHtml(deal.borrower_name || 'N/A')}</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Borrower</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9">${sanitizeHtml(deal.borrower_name || 'N/A')}</span>
       </div>
-      <div style="width:1px;height:24px;background:#e2e8f0"></div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Type</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">${sanitizeHtml(deal.borrower_type || 'Individual')}</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Type</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9">${sanitizeHtml(deal.borrower_type || 'Individual')}</span>
       </div>
-      <div style="width:1px;height:24px;background:#e2e8f0"></div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Loan</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">£${fmtMoney(deal.loan_amount)}</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Loan</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9">£${fmtMoney(deal.loan_amount)}</span>
       </div>
-      <div style="width:1px;height:24px;background:#e2e8f0"></div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">LTV</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">${fmtPct(deal.ltv_requested)}%</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">LTV</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9">${fmtPct(deal.ltv_requested)}%</span>
       </div>
-      <div style="width:1px;height:24px;background:#e2e8f0"></div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Security</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b">${sanitizeHtml(deal.security_address || 'N/A')}</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Security</span>
+        <span style="font-size:12px;font-weight:600;color:#F1F5F9">${sanitizeHtml(deal.security_address || 'N/A')}</span>
       </div>
-      <div style="width:1px;height:24px;background:#e2e8f0"></div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8">Stage</span>
-        <span style="font-size:12px;font-weight:600;color:#2563eb">${sanitizeHtml(currentStage.replace(/_/g, ' ').toUpperCase())}</span>
+        <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Stage</span>
+        <span style="font-size:12px;font-weight:600;color:#D4A853">${sanitizeHtml(currentStage.replace(/_/g, ' ').toUpperCase())}</span>
       </div>
     </div>
 
     <!-- Progress Bars -->
-    <div style="padding:12px 26px 16px;border-bottom:1px solid #f1f5f9">
+    <div style="padding:12px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06)">
       <div style="display:flex;align-items:center;gap:10px;margin-top:0">
-        <span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;min-width:82px">DIP</span>
-        <div style="flex:1;height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 0 ? 75 : 0}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);transition:width .5s ease"></div>
+        <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">DIP</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
+          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 0 ? 75 : 0}%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
         </div>
-        <span style="color:#2563eb;font-size:12px;font-weight:600">${currentStageIdx >= 0 ? 75 : 0}%</span>
+        <span style="color:#D4A853;font-size:12px;font-weight:600">${currentStageIdx >= 0 ? 75 : 0}%</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-        <span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Indicative TS</span>
-        <div style="flex:1;height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 1 ? 30 : 0}%;background:linear-gradient(90deg,#a855f7,#d946ef);transition:width .5s ease"></div>
+        <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Indicative TS</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
+          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 1 ? 30 : 0}%;background:linear-gradient(90deg,#D4A853,#E8C97A);transition:width .5s ease"></div>
         </div>
-        <span style="color:#7c3aed;font-size:12px;font-weight:600">${currentStageIdx >= 1 ? 30 : 0}%</span>
+        <span style="color:#D4A853;font-size:12px;font-weight:600">${currentStageIdx >= 1 ? 30 : 0}%</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-        <span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Formal Offer</span>
-        <div style="flex:1;height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 2 ? 0 : 0}%;background:linear-gradient(90deg,#10b981,#34d399);transition:width .5s ease"></div>
+        <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Formal Offer</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
+          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 2 ? 0 : 0}%;background:linear-gradient(90deg,#34D399,#34D399);transition:width .5s ease"></div>
         </div>
-        <span style="color:#059669;font-size:12px;font-weight:600">${currentStageIdx >= 2 ? 0 : 0}%</span>
+        <span style="color:#34D399;font-size:12px;font-weight:600">${currentStageIdx >= 2 ? 0 : 0}%</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-        <span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Execution</span>
-        <div style="flex:1;height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden">
-          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 3 ? 0 : 0}%;background:linear-gradient(90deg,#64748b,#94a3b8);transition:width .5s ease"></div>
+        <span style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;min-width:82px">Execution</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:99px;overflow:hidden">
+          <div style="height:100%;border-radius:99px;width:${currentStageIdx >= 3 ? 0 : 0}%;background:linear-gradient(90deg,#94A3B8,#94A3B8);transition:width .5s ease"></div>
         </div>
-        <span style="color:#334155;font-size:12px;font-weight:600">${currentStageIdx >= 3 ? 0 : 0}%</span>
+        <span style="color:#94A3B8;font-size:12px;font-weight:600">${currentStageIdx >= 3 ? 0 : 0}%</span>
       </div>
     </div>
 
     <!-- SUBMIT FOR REVIEW — prominent CTA for brokers -->
     ${!isInternalUser && currentStage === 'received' ? `
-    <div id="matrix-submit-cta" style="padding:14px 26px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-bottom:2px solid #86efac;">
+    <div id="matrix-submit-cta" style="padding:14px 26px;background:rgba(52,211,153,0.1);border-bottom:2px solid rgba(52,211,153,0.2);">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div style="flex:1;min-width:240px;">
-          <div style="font-size:14px;font-weight:700;color:#166534;">Ready to submit?</div>
-          <div style="font-size:11px;color:#15803d;margin-top:2px;margin-bottom:10px;">Complete the required fields below, then submit for RM review to proceed to DIP.</div>
+          <div style="font-size:14px;font-weight:700;color:#34D399;">Ready to submit?</div>
+          <div style="font-size:11px;color:#34D399;margin-top:2px;margin-bottom:10px;">Complete the required fields below, then submit for RM review to proceed to DIP.</div>
           <div id="dip-readiness-checklist" style="display:flex;flex-direction:column;gap:3px;"></div>
         </div>
-        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#94a3b8;color:#fff;box-shadow:0 2px 8px rgba(34,197,94,.3);transition:all .15s;white-space:nowrap;opacity:0.5;" disabled onmouseover="if(!this.disabled)this.style.background='#16a34a'" onmouseout="if(!this.disabled)this.style.background='#22c55e'">
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#64748B;color:#F1F5F9;box-shadow:0 2px 8px rgba(212,168,83,.3);transition:all .15s;white-space:nowrap;opacity:0.5;" disabled onmouseover="if(!this.disabled)this.style.background='#94A3B8'" onmouseout="if(!this.disabled)this.style.background='#34D399'">
           Submit for RM Review &#8594;
         </button>
       </div>
     </div>
     ` : ''}
     ${!isInternalUser && currentStage !== 'received' ? `
-    <div style="padding:10px 26px;background:#eff6ff;border-bottom:2px solid #bfdbfe;text-align:center;">
-      <span style="font-size:12px;font-weight:600;color:#1d4ed8;">&#128274; Deal submitted for review — Matrix is read-only</span>
+    <div style="padding:10px 26px;background:rgba(212,168,83,0.1);border-bottom:2px solid rgba(212,168,83,0.2);text-align:center;">
+      <span style="font-size:12px;font-weight:600;color:#E8C97A;">&#34D399; Deal submitted for review — Matrix is read-only</span>
     </div>
     ` : ''}
 
     <!-- Column Headers -->
-    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-bottom:2px solid #e2e8f0;position:sticky;top:0;background:#fff;z-index:20">
-      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding-left:26px;color:#64748b">Information</div>
-      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#2563eb;background:#f0f7ff"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:#dbeafe;color:#1d4ed8">1</span>DIP<span style="font-size:7px;font-weight:800;letter-spacing:1px;color:#2563eb;background:#dbeafe;padding:1px 5px;border-radius:3px;margin-left:3px;vertical-align:middle">CURRENT</span></div>
-      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#7c3aed"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:#ede9fe;color:#6d28d9">2</span>Indicative TS</div>
-      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#059669"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:#d1fae5;color:#047857">3</span>Formal Offer</div>
-      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#334155"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:#e2e8f0;color:#1e293b">4</span>Execution</div>
+    <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-bottom:2px solid rgba(255,255,255,0.06);position:sticky;top:0;background:#0B1120;z-index:20">
+      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding-left:26px;color:#94A3B8">Information</div>
+      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#D4A853;background:rgba(212,168,83,0.15)"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:rgba(212,168,83,0.25);color:#E8C97A">1</span>DIP<span style="font-size:7px;font-weight:800;letter-spacing:1px;color:#D4A853;background:rgba(212,168,83,0.25);padding:1px 5px;border-radius:3px;margin-left:3px;vertical-align:middle">CURRENT</span></div>
+      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#E8C97A"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:rgba(212,168,83,0.25);color:#D4A853">2</span>Indicative TS</div>
+      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#34D399"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:rgba(52,211,153,0.2);color:#34D399">3</span>Formal Offer</div>
+      <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:center;color:#94A3B8"><span style="display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:800;margin-right:3px;background:rgba(255,255,255,0.06);color:#F1F5F9">4</span>Execution</div>
     </div>
   `;
 
@@ -420,7 +420,7 @@ export async function renderDealMatrix(deal) {
   ];
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s1', '👤', 'Borrower / KYC', 'Comprehensive identity verification', [
         renderStatusDot(0, 'not-started', 'dip-sec-s1'),
         renderStatusDot(0, 'not-started'),
@@ -433,12 +433,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
           ['not-started', 'not-started', 'locked', 'locked'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-primary-borrower">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Primary Borrower</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Primary Borrower</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
@@ -450,8 +450,8 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
                 ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
               </div>
-              ${isInternalUser ? `<div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid #f1f5f9;padding-top:10px">
-                <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('borrower')">📧 Request Info</button>
+              ${isInternalUser ? `<div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px">
+                <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.06);background:#111827;color:#F1F5F9;cursor:pointer" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('borrower')">📧 Request Info</button>
               </div>` : ''}
             </div>
           </div>
@@ -461,11 +461,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('guarantors', 'Guarantor(s)', 'Co-signatory, personal guarantees',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-guarantors">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-guarantors">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Guarantor Details</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Guarantor information will be captured here. Upload guarantor ID and proof of address via the Document Repository.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Guarantor Details</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Guarantor information will be captured here. Upload guarantor ID and proof of address via the Document Repository.</p>
             </div>
           </div>
         </div>
@@ -478,7 +478,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s2', '💰', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
         renderStatusDot(0, 'not-started', 'dip-sec-s2'),
         renderStatusDot(0, 'not-started'),
@@ -491,14 +491,14 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('financial-summary', 'Financial Summary', 'Estimated net worth and source of wealth',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-financial-summary">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-financial-summary">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Financial Summary</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Financial Summary</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
-              <p style="font-size:11px;color:#64748b;margin:0 0 10px;">Provide an estimate of the borrower's net worth. This is not verified at DIP stage — just an indication for the RM.</p>
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 10px;">Provide an estimate of the borrower's net worth. This is not verified at DIP stage — just an indication for the RM.</p>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('estimated_net_worth', 'Estimated Net Worth (£)', deal.estimated_net_worth, 'money', canEdit)}
                 ${renderEditableField('source_of_wealth', 'Source of Wealth', deal.source_of_wealth, 'select', canEdit, [
@@ -518,11 +518,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('assets', 'Assets', 'Real estate, investments, cash, vehicles',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-assets">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-assets">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Assets Schedule</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload asset statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Assets Schedule</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload asset statements via Document Repository. Parsed data will auto-populate here.</p>
             </div>
           </div>
         </div>
@@ -531,11 +531,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('liabilities', 'Liabilities', 'Mortgages, loans, credit commitments',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-liabilities">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-liabilities">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Liabilities Schedule</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload mortgage statements and credit reports via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Liabilities Schedule</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload mortgage statements and credit reports via Document Repository. Parsed data will auto-populate here.</p>
             </div>
           </div>
         </div>
@@ -544,11 +544,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('income', 'Income', 'Employment, rental, investment income',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-income">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-income">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Income Schedule</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload payslips, tax returns, or rental statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Income Schedule</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload payslips, tax returns, or rental statements via Document Repository. Parsed data will auto-populate here.</p>
             </div>
           </div>
         </div>
@@ -557,11 +557,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('expenses', 'Expenses', 'Housing, living costs, financial commitments',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-expenses">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-expenses">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Expenses Schedule</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload bank statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Expenses Schedule</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload bank statements via Document Repository. Parsed data will auto-populate here.</p>
             </div>
           </div>
         </div>
@@ -570,12 +570,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('aml-source-funds', 'AML & Source of Funds', 'Source of funds, wealth, PEP screening, tax residency',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-aml-source-funds">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-aml-source-funds">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Source of Funds & AML</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Source of Funds & AML</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('deposit_source', 'Source of Deposit / Funds', deal.deposit_source, 'textarea', canEdit)}
@@ -594,7 +594,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s3', '🏘️', 'Property / Security', 'Property details and valuation', [
         renderStatusDot(0, 'not-started', 'dip-sec-s3'),
         renderStatusDot(0, 'not-started'),
@@ -607,12 +607,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('property-details', 'Property Details', 'Address, tenure, bedrooms, square footage',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-details">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-property-details">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Property / Security Details</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Property / Security Details</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('security_address', 'Security Address', deal.security_address, 'text', canEdit)}
@@ -637,10 +637,10 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('property-valuation', 'Valuation', 'Desktop valuation, survey, final valuation',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-valuation">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-property-valuation">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Valuation & Pricing</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Valuation & Pricing</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('current_value', 'Current Value (£)', deal.current_value, 'money', canEdit)}
                 ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
@@ -657,7 +657,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s4', '📋', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
         renderStatusDot(0, 'not-started', 'dip-sec-s4'),
         renderStatusDot(0, 'not-started'),
@@ -670,12 +670,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '?'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-loan-terms">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-loan-terms">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Loan Structure</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Loan Structure</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('loan_amount', 'Loan Amount (£)', deal.loan_amount, 'money', canEdit)}
@@ -697,10 +697,10 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('use-of-funds', 'Use of Funds', 'Refinance, purchase, renovation, other',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-use-of-funds">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-use-of-funds">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Purpose & Use of Funds</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Purpose & Use of Funds</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
                   { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
@@ -723,7 +723,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s5', '🚪', 'Exit Strategy', 'Refinance or sale plan', [
         renderStatusDot(0, 'not-started', 'dip-sec-s5'),
         renderStatusDot(0, 'not-started'),
@@ -736,12 +736,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('exit-strategy', 'Exit Strategy', 'Refinance, sale, hold',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-exit-strategy">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-exit-strategy">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Exit Strategy</div>
-                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Exit Strategy</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr;gap:8px;">
                 ${renderEditableField('exit_strategy', 'Exit Plan', deal.exit_strategy, 'textarea', canEdit)}
@@ -755,11 +755,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('refinance-evidence', 'Refinance Evidence', 'Lender offer, pre-approval',
           ['not-started', 'not-started', 'not-started', 'not-started'], true)}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-refinance-evidence">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-refinance-evidence">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Refinance Evidence</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload lender DIP, mortgage offer, or broker confirmation via Document Repository.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Refinance Evidence</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload lender DIP, mortgage offer, or broker confirmation via Document Repository.</p>
             </div>
           </div>
         </div>
@@ -773,7 +773,7 @@ export async function renderDealMatrix(deal) {
 
   const isDIPStage = currentStageIdx === 0;
   html += `
-    <div style="border-bottom:1px solid #f1f5f9;${isDIPStage ? 'opacity:.45' : ''}">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06);${isDIPStage ? 'opacity:.45' : ''}">
       ${renderSectionHeader('s6', '⚖️', 'Legal & Insurance', 'Security and insurance requirements', [
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required'),
@@ -786,11 +786,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('legal-security', 'Legal / Security', 'Title deeds, searches, mortgage deed',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-legal-security">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-legal-security">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Legal & Security</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Title deeds, Land Registry searches, mortgage deed, and legal opinion. Upload via Document Repository — required at Formal Offer stage.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Legal & Security</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Title deeds, Land Registry searches, mortgage deed, and legal opinion. Upload via Document Repository — required at Formal Offer stage.</p>
             </div>
           </div>
         </div>
@@ -799,11 +799,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('insurance', 'Insurance', 'Buildings insurance, landlord insurance',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-insurance">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-insurance">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Insurance</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Buildings insurance and landlord insurance evidence. Upload via Document Repository — required at Formal Offer stage.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Insurance</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">Buildings insurance and landlord insurance evidence. Upload via Document Repository — required at Formal Offer stage.</p>
             </div>
           </div>
         </div>
@@ -812,8 +812,8 @@ export async function renderDealMatrix(deal) {
       ${isDIPStage ? `
         <div style="padding:16px 50px;text-align:center">
           <div style="font-size:20px;margin-bottom:3px">📋</div>
-          <div style="font-size:10px;font-weight:600;color:#94a3b8">Not required at DIP stage</div>
-          <div style="font-size:9px;color:#cbd5e1;margin-top:1px">Will be required for Formal Offer</div>
+          <div style="font-size:10px;font-weight:600;color:#94A3B8">Not required at DIP stage</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.06);margin-top:1px">Will be required for Formal Offer</div>
         </div>
       ` : ''}
     </div>
@@ -824,7 +824,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s7', '💼', 'Commercial', 'Fees and credit approval', [
         renderStatusDot(0, 'not-started', 'dip-sec-s7'),
         renderStatusDot(0, 'not-started'),
@@ -837,12 +837,12 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('fees', 'Fees', `Arrangement: ${fmtPct(deal.arrangement_fee_pct || 2)}%, Broker: ${fmtPct(deal.broker_fee_pct || 0)}%`,
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-fees">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-fees">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#334155">Fee Structure</div>
-                ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Fee Structure</div>
+                ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct || '2.0', 'text', ['rm','admin'].includes(role))}
@@ -858,11 +858,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
           ['not-required', 'not-started', isDIPStage ? 'not-started' : 'under-review', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-credit-approval">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-credit-approval">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Credit Approval</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">${isDIPStage ? 'Not required at DIP stage. Credit committee sign-off happens after AI analysis and RM review at the Formal Offer stage.' : 'Internal credit committee sign-off. This is populated automatically after the AI analysis and RM/Credit review.'}</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Credit Approval</div>
+              <p style="font-size:13px;color:#94A3B8;margin:0;">${isDIPStage ? 'Not required at DIP stage. Credit committee sign-off happens after AI analysis and RM review at the Formal Offer stage.' : 'Internal credit committee sign-off. This is populated automatically after the AI analysis and RM/Credit review.'}</p>
             </div>
           </div>
         </div>
@@ -875,7 +875,7 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="border-bottom:1px solid #f1f5f9">
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s8', '📄', 'Documents Issued', 'Deal documentation status', [
         renderStatusDot(deal.dip_signed ? 1 : 0, deal.dip_signed ? 'signed' : 'not-started'),
         renderStatusDot(deal.ts_signed ? 1 : 0, deal.ts_signed ? 'signed' : 'not-started'),
@@ -888,11 +888,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('dip-document', 'Data Information Package (DIP)', 'Initial deal summary and requirements',
           [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-dip-document">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-dip-document">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Data Information Package (DIP)</div>
-              <div style="font-size:13px;color:#64748b;">${deal.dip_signed ? 'Signed and issued.' : deal.dip_issued_at ? 'Issued — awaiting signature.' : 'Will be generated once all required fields are populated.'}</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Data Information Package (DIP)</div>
+              <div style="font-size:13px;color:#64748B;">${deal.dip_signed ? 'Signed and issued.' : deal.dip_issued_at ? 'Issued — awaiting signature.' : 'Will be generated once all required fields are populated.'}</div>
             </div>
           </div>
         </div>
@@ -901,11 +901,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('indicative-ts', 'Indicative Term Sheet', 'Initial lending terms and conditions',
           ['locked', deal.ts_signed ? 'signed' : 'not-started', 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-indicative-ts">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-indicative-ts">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Indicative Term Sheet</div>
-              <div style="font-size:13px;color:#64748b;">${deal.ts_signed ? 'Signed and accepted.' : 'Generated after DIP is signed and commitment fee is paid.'}</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Indicative Term Sheet</div>
+              <div style="font-size:13px;color:#64748B;">${deal.ts_signed ? 'Signed and accepted.' : 'Generated after DIP is signed and commitment fee is paid.'}</div>
             </div>
           </div>
         </div>
@@ -914,11 +914,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('formal-offer', 'Formal Offer Letter', 'Final binding lending terms',
           ['locked', 'locked', deal.fl_signed ? 'signed' : 'not-started', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-formal-offer">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-formal-offer">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Formal Offer Letter</div>
-              <div style="font-size:13px;color:#64748b;">${deal.fl_signed ? 'Signed — proceeding to legal.' : 'Issued after underwriting and bank approval.'}</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Formal Offer Letter</div>
+              <div style="font-size:13px;color:#64748B;">${deal.fl_signed ? 'Signed — proceeding to legal.' : 'Issued after underwriting and bank approval.'}</div>
             </div>
           </div>
         </div>
@@ -927,11 +927,11 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('execution-completion', 'Execution & Completion', 'Legal docs and completion statement',
           ['locked', 'locked', 'locked', 'not-started'])}
 
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-execution-completion">
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-execution-completion">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Execution & Completion</div>
-              <div style="font-size:13px;color:#64748b;">Final legal documentation and completion statement. Generated at the execution stage.</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Execution & Completion</div>
+              <div style="font-size:13px;color:#64748B;">Final legal documentation and completion statement. Generated at the execution stage.</div>
             </div>
           </div>
         </div>
@@ -944,30 +944,30 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="padding:16px 26px;border-top:1px solid #e2e8f0;background:#f8fafc">
-      <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:10px">Document Repository</div>
+    <div style="padding:16px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#1a2332">
+      <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:10px">Document Repository</div>
 
       <!-- Category tabs -->
-      <div style="display:flex;gap:1px;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#fff;color:#334155;border-right:1px solid #e2e8f0;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('all')">All</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('kyc')">KYC/ID</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('financial')">Financial</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('property')">Property</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('legal')">Legal</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('issued')">Issued Docs</button>
+      <div style="display:flex;gap:1px;margin-bottom:10px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;overflow:hidden">
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#111827;color:#F1F5F9;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('all')">All</button>
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('kyc')">KYC/ID</button>
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('financial')">Financial</button>
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('property')">Property</button>
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('legal')">Legal</button>
+        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('issued')">Issued Docs</button>
       </div>
 
       <!-- Document table placeholder -->
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:12px;font-size:9px;color:#64748b;text-align:center">
+      <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:12px;font-size:9px;color:#64748B;text-align:center">
         <div style="font-size:16px;margin-bottom:4px">📄</div>
         Documents will appear here once uploaded
       </div>
 
       <!-- Upload drop zone -->
-      <div style="border:2px dashed #cbd5e1;border-radius:7px;padding:12px;text-align:center;background:#fff;cursor:pointer;transition:all .12s;margin-top:10px">
+      <div style="border:2px dashed rgba(255,255,255,0.06);border-radius:7px;padding:12px;text-align:center;background:#111827;cursor:pointer;transition:all .12s;margin-top:10px">
         <div style="font-size:18px">📁</div>
-        <div style="font-size:10px;color:#64748b;font-weight:500;margin-top:2px">Drop documents here or click to upload</div>
-        <div style="font-size:8px;color:#94a3b8;margin-top:1px">PDF, Word, Excel, images supported</div>
+        <div style="font-size:10px;color:#64748B;font-weight:500;margin-top:2px">Drop documents here or click to upload</div>
+        <div style="font-size:8px;color:#94A3B8;margin-top:1px">PDF, Word, Excel, images supported</div>
       </div>
     </div>
   `;
@@ -981,46 +981,46 @@ export async function renderDealMatrix(deal) {
     <input type="file" id="matrix-parse-file-input" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.txt,.csv" style="display:none" onchange="window.matrixUploadFiles && window.matrixUploadFiles(this.files)" />
 
     <!-- Paste Broker Pack modal (hidden by default) -->
-    <div id="matrix-paste-modal" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#f5f3ff;">
+    <div id="matrix-paste-modal" style="display:none;padding:16px 26px;border-top:1px solid rgba(255,255,255,0.06);background:rgba(212,168,83,0.15);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <div style="font-size:14px;font-weight:700;color:#7c3aed;">Paste Broker Pack / Email / WhatsApp</div>
-        <button onclick="document.getElementById('matrix-paste-modal').style.display='none'" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#64748b;">Cancel</button>
+        <div style="font-size:14px;font-weight:700;color:#E8C97A;">Paste Broker Pack / Email / WhatsApp</div>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='none'" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:#111827;color:#64748B;">Cancel</button>
       </div>
-      <textarea id="matrix-paste-text" placeholder="Paste the broker pack, email, or WhatsApp message here..." style="width:100%;min-height:120px;padding:12px;border:1px solid #d8b4fe;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none;"></textarea>
-      <button onclick="window.matrixParsePastedText && window.matrixParsePastedText()" style="margin-top:10px;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;border:none;background:#7c3aed;color:#fff;cursor:pointer;">Parse Text</button>
+      <textarea id="matrix-paste-text" placeholder="Paste the broker pack, email, or WhatsApp message here..." style="width:100%;min-height:120px;padding:12px;border:1px solid rgba(212,168,83,0.25);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+      <button onclick="window.matrixParsePastedText && window.matrixParsePastedText()" style="margin-top:10px;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;border:none;background:#D4A853;color:#fff;cursor:pointer;">Parse Text</button>
     </div>
 
     <!-- Parse progress indicator (hidden by default) -->
-    <div id="matrix-parse-progress" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#eff6ff;text-align:center;">
-      <div style="font-size:14px;font-weight:700;color:#2563eb;margin-bottom:6px;" id="matrix-parse-status">Processing...</div>
-      <div style="font-size:12px;color:#64748b;">AI is working. This may take up to 2 minutes.</div>
-      <div style="margin-top:10px;height:4px;background:#dbeafe;border-radius:4px;overflow:hidden;"><div style="height:100%;width:0%;background:#2563eb;border-radius:4px;animation:matrixParseBar 90s linear forwards;" id="matrix-parse-bar"></div></div>
+    <div id="matrix-parse-progress" style="display:none;padding:16px 26px;border-top:1px solid rgba(255,255,255,0.06);background:rgba(212,168,83,0.15);text-align:center;">
+      <div style="font-size:14px;font-weight:700;color:#D4A853;margin-bottom:6px;" id="matrix-parse-status">Processing...</div>
+      <div style="font-size:12px;color:#64748B;">AI is working. This may take up to 2 minutes.</div>
+      <div style="margin-top:10px;height:4px;background:rgba(212,168,83,0.25);border-radius:4px;overflow:hidden;"><div style="height:100%;width:0%;background:#D4A853;border-radius:4px;animation:matrixParseBar 90s linear forwards;" id="matrix-parse-bar"></div></div>
     </div>
 
     <!-- COMPLETENESS INDICATOR -->
-    <div id="matrix-completeness-bar" style="padding:14px 26px;border-top:1px solid #e2e8f0;background:#f0fdf4;">
+    <div id="matrix-completeness-bar" style="padding:14px 26px;border-top:1px solid rgba(255,255,255,0.06);background:rgba(52,211,153,0.1);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <div style="font-size:13px;font-weight:700;color:#166534;">Matrix Completeness</div>
-        <div style="font-size:14px;font-weight:800;color:#166534;" id="matrix-completeness-pct">0%</div>
+        <div style="font-size:13px;font-weight:700;color:#34D399;">Matrix Completeness</div>
+        <div style="font-size:14px;font-weight:800;color:#34D399;" id="matrix-completeness-pct">0%</div>
       </div>
-      <div style="height:8px;background:#dcfce7;border-radius:4px;overflow:hidden;">
-        <div id="matrix-completeness-fill" style="height:100%;width:0%;background:#22c55e;border-radius:4px;transition:width 0.5s ease;"></div>
+      <div style="height:8px;background:rgba(52,211,153,0.1);border-radius:4px;overflow:hidden;">
+        <div id="matrix-completeness-fill" style="height:100%;width:0%;background:#34D399;border-radius:4px;transition:width 0.5s ease;"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#64748b;">
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#64748B;">
         <span id="matrix-completeness-detail">0 of 0 key fields completed</span>
         <span id="matrix-completeness-status" style="font-weight:600;"></span>
       </div>
     </div>
 
     <!-- ACTION BUTTONS BAR -->
-    <div style="padding:12px 26px;border-top:1px solid #e2e8f0;background:#1e3a5f;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div style="padding:12px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#111827;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#2563eb;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">📤 Upload Documents</button>
-        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#7c3aed;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">📋 Paste Broker Pack</button>
-        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#f59e0b;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">🔍 Parse Confirmed Docs</button>
-        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#22c55e;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">✅ Submit for Review</button>
+        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">📤 Upload Documents</button>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">📋 Paste Broker Pack</button>
+        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">🔍 Parse Confirmed Docs</button>
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">✅ Submit for Review</button>
       </div>
-      <div style="display:flex;gap:12px;font-size:8px;color:#cbd5e1">
+      <div style="display:flex;gap:12px;font-size:8px;color:rgba(255,255,255,0.06)">
         <span>Last Parsed: <span id="matrix-last-parsed">never</span></span>
         <span>•</span>
         <span>Fields Auto-Filled: <span id="matrix-fields-filled">0</span></span>
@@ -1035,13 +1035,13 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <div style="padding:12px 26px 16px;border-top:1px solid #e2e8f0;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:8px;color:#64748b">
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#dcfce7"></span>Approved</span>
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#fef3c7"></span>Requested</span>
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#bfdbfe"></span>Submitted</span>
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#e2e8f0"></span>Not Started</span>
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#fed7aa"></span>Evidenced</span>
-      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#166534"></span>Signed</span>
+    <div style="padding:12px 26px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;flex-wrap:wrap;gap:6px 12px;font-size:8px;color:#64748B">
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:rgba(52,211,153,0.1)"></span>Approved</span>
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:rgba(212,168,83,0.15)"></span>Requested</span>
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:rgba(212,168,83,0.25)"></span>Submitted</span>
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:rgba(255,255,255,0.06)"></span>Not Started</span>
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:rgba(251,191,36,0.1)"></span>Evidenced</span>
+      <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:2px;background:#34D399"></span>Signed</span>
     </div>
   `;
 
@@ -1061,8 +1061,8 @@ export async function renderDealMatrix(deal) {
       content.style.overflow = 'hidden';
       if (chevron) {
         chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
-        chevron.style.background = isOpen ? '#f1f5f9' : '#dbeafe';
-        chevron.style.color = isOpen ? '#64748b' : '#2563eb';
+        chevron.style.background = isOpen ? 'rgba(255,255,255,0.06)' : 'rgba(212,168,83,0.25)';
+        chevron.style.color = isOpen ? '#94A3B8' : '#D4A853';
       }
     }
   };
@@ -1088,7 +1088,7 @@ export async function renderDealMatrix(deal) {
       // Smooth scroll to section header
       header.scrollIntoView({ behavior: 'smooth', block: 'start' });
       // Brief highlight flash
-      header.style.background = '#fef9c3';
+      header.style.background = 'rgba(212,168,83,0.15)';
       setTimeout(() => { header.style.background = ''; }, 1500);
     }
   };
@@ -1100,7 +1100,7 @@ export async function renderDealMatrix(deal) {
 
     // Clear previous error
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-    if (el) el.style.borderColor = '#e2e8f0';
+    if (el) el.style.borderColor = 'rgba(255,255,255,0.06)';
 
     // Empty is always valid (not a required-check — readiness handles that)
     const trimmed = String(rawValue || '').trim();
@@ -1113,7 +1113,7 @@ export async function renderDealMatrix(deal) {
     if (dataType === 'money') {
       const raw = stripCommas(trimmed);
       if (!/^\d+\.?\d{0,2}$/.test(raw)) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Enter a valid amount (e.g. 1,500,000)'; errEl.style.display = 'block'; }
         return;
       }
@@ -1126,7 +1126,7 @@ export async function renderDealMatrix(deal) {
     // Email validation
     if (dataType === 'email') {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Enter a valid email address'; errEl.style.display = 'block'; }
         return;
       }
@@ -1135,7 +1135,7 @@ export async function renderDealMatrix(deal) {
     // Phone validation
     if (dataType === 'tel') {
       if (!/^[\d\s\+\-\(\)]{7,20}$/.test(trimmed)) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Enter a valid phone number'; errEl.style.display = 'block'; }
         return;
       }
@@ -1144,7 +1144,7 @@ export async function renderDealMatrix(deal) {
     // Date validation
     if (dataType === 'date') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Enter date as YYYY-MM-DD'; errEl.style.display = 'block'; }
         return;
       }
@@ -1154,7 +1154,7 @@ export async function renderDealMatrix(deal) {
     if (fieldKey.includes('_pct') || fieldKey.includes('ltv')) {
       const num = parseFloat(trimmed);
       if (isNaN(num) || num < 0 || num > 100) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Enter a percentage between 0 and 100'; errEl.style.display = 'block'; }
         return;
       }
@@ -1164,7 +1164,7 @@ export async function renderDealMatrix(deal) {
     if (fieldKey === 'term_months') {
       const num = parseInt(trimmed, 10);
       if (isNaN(num) || num < 1 || num > 60) {
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         if (errEl) { errEl.textContent = 'Term must be 1–60 months'; errEl.style.display = 'block'; }
         return;
       }
@@ -1190,19 +1190,19 @@ export async function renderDealMatrix(deal) {
       if (resp.ok) {
         // Flash green border to confirm save
         if (el) {
-          el.style.borderColor = '#22c55e';
-          setTimeout(() => { el.style.borderColor = '#e2e8f0'; }, 1200);
+          el.style.borderColor = '#34D399';
+          setTimeout(() => { el.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
         }
         // Recalculate completeness after every save
         calculateCompleteness();
       } else {
         const err = await resp.json().catch(() => ({}));
-        if (el) el.style.borderColor = '#dc2626';
+        if (el) el.style.borderColor = '#F87171';
         showToast(err.error || 'Failed to save field', 'error');
       }
     } catch (e) {
       console.error('[matrix-save] Error saving field:', fieldKey, e);
-      if (el) el.style.borderColor = '#dc2626';
+      if (el) el.style.borderColor = '#F87171';
       showToast('Connection error saving field', 'error');
     }
   };
@@ -1297,7 +1297,7 @@ export async function renderDealMatrix(deal) {
     if (!parserFields) return;
 
     const extracted = ALL_FIELD_KEYS.filter(k => parsedData[k] != null && parsedData[k] !== '');
-    const confColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
+    const confColor = confidence >= 80 ? '#34D399' : confidence >= 50 ? '#D4A853' : '#F87171';
 
     // ── Detect new borrower / property entities FIRST (before conflicts banner) ──
     const matrixBorrowerEl = document.getElementById('mf-borrower_name');
@@ -1319,45 +1319,45 @@ export async function renderDealMatrix(deal) {
 
     // Build summary header — show only non-entity conflicts count
     let html = `
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="background:rgba(212,168,83,0.15);border:1px solid rgba(212,168,83,0.25);border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:14px;font-weight:700;color:#1e3a5f;">AI Extraction Results</div>
-          <div style="font-size:12px;color:#64748b;margin-top:2px;">${extracted.length} fields extracted from your documents</div>
+          <div style="font-size:14px;font-weight:700;color:#111827;">AI Extraction Results</div>
+          <div style="font-size:12px;color:#64748B;margin-top:2px;">${extracted.length} fields extracted from your documents</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
-          ${hasNewBorrower ? `<div style="text-align:center;"><div style="font-size:16px;">&#128100;</div><div style="font-size:9px;color:#3b82f6;font-weight:600;">NEW PERSON</div></div>` : ''}
-          ${hasNewProperty ? `<div style="text-align:center;"><div style="font-size:16px;">&#127968;</div><div style="font-size:9px;color:#22c55e;font-weight:600;">NEW PROPERTY</div></div>` : ''}
-          ${filteredConflictKeys.length > 0 ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#dc2626;">${filteredConflictKeys.length}</div><div style="font-size:9px;color:#dc2626;font-weight:600;">CONFLICTS</div></div>` : ''}
-          ${confidence != null ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:${confColor};">${confidence}%</div><div style="font-size:9px;color:#64748b;font-weight:600;">CONFIDENCE</div></div>` : ''}
-          <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#2563eb;">${extracted.length}</div><div style="font-size:9px;color:#64748b;font-weight:600;">FIELDS</div></div>
+          ${hasNewBorrower ? `<div style="text-align:center;"><div style="font-size:16px;">&#34D399;</div><div style="font-size:9px;color:#D4A853;font-weight:600;">NEW PERSON</div></div>` : ''}
+          ${hasNewProperty ? `<div style="text-align:center;"><div style="font-size:16px;">&#34D399;</div><div style="font-size:9px;color:#34D399;font-weight:600;">NEW PROPERTY</div></div>` : ''}
+          ${filteredConflictKeys.length > 0 ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#F87171;">${filteredConflictKeys.length}</div><div style="font-size:9px;color:#F87171;font-weight:600;">CONFLICTS</div></div>` : ''}
+          ${confidence != null ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:${confColor};">${confidence}%</div><div style="font-size:9px;color:#64748B;font-weight:600;">CONFIDENCE</div></div>` : ''}
+          <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#D4A853;">${extracted.length}</div><div style="font-size:9px;color:#64748B;font-weight:600;">FIELDS</div></div>
         </div>
       </div>`;
 
     // Show conflicts banner ONLY for non-entity fields
     if (filteredConflictKeys.length > 0) {
       html += `
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
-          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px;">&#9888; ${filteredConflictKeys.length} Conflicting Field${filteredConflictKeys.length > 1 ? 's' : ''} Detected</div>
-          <div style="font-size:11px;color:#7f1d1d;margin-bottom:10px;">Different documents contain different values for these core deal fields. Please select the correct value for each.</div>`;
+        <div style="background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:700;color:#F87171;margin-bottom:8px;">&#9888; ${filteredConflictKeys.length} Conflicting Field${filteredConflictKeys.length > 1 ? 's' : ''} Detected</div>
+          <div style="font-size:11px;color:#F87171;margin-bottom:10px;">Different documents contain different values for these core deal fields. Please select the correct value for each.</div>`;
 
       for (const field of filteredConflictKeys) {
         const options = _lastConflicts[field];
         const label = FIELD_LABELS[field] || field;
         html += `
-          <div style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;margin-bottom:8px;">
-            <div style="font-size:12px;font-weight:700;color:#1e3a5f;margin-bottom:6px;">${label}</div>`;
+          <div style="background:#111827;border:1px solid rgba(248,113,113,0.2);border-radius:6px;padding:10px 14px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px;">${label}</div>`;
         for (let i = 0; i < options.length; i++) {
           const opt = options[i];
-          const catBadge = opt.category ? `<span style="padding:1px 6px;border-radius:4px;background:#e2e8f0;color:#475569;font-size:9px;font-weight:600;margin-left:6px;">${opt.category.toUpperCase()}</span>` : '';
-          const srcName = opt.filename ? `<span style="font-size:10px;color:#94a3b8;margin-left:6px;">from: ${opt.filename.substring(0, 40)}</span>` : '';
+          const catBadge = opt.category ? `<span style="padding:1px 6px;border-radius:4px;background:rgba(255,255,255,0.06);color:#475569;font-size:9px;font-weight:600;margin-left:6px;">${opt.category.toUpperCase()}</span>` : '';
+          const srcName = opt.filename ? `<span style="font-size:10px;color:#94A3B8;margin-left:6px;">from: ${opt.filename.substring(0, 40)}</span>` : '';
           const isWinner = String(opt.value) === String(parsedData[field]);
           html += `
-            <div style="display:flex;align-items:center;padding:5px 10px;border-radius:5px;margin-bottom:3px;background:${isWinner ? '#f0fdf4' : '#fff'};border:1px solid ${isWinner ? '#bbf7d0' : '#f1f5f9'};">
-              <div style="flex:1;font-size:13px;color:#1e293b;font-weight:${isWinner ? '600' : '400'};">
+            <div style="display:flex;align-items:center;padding:5px 10px;border-radius:5px;margin-bottom:3px;background:${isWinner ? 'rgba(52,211,153,0.1)' : '#fff'};border:1px solid ${isWinner ? 'rgba(52,211,153,0.2)' : '#1a2332'};">
+              <div style="flex:1;font-size:13px;color:#F1F5F9;font-weight:${isWinner ? '600' : '400'};">
                 ${String(opt.value)}${catBadge}${srcName}
-                ${isWinner ? '<span style="font-size:10px;color:#22c55e;font-weight:700;margin-left:8px;">&#10003; SELECTED (highest priority)</span>' : ''}
+                ${isWinner ? '<span style="font-size:10px;color:#34D399;font-weight:700;margin-left:8px;">&#10003; SELECTED (highest priority)</span>' : ''}
               </div>
-              ${!isWinner ? `<button onclick="window.resolveConflict('${field}', ${i})" style="padding:2px 10px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#2563eb;color:#fff;">Use This</button>` : ''}
+              ${!isWinner ? `<button onclick="window.resolveConflict('${field}', ${i})" style="padding:2px 10px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#D4A853;color:#fff;">Use This</button>` : ''}
             </div>`;
         }
         html += `</div>`;
@@ -1372,7 +1372,7 @@ export async function renderDealMatrix(deal) {
 
       html += `
         <div style="margin-bottom:14px;">
-          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;padding:6px 0;border-bottom:1px solid #e2e8f0;margin-bottom:6px;">${sectionName}</div>`;
+          <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.4px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:6px;">${sectionName}</div>`;
 
       // ── NEW PERSON DETECTED card ──
       if (sectionName === 'Borrower / KYC' && hasNewBorrower) {
@@ -1393,33 +1393,33 @@ export async function renderDealMatrix(deal) {
         const parsedCompany = parsedData.company_name ? ` (${parsedData.company_name})` : '';
         const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
         html += `
-          <div id="new-borrower-card" style="background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:2px solid #3b82f6;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+          <div id="new-borrower-card" style="background:linear-gradient(135deg,rgba(212,168,83,0.15),rgba(212,168,83,0.1));border:2px solid #D4A853;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-              <span style="font-size:20px;">&#128100;</span>
+              <span style="font-size:20px;">&#34D399;</span>
               <div>
-                <div style="font-size:14px;font-weight:700;color:#1e3a5f;">New Person Detected</div>
-                <div style="font-size:11px;color:#64748b;">This document identifies a different person from the current borrower</div>
+                <div style="font-size:14px;font-weight:700;color:#111827;">New Person Detected</div>
+                <div style="font-size:11px;color:#64748B;">This document identifies a different person from the current borrower</div>
               </div>
             </div>
-            <div style="display:flex;gap:16px;background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+            <div style="display:flex;gap:16px;background:#111827;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
               <div style="flex:1;">
-                <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
-                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(matrixBorrower)}</div>
+                <div style="font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(matrixBorrower)}</div>
               </div>
-              <div style="color:#cbd5e1;font-size:20px;align-self:center;">&#8594;</div>
+              <div style="color:rgba(255,255,255,0.06);font-size:20px;align-self:center;">&#8594;</div>
               <div style="flex:1;">
-                <div style="font-size:9px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
-                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(parsedBorrower)}${sanitizeHtml(parsedCompany)}</div>
-                <div style="font-size:10px;color:#64748b;margin-top:1px;">Type: ${sanitizeHtml(parsedType)}</div>
+                <div style="font-size:9px;font-weight:700;color:#D4A853;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(parsedBorrower)}${sanitizeHtml(parsedCompany)}</div>
+                <div style="font-size:10px;color:#64748B;margin-top:1px;">Type: ${sanitizeHtml(parsedType)}</div>
               </div>
             </div>
             <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:8px;">What would you like to do with this person?</div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              <button onclick="window.addParsedAsBorrower('primary')" style="${btnStyle}background:#2563eb;color:#fff;" title="Add as a joint/additional borrower">&#43; Add as Borrower</button>
-              <button onclick="window.addParsedAsBorrower('guarantor')" style="${btnStyle}background:#7c3aed;color:#fff;" title="Add as a personal guarantor">&#43; Add as Guarantor</button>
-              <button onclick="window.addParsedAsBorrower('director')" style="${btnStyle}background:#0891b2;color:#fff;" title="Add as a company director">&#43; Add as Director</button>
-              <button onclick="window.replaceBorrowerFromParsed()" style="${btnStyle}background:#f59e0b;color:#fff;" title="Replace the existing borrower with this person">&#8635; Replace Existing</button>
-              <button onclick="document.getElementById('new-borrower-card').style.display='none'" style="${btnStyle}background:#f1f5f9;color:#64748b;" title="Ignore this person">Ignore</button>
+              <button onclick="window.addParsedAsBorrower('primary')" style="${btnStyle}background:#D4A853;color:#fff;" title="Add as a joint/additional borrower">&#43; Add as Borrower</button>
+              <button onclick="window.addParsedAsBorrower('guarantor')" style="${btnStyle}background:#D4A853;color:#fff;" title="Add as a personal guarantor">&#43; Add as Guarantor</button>
+              <button onclick="window.addParsedAsBorrower('director')" style="${btnStyle}background:#34D399;color:#fff;" title="Add as a company director">&#43; Add as Director</button>
+              <button onclick="window.replaceBorrowerFromParsed()" style="${btnStyle}background:#D4A853;color:#fff;" title="Replace the existing borrower with this person">&#8635; Replace Existing</button>
+              <button onclick="document.getElementById('new-borrower-card').style.display='none'" style="${btnStyle}background:#1a2332;color:#64748B;" title="Ignore this person">Ignore</button>
             </div>
           </div>`;
       }
@@ -1442,31 +1442,31 @@ export async function renderDealMatrix(deal) {
         const parsedAssetType = parsedData.asset_type ? ` (${parsedData.asset_type})` : '';
         const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
         html += `
-          <div id="new-property-card" style="background:linear-gradient(135deg,#f0fdf4,#f0fdfa);border:2px solid #22c55e;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+          <div id="new-property-card" style="background:linear-gradient(135deg,rgba(52,211,153,0.1),rgba(52,211,153,0.1));border:2px solid #34D399;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-              <span style="font-size:20px;">&#127968;</span>
+              <span style="font-size:20px;">&#34D399;</span>
               <div>
-                <div style="font-size:14px;font-weight:700;color:#1e3a5f;">New Property Detected</div>
-                <div style="font-size:11px;color:#64748b;">This document references a different property from the current security</div>
+                <div style="font-size:14px;font-weight:700;color:#111827;">New Property Detected</div>
+                <div style="font-size:11px;color:#64748B;">This document references a different property from the current security</div>
               </div>
             </div>
-            <div style="display:flex;gap:16px;background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+            <div style="display:flex;gap:16px;background:#111827;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
               <div style="flex:1;">
-                <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
-                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(matrixProperty.substring(0, 80))}</div>
+                <div style="font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(matrixProperty.substring(0, 80))}</div>
               </div>
-              <div style="color:#cbd5e1;font-size:20px;align-self:center;">&#8594;</div>
+              <div style="color:rgba(255,255,255,0.06);font-size:20px;align-self:center;">&#8594;</div>
               <div style="flex:1;">
-                <div style="font-size:9px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
-                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(parsedPropertyAddr)}${sanitizeHtml(parsedPostcode)}</div>
-                ${parsedAssetType ? `<div style="font-size:10px;color:#64748b;margin-top:1px;">${sanitizeHtml(parsedAssetType)}</div>` : ''}
+                <div style="font-size:9px;font-weight:700;color:#34D399;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(parsedPropertyAddr)}${sanitizeHtml(parsedPostcode)}</div>
+                ${parsedAssetType ? `<div style="font-size:10px;color:#64748B;margin-top:1px;">${sanitizeHtml(parsedAssetType)}</div>` : ''}
               </div>
             </div>
             <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:8px;">What would you like to do with this property?</div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              <button onclick="window.addParsedAsProperty()" style="${btnStyle}background:#22c55e;color:#fff;" title="Add as additional security in a portfolio deal">&#43; Add to Portfolio</button>
-              <button onclick="window.replacePropertyFromParsed()" style="${btnStyle}background:#f59e0b;color:#fff;" title="Replace the existing property with this one">&#8635; Replace Existing</button>
-              <button onclick="document.getElementById('new-property-card').style.display='none'" style="${btnStyle}background:#f1f5f9;color:#64748b;" title="Ignore this property">Ignore</button>
+              <button onclick="window.addParsedAsProperty()" style="${btnStyle}background:#34D399;color:#fff;" title="Add as additional security in a portfolio deal">&#43; Add to Portfolio</button>
+              <button onclick="window.replacePropertyFromParsed()" style="${btnStyle}background:#D4A853;color:#fff;" title="Replace the existing property with this one">&#8635; Replace Existing</button>
+              <button onclick="document.getElementById('new-property-card').style.display='none'" style="${btnStyle}background:#1a2332;color:#64748B;" title="Ignore this property">Ignore</button>
             </div>
           </div>`;
       }
@@ -1492,31 +1492,31 @@ export async function renderDealMatrix(deal) {
         const entityHandled = (isBorrowerField && hasNewBorrower) || (isPropertyField && hasNewProperty);
 
         // Core field badge — suppress CONFLICT badge if entity card handles it
-        const coreBadge = isCore ? '<span style="padding:1px 5px;border-radius:3px;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;margin-left:6px;letter-spacing:.3px;">CORE</span>' : '';
+        const coreBadge = isCore ? '<span style="padding:1px 5px;border-radius:3px;background:#111827;color:#fff;font-size:8px;font-weight:700;margin-left:6px;letter-spacing:.3px;">CORE</span>' : '';
         const showConflict = hasConflict && !entityHandled;
-        const conflictBadge = showConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
-        const rowBorder = showConflict ? 'border:1px solid #fecaca;background:#fef2f2;' : 'border:1px solid #f1f5f9;background:#fff;';
+        const conflictBadge = showConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#F87171;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
+        const rowBorder = showConflict ? 'border:1px solid rgba(248,113,113,0.2);background:rgba(248,113,113,0.1);' : 'border:1px solid #1a2332;background:#111827;';
 
         // Check if Matrix already has a value for this field — suppress overwrite warning if entity card handles it
         const matrixEl = document.getElementById(`mf-${key}`);
         const matrixVal = matrixEl ? matrixEl.value.trim() : '';
         const matrixDiffers = matrixVal && matrixVal !== String(parsedData[key]) && isCore;
-        const matrixWarning = (matrixDiffers && !entityHandled) ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
+        const matrixWarning = (matrixDiffers && !entityHandled) ? `<div style="font-size:10px;color:#D4A853;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
 
         // If entity card is shown, dim the individual accept/reject buttons and add a note
-        const entityNote = entityHandled && matrixDiffers ? `<div style="font-size:9px;color:#3b82f6;margin-top:2px;">&#8593; Use the card above to add/replace</div>` : '';
+        const entityNote = entityHandled && matrixDiffers ? `<div style="font-size:9px;color:#D4A853;margin-top:2px;">&#8593; Use the card above to add/replace</div>` : '';
 
         html += `
           <div style="display:flex;align-items:flex-start;padding:7px 12px;border-radius:6px;margin-bottom:3px;${rowBorder}" id="parsed-row-${key}">
-            <div style="width:180px;font-size:12px;color:#64748b;font-weight:600;flex-shrink:0;">${label}${coreBadge}${conflictBadge}</div>
-            <div style="flex:1;font-size:13px;color:#1e293b;font-weight:500;">
+            <div style="width:180px;font-size:12px;color:#64748B;font-weight:600;flex-shrink:0;">${label}${coreBadge}${conflictBadge}</div>
+            <div style="flex:1;font-size:13px;color:#F1F5F9;font-weight:500;">
               ${val}
               ${matrixWarning}
               ${entityNote}
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;">
-              <button onclick="window.acceptParsedField('${key}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;" title="Accept and fill Matrix">&#10003;</button>
-              <button onclick="document.getElementById('parsed-row-${key}').style.display='none'" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#fee2e2;color:#dc2626;" title="Reject this value">&#10005;</button>
+              <button onclick="window.acceptParsedField('${key}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#34D399;color:#fff;" title="Accept and fill Matrix">&#10003;</button>
+              <button onclick="document.getElementById('parsed-row-${key}').style.display='none'" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Reject this value">&#10005;</button>
             </div>
           </div>`;
       }
@@ -1528,7 +1528,7 @@ export async function renderDealMatrix(deal) {
     if (parserActions) parserActions.style.display = 'flex';
 
     // Remove the "Select a document" placeholder
-    const infoBox = parserContent ? parserContent.querySelector('div[style*="background:#eff6ff"]') : null;
+    const infoBox = parserContent ? parserContent.querySelector('div[style*="background:rgba(212,168,83,0.15)"]') : null;
     if (infoBox && infoBox.textContent.includes('Select a document')) infoBox.style.display = 'none';
 
     // Auto-open Parser section and scroll to it
@@ -1550,7 +1550,7 @@ export async function renderDealMatrix(deal) {
     if (fieldsFilled) fieldsFilled.textContent = String(extracted.length);
     if (confEl && confidence != null) {
       confEl.textContent = confidence + '%';
-      confEl.style.color = confidence >= 80 ? '#86efac' : confidence >= 50 ? '#fde68a' : '#fca5a5';
+      confEl.style.color = confidence >= 80 ? 'rgba(52,211,153,0.2)' : confidence >= 50 ? 'rgba(251,191,36,0.2)' : 'rgba(248,113,113,0.2)';
     }
   }
 
@@ -1607,9 +1607,9 @@ export async function renderDealMatrix(deal) {
         // Hide the entity card and dim borrower field rows (they're now handled)
         const card = document.getElementById('new-borrower-card');
         if (card) {
-          card.innerHTML = `<div style="text-align:center;padding:12px;color:#22c55e;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.full_name)} added as ${roleLabel}</div>`;
-          card.style.borderColor = '#22c55e';
-          card.style.background = '#f0fdf4';
+          card.innerHTML = `<div style="text-align:center;padding:12px;color:#34D399;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.full_name)} added as ${roleLabel}</div>`;
+          card.style.borderColor = '#34D399';
+          card.style.background = 'rgba(52,211,153,0.1)';
         }
         // Hide individual borrower field rows since entity was added
         for (const f of BORROWER_ENTITY_FIELDS) {
@@ -1636,14 +1636,14 @@ export async function renderDealMatrix(deal) {
       if (src[f] != null && src[f] !== '') {
         if (pushFieldToMatrix(f, src[f])) count++;
         const row = document.getElementById(`parsed-row-${f}`);
-        if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
+        if (row) { row.style.background = 'rgba(52,211,153,0.1)'; row.style.borderColor = 'rgba(52,211,153,0.2)'; }
       }
     }
     const card = document.getElementById('new-borrower-card');
     if (card) {
-      card.innerHTML = `<div style="text-align:center;padding:12px;color:#f59e0b;font-weight:700;font-size:13px;">&#8635; Borrower replaced — ${count} fields updated in Matrix</div>`;
-      card.style.borderColor = '#f59e0b';
-      card.style.background = '#fffbeb';
+      card.innerHTML = `<div style="text-align:center;padding:12px;color:#D4A853;font-weight:700;font-size:13px;">&#8635; Borrower replaced — ${count} fields updated in Matrix</div>`;
+      card.style.borderColor = '#D4A853';
+      card.style.background = 'rgba(251,191,36,0.1)';
     }
     showToast(`Borrower replaced — ${count} fields updated`, 'success');
   };
@@ -1681,9 +1681,9 @@ export async function renderDealMatrix(deal) {
         showToast(`Property added to portfolio: ${body.address.substring(0, 40)}`, 'success');
         const card = document.getElementById('new-property-card');
         if (card) {
-          card.innerHTML = `<div style="text-align:center;padding:12px;color:#22c55e;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.address.substring(0, 50))} added to portfolio</div>`;
-          card.style.borderColor = '#22c55e';
-          card.style.background = '#f0fdf4';
+          card.innerHTML = `<div style="text-align:center;padding:12px;color:#34D399;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.address.substring(0, 50))} added to portfolio</div>`;
+          card.style.borderColor = '#34D399';
+          card.style.background = 'rgba(52,211,153,0.1)';
         }
         for (const f of PROPERTY_ENTITY_FIELDS) {
           const row = document.getElementById(`parsed-row-${f}`);
@@ -1709,14 +1709,14 @@ export async function renderDealMatrix(deal) {
       if (src[f] != null && src[f] !== '') {
         if (pushFieldToMatrix(f, src[f])) count++;
         const row = document.getElementById(`parsed-row-${f}`);
-        if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
+        if (row) { row.style.background = 'rgba(52,211,153,0.1)'; row.style.borderColor = 'rgba(52,211,153,0.2)'; }
       }
     }
     const card = document.getElementById('new-property-card');
     if (card) {
-      card.innerHTML = `<div style="text-align:center;padding:12px;color:#f59e0b;font-weight:700;font-size:13px;">&#8635; Property replaced — ${count} fields updated in Matrix</div>`;
-      card.style.borderColor = '#f59e0b';
-      card.style.background = '#fffbeb';
+      card.innerHTML = `<div style="text-align:center;padding:12px;color:#D4A853;font-weight:700;font-size:13px;">&#8635; Property replaced — ${count} fields updated in Matrix</div>`;
+      card.style.borderColor = '#D4A853';
+      card.style.background = 'rgba(251,191,36,0.1)';
     }
     showToast(`Property replaced — ${count} fields updated`, 'success');
   };
@@ -1729,14 +1729,14 @@ export async function renderDealMatrix(deal) {
     if (!el) return false;
 
     el.value = String(val);
-    el.style.borderColor = '#f59e0b';
-    el.style.background = '#fffbeb';
+    el.style.borderColor = '#D4A853';
+    el.style.background = 'rgba(251,191,36,0.1)';
 
     // Add AI badge if not there
     const confidence = _lastParsedData && _lastParsedData.confidence != null ? Math.round(_lastParsedData.confidence * 100) : null;
     const badge = el.parentElement.querySelector('.ai-confidence-badge');
     if (!badge && confidence != null) {
-      const badgeColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
+      const badgeColor = confidence >= 80 ? '#34D399' : confidence >= 50 ? '#D4A853' : '#F87171';
       const badgeHtml = document.createElement('div');
       badgeHtml.className = 'ai-confidence-badge';
       badgeHtml.style.cssText = 'display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;';
@@ -1755,12 +1755,12 @@ export async function renderDealMatrix(deal) {
       // Mark row as accepted visually
       const row = document.getElementById(`parsed-row-${key}`);
       if (row) {
-        row.style.background = '#f0fdf4';
-        row.style.borderColor = '#bbf7d0';
+        row.style.background = 'rgba(52,211,153,0.1)';
+        row.style.borderColor = 'rgba(52,211,153,0.2)';
         const btns = row.querySelectorAll('button');
         btns.forEach(b => b.remove());
         const accepted = document.createElement('span');
-        accepted.style.cssText = 'font-size:10px;font-weight:700;color:#22c55e;';
+        accepted.style.cssText = 'font-size:10px;font-weight:700;color:#34D399;';
         accepted.textContent = '\u2713 Accepted';
         row.querySelector('div:last-child') || row.appendChild(accepted);
         row.appendChild(accepted);
@@ -1803,12 +1803,12 @@ export async function renderDealMatrix(deal) {
         // Mark row
         const row = document.getElementById(`parsed-row-${key}`);
         if (row) {
-          row.style.background = '#f0fdf4';
-          row.style.borderColor = '#bbf7d0';
+          row.style.background = 'rgba(52,211,153,0.1)';
+          row.style.borderColor = 'rgba(52,211,153,0.2)';
           const btns = row.querySelectorAll('button');
           btns.forEach(b => b.remove());
           const accepted = document.createElement('span');
-          accepted.style.cssText = 'font-size:10px;font-weight:700;color:#22c55e;';
+          accepted.style.cssText = 'font-size:10px;font-weight:700;color:#34D399;';
           accepted.textContent = '\u2713 Accepted';
           row.appendChild(accepted);
         }
@@ -2293,13 +2293,13 @@ export async function renderDealMatrix(deal) {
       const tierName = tierLabels[readiness.tier] || 'Submission';
       if (readiness.ready) {
         statusEl.textContent = `Ready for ${tierName}`;
-        statusEl.style.color = '#22c55e';
+        statusEl.style.color = '#34D399';
       } else if (readiness.requiredPct >= 60) {
         statusEl.textContent = `Almost Ready — ${tierName}`;
-        statusEl.style.color = '#f59e0b';
+        statusEl.style.color = '#D4A853';
       } else {
         statusEl.textContent = `More Info Needed — ${tierName}`;
-        statusEl.style.color = '#dc2626';
+        statusEl.style.color = '#F87171';
       }
     }
 
@@ -2319,8 +2319,8 @@ export async function renderDealMatrix(deal) {
       let checkHtml = '';
       for (const [name, sec] of Object.entries(readiness.sections)) {
         const icon = sec.status === 'ready' ? '&#10003;' : sec.status === 'partial' ? '&#9888;' : '&#10005;';
-        const color = sec.status === 'ready' ? '#22c55e' : sec.status === 'partial' ? '#f59e0b' : '#dc2626';
-        const bg = sec.status === 'ready' ? '#f0fdf4' : sec.status === 'partial' ? '#fffbeb' : '#fef2f2';
+        const color = sec.status === 'ready' ? '#34D399' : sec.status === 'partial' ? '#D4A853' : '#F87171';
+        const bg = sec.status === 'ready' ? 'rgba(52,211,153,0.1)' : sec.status === 'partial' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)';
         const missingText = sec.missing.length > 0
           ? sec.missing.map(k => FIELD_LABELS[k] || k.replace(/_/g, ' ')).join(', ')
           : '';
@@ -2333,9 +2333,9 @@ export async function renderDealMatrix(deal) {
           <div ${clickHandler} ${hoverTitle} style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-radius:6px;background:${bg};margin-bottom:3px;${cursorStyle}transition:opacity .15s;" ${clickable ? 'onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1"' : ''}>
             <span style="font-size:13px;color:${color};font-weight:700;flex-shrink:0;">${icon}</span>
             <div style="flex:1;">
-              <span style="font-size:12px;font-weight:600;color:#1e293b;">${name}</span>
+              <span style="font-size:12px;font-weight:600;color:#F1F5F9;">${name}</span>
               ${missingText ? `<div style="font-size:10px;color:${color};margin-top:1px;">Missing: ${missingText}</div>` : ''}
-              ${clickable ? '<div style="font-size:9px;color:#2563eb;margin-top:2px;">Click to complete ↓</div>' : ''}
+              ${clickable ? '<div style="font-size:9px;color:#D4A853;margin-top:2px;">Click to complete ↓</div>' : ''}
             </div>
           </div>`;
       }
@@ -2348,11 +2348,11 @@ export async function renderDealMatrix(deal) {
       if (readiness.ready) {
         submitCta.disabled = false;
         submitCta.style.opacity = '1';
-        submitCta.style.background = '#22c55e';
+        submitCta.style.background = '#34D399';
       } else {
         submitCta.disabled = true;
         submitCta.style.opacity = '0.5';
-        submitCta.style.background = '#94a3b8';
+        submitCta.style.background = '#94A3B8';
       }
     }
 
@@ -2422,9 +2422,9 @@ export async function renderDealMatrix(deal) {
 
     // Pill colours
     const pillColors = {
-      'complete': { bg: '#dcfce7', color: '#166534' },
-      'incomplete': { bg: '#fef3c7', color: '#a16207' },
-      'not-started': { bg: '#f1f5f9', color: '#94a3b8' }
+      'complete': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' },
+      'incomplete': { bg: 'rgba(212,168,83,0.15)', color: '#FBBF24' },
+      'not-started': { bg: '#1a2332', color: '#94A3B8' }
     };
 
     // ── Update section header dots ──
@@ -2468,8 +2468,8 @@ export async function renderDealMatrix(deal) {
       const btn = document.getElementById('matrix-submit-review-btn');
       if (btn) {
         btn.innerHTML = '✅ Submitted for Review';
-        btn.style.background = '#86efac';
-        btn.style.color = '#166534';
+        btn.style.background = 'rgba(52,211,153,0.2)';
+        btn.style.color = '#34D399';
         btn.disabled = true;
         btn.style.cursor = 'default';
       }
@@ -2477,7 +2477,7 @@ export async function renderDealMatrix(deal) {
       const compBar = document.getElementById('matrix-completeness-bar');
       if (compBar) {
         const banner = document.createElement('div');
-        banner.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 14px;margin-top:10px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center;';
+        banner.style.cssText = 'background:rgba(212,168,83,0.15);border:1px solid rgba(212,168,83,0.25);border-radius:6px;padding:8px 14px;margin-top:10px;font-size:12px;color:#E8C97A;font-weight:600;text-align:center;';
         banner.textContent = 'This deal has been submitted for RM review. Matrix is now read-only.';
         compBar.appendChild(banner);
       }
@@ -2524,8 +2524,8 @@ export async function renderDealMatrix(deal) {
         const btn = document.getElementById('matrix-submit-review-btn');
         if (btn) {
           btn.innerHTML = '✅ Submitted for Review';
-          btn.style.background = '#86efac';
-          btn.style.color = '#166534';
+          btn.style.background = 'rgba(52,211,153,0.2)';
+          btn.style.color = '#34D399';
           btn.disabled = true;
           btn.style.cursor = 'default';
         }
@@ -2533,10 +2533,10 @@ export async function renderDealMatrix(deal) {
         // Replace the top CTA with confirmation banner
         const cta = document.getElementById('matrix-submit-cta');
         if (cta) {
-          cta.style.background = '#eff6ff';
-          cta.style.borderColor = '#bfdbfe';
+          cta.style.background = 'rgba(212,168,83,0.15)';
+          cta.style.borderColor = 'rgba(212,168,83,0.25)';
           cta.innerHTML = `<div style="text-align:center;padding:6px;">
-            <span style="font-size:13px;font-weight:700;color:#1d4ed8;">&#10003; Deal submitted for RM review${data.notification_sent ? ' — RM has been notified' : ''}</span>
+            <span style="font-size:13px;font-weight:700;color:#E8C97A;">&#10003; Deal submitted for RM review${data.notification_sent ? ' — RM has been notified' : ''}</span>
           </div>`;
         }
       } else {

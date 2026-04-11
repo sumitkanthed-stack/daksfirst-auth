@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0B1120">
   <title>Daksfirst Limited — Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
     <div id="screen-landing" class="screen active">
       <div class="portal-logo" style="text-align:center;margin-bottom:30px;">
         <img src="/logo.PNG" alt="Daksfirst" style="height:60px;" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-        <div style="display:none;font-size:28px;font-weight:700;color:#fff;letter-spacing:1px;">Daksfirst</div>
+        <div style="display:none;font-size:28px;font-weight:700;color:#F1F5F9;letter-spacing:1px;font-family:'Playfair Display',serif;">Daksfirst</div>
       </div>
       <div class="role-selection">
         <div class="role-card" onclick="goToRegister('broker')">
@@ -481,7 +483,7 @@
         <!-- Dashboard Header -->
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#1a365d" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#1a365d"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#1a365d"/></svg></span> Daksfirst</div>
+            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="user-name-display">User</span>
@@ -515,13 +517,13 @@
           </div>
 
           <!-- Broker Onboarding Banner -->
-          <div id="broker-onboarding-banner" style="display:none;background:linear-gradient(135deg,#1a365d 0%,#2a4365 100%);color:white;padding:20px 24px;border-radius:12px;margin-bottom:20px;">
+          <div id="broker-onboarding-banner" style="display:none;background:linear-gradient(135deg,#0F172A 0%,#1A2B3F 100%);color:#F1F5F9;padding:20px 24px;border-radius:12px;margin-bottom:20px;border:1px solid rgba(255,255,255,0.06);">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
                 <div style="font-weight:700;font-size:1.1rem;margin-bottom:4px;">Complete Your Broker Onboarding</div>
                 <div style="font-size:0.9rem;opacity:0.85;" id="broker-onb-status-text">We need your KYC documents and bank details before we can pay your commission fees.</div>
               </div>
-              <button onclick="showBrokerOnboarding()" style="padding:10px 20px;background:#c9a84c;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;">Complete Now</button>
+              <button onclick="showBrokerOnboarding()" style="padding:10px 20px;background:#D4A853;color:#0B1120;border:none;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;">Complete Now</button>
             </div>
           </div>
 
@@ -530,9 +532,9 @@
             <div class="detail-panel" style="padding:24px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                 <h3 style="margin:0;color:var(--primary);">Broker Onboarding — KYC & Bank Details</h3>
-                <button onclick="hideBrokerOnboarding()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#666;">✕</button>
+                <button onclick="hideBrokerOnboarding()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#94A3B8;">✕</button>
               </div>
-              <p style="color:#666;margin-bottom:16px;font-size:0.9rem;">Please complete all sections. We cannot process commission payments until your onboarding is approved.</p>
+              <p style="color:#94A3B8;margin-bottom:16px;font-size:0.9rem;">Please complete all sections. We cannot process commission payments until your onboarding is approved.</p>
 
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group"><label style="font-weight:600;">Full Legal Name *</label><input type="text" id="bonb-name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
@@ -548,7 +550,7 @@
                   <div class="form-group"><label style="font-weight:600;">Company Name</label><input type="text" id="bonb-company-name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
                   <div class="form-group"><label style="font-weight:600;">Company Number</label><input type="text" id="bonb-company-number" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
                 </div>
-                <p style="color:#666;font-size:0.85rem;margin-top:4px;">Upload incorporation documents in the Documents tab of any deal, or email to portal@daksfirst.com</p>
+                <p style="color:#94A3B8;font-size:0.85rem;margin-top:4px;">Upload incorporation documents in the Documents tab of any deal, or email to portal@daksfirst.com</p>
               </div>
 
               <h4 style="margin:20px 0 12px;color:var(--primary);border-top:1px solid var(--border);padding-top:16px;">Bank Details (for commission payments)</h4>
@@ -559,36 +561,36 @@
                 <div class="form-group"><label style="font-weight:600;">Account Number *</label><input type="text" id="bonb-account-no" placeholder="12345678" maxlength="8" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
               </div>
 
-              <p style="color:#666;font-size:0.85rem;margin-top:8px;">Please email your passport and proof of address (utility bill dated within 3 months) to <strong>portal@daksfirst.com</strong>.</p>
+              <p style="color:#94A3B8;font-size:0.85rem;margin-top:8px;">Please email your passport and proof of address (utility bill dated within 3 months) to <strong>portal@daksfirst.com</strong>.</p>
 
               <button onclick="saveBrokerOnboarding()" id="bonb-submit-btn" class="btn btn-primary" style="width:100%;margin-top:16px;padding:12px;font-size:1rem;">Save & Submit for Review</button>
-              <div id="bonb-success" style="display:none;margin-top:12px;padding:12px;background:#f0fff4;border-radius:8px;border:1px solid #c6f6d5;color:#22543d;font-weight:600;">Onboarding submitted for review. We'll notify you once approved.</div>
+              <div id="bonb-success" style="display:none;margin-top:12px;padding:12px;background:#064E3B;border-radius:8px;border:1px solid #10B981;color:#A7F3D0;font-weight:600;">Onboarding submitted for review. We'll notify you once approved.</div>
             </div>
           </div>
 
           <!-- Smart Document Drop Zone -->
           <div id="smart-drop-zone" style="margin-bottom:24px;">
-            <div id="smart-drop-area" style="border:2px dashed #c9a84c;border-radius:16px;padding:40px 20px;text-align:center;background:#fffdf5;cursor:pointer;transition:all 0.3s ease;"
-              ondragover="event.preventDefault();this.style.borderColor='#1a365d';this.style.background='#f7fafc';"
-              ondragleave="this.style.borderColor='#c9a84c';this.style.background='#fffdf5';"
+            <div id="smart-drop-area" style="border:2px dashed #D4A853;border-radius:16px;padding:40px 20px;text-align:center;background:#1a2332;cursor:pointer;transition:all 0.3s ease;"
+              ondragover="event.preventDefault();this.style.borderColor='#D4A853';this.style.background='#1a2332';"
+              ondragleave="this.style.borderColor='#D4A853';this.style.background='#1a2332';"
               ondrop="handleSmartDrop(event)"
               onclick="document.getElementById('smart-file-input').click()">
               <div style="font-size:48px;margin-bottom:12px;">📁</div>
               <div style="font-size:1.2rem;font-weight:700;color:var(--primary);margin-bottom:8px;">Drop Your Deal Pack Here</div>
               <div style="color:var(--text-light);font-size:0.95rem;max-width:500px;margin:0 auto;">Drop PDFs, Word docs, Excel files, images, or paste WhatsApp text. Our AI will extract the deal details and pre-fill the form for you.</div>
               <div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">PDF</span>
-                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Word</span>
-                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Excel</span>
-                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">Images</span>
-                <span style="padding:4px 12px;background:white;border-radius:20px;font-size:12px;color:#666;border:1px solid #e2e8f0;">WhatsApp</span>
+                <span style="padding:4px 12px;background:#0F172A;border-radius:20px;font-size:12px;color:#94A3B8;border:1px solid rgba(255,255,255,0.06);">PDF</span>
+                <span style="padding:4px 12px;background:#0F172A;border-radius:20px;font-size:12px;color:#94A3B8;border:1px solid rgba(255,255,255,0.06);">Word</span>
+                <span style="padding:4px 12px;background:#0F172A;border-radius:20px;font-size:12px;color:#94A3B8;border:1px solid rgba(255,255,255,0.06);">Excel</span>
+                <span style="padding:4px 12px;background:#0F172A;border-radius:20px;font-size:12px;color:#94A3B8;border:1px solid rgba(255,255,255,0.06);">Images</span>
+                <span style="padding:4px 12px;background:#0F172A;border-radius:20px;font-size:12px;color:#94A3B8;border:1px solid rgba(255,255,255,0.06);">WhatsApp</span>
               </div>
               <input type="file" id="smart-file-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.txt" style="display:none;" onchange="handleSmartFileSelect(event)">
             </div>
 
             <!-- WhatsApp text paste area (toggled) -->
             <div style="text-align:center;margin-top:8px;">
-              <a href="#" onclick="toggleWhatsappPaste(); return false;" style="color:var(--secondary);font-size:0.85rem;text-decoration:none;">Or paste WhatsApp / email text</a>
+              <a href="#" onclick="toggleWhatsappPaste(); return false;" style="color:#D4A853;font-size:0.85rem;text-decoration:none;">Or paste WhatsApp / email text</a>
             </div>
             <div id="whatsapp-paste-area" style="display:none;margin-top:8px;">
               <textarea id="whatsapp-text-input" placeholder="Paste broker pack text, WhatsApp message, email content, or any deal description here..." style="width:100%;min-height:100px;padding:12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:0.9rem;resize:vertical;"></textarea>
@@ -597,7 +599,7 @@
 
             <!-- Upload progress / file list -->
             <div id="smart-upload-progress" style="display:none;margin-top:12px;">
-              <div id="smart-file-list" style="background:white;border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+              <div id="smart-file-list" style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;"></div>
               <div id="smart-upload-status" style="text-align:center;padding:12px;color:var(--text-light);"></div>
             </div>
           </div>
@@ -607,9 +609,9 @@
             <div class="detail-panel" style="padding:24px;border:2px solid var(--secondary);">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                 <h3 style="margin:0;color:var(--primary);">Review Extracted Deal Data</h3>
-                <button onclick="cancelSmartParse()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#666;">✕</button>
+                <button onclick="cancelSmartParse()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#94A3B8;">✕</button>
               </div>
-              <p style="color:#666;margin-bottom:16px;font-size:0.9rem;">Our AI extracted the following details from your documents. Please review and correct anything before submitting.</p>
+              <p style="color:#94A3B8;margin-bottom:16px;font-size:0.9rem;">Our AI extracted the following details from your documents. Please review and correct anything before submitting.</p>
 
               <!-- Mode selector: New deal or Update existing -->
               <div id="smart-parse-mode" style="margin-bottom:16px;padding:12px;background:var(--light-blue);border-radius:8px;">
@@ -701,7 +703,7 @@
       <div class="dashboard-container">
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#1a365d" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#1a365d"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#1a365d"/></svg></span> Daksfirst</div>
+            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="detail-user-name">User</span>
@@ -728,30 +730,30 @@
           <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-snapshot">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('snapshot')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#eff6ff;color:#2563eb;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128200;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#1E3A5F;color:#60A5FA;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128200;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Snapshot</div><div style="font-size:11px;color:#64748b;">Deal summary at a glance</div></div>
               </div>
               <div class="deal-section-chevron open" id="chev-snapshot">&#9658;</div>
             </div>
             <div class="deal-section-body" id="body-snapshot">
-              <div id="snapshot-hero" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#f8fafc,#eff6ff);border-bottom:1px solid #e2e8f0;">
+              <div id="snapshot-hero" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#0F172A,#1A2B3F);border-bottom:1px solid rgba(255,255,255,0.06);">
                 <div id="detail-property-address" style="font-size:15px;font-weight:700;color:#1e3a5f;max-width:65%;">Property Address</div>
                 <div style="display:flex;gap:8px;">
                   <span id="detail-stage-badge" class="stage-badge" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;">DIP</span>
                   <span id="detail-status-badge" class="status-badge status-received" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;">Received</span>
                 </div>
               </div>
-              <div id="snapshot-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e2e8f0;">
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Loan Amount</div><div id="snap-loan" style="font-size:16px;font-weight:700;color:#1e3a5f;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Day 1 LTV</div><div id="snap-ltv" style="font-size:16px;font-weight:700;color:#059669;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Property Value</div><div id="snap-value" style="font-size:16px;font-weight:700;color:#1e3a5f;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Term</div><div id="snap-term" style="font-size:16px;font-weight:700;color:#1e293b;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Rate</div><div id="snap-rate" style="font-size:16px;font-weight:700;color:#1e293b;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Borrower</div><div id="snap-borrower" style="font-size:13px;font-weight:600;color:#1e293b;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Exit Strategy</div><div id="snap-exit" style="font-size:13px;font-weight:600;color:#1e293b;margin-top:3px;">-</div></div>
-                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Submitted</div><div id="detail-date" style="font-size:13px;font-weight:500;color:#374151;margin-top:3px;">-</div></div>
+              <div id="snapshot-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:rgba(255,255,255,0.06);">
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Loan Amount</div><div id="snap-loan" style="font-size:16px;font-weight:700;color:#D4A853;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Day 1 LTV</div><div id="snap-ltv" style="font-size:16px;font-weight:700;color:#10B981;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Property Value</div><div id="snap-value" style="font-size:16px;font-weight:700;color:#D4A853;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Term</div><div id="snap-term" style="font-size:16px;font-weight:700;color:#F1F5F9;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Rate</div><div id="snap-rate" style="font-size:16px;font-weight:700;color:#F1F5F9;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Borrower</div><div id="snap-borrower" style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Exit Strategy</div><div id="snap-exit" style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Submitted</div><div id="detail-date" style="font-size:13px;font-weight:500;color:#CBD5E1;margin-top:3px;">-</div></div>
               </div>
-              <div id="snapshot-pipeline" style="padding:10px 20px;display:flex;gap:4px;align-items:center;background:#fafbfc;flex-wrap:wrap;">
+              <div id="snapshot-pipeline" style="padding:10px 20px;display:flex;gap:4px;align-items:center;background:#0F172A;flex-wrap:wrap;">
                 <span style="font-size:10px;color:#64748b;font-weight:600;margin-right:4px;">STAGE</span>
               </div>
               <!-- Hidden ref for JS compat -->
@@ -763,7 +765,7 @@
           <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-matrix">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('matrix')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#dbeafe;color:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128202;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#1E3A5F;color:#60A5FA;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128202;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Deal Information Matrix</div><div style="font-size:11px;color:#64748b;">Field-by-field status tracking across all stages</div></div>
               </div>
               <div class="deal-section-chevron open" id="chev-matrix">&#9658;</div>
@@ -779,33 +781,33 @@
           <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-doc-repo">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('doc-repo')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128193;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#D4A853;color:#0B1120;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128193;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Document Repository</div><div style="font-size:11px;color:#64748b;">Filing cabinet — all deal documents, emails, text</div></div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
-                <span id="doc-repo-count" style="background:#1e3a5f;color:#fff;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0 files</span>
+                <span id="doc-repo-count" style="background:#D4A853;color:#0B1120;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0 files</span>
                 <div class="deal-section-chevron open" id="chev-doc-repo">&#9658;</div>
               </div>
             </div>
             <div class="deal-section-body" id="body-doc-repo">
               <!-- Action bar: Confirm All + Parse All Confirmed -->
-              <div id="doc-repo-actions" style="padding:10px 16px;background:#f0fdf4;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div id="doc-repo-actions" style="padding:10px 16px;background:#0F172A;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
                 <div style="font-size:12px;color:#166534;font-weight:600;">Step 2: Review AI-suggested categories and confirm. Then parse to extract deal data.</div>
                 <div style="display:flex;gap:8px;">
-                  <button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;transition:background .15s;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">&#10003; Confirm All Categories</button>
-                  <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#f59e0b;color:#fff;transition:background .15s;" onmouseover="this.style.background='#d97706'" onmouseout="this.style.background='#f59e0b'">&#128269; Parse All Confirmed</button>
+                  <button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All Categories</button>
+                  <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse All Confirmed</button>
                 </div>
               </div>
               <div id="doc-repo-table-container">
                 <table id="doc-repo-table" style="width:100%;border-collapse:collapse;font-size:13px;">
                   <thead>
-                    <tr style="background:#f8fafc;">
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;border-bottom:2px solid #e2e8f0;">Document</th>
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Category</th>
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Uploaded</th>
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Confirmed</th>
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Parsed</th>
-                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Actions</th>
+                    <tr style="background:#0F172A;">
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Document</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Category</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Uploaded</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Confirmed</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Parsed</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="doc-repo-tbody">
@@ -813,7 +815,7 @@
                   </tbody>
                 </table>
               </div>
-              <div id="upload-zone" style="padding:12px 16px;background:#fffdf5;border-top:2px dashed #c9a84c;display:flex;align-items:center;gap:12px;font-size:12px;color:#92400e;cursor:pointer;" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
+              <div id="upload-zone" style="padding:12px 16px;background:#1a2332;border-top:2px dashed #D4A853;display:flex;align-items:center;gap:12px;font-size:12px;color:#D4A853;cursor:pointer;" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
                 &#128206; <strong>Drop files, paste emails, or forward to deals@daksfirst.com</strong> — PDF, DOCX, XLSX, JPG, PNG, EML &middot; Max 25MB
                 <input type="file" id="file-input" multiple style="display:none;" onchange="handleFileSelect(event)">
               </div>
@@ -826,21 +828,21 @@
           <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-parser">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('parser')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#fce7f3;color:#be185d;display:flex;align-items:center;justify-content:center;font-size:16px;">&#129302;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#831843;color:#F472B6;display:flex;align-items:center;justify-content:center;font-size:16px;">&#129302;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted data from documents and emails</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-parser">&#9658;</div>
             </div>
             <div class="deal-section-body collapsed" id="body-parser">
               <div id="parser-content" style="padding:20px;">
-                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+                <div style="background:#1E3A5F;border:1px solid #3B82F6;border-radius:8px;padding:14px 16px;margin-bottom:16px;color:#E0E7FF;">
                   <div style="font-size:10px;color:#3b82f6;font-weight:600;text-transform:uppercase;">Select a document</div>
                   <div style="font-size:13px;color:#1e3a5f;margin-top:4px;">Click "View Parsed" on any document above to see extracted data here</div>
                 </div>
                 <div id="parser-fields" style="display:none;"></div>
                 <div id="parser-actions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
-                  <button onclick="window.acceptAllParsed && window.acceptAllParsed()" style="padding:10px 22px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">&#10003; Accept All &amp; Fill Matrix</button>
-                  <button onclick="document.getElementById('section-matrix').scrollIntoView({behavior:'smooth',block:'start'})" style="padding:10px 22px;background:#fff;color:#1e3a5f;border:2px solid #1e3a5f;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#8593; Go to Matrix</button>
+                  <button onclick="window.acceptAllParsed && window.acceptAllParsed()" style="padding:10px 22px;background:#10B981;color:#0B1120;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Accept All &amp; Fill Matrix</button>
+                  <button onclick="document.getElementById('section-matrix').scrollIntoView({behavior:'smooth',block:'start'})" style="padding:10px 22px;background:#111827;color:#D4A853;border:2px solid #D4A853;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#8593; Go to Matrix</button>
                 </div>
               </div>
             </div>
@@ -850,11 +852,11 @@
           <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-notes">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('notes')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#e0e7ff;color:#3730a3;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128172;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#312E81;color:#A5B4FC;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128172;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Notes / Comments / Edits</div><div style="font-size:11px;color:#64748b;">Discussion centre — all parties</div></div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
-                <span id="notes-count" style="background:#3730a3;color:#fff;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0</span>
+                <span id="notes-count" style="background:#D4A853;color:#0B1120;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0</span>
                 <div class="deal-section-chevron" id="chev-notes">&#9658;</div>
               </div>
             </div>
@@ -862,9 +864,9 @@
               <div id="notes-thread" style="padding:16px 20px;max-height:500px;overflow-y:auto;">
                 <p style="color:#94a3b8;text-align:center;padding:20px 0;font-size:13px;">No notes yet. Start the conversation below.</p>
               </div>
-              <div style="border-top:1px solid #e2e8f0;padding:14px 20px;display:flex;gap:10px;align-items:flex-end;">
-                <textarea id="note-input" placeholder="Add a note or comment..." style="flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:13px;font-family:inherit;resize:vertical;min-height:50px;"></textarea>
-                <button onclick="window.sendDealNote && window.sendDealNote()" style="padding:10px 18px;background:#1e3a5f;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Send</button>
+              <div style="border-top:1px solid rgba(255,255,255,0.06);padding:14px 20px;display:flex;gap:10px;align-items:flex-end;">
+                <textarea id="note-input" placeholder="Add a note or comment..." style="flex:1;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 14px;font-size:13px;font-family:inherit;resize:vertical;min-height:50px;background:#0F172A;color:#F1F5F9;"></textarea>
+                <button onclick="window.sendDealNote && window.sendDealNote()" style="padding:10px 18px;background:#D4A853;color:#0B1120;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Send</button>
               </div>
             </div>
           </div>
@@ -873,7 +875,7 @@
           <div class="deal-section" data-roles="rm,credit,compliance,admin" id="section-analysis">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('analysis')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#f3e8ff;color:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128269;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#5B21B6;color:#D8B4FE;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128269;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Analysis</div><div style="font-size:11px;color:#64748b;">Credit memo, risk assessment, conditions precedent</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-analysis">&#9658;</div>
@@ -889,7 +891,7 @@
           <div class="deal-section" data-roles="broker,borrower,rm,admin" id="section-fee">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('fee')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128176;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#D4A853;color:#0B1120;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128176;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Fees</div><div style="font-size:11px;color:#64748b;">Fee schedule, payments, and tracking</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-fee">&#9658;</div>
@@ -898,7 +900,7 @@
               <div id="fee-content" style="padding:0;">
                 <table style="width:100%;border-collapse:collapse;font-size:13px;">
                   <thead>
-                    <tr style="background:#f5f3ff;">
+                    <tr style="background:#0F172A;">
                       <th style="text-align:left;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">Fee Type</th>
                       <th style="text-align:right;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">Amount</th>
                       <th style="text-align:left;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">When Due</th>
@@ -910,7 +912,7 @@
                   </tbody>
                 </table>
                 <!-- Admin-only: Fee Allocation -->
-                <div id="fee-allocation-block" style="display:none;padding:16px 20px;background:#faf5ff;border-top:2px solid #7c3aed;">
+                <div id="fee-allocation-block" style="display:none;padding:16px 20px;background:#1A1252;border-top:2px solid #D4A853;color:#F1F5F9;">
                   <div style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin-bottom:10px;">Fee Earned &amp; Allocation</div>
                   <div id="fee-allocation-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:13px;"></div>
                 </div>
@@ -922,7 +924,7 @@
           <div class="deal-section" data-roles="credit,compliance,admin" id="section-funding">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('funding')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#dcfce7;color:#166534;display:flex;align-items:center;justify-content:center;font-size:16px;">&#127974;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#065F46;color:#86EFAC;display:flex;align-items:center;justify-content:center;font-size:16px;">&#127974;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Funding</div><div style="font-size:11px;color:#64748b;">Funding bucket — GB Bank Warehouse or Whole Loan</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-funding">&#9658;</div>
@@ -930,23 +932,23 @@
             <div class="deal-section-body collapsed" id="body-funding">
               <div id="funding-content" style="padding:20px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-                  <div id="bucket-gbb" style="padding:20px;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('gbb')">
+                  <div id="bucket-gbb" style="padding:20px;border-radius:10px;border:2px solid rgba(255,255,255,0.06);cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('gbb')">
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                       <div style="font-size:14px;font-weight:700;color:#1e3a5f;">&#127974; GB Bank Warehouse Facility</div>
-                      <span id="gbb-selected-badge" style="display:none;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;">SELECTED</span>
+                      <span id="gbb-selected-badge" style="display:none;background:#065F46;color:#86EFAC;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;">SELECTED</span>
                     </div>
                     <div style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.5;">90/10 advance structure. Must meet GBB criteria: England/Wales, residential/commercial, LTV &lt;75%, term &le;24m, no development.</div>
                     <div style="font-size:24px;font-weight:800;color:#c9a84c;margin-top:8px;">90 / 10</div>
                     <div id="gbb-amounts" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
                   </div>
-                  <div id="bucket-wl" style="padding:20px;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('wl')">
+                  <div id="bucket-wl" style="padding:20px;border-radius:10px;border:2px solid rgba(255,255,255,0.06);cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('wl')">
                     <div style="font-size:14px;font-weight:700;color:#1e3a5f;">&#128188; Whole Loan Facility</div>
                     <div style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.5;">For deals outside warehouse criteria. Daksfirst funds 100% from own balance sheet or external capital deal-by-deal.</div>
                     <div style="font-size:24px;font-weight:800;color:#94a3b8;margin-top:8px;">100 / 0</div>
                     <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Full risk on Daksfirst balance sheet</div>
                   </div>
                 </div>
-                <div id="gbb-eligibility" style="background:#f0fff4;padding:14px;border-radius:8px;border:1px solid #86efac;font-size:13px;display:none;"></div>
+                <div id="gbb-eligibility" style="background:#064E3B;padding:14px;border-radius:8px;border:1px solid #10B981;font-size:13px;display:none;color:#A7F3D0;"></div>
               </div>
             </div>
           </div>
@@ -955,7 +957,7 @@
           <div class="deal-section" data-roles="admin" id="section-admin">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('admin-extra')">
               <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:32px;height:32px;border-radius:8px;background:#fee2e2;color:#dc2626;display:flex;align-items:center;justify-content:center;font-size:16px;">&#9881;</div>
+                <div style="width:32px;height:32px;border-radius:8px;background:#7F1D1D;color:#FCA5A5;display:flex;align-items:center;justify-content:center;font-size:16px;">&#9881;</div>
                 <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Assignment &amp; Allocation</div><div style="font-size:11px;color:#64748b;">Staff assignment, deal controls</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-admin-extra">&#9658;</div>
@@ -1012,7 +1014,7 @@
                 <div class="form-group"><label>UBO Declaration (all individuals with 25%+ interest)</label><textarea id="kyc-ubo-declaration" rows="2" placeholder="Names and percentage holdings of all UBOs"></textarea></div>
                 <div class="form-group"><label>Group Structure Chart (if subsidiary)</label><input type="file" id="kyc-group-chart" class="onboarding-file"></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-kyc" class="btn" onclick="aiAutoFill('kyc')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-kyc" class="btn" onclick="aiAutoFill('kyc')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('kyc')" style="flex:1;">Save KYC Data</button>
                 </div>
               </div>
@@ -1054,7 +1056,7 @@
                 <div class="form-group"><label>AML Policy Acknowledgement *</label><select id="aml-broker-ack"><option value="">Select</option><option value="confirmed">Confirmed — AML checks completed</option><option value="pending">Pending</option></select></div>
                 <div class="form-group"><label>Declaration of Conflicts of Interest *</label><textarea id="aml-conflicts" rows="2" placeholder="Any relationship between broker and borrower/property beyond this transaction, or 'None'"></textarea></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-financials_aml" class="btn" onclick="aiAutoFill('financials_aml')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-financials_aml" class="btn" onclick="aiAutoFill('financials_aml')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('financials_aml')" style="flex:1;">Save Financials &amp; AML Data</button>
                 </div>
               </div>
@@ -1084,7 +1086,7 @@
                 <div class="form-group"><label>Supervising Partner Name</label><input type="text" id="val-solicitor-partner"></div>
                 <div class="form-group"><label>Search Results (Local Authority, Drainage, Environmental)</label><input type="file" id="val-searches" class="onboarding-file" multiple></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-valuation" class="btn" onclick="aiAutoFill('valuation')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-valuation" class="btn" onclick="aiAutoFill('valuation')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('valuation')" style="flex:1;">Save Valuation &amp; Legal Data</button>
                 </div>
               </div>
@@ -1115,7 +1117,7 @@
                 <div class="form-group"><label>PI Insurance for Contractors</label><input type="file" id="refurb-pi-insurance" class="onboarding-file"></div>
                 <div class="form-group"><label>Structural Engineer Report (if structural works)</label><input type="file" id="refurb-structural" class="onboarding-file"></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-use_of_funds" class="btn" onclick="aiAutoFill('use_of_funds')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-use_of_funds" class="btn" onclick="aiAutoFill('use_of_funds')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('use_of_funds')" style="flex:1;">Save Use of Funds Data</button>
                 </div>
               </div>
@@ -1145,7 +1147,7 @@
                 <div class="section-title">If Exit via Asset Sale</div>
                 <div class="form-group"><label>Asset Particulars / Agent Confirmation</label><input type="file" id="exit-asset-sale" class="onboarding-file"></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-exit_evidence" class="btn" onclick="aiAutoFill('exit_evidence')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-exit_evidence" class="btn" onclick="aiAutoFill('exit_evidence')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('exit_evidence')" style="flex:1;">Save Exit Evidence</button>
                 </div>
               </div>
@@ -1175,7 +1177,7 @@
                 <div class="form-group"><label>Additional Notes / Conditions</label><textarea id="oc-other-notes" rows="3" placeholder="Any other conditions, warranties, or requirements specific to this deal"></textarea></div>
                 <div class="form-group"><label>Supporting Documents</label><input type="file" id="oc-other-docs" class="onboarding-file" multiple></div>
                 <div style="display:flex;gap:10px;margin-top:15px;">
-                  <button id="ai-fill-other_conditions" class="btn" onclick="aiAutoFill('other_conditions')" style="background:#7c3aed;color:#fff;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
+                  <button id="ai-fill-other_conditions" class="btn" onclick="aiAutoFill('other_conditions')" style="background:#D4A853;color:#0B1120;border:none;flex:1;">&#x1F4CB; Auto-Fill from Documents</button>
                   <button class="btn btn-primary" onclick="saveOnboardingTab('other_conditions')" style="flex:1;">Save Other Conditions</button>
                 </div>
               </div>
@@ -1201,7 +1203,7 @@
       <div class="admin-container">
         <div class="dashboard-header">
           <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#1a365d" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#1a365d"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#1a365d"/></svg></span> Daksfirst</div>
+            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
             <div class="dashboard-user">
               <div class="user-badge">
                 <span id="admin-user-name">Admin</span>
@@ -1362,8 +1364,8 @@
 
                 <button onclick="createInternalUser()" id="cu-submit-btn" class="btn btn-primary" style="width:100%;margin-top:12px;padding:12px;font-size:1rem;">Create Account</button>
 
-                <div id="cu-success" style="display:none;margin-top:16px;padding:16px;background:#f0fff4;border-radius:8px;border:1px solid #c6f6d5;">
-                  <div style="font-weight:700;color:#22543d;margin-bottom:4px;">Account Created Successfully</div>
+                <div id="cu-success" style="display:none;margin-top:16px;padding:16px;background:#064E3B;border-radius:8px;border:1px solid #10B981;color:#A7F3D0;">
+                  <div style="font-weight:700;color:#A7F3D0;margin-bottom:4px;">Account Created Successfully</div>
                   <div id="cu-success-detail" style="font-size:0.9rem;color:#2f855a;"></div>
                 </div>
               </div>

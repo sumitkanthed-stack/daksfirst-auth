@@ -192,7 +192,7 @@ export function renderPipelineRows(deals, tbody, stageLabels) {
     if (rmName) {
       teamHtml += `<span class="pipe-role">RM:</span> ${rmName}`;
     } else {
-      teamHtml += '<span style="color:#e53e3e;font-weight:600;">No RM</span>';
+      teamHtml += '<span style="color:#F87171;font-weight:600;">No RM</span>';
     }
     if (creditName) teamHtml += `<br><span class="pipe-role">CR:</span> ${creditName}`;
     if (compName) teamHtml += `<br><span class="pipe-role">CO:</span> ${compName}`;

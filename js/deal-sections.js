@@ -132,15 +132,15 @@ export function renderSnapshot(deal) {
   if (pipeline) {
     const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
     const currentIdx = stageOrder.indexOf(stage);
-    let phtml = '<span style="font-size:10px;color:#64748b;font-weight:600;margin-right:4px;">STAGE</span>';
+    let phtml = '<span style="font-size:10px;color:#94A3B8;font-weight:600;margin-right:4px;">STAGE</span>';
     stageOrder.forEach((s, i) => {
       const isCurrent = s === stage;
       const isDone = i < currentIdx;
-      const bg = isCurrent ? '#c9a84c' : isDone ? '#22c55e' : '#e2e8f0';
-      const color = (isCurrent || isDone) ? '#fff' : '#94a3b8';
+      const bg = isCurrent ? '#D4A853' : isDone ? '#34D399' : 'rgba(255,255,255,0.06)';
+      const color = (isCurrent || isDone) ? '#111827' : '#64748B';
       const fw = isCurrent ? 'font-weight:700;' : '';
       phtml += `<span style="padding:3px 10px;border-radius:10px;font-size:10px;background:${bg};color:${color};${fw}">${stageLabels[s] || s}</span>`;
-      if (i < stageOrder.length - 1) phtml += '<span style="color:#cbd5e1;font-size:10px;">&rarr;</span>';
+      if (i < stageOrder.length - 1) phtml += '<span style="color:rgba(255,255,255,0.06);font-size:10px;">&rarr;</span>';
     });
     pipeline.innerHTML = phtml;
   }
@@ -181,7 +181,7 @@ export async function renderDocRepo(submissionId, role) {
   if (countEl) countEl.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : '');
 
   if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:30px;text-align:center;color:#64748B;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
     return;
   }
 
@@ -212,35 +212,35 @@ export async function renderDocRepo(submissionId, role) {
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
       categoryCell = `
-        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;${catStyle}">
+        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px rgba(255,255,255,0.06);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;${catStyle}">
           ${options}
         </select>
         <button onclick="window.confirmDocCategory(${docId})"
-          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;transition:background .15s;"
-          onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'"
+          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#34D399;color:#111827;transition:background .15s;"
+          onmouseover="this.style.background='#2fb589'" onmouseout="this.style.background='#34D399'"
           title="Confirm this classification">&#10003; Confirm</button>
-        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting confirmation</div>`;
+        <div style="font-size:10px;color:#FBBF24;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting confirmation</div>`;
     } else if (canConfirm && isConfirmed) {
       const options = CATEGORIES.map(c =>
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
       categoryCell = `
-        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #d1fae5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#dcfce7;color:#166534;">
+        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px #34D399;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;">
           ${options}
         </select>
         <button onclick="window.confirmDocCategory(${docId})"
-          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#e2e8f0;color:#64748b;transition:background .15s;"
-          onmouseover="this.style.background='#22c55e';this.style.color='#fff'" onmouseout="this.style.background='#e2e8f0';this.style.color='#64748b'"
+          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94A3B8;transition:background .15s;"
+          onmouseover="this.style.background='#34D399';this.style.color='#111827'" onmouseout="this.style.background='rgba(255,255,255,0.06)';this.style.color='#94A3B8'"
           title="Re-classify">&#8635; Update</button>
-        <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
+        <div style="font-size:10px;color:#34D399;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
     } else if (isConfirmed) {
       categoryCell = `
         <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
-        <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
+        <div style="font-size:10px;color:#34D399;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
     } else {
       categoryCell = `
         <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
-        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested</div>`;
+        <div style="font-size:10px;color:#FBBF24;margin-top:3px;font-style:italic;">AI-suggested</div>`;
     }
 
     // Determine if viewable inline (images + PDFs)
@@ -252,34 +252,34 @@ export async function renderDocRepo(submissionId, role) {
     // Parse / View Data button
     let parseBtn = '';
     if (hasParsedData) {
-      parseBtn = `<button onclick="window.viewDocParsedData(${docId})" style="padding:4px 10px;border:1px solid #d1fae5;border-radius:5px;font-size:11px;cursor:pointer;background:#f0fdf4;color:#166534;margin-right:4px;font-weight:600;" title="View extracted data">&#128202; View Data</button>`;
+      parseBtn = `<button onclick="window.viewDocParsedData(${docId})" style="padding:4px 10px;border:1px #34D399;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;font-weight:600;" title="View extracted data">&#128202; View Data</button>`;
     } else {
-      parseBtn = `<button onclick="window.parseDocById(${docId})" style="padding:4px 10px;border:1px solid #fef3c7;border-radius:5px;font-size:11px;cursor:pointer;background:#fffbeb;color:#92400e;margin-right:4px;font-weight:600;" title="Extract data with AI">&#9889; Parse</button>`;
+      parseBtn = `<button onclick="window.parseDocById(${docId})" style="padding:4px 10px;border:1px #D4A853;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#FBBF24;margin-right:4px;font-weight:600;" title="Extract data with AI">&#9889; Parse</button>`;
     }
 
-    return `<tr style="transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
+    return `<tr style="transition:background .1s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
         <strong>${name}</strong>
-        ${size ? '<br><span style="font-size:11px;color:#94a3b8;">' + size + '</span>' : ''}
+        ${size ? '<br><span style="font-size:11px;color:#64748B;">' + size + '</span>' : ''}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
         ${categoryCell}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;">${uploaded}</td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);font-size:12px;">${uploaded}</td>
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
         ${isConfirmed
-          ? '<span style="color:#22c55e;font-weight:700;font-size:12px;">&#10003; Confirmed</span>'
-          : '<span style="color:#f59e0b;font-size:12px;">Pending</span>'}
+          ? '<span style="color:#34D399;font-weight:700;font-size:12px;">&#10003; Confirmed</span>'
+          : '<span style="color:#FBBF24;font-size:12px;">Pending</span>'}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
         ${isParsed
-          ? '<span style="color:#22c55e;font-weight:700;font-size:12px;">&#10003; Parsed</span>'
-          : '<span style="color:#cbd5e1;font-size:12px;">&#x2013; Not yet</span>'}
+          ? '<span style="color:#34D399;font-weight:700;font-size:12px;">&#10003; Parsed</span>'
+          : '<span style="color:rgba(255,255,255,0.06);font-size:12px;">&#x2013; Not yet</span>'}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">
+      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);white-space:nowrap;">
         ${parseBtn}
-        ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#2563eb;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}
-        <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;font-weight:600;" title="Download">&#128229; Download</button>
+        ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}
+        <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;font-weight:600;" title="Download">&#128229; Download</button>
       </td>
     </tr>`;
   }).join('');
@@ -408,16 +408,16 @@ window.viewDocInline = async function(docId, filename, fileType) {
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:90%;max-width:900px;padding:12px 0;';
     header.innerHTML = `
-      <div style="color:#fff;font-size:14px;font-weight:600;">${filename || 'Document Preview'}</div>
+      <div style="color:#F1F5F9;font-size:14px;font-weight:600;">${filename || 'Document Preview'}</div>
       <div style="display:flex;gap:8px;">
-        <button onclick="window.downloadDocById(${docId})" style="padding:6px 14px;border:1px solid #fff;border-radius:6px;font-size:12px;cursor:pointer;background:transparent;color:#fff;font-weight:600;">&#128229; Download</button>
-        <button onclick="document.getElementById('doc-preview-modal').remove()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;background:#dc2626;color:#fff;font-weight:600;">&#10005; Close</button>
+        <button onclick="window.downloadDocById(${docId})" style="padding:6px 14px;border:1px solid #F1F5F9;border-radius:6px;font-size:12px;cursor:pointer;background:transparent;color:#F1F5F9;font-weight:600;">&#128229; Download</button>
+        <button onclick="document.getElementById('doc-preview-modal').remove()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;background:#F87171;color:#111827;font-weight:600;">&#10005; Close</button>
       </div>`;
     modal.appendChild(header);
 
     // Content area
     const content = document.createElement('div');
-    content.style.cssText = 'width:90%;max-width:900px;max-height:80vh;background:#fff;border-radius:10px;overflow:auto;';
+    content.style.cssText = 'width:90%;max-width:900px;max-height:80vh;background:#1a2332;border-radius:10px;overflow:auto;';
 
     const ft = (fileType || '').toLowerCase();
     if (ft.includes('pdf')) {
@@ -425,7 +425,7 @@ window.viewDocInline = async function(docId, filename, fileType) {
     } else if (ft.includes('image') || ft.includes('png') || ft.includes('jpg') || ft.includes('jpeg')) {
       content.innerHTML = `<img src="${blobUrl}" style="width:100%;max-height:80vh;object-fit:contain;border-radius:10px;" />`;
     } else {
-      content.innerHTML = `<div style="padding:40px;text-align:center;color:#64748b;font-size:14px;">Preview not available for this file type. Use the Download button above.</div>`;
+      content.innerHTML = `<div style="padding:40px;text-align:center;color:#94A3B8;font-size:14px;">Preview not available for this file type. Use the Download button above.</div>`;
     }
 
     modal.appendChild(content);
@@ -538,7 +538,7 @@ export function renderFeeSection(deal) {
   const term = num(deal.term_months);
 
   if (!loan) {
-    tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8;">Fee schedule will appear once loan terms are confirmed.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;text-align:center;color:#64748B;">Fee schedule will appear once loan terms are confirmed.</td></tr>';
     return;
   }
 
@@ -549,29 +549,29 @@ export function renderFeeSection(deal) {
   const retainedInterest = Math.round(loan * (rate / 100) * retainedMonths);
 
   const feeStatus = (paid) => paid
-    ? '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;">Paid</span>'
-    : '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#fef3c7;color:#92400e;">Due</span>';
+    ? '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">Paid</span>'
+    : '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(251,191,36,0.1);color:#FBBF24;">Due</span>';
 
   const stage = deal.deal_stage || 'received';
   const feePaid = ['fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'].includes(stage);
 
   tbody.innerHTML = `
-    <tr><td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;"><strong>Commitment Fee</strong></td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;text-align:right;">&pound;${commitmentFee.toLocaleString()}</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">On acceptance of Indicative TS</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">${feeStatus(feePaid)}</td></tr>
-    <tr><td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;"><strong>Arrangement Fee</strong> (${arrangementPct.toFixed(2)}%)</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;text-align:right;">&pound;${arrangementFee.toLocaleString()}</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">Deducted from advance</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">${feeStatus(false)}</td></tr>
-    ${brokerFee ? `<tr><td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;"><strong>Broker Fee</strong> (${brokerPct.toFixed(2)}%)</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;text-align:right;">&pound;${brokerFee.toLocaleString()}</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">From arrangement fee</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">${feeStatus(false)}</td></tr>` : ''}
-    <tr><td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;"><strong>Retained Interest</strong> (${retainedMonths}m)</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;text-align:right;">&pound;${retainedInterest.toLocaleString()}</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">Deducted from advance</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">${feeStatus(false)}</td></tr>
+    <tr><td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);"><strong>Commitment Fee</strong></td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);text-align:right;">&pound;${commitmentFee.toLocaleString()}</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">On acceptance of Indicative TS</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">${feeStatus(feePaid)}</td></tr>
+    <tr><td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);"><strong>Arrangement Fee</strong> (${arrangementPct.toFixed(2)}%)</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);text-align:right;">&pound;${arrangementFee.toLocaleString()}</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">Deducted from advance</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">${feeStatus(false)}</td></tr>
+    ${brokerFee ? `<tr><td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);"><strong>Broker Fee</strong> (${brokerPct.toFixed(2)}%)</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);text-align:right;">&pound;${brokerFee.toLocaleString()}</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">From arrangement fee</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">${feeStatus(false)}</td></tr>` : ''}
+    <tr><td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);"><strong>Retained Interest</strong> (${retainedMonths}m)</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);text-align:right;">&pound;${retainedInterest.toLocaleString()}</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">Deducted from advance</td>
+        <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">${feeStatus(false)}</td></tr>
   `;
 
   // Admin fee allocation
@@ -579,17 +579,17 @@ export function renderFeeSection(deal) {
   if (allocGrid) {
     const netToDaksfirst = arrangementFee - brokerFee;
     allocGrid.innerHTML = `
-      <div style="background:#fff;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">
-        <div style="color:#64748b;font-size:11px;">Total Fee Earned</div>
-        <div style="font-size:20px;font-weight:800;color:#1e3a5f;">&pound;${arrangementFee.toLocaleString()}</div>
+      <div style="background:#1e293b;padding:12px;border-radius:6px;border:1px rgba(255,255,255,0.06);">
+        <div style="color:#94A3B8;font-size:11px;">Total Fee Earned</div>
+        <div style="font-size:20px;font-weight:800;color:#D4A853;">&pound;${arrangementFee.toLocaleString()}</div>
       </div>
-      <div style="background:#fff;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">
-        <div style="color:#64748b;font-size:11px;">Broker Payout</div>
-        <div style="font-size:20px;font-weight:800;color:#dc2626;">&pound;${brokerFee.toLocaleString()}</div>
+      <div style="background:#1e293b;padding:12px;border-radius:6px;border:1px rgba(255,255,255,0.06);">
+        <div style="color:#94A3B8;font-size:11px;">Broker Payout</div>
+        <div style="font-size:20px;font-weight:800;color:#F87171;">&pound;${brokerFee.toLocaleString()}</div>
       </div>
-      <div style="background:#fff;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">
-        <div style="color:#64748b;font-size:11px;">Net to Daksfirst</div>
-        <div style="font-size:20px;font-weight:800;color:#22c55e;">&pound;${netToDaksfirst.toLocaleString()}</div>
+      <div style="background:#1e293b;padding:12px;border-radius:6px;border:1px rgba(255,255,255,0.06);">
+        <div style="color:#94A3B8;font-size:11px;">Net to Daksfirst</div>
+        <div style="font-size:20px;font-weight:800;color:#34D399;">&pound;${netToDaksfirst.toLocaleString()}</div>
       </div>
     `;
   }
@@ -623,9 +623,9 @@ export function renderFundingSection(deal) {
   // GBB eligibility display
   const eligEl = document.getElementById('gbb-eligibility');
   if (eligEl) {
-    const bg = allPass ? '#f0fff4' : '#fef2f2';
-    const border = allPass ? '#86efac' : '#fca5a5';
-    const label = allPass ? '<strong style="color:#166534;">GBB Eligible &#10003;</strong>' : '<strong style="color:#991b1b;">GBB Issues Found</strong>';
+    const bg = allPass ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
+    const border = allPass ? '#34D399' : '#F87171';
+    const label = allPass ? '<strong style="color:#34D399;">GBB Eligible &#10003;</strong>' : '<strong style="color:#F87171;">GBB Issues Found</strong>';
     eligEl.style.display = 'block';
     eligEl.style.background = bg;
     eligEl.style.borderColor = border;
@@ -654,11 +654,11 @@ window.selectFundingBucket = function(bucket) {
   const gbbBadge = document.getElementById('gbb-selected-badge');
   if (bucket === 'gbb') {
     if (gbb) { gbb.style.borderColor = '#1e3a5f'; gbb.style.background = '#f0f5ff'; gbb.style.boxShadow = '0 0 0 3px rgba(30,58,95,0.1)'; }
-    if (wl) { wl.style.borderColor = '#e2e8f0'; wl.style.background = ''; wl.style.boxShadow = ''; }
+    if (wl) { wl.style.borderColor = 'rgba(255,255,255,0.06)'; wl.style.background = ''; wl.style.boxShadow = ''; }
     if (gbbBadge) gbbBadge.style.display = 'inline';
   } else {
     if (wl) { wl.style.borderColor = '#1e3a5f'; wl.style.background = '#f0f5ff'; wl.style.boxShadow = '0 0 0 3px rgba(30,58,95,0.1)'; }
-    if (gbb) { gbb.style.borderColor = '#e2e8f0'; gbb.style.background = ''; gbb.style.boxShadow = ''; }
+    if (gbb) { gbb.style.borderColor = 'rgba(255,255,255,0.06)'; gbb.style.background = ''; gbb.style.boxShadow = ''; }
     if (gbbBadge) gbbBadge.style.display = 'none';
   }
 };
@@ -675,12 +675,12 @@ export function renderAdminSection(deal) {
   const compName = deal.comp_first ? `${sanitizeHtml(deal.comp_first)} ${sanitizeHtml(deal.comp_last)}` : null;
 
   const badge = (name) => name
-    ? `<span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#dcfce7;color:#166534;">${name}</span>`
-    : `<span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#fee2e2;color:#991b1b;">Unassigned</span>`;
+    ? `<span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">${name}</span>`
+    : `<span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:rgba(248,113,113,0.1);color:#F87171;">Unassigned</span>`;
 
   container.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+      <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;">
         <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:12px;">Staff Assignments</div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
           <span>Relationship Manager</span>${badge(rmName)}
@@ -692,12 +692,12 @@ export function renderAdminSection(deal) {
           <span>Compliance Officer</span>${badge(compName)}
         </div>
       </div>
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+      <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;">
         <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:12px;">Deal Controls</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          <button onclick="window.advanceDealStage && window.advanceDealStage()" style="width:100%;padding:10px;background:#fff;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#1e3a5f;">&#9654; Advance Stage</button>
-          <button onclick="window.holdDeal && window.holdDeal()" style="width:100%;padding:10px;background:#fff;border:2px solid #f59e0b;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#92400e;">&#9208; Hold Deal</button>
-          <button onclick="window.declineDeal && window.declineDeal()" style="width:100%;padding:10px;background:#fff;border:2px solid #dc2626;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#dc2626;">&#10005; Decline Deal</button>
+          <button onclick="window.advanceDealStage && window.advanceDealStage()" style="width:100%;padding:10px;background:#111827;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#1e3a5f;">&#9654; Advance Stage</button>
+          <button onclick="window.holdDeal && window.holdDeal()" style="width:100%;padding:10px;background:#111827;border:2px solid #f59e0b;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#92400e;">&#9208; Hold Deal</button>
+          <button onclick="window.declineDeal && window.declineDeal()" style="width:100%;padding:10px;background:#111827;border:2px solid #dc2626;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#dc2626;">&#10005; Decline Deal</button>
         </div>
       </div>
     </div>
@@ -719,18 +719,18 @@ export function renderNotesSection(deal) {
   if (countEl) countEl.textContent = notes.length || '0';
 
   if (notes.length === 0) {
-    thread.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px 0;font-size:13px;">No notes yet. Start the conversation below.</p>';
+    thread.innerHTML = '<p style="color:#64748B;text-align:center;padding:20px 0;font-size:13px;">No notes yet. Start the conversation below.</p>';
     return;
   }
 
   thread.innerHTML = notes.map(n => {
     const initials = (n.author || 'U').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
-    const bg = noteColors[n.role] || '#64748b';
+    const bg = noteColors[n.role] || '#64748B';
     return `<div style="display:flex;gap:10px;margin-bottom:14px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#111827;flex-shrink:0;">${initials}</div>
       <div style="flex:1;">
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;"><strong style="color:#1e293b;">${sanitizeHtml(n.author || 'User')}</strong> &middot; ${sanitizeHtml(n.role || '')} &middot; ${n.date ? formatDate(n.date) : ''}</div>
-        <div style="font-size:13px;color:#374151;line-height:1.5;background:#f8fafc;padding:10px 14px;border-radius:8px;border:1px solid #e2e8f0;">${sanitizeHtml(n.text || '')}</div>
+        <div style="font-size:11px;color:#64748B;margin-bottom:4px;"><strong style="color:#F1F5F9;">${sanitizeHtml(n.author || 'User')}</strong> &middot; ${sanitizeHtml(n.role || '')} &middot; ${n.date ? formatDate(n.date) : ''}</div>
+        <div style="font-size:13px;color:#F1F5F9;line-height:1.5;background:#1e293b;padding:10px 14px;border-radius:8px;border:1px rgba(255,255,255,0.06);">${sanitizeHtml(n.text || '')}</div>
       </div>
     </div>`;
   }).join('');
@@ -751,12 +751,12 @@ window.sendDealNote = function() {
   if (emptyMsg && emptyMsg.textContent.includes('No notes')) emptyMsg.remove();
 
   const initials = user ? (user.first_name || 'U')[0] + (user.last_name || '')[0] : 'U';
-  const bg = noteColors[role] || '#64748b';
+  const bg = noteColors[role] || '#64748B';
   const noteHtml = `<div style="display:flex;gap:10px;margin-bottom:14px;">
-    <div style="width:32px;height:32px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;">${initials.toUpperCase()}</div>
+    <div style="width:32px;height:32px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#111827;flex-shrink:0;">${initials.toUpperCase()}</div>
     <div style="flex:1;">
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;"><strong style="color:#1e293b;">${user ? sanitizeHtml(user.first_name + ' ' + user.last_name) : 'You'}</strong> &middot; ${role} &middot; Just now</div>
-      <div style="font-size:13px;color:#374151;line-height:1.5;background:#f8fafc;padding:10px 14px;border-radius:8px;border:1px solid #e2e8f0;">${sanitizeHtml(text)}</div>
+      <div style="font-size:11px;color:#64748B;margin-bottom:4px;"><strong style="color:#F1F5F9;">${user ? sanitizeHtml(user.first_name + ' ' + user.last_name) : 'You'}</strong> &middot; ${role} &middot; Just now</div>
+      <div style="font-size:13px;color:#F1F5F9;line-height:1.5;background:#1e293b;padding:10px 14px;border-radius:8px;border:1px rgba(255,255,255,0.06);">${sanitizeHtml(text)}</div>
     </div>
   </div>`;
 

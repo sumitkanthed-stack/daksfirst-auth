@@ -79,39 +79,39 @@ function showReAuthModal() {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
 
   overlay.innerHTML = `
-    <div style="background:#fff;border-radius:16px;padding:32px 36px;max-width:420px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,.25);font-family:inherit;">
+    <div style="background:#1a2332;border-radius:16px;padding:32px 36px;max-width:420px;width:90%;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-family:inherit;">
       <div style="text-align:center;margin-bottom:20px;">
-        <div style="width:56px;height:56px;border-radius:50%;background:#fef3c7;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
+        <div style="width:56px;height:56px;border-radius:50%;background:rgba(251,191,36,0.1);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
           <span style="font-size:28px;">&#128274;</span>
         </div>
-        <div style="font-size:18px;font-weight:700;color:#1e3a5f;">Session Expired</div>
-        <div style="font-size:13px;color:#64748b;margin-top:4px;">Your session has timed out. Log in again to continue — your work is saved.</div>
+        <div style="font-size:18px;font-weight:700;color:#F1F5F9;">Session Expired</div>
+        <div style="font-size:13px;color:#94A3B8;margin-top:4px;">Your session has timed out. Log in again to continue — your work is saved.</div>
       </div>
 
-      <div id="reauth-queue-info" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;">
-        <span style="font-size:12px;color:#1d4ed8;font-weight:600;" id="reauth-queue-count">${queueCount > 0 ? `${queueCount} pending save${queueCount > 1 ? 's' : ''} will resume automatically` : 'Your progress is preserved'}</span>
+      <div id="reauth-queue-info" style="background:rgba(212,168,83,0.15);border:1px solid #D4A853;border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;">
+        <span style="font-size:12px;color:#D4A853;font-weight:600;" id="reauth-queue-count">${queueCount > 0 ? `${queueCount} pending save${queueCount > 1 ? 's' : ''} will resume automatically` : 'Your progress is preserved'}</span>
       </div>
 
-      <div id="reauth-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#dc2626;font-weight:500;"></div>
+      <div id="reauth-error" style="display:none;background:rgba(248,113,113,0.1);border:1px solid #F87171;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#F87171;font-weight:500;"></div>
 
       <div style="margin-bottom:12px;">
-        <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Email</label>
-        <input id="reauth-email" type="email" value="${emailHint}" style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b;outline:none;box-sizing:border-box;" />
+        <label style="font-size:11px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Email</label>
+        <input id="reauth-email" type="email" value="${emailHint}" style="width:100%;padding:10px 14px;border:1px rgba(255,255,255,0.06);border-radius:8px;font-size:14px;color:#F1F5F9;background:#0f1729;outline:none;box-sizing:border-box;" />
       </div>
 
       <div style="margin-bottom:20px;">
-        <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Password</label>
-        <input id="reauth-password" type="password" style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b;outline:none;box-sizing:border-box;" placeholder="Enter your password" />
+        <label style="font-size:11px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Password</label>
+        <input id="reauth-password" type="password" style="width:100%;padding:10px 14px;border:1px rgba(255,255,255,0.06);border-radius:8px;font-size:14px;color:#F1F5F9;background:#0f1729;outline:none;box-sizing:border-box;" placeholder="Enter your password" />
       </div>
 
-      <button id="reauth-submit" style="width:100%;padding:12px;border:none;border-radius:8px;background:#1e3a5f;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;">
+      <button id="reauth-submit" style="width:100%;padding:12px;border:none;border-radius:8px;background:#D4A853;color:#111827;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;">
         Log In & Continue
       </button>
 
       <div id="reauth-progress" style="display:none;text-align:center;margin-top:12px;">
-        <div style="font-size:12px;color:#64748b;font-weight:600;" id="reauth-progress-text">Replaying saved requests...</div>
-        <div style="background:#e2e8f0;border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
-          <div id="reauth-progress-bar" style="width:0%;height:100%;background:#22c55e;border-radius:4px;transition:width .3s;"></div>
+        <div style="font-size:12px;color:#94A3B8;font-weight:600;" id="reauth-progress-text">Replaying saved requests...</div>
+        <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
+          <div id="reauth-progress-bar" style="width:0%;height:100%;background:#34D399;border-radius:4px;transition:width .3s;"></div>
         </div>
       </div>
     </div>
@@ -161,7 +161,7 @@ async function handleReAuth() {
 
     if (!resp.ok) {
       if (errorEl) { errorEl.textContent = data.error || 'Login failed. Please check your credentials.'; errorEl.style.display = 'block'; }
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Log In & Continue'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Log In & Continue'; submitBtn.style.background = '#D4A853'; }
       return;
     }
 
@@ -236,7 +236,7 @@ async function replayQueuedRequests() {
     progressText.textContent = failed > 0
       ? `Done — ${completed} saved, ${failed} failed`
       : `All ${completed} saves completed!`;
-    progressText.style.color = failed > 0 ? '#f59e0b' : '#22c55e';
+    progressText.style.color = failed > 0 ? '#FBBF24' : '#34D399';
   }
 
   // Brief pause so user sees the completion
@@ -377,18 +377,18 @@ export async function handleEmailVerification(token) {
     const data = await res.json();
     if (res.ok && data.success) {
       document.getElementById('verify-spinner').textContent = '\u2713';
-      document.getElementById('verify-spinner').style.color = '#48bb78';
+      document.getElementById('verify-spinner').style.color = '#34D399';
       document.getElementById('verify-title').textContent = 'Email Verified!';
       document.getElementById('verify-message').textContent = 'Your email has been verified successfully. You can now log in to your account.';
     } else {
       document.getElementById('verify-spinner').textContent = '\u2717';
-      document.getElementById('verify-spinner').style.color = '#e53e3e';
+      document.getElementById('verify-spinner').style.color = '#F87171';
       document.getElementById('verify-title').textContent = 'Verification Failed';
       document.getElementById('verify-message').textContent = data.error || 'The verification link is invalid or has expired. Please register again or contact support.';
     }
   } catch (err) {
     document.getElementById('verify-spinner').textContent = '\u2717';
-    document.getElementById('verify-spinner').style.color = '#e53e3e';
+    document.getElementById('verify-spinner').style.color = '#F87171';
     document.getElementById('verify-title').textContent = 'Verification Error';
     document.getElementById('verify-message').textContent = 'Unable to connect to the server. Please try again later.';
   }

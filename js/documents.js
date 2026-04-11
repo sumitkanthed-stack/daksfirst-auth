@@ -13,7 +13,7 @@ export function renderDocumentsList(documents) {
   list.innerHTML = '';
 
   if (!documents || documents.length === 0) {
-    list.innerHTML = '<p style="color: var(--text-light); text-align: center; padding: 20px;">No documents uploaded yet.</p>';
+    list.innerHTML = '<p style="color: #64748B; text-align: center; padding: 20px;">No documents uploaded yet.</p>';
     return;
   }
 
@@ -202,7 +202,7 @@ export async function viewDocumentInline(docId) {
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:2000;display:flex;align-items:center;justify-content:center;';
 
     const container = document.createElement('div');
-    container.style.cssText = 'max-width:90%;max-height:90%;background:white;border-radius:8px;padding:20px;text-align:center;position:relative;';
+    container.style.cssText = 'max-width:90%;max-height:90%;background:#1a2332;border-radius:8px;padding:20px;text-align:center;position:relative;';
 
     const img = document.createElement('img');
     img.src = imgUrl;
@@ -210,7 +210,7 @@ export async function viewDocumentInline(docId) {
 
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '\u2715';
-    closeBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:#e53e3e;color:white;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:18px;';
+    closeBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:#F87171;color:#111827;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:18px;';
     closeBtn.onclick = () => { modal.remove(); URL.revokeObjectURL(imgUrl); };
 
     container.appendChild(closeBtn);

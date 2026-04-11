@@ -160,8 +160,8 @@ export async function renderDocPanel(deal) {
   // Smart Upload zone — drop all files, AI categorises them
   const canSmartUpload = ['broker', 'borrower', 'rm', 'admin'].includes(role) && phase2Unlocked;
   if (canSmartUpload) {
-    html += `<div style="padding:10px 14px;border-bottom:2px solid var(--secondary);background:#fffbeb;">
-      <label style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed #c9a84c;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:#92400e;background:#fff;">
+    html += `<div style="padding:10px 14px;border-bottom:2px solid var(--secondary);background:rgba(251,191,36,0.1);">
+      <label style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed #D4A853;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:#FBBF24;background:#111827;">
         <input type="file" multiple style="display:none;" onchange="window.smartUploadFiles(this.files)">
         <span style="font-size:16px;">&#x1F4E4;</span> Drop All Files Here — Auto-Sorted
       </label>
@@ -220,7 +220,7 @@ export async function renderDocPanel(deal) {
     if (docs.length > 0) {
       html += `<span class="doc-count-pill">${docs.length}</span>`;
     }
-    html += `<span style="font-size:11px;color:#9ca3af;">${expandedSection === section.key ? '\u25B2' : '\u25BC'}</span>`;
+    html += `<span style="font-size:11px;color:#64748B;">${expandedSection === section.key ? '\u25B2' : '\u25BC'}</span>`;
     html += `</div>`;
     html += `</div>`; // close header
 
@@ -245,7 +245,7 @@ export async function renderDocPanel(deal) {
           if (dlUrl) {
             html += `<a href="${sanitizeHtml(dlUrl)}" target="_blank" class="doc-file-dl" title="Download">\u2193</a>`;
           } else if (doc._status === 'regenerate') {
-            html += `<button onclick="window.viewDipPdf && window.viewDipPdf('${deal.submission_id}')" class="doc-file-dl" title="View/Regenerate DIP PDF" style="background:#f59e0b;color:#fff;border-color:#f59e0b;">View PDF</button>`;
+            html += `<button onclick="window.viewDipPdf && window.viewDipPdf('${deal.submission_id}')" class="doc-file-dl" title="View/Regenerate DIP PDF" style="background:#FBBF24;color:#111827;border-color:#FBBF24;">View PDF</button>`;
           }
           html += `</div>`;
         });
@@ -276,7 +276,7 @@ export async function renderDocPanel(deal) {
   const footerEl = document.getElementById('doc-panel-footer');
   if (footerEl) {
     const visibleCount = SECTION_DEFS.filter(s => s.viewers.includes(role) || role === 'admin').length;
-    footerEl.innerHTML = `<span>Viewing as: <strong style="color:var(--primary);">${role.toUpperCase()}</strong></span>
+    footerEl.innerHTML = `<span>Viewing as: <strong style="color:#D4A853;">${role.toUpperCase()}</strong></span>
       <span>${visibleCount}/${SECTION_DEFS.length} sections visible</span>`;
   }
 }
