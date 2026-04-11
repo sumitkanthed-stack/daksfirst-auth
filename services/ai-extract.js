@@ -153,7 +153,7 @@ async function extractSectionData(section, documents) {
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 2000,
       system: schema.systemPrompt + `\n\nExpected JSON fields:\n{\n${fieldDesc}\n}\n\nIMPORTANT: Return ONLY valid JSON. No markdown, no backticks, no explanation. Just the JSON object.`,
       messages: [{
@@ -308,7 +308,7 @@ async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCate
       const mediaType = mime.includes('png') ? 'image/png' : mime.includes('gif') ? 'image/gif' : mime.includes('webp') ? 'image/webp' : 'image/jpeg';
 
       const message = await client.messages.create({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 2000,
         system: DEAL_EXTRACTION_PROMPT,
         messages: [{
@@ -355,7 +355,7 @@ async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCate
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 2000,
       system: DEAL_EXTRACTION_PROMPT,
       messages: [{
