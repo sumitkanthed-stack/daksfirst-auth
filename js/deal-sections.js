@@ -150,7 +150,7 @@ export function renderSnapshot(deal) {
   // Stage pipeline
   const pipeline = document.getElementById('snapshot-pipeline');
   if (pipeline) {
-    const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+    const stageOrder = ['received', 'assigned', 'info_gathering', 'dip_issued', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
     const currentIdx = stageOrder.indexOf(stage);
     let phtml = '<span style="font-size:10px;color:#94A3B8;font-weight:600;margin-right:4px;">STAGE</span>';
     stageOrder.forEach((s, i) => {

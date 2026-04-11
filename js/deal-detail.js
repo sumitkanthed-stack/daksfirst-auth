@@ -51,8 +51,7 @@ export async function showDealDetail(dealId) {
     // Update breadcrumb
     document.getElementById('breadcrumb-ref').textContent = `${dealId.substring(0, 8)}`;
 
-    // Header
-    document.getElementById('detail-property-address').textContent = sanitizeHtml(deal.security_address || 'N/A');
+    // Header (address is set by renderDealSections with truncation for multi-property)
     document.getElementById('detail-ref-id').textContent = dealId;
     document.getElementById('detail-date').textContent = formatDate(deal.created_at);
 
@@ -399,11 +398,11 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   // ── Stage Pipeline Visual (Grouped Phases) ──
-  const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+  const stageOrder = ['received', 'assigned', 'info_gathering', 'dip_issued', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
   const phases = [
-    { label: 'Pre-DIP', stages: ['received', 'assigned', 'dip_issued'] },
-    { label: 'Onboarding', stages: ['info_gathering', 'ai_termsheet'] },
+    { label: 'Pre-DIP', stages: ['received', 'assigned', 'info_gathering', 'dip_issued'] },
+    { label: 'Onboarding', stages: ['ai_termsheet'] },
     { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
   ];
 
@@ -1586,7 +1585,7 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   // ── Fee Tracker (visible to internal users at all stages from dip_issued onwards) ──
-  const feeStages = ['dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
+  const feeStages = ['info_gathering','dip_issued','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
   const canEditFees = ['admin', 'rm'].includes(currentRole);
   if (isInternal && feeStages.includes(stage)) {
     const fd = deal.ai_termsheet_data || {};
@@ -2032,10 +2031,10 @@ export function renderExternalWorkflowControls(deal) {
         '</div>';
     }
   } else if (stage === 'info_gathering') {
-    // Info gathering = RM collecting additional data. DIP not yet issued.
+    // Info gathering = RM reviewing deal internally. Broker just waits.
     html += `<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;margin-bottom:16px;">
-      <p style="font-size:14px;margin-bottom:4px;"><strong>Additional Information Required</strong></p>
-      <p style="font-size:13px;color:#94A3B8;">Our team is reviewing your submission and may request additional documents or information. Your RM will be in touch if anything further is needed.</p>
+      <p style="font-size:14px;margin-bottom:4px;"><strong>Under Review</strong></p>
+      <p style="font-size:13px;color:#94A3B8;">Your deal is being reviewed by our team. We will be in touch if anything further is needed.</p>
     </div>`;
   } else if (stage === 'ai_termsheet') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
