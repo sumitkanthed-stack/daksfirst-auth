@@ -1454,6 +1454,116 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  MATRIX FIELD UPDATE — Allows broker/borrower/RM to edit deal fields inline
+//  Credit/compliance/admin are read-only on the Matrix
+// ═══════════════════════════════════════════════════════════════════════════
+router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) => {
+  try {
+    const updates = req.body;
+    if (!updates || Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No fields provided to update' });
+    }
+
+    const { userId, role } = req.user;
+
+    // Only broker, borrower, rm can edit via Matrix
+    const editableRoles = ['broker', 'borrower', 'rm', 'admin'];
+    if (!editableRoles.includes(role)) {
+      return res.status(403).json({ error: 'Matrix fields are read-only for your role' });
+    }
+
+    // Fetch deal — broker/borrower must own the deal, RM/admin can edit any
+    let dealResult;
+    if (['rm', 'admin', 'credit', 'compliance'].includes(role)) {
+      dealResult = await pool.query(`SELECT id, dip_signed, ai_termsheet_generated_at, status FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    } else {
+      dealResult = await pool.query(`SELECT id, dip_signed, ai_termsheet_generated_at, status FROM deal_submissions WHERE submission_id = $1 AND user_id = $2`, [req.params.submissionId, userId]);
+    }
+
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealState = dealResult.rows[0];
+
+    // Field lock check
+    const { locked, reasons } = getLockedFields(dealState);
+    const blockedFields = Object.keys(updates).filter(k => locked.includes(k));
+    if (blockedFields.length > 0) {
+      return res.status(403).json({
+        error: 'Some fields are locked at this stage',
+        locked_fields: blockedFields.map(f => ({ field: f, reason: reasons[f] }))
+      });
+    }
+
+    // Whitelist — broker/borrower can edit client-facing fields, RM/admin can edit all
+    const clientFields = [
+      'borrower_name', 'borrower_company', 'borrower_email', 'borrower_phone',
+      'borrower_dob', 'borrower_nationality', 'borrower_jurisdiction', 'borrower_type',
+      'company_name', 'company_number',
+      'security_address', 'security_postcode', 'asset_type', 'current_value',
+      'loan_amount', 'ltv_requested', 'loan_purpose', 'exit_strategy',
+      'term_months', 'rate_requested', 'additional_notes',
+      'drawdown_date', 'interest_servicing', 'existing_charges',
+      'property_tenure', 'occupancy_status', 'current_use',
+      'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
+      'deposit_source', 'concurrent_transactions'
+    ];
+
+    const rmFields = [
+      ...clientFields,
+      'broker_name', 'broker_company', 'broker_fca',
+      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
+      'retained_interest_months'
+    ];
+
+    const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;
+
+    // Numeric fields
+    const numericFields = [
+      'current_value', 'loan_amount', 'ltv_requested', 'term_months',
+      'rate_requested', 'purchase_price', 'refurb_cost',
+      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months'
+    ];
+
+    // Build SET clause
+    const setClauses = [];
+    const values = [];
+    let paramIdx = 1;
+
+    for (const [key, val] of Object.entries(updates)) {
+      if (!allowedFields.includes(key)) continue;
+      setClauses.push(`${key} = $${paramIdx}`);
+      if (numericFields.includes(key) && val !== null && val !== '') {
+        const parsed = parseFloat(String(val).replace(/,/g, ''));
+        values.push(isNaN(parsed) ? null : parsed);
+      } else {
+        values.push(val === '' ? null : val);
+      }
+      paramIdx++;
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    setClauses.push(`updated_at = NOW()`);
+    values.push(req.params.submissionId);
+
+    const result = await pool.query(
+      `UPDATE deal_submissions SET ${setClauses.join(', ')} WHERE submission_id = $${paramIdx} RETURNING id, submission_id, updated_at`,
+      values
+    );
+
+    await logAudit(result.rows[0].id, 'matrix_fields_updated', null, null,
+      { fields_updated: Object.keys(updates).filter(k => allowedFields.includes(k)), updated_by: userId, role }, userId);
+
+    console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', setClauses.length - 1, 'fields');
+    res.json({ success: true, fields_updated: setClauses.length - 1 });
+  } catch (error) {
+    console.error('[matrix-fields] Error:', error);
+    res.status(500).json({ error: 'Failed to update matrix fields' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  TERMS TRACKER — Side-by-side DIP → Termsheet → Final comparison
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/terms-tracker', authenticateToken, authenticateInternal, async (req, res) => {

@@ -10,6 +10,61 @@ import { showToast, sanitizeHtml } from './utils.js';
 import { getCurrentRole } from './state.js';
 
 // ═══════════════════════════════════════════════════════════════════
+// EDITABLE FIELD HELPER — renders input for editable roles, static text for read-only
+// ═══════════════════════════════════════════════════════════════════
+
+const EDITABLE_ROLES = ['broker', 'borrower', 'rm', 'admin'];
+const inputStyle = 'width:100%;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;color:#1e293b;background:#fff;transition:border-color .15s;outline:none;';
+const inputFocusClass = 'matrix-editable';
+const readonlyStyle = 'font-size:11px;color:#1e293b;padding:6px 0;';
+
+function renderEditableField(dbField, label, value, inputType, canEdit, options) {
+  const safeVal = sanitizeHtml(String(value || ''));
+  const id = `mf-${dbField}`;
+
+  if (!canEdit) {
+    // Read-only display
+    if (inputType === 'select' && options) {
+      const selected = options.find(o => o.value === value);
+      return `<div style="margin-bottom:8px">
+        <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px">${sanitizeHtml(label)}</label>
+        <div style="${readonlyStyle}">${sanitizeHtml(selected ? selected.label : value || '—')}</div>
+      </div>`;
+    }
+    return `<div style="margin-bottom:8px">
+      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px">${sanitizeHtml(label)}</label>
+      <div style="${readonlyStyle}">${safeVal || '—'}</div>
+    </div>`;
+  }
+
+  // Editable input
+  if (inputType === 'select' && options) {
+    const optHtml = options.map(o => `<option value="${sanitizeHtml(o.value)}" ${o.value === value ? 'selected' : ''}>${sanitizeHtml(o.label)}</option>`).join('');
+    return `<div style="margin-bottom:8px">
+      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
+      <select id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}cursor:pointer;" onchange="window.matrixSaveField('${dbField}', this.value)">
+        <option value="">— Select —</option>${optHtml}
+      </select>
+    </div>`;
+  }
+
+  if (inputType === 'textarea') {
+    return `<div style="margin-bottom:8px">
+      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
+      <textarea id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}min-height:60px;resize:vertical;" onblur="window.matrixSaveField('${dbField}', this.value)">${safeVal}</textarea>
+    </div>`;
+  }
+
+  const typeAttr = inputType === 'money' ? 'text' : (inputType || 'text');
+  const placeholder = inputType === 'money' ? 'e.g. 1,500,000' : inputType === 'date' ? 'YYYY-MM-DD' : '';
+
+  return `<div style="margin-bottom:8px">
+    <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
+    <input id="${id}" type="${typeAttr}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}" value="${safeVal}" placeholder="${placeholder}" onblur="window.matrixSaveField('${dbField}', this.value)" />
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS - Pill Rendering
 // ═══════════════════════════════════════════════════════════════════
 
@@ -175,6 +230,7 @@ export async function renderDealMatrix(deal) {
 
   const role = getCurrentRole();
   const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
+  const canEdit = EDITABLE_ROLES.includes(role);
   const currentStage = deal.deal_stage || 'received';
 
   // Safe number helpers
@@ -286,6 +342,13 @@ export async function renderDealMatrix(deal) {
   // SECTION 1: BORROWER / KYC
   // ═══════════════════════════════════════════════════════════════════
 
+  // ── Borrower type options for dropdown ──
+  const borrowerTypeOpts = [
+    { value: 'individual', label: 'Individual' }, { value: 'corporate', label: 'Corporate' },
+    { value: 'spv', label: 'SPV' }, { value: 'llp', label: 'LLP' },
+    { value: 'trust', label: 'Trust' }, { value: 'partnership', label: 'Partnership' }
+  ];
+
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s1', '👤', 'Borrower / KYC', 'Comprehensive identity verification', [
@@ -303,32 +366,23 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Primary Borrower — DIP Stage</div>
-                <div style="font-size:8px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Approved by RM</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Primary Borrower</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
-
-              <!-- Borrower type tabs -->
-              <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1e3a5f;color:#fff;border-right:1px solid #e2e8f0;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('individual')">Individual</div>
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('corporate')">Corporate</div>
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('spv')">SPV</div>
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('llp')">LLP</div>
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;border-right:1px solid #e2e8f0;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('trust')">Trust</div>
-                <div style="padding:6px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#f8fafc;color:#64748b;transition:all .12s;text-align:center;flex:1" onclick="window.matrixSwitchBorrowerType && window.matrixSwitchBorrowerType('partnership')">Partnership</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
+                ${renderEditableField('borrower_name', 'Full Name', deal.borrower_name, 'text', canEdit)}
+                ${renderEditableField('borrower_email', 'Email', deal.borrower_email, 'email', canEdit)}
+                ${renderEditableField('borrower_phone', 'Phone', deal.borrower_phone, 'tel', canEdit)}
+                ${renderEditableField('borrower_dob', 'Date of Birth', deal.borrower_dob, 'date', canEdit)}
+                ${renderEditableField('borrower_nationality', 'Nationality', deal.borrower_nationality, 'text', canEdit)}
+                ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
+                ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
               </div>
-
-              <!-- Individual details -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;margin-bottom:10px">
-                <div><span style="color:#94a3b8">Name:</span> ${sanitizeHtml(deal.borrower_name || 'N/A')}</div>
-                <div><span style="color:#94a3b8">Email:</span> ${sanitizeHtml(deal.borrower_email || 'N/A')}</div>
-              </div>
-
-              ${isInternalUser ? `
-                <div style="display:flex;gap:6px;margin-top:10px">
-                  <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;transition:all .12s" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('borrower')">Request Info</button>
-                </div>
-              ` : ''}
+              ${isInternalUser ? `<div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid #f1f5f9;padding-top:10px">
+                <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('borrower')">📧 Request Info</button>
+              </div>` : ''}
             </div>
           </div>
         </div>
@@ -373,6 +427,22 @@ export async function renderDealMatrix(deal) {
         <!-- AML & Source of Funds -->
         ${renderFieldRow('aml-source-funds', 'AML & Source of Funds', 'Source of funds, wealth, PEP screening, tax residency',
           ['under-review', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-aml-source-funds">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Source of Funds & AML</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('deposit_source', 'Source of Deposit / Funds', deal.deposit_source, 'textarea', canEdit)}
+                ${renderEditableField('existing_charges', 'Existing Charges', deal.existing_charges, 'textarea', canEdit)}
+                ${renderEditableField('concurrent_transactions', 'Concurrent Transactions', deal.concurrent_transactions, 'textarea', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -395,9 +465,47 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('property-details', 'Property Details', 'Address, tenure, bedrooms, square footage',
           ['approved', 'not-started', 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-details">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Property / Security Details</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('security_address', 'Security Address', deal.security_address, 'text', canEdit)}
+                ${renderEditableField('security_postcode', 'Postcode', deal.security_postcode, 'text', canEdit)}
+                ${renderEditableField('asset_type', 'Asset Type', deal.asset_type, 'select', canEdit, [
+                  { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' },
+                  { value: 'mixed_use', label: 'Mixed Use' }, { value: 'hmo', label: 'HMO' },
+                  { value: 'mufb', label: 'Multi-Unit Freehold Block' }, { value: 'land', label: 'Land with Planning' }
+                ])}
+                ${renderEditableField('property_tenure', 'Tenure', deal.property_tenure, 'select', canEdit, [
+                  { value: 'freehold', label: 'Freehold' }, { value: 'leasehold', label: 'Leasehold' },
+                  { value: 'share_of_freehold', label: 'Share of Freehold' }
+                ])}
+                ${renderEditableField('occupancy_status', 'Occupancy', deal.occupancy_status, 'text', canEdit)}
+                ${renderEditableField('current_use', 'Current Use', deal.current_use, 'text', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Valuation -->
         ${renderFieldRow('property-valuation', 'Valuation', 'Desktop valuation, survey, final valuation',
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-valuation">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="font-size:11px;font-weight:700;color:#334155;margin-bottom:12px">Valuation & Pricing</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('current_value', 'Current Value (£)', deal.current_value, 'money', canEdit)}
+                ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -417,12 +525,53 @@ export async function renderDealMatrix(deal) {
 
       <div id="content-s4" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
-        ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '12'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
+        ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '?'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-loan-terms">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Loan Structure</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('loan_amount', 'Loan Amount (£)', deal.loan_amount, 'money', canEdit)}
+                ${renderEditableField('ltv_requested', 'LTV Requested (%)', deal.ltv_requested, 'text', canEdit)}
+                ${renderEditableField('term_months', 'Term (months)', deal.term_months, 'text', canEdit)}
+                ${renderEditableField('rate_requested', 'Rate (%/month)', deal.rate_requested, 'text', canEdit)}
+                ${renderEditableField('interest_servicing', 'Interest Servicing', deal.interest_servicing, 'select', canEdit, [
+                  { value: 'retained', label: 'Retained (deducted upfront)' },
+                  { value: 'serviced', label: 'Serviced (monthly payments)' },
+                  { value: 'rolled', label: 'Rolled Up' }
+                ])}
+                ${renderEditableField('drawdown_date', 'Target Drawdown', deal.drawdown_date, 'date', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Use of Funds -->
         ${renderFieldRow('use-of-funds', 'Use of Funds', 'Refinance, purchase, renovation, other',
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-use-of-funds">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="font-size:11px;font-weight:700;color:#334155;margin-bottom:12px">Purpose & Use of Funds</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
+                  { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
+                  { value: 'refurbishment', label: 'Refurbishment' }, { value: 'capital_raise', label: 'Capital Raise' },
+                  { value: 'auction', label: 'Auction Purchase' }, { value: 'other', label: 'Other' }
+                ])}
+                ${renderEditableField('use_of_funds', 'Use of Funds Detail', deal.use_of_funds, 'textarea', canEdit)}
+                ${renderEditableField('refurb_scope', 'Refurb Scope', deal.refurb_scope, 'textarea', canEdit)}
+                ${renderEditableField('refurb_cost', 'Refurb Cost (£)', deal.refurb_cost, 'money', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -444,6 +593,21 @@ export async function renderDealMatrix(deal) {
         <!-- Exit Strategy -->
         ${renderFieldRow('exit-strategy', 'Exit Strategy', 'Refinance, sale, hold',
           ['submitted', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-exit-strategy">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Exit Strategy</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr;gap:8px;">
+                ${renderEditableField('exit_strategy', 'Exit Plan', deal.exit_strategy, 'textarea', canEdit)}
+                ${renderEditableField('additional_notes', 'Additional Notes', deal.additional_notes, 'textarea', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Refinance Evidence (conditional) -->
         ${renderFieldRow('refinance-evidence', 'Refinance Evidence', 'Lender offer, pre-approval',
@@ -501,8 +665,25 @@ export async function renderDealMatrix(deal) {
 
       <div id="content-s7" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
-        ${renderFieldRow('fees', 'Fees', 'DIP: £0, Arrangement: £0, Broker: £0, Legal: £0, Valuation: £0',
+        ${renderFieldRow('fees', 'Fees', `Arrangement: ${fmtPct(deal.arrangement_fee_pct || 2)}%, Broker: ${fmtPct(deal.broker_fee_pct || 0)}%`,
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-fees">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:11px;font-weight:700;color:#334155">Fee Structure</div>
+                ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct || '2.0', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct || '0', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee || '5000', 'money', ['rm','admin'].includes(role))}
+                ${renderEditableField('retained_interest_months', 'Retained Interest (months)', deal.retained_interest_months || '6', 'text', ['rm','admin'].includes(role))}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Credit Approval -->
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
@@ -643,6 +824,37 @@ export async function renderDealMatrix(deal) {
       const isOpen = detail.style.maxHeight !== '0px';
       detail.style.maxHeight = isOpen ? '0px' : '1200px';
       detail.style.overflow = 'hidden';
+    }
+  };
+
+  // ── Matrix field auto-save on blur ──
+  window.matrixSaveField = async function(fieldKey, value) {
+    const submissionId = deal.submission_id;
+    if (!submissionId) return;
+
+    const el = document.getElementById(`mf-${fieldKey}`);
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/matrix-fields`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [fieldKey]: value })
+      });
+
+      if (resp.ok) {
+        // Flash green border to confirm save
+        if (el) {
+          el.style.borderColor = '#22c55e';
+          setTimeout(() => { el.style.borderColor = '#e2e8f0'; }, 1200);
+        }
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        if (el) el.style.borderColor = '#dc2626';
+        showToast(err.error || 'Failed to save field', 'error');
+      }
+    } catch (e) {
+      console.error('[matrix-save] Error saving field:', fieldKey, e);
+      if (el) el.style.borderColor = '#dc2626';
+      showToast('Connection error saving field', 'error');
     }
   };
 

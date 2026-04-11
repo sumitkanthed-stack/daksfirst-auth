@@ -279,6 +279,10 @@
     .deal-section-chevron.open { transform: rotate(90deg); color: #2563eb; background: #dbeafe; }
     .deal-section-body { border-top: 1px solid #f1f5f9; }
     .deal-section-body.collapsed { max-height: 0; overflow: hidden; }
+
+    /* Matrix editable field styles */
+    .matrix-editable:focus { border-color: #2563eb !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .matrix-editable:hover { border-color: #94a3b8; }
     .doc-panel-header {
       background: var(--primary); color: #fff; padding: 14px 16px;
       position: sticky; top: 0; z-index: 2;
