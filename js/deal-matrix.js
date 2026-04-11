@@ -1081,6 +1081,10 @@ export async function renderDealMatrix(deal) {
     'loan_purpose'
   ];
 
+  // Entity groupings — fields that belong to a single person or property
+  const BORROWER_ENTITY_FIELDS = ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality', 'borrower_jurisdiction', 'company_name', 'company_number'];
+  const PROPERTY_ENTITY_FIELDS = ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'occupancy_status', 'current_use', 'current_value', 'purchase_price'];
+
   function showParsedResults(parsedData, conflicts, coreFields) {
     if (!parsedData || typeof parsedData !== 'object') return;
     _lastParsedData = parsedData;
@@ -1142,6 +1146,17 @@ export async function renderDealMatrix(deal) {
       html += `</div>`;
     }
 
+    // ── Detect new borrower / property entities ──
+    const matrixBorrowerEl = document.getElementById('mf-borrower_name');
+    const matrixBorrower = matrixBorrowerEl ? matrixBorrowerEl.value.trim() : '';
+    const parsedBorrower = parsedData.borrower_name ? String(parsedData.borrower_name).trim() : '';
+    const hasNewBorrower = matrixBorrower && parsedBorrower && matrixBorrower.toLowerCase() !== parsedBorrower.toLowerCase();
+
+    const matrixPropertyEl = document.getElementById('mf-security_address');
+    const matrixProperty = matrixPropertyEl ? matrixPropertyEl.value.trim() : '';
+    const parsedPropertyAddr = parsedData.security_address ? String(parsedData.security_address).trim() : '';
+    const hasNewProperty = matrixProperty && parsedPropertyAddr && matrixProperty.toLowerCase() !== parsedPropertyAddr.toLowerCase();
+
     // Build grouped field table
     for (const [sectionName, fields] of Object.entries(FIELD_SECTIONS)) {
       const sectionFields = fields.filter(k => parsedData[k] != null && parsedData[k] !== '');
@@ -1151,11 +1166,85 @@ export async function renderDealMatrix(deal) {
         <div style="margin-bottom:14px;">
           <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;padding:6px 0;border-bottom:1px solid #e2e8f0;margin-bottom:6px;">${sectionName}</div>`;
 
+      // ── NEW PERSON DETECTED card ──
+      if (sectionName === 'Borrower / KYC' && hasNewBorrower) {
+        const parsedType = parsedData.borrower_type || 'individual';
+        const parsedCompany = parsedData.company_name ? ` (${parsedData.company_name})` : '';
+        const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
+        html += `
+          <div id="new-borrower-card" style="background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:2px solid #3b82f6;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+              <span style="font-size:20px;">&#128100;</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1e3a5f;">New Person Detected</div>
+                <div style="font-size:11px;color:#64748b;">This document identifies a different person from the current borrower</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+              <div style="flex:1;">
+                <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
+                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(matrixBorrower)}</div>
+              </div>
+              <div style="color:#cbd5e1;font-size:20px;align-self:center;">&#8594;</div>
+              <div style="flex:1;">
+                <div style="font-size:9px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
+                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(parsedBorrower)}${sanitizeHtml(parsedCompany)}</div>
+                <div style="font-size:10px;color:#64748b;margin-top:1px;">Type: ${sanitizeHtml(parsedType)}</div>
+              </div>
+            </div>
+            <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:8px;">What would you like to do with this person?</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <button onclick="window.addParsedAsBorrower('primary')" style="${btnStyle}background:#2563eb;color:#fff;" title="Add as a joint/additional borrower">&#43; Add as Borrower</button>
+              <button onclick="window.addParsedAsBorrower('guarantor')" style="${btnStyle}background:#7c3aed;color:#fff;" title="Add as a personal guarantor">&#43; Add as Guarantor</button>
+              <button onclick="window.addParsedAsBorrower('director')" style="${btnStyle}background:#0891b2;color:#fff;" title="Add as a company director">&#43; Add as Director</button>
+              <button onclick="window.replaceBorrowerFromParsed()" style="${btnStyle}background:#f59e0b;color:#fff;" title="Replace the existing borrower with this person">&#8635; Replace Existing</button>
+              <button onclick="document.getElementById('new-borrower-card').style.display='none'" style="${btnStyle}background:#f1f5f9;color:#64748b;" title="Ignore this person">Ignore</button>
+            </div>
+          </div>`;
+      }
+
+      // ── NEW PROPERTY DETECTED card ──
+      if (sectionName === 'Property' && hasNewProperty) {
+        const parsedPostcode = parsedData.security_postcode ? `, ${parsedData.security_postcode}` : '';
+        const parsedAssetType = parsedData.asset_type ? ` (${parsedData.asset_type})` : '';
+        const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
+        html += `
+          <div id="new-property-card" style="background:linear-gradient(135deg,#f0fdf4,#f0fdfa);border:2px solid #22c55e;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+              <span style="font-size:20px;">&#127968;</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1e3a5f;">New Property Detected</div>
+                <div style="font-size:11px;color:#64748b;">This document references a different property from the current security</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+              <div style="flex:1;">
+                <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;">Current in Matrix</div>
+                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(matrixProperty.substring(0, 80))}</div>
+              </div>
+              <div style="color:#cbd5e1;font-size:20px;align-self:center;">&#8594;</div>
+              <div style="flex:1;">
+                <div style="font-size:9px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:.5px;">Parsed from Document</div>
+                <div style="font-size:13px;font-weight:600;color:#1e293b;margin-top:2px;">${sanitizeHtml(parsedPropertyAddr)}${sanitizeHtml(parsedPostcode)}</div>
+                ${parsedAssetType ? `<div style="font-size:10px;color:#64748b;margin-top:1px;">${sanitizeHtml(parsedAssetType)}</div>` : ''}
+              </div>
+            </div>
+            <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:8px;">What would you like to do with this property?</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <button onclick="window.addParsedAsProperty()" style="${btnStyle}background:#22c55e;color:#fff;" title="Add as additional security in a portfolio deal">&#43; Add to Portfolio</button>
+              <button onclick="window.replacePropertyFromParsed()" style="${btnStyle}background:#f59e0b;color:#fff;" title="Replace the existing property with this one">&#8635; Replace Existing</button>
+              <button onclick="document.getElementById('new-property-card').style.display='none'" style="${btnStyle}background:#f1f5f9;color:#64748b;" title="Ignore this property">Ignore</button>
+            </div>
+          </div>`;
+      }
+
       for (const key of sectionFields) {
         const label = FIELD_LABELS[key] || key;
         let val = String(parsedData[key]);
         const isCore = CORE_STRUCTURE_FIELDS.includes(key);
         const hasConflict = !!_lastConflicts[key];
+        const isBorrowerField = BORROWER_ENTITY_FIELDS.includes(key);
+        const isPropertyField = PROPERTY_ENTITY_FIELDS.includes(key);
 
         // Format currency values
         if (['current_value', 'purchase_price', 'loan_amount', 'refurb_cost', 'commitment_fee'].includes(key) && !isNaN(parseFloat(val.replace(/[£,]/g, '')))) {
@@ -1171,11 +1260,15 @@ export async function renderDealMatrix(deal) {
         const conflictBadge = hasConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
         const rowBorder = hasConflict ? 'border:1px solid #fecaca;background:#fef2f2;' : 'border:1px solid #f1f5f9;background:#fff;';
 
-        // Check if Matrix already has a value for this field
+        // Check if Matrix already has a value for this field — suppress overwrite warning if entity card handles it
         const matrixEl = document.getElementById(`mf-${key}`);
         const matrixVal = matrixEl ? matrixEl.value.trim() : '';
         const matrixDiffers = matrixVal && matrixVal !== String(parsedData[key]) && isCore;
-        const matrixWarning = matrixDiffers ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
+        const entityHandled = (isBorrowerField && hasNewBorrower) || (isPropertyField && hasNewProperty);
+        const matrixWarning = (matrixDiffers && !entityHandled) ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
+
+        // If entity card is shown, dim the individual accept/reject buttons and add a note
+        const entityNote = entityHandled && matrixDiffers ? `<div style="font-size:9px;color:#3b82f6;margin-top:2px;">&#8593; Use the card above to add/replace</div>` : '';
 
         html += `
           <div style="display:flex;align-items:flex-start;padding:7px 12px;border-radius:6px;margin-bottom:3px;${rowBorder}" id="parsed-row-${key}">
@@ -1183,6 +1276,7 @@ export async function renderDealMatrix(deal) {
             <div style="flex:1;font-size:13px;color:#1e293b;font-weight:500;">
               ${val}
               ${matrixWarning}
+              ${entityNote}
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;">
               <button onclick="window.acceptParsedField('${key}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;" title="Accept and fill Matrix">&#10003;</button>
@@ -1237,6 +1331,153 @@ export async function renderDealMatrix(deal) {
   };
 
   // ═══════════════════════════════════════════════════════════════════
+  // ADD PARSED ENTITY → Borrower or Property via API
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Add the parsed person as a new borrower/guarantor/director in deal_borrowers
+   */
+  window.addParsedAsBorrower = async function(role) {
+    if (!_lastParsedData || !_lastParsedData.borrower_name) {
+      showToast('No borrower data to add', 'error');
+      return;
+    }
+    const subId = deal.submission_id;
+    const body = {
+      role: role,
+      full_name: _lastParsedData.borrower_name,
+      borrower_type: _lastParsedData.borrower_type || 'individual',
+      email: _lastParsedData.borrower_email || null,
+      phone: _lastParsedData.borrower_phone || null,
+      date_of_birth: _lastParsedData.borrower_dob || null,
+      nationality: _lastParsedData.borrower_nationality || null,
+      jurisdiction: _lastParsedData.borrower_jurisdiction || null,
+      company_name: _lastParsedData.company_name || null,
+      company_number: _lastParsedData.company_number || null
+    };
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/borrowers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if (data.success) {
+        const roleLabel = { primary: 'Borrower', guarantor: 'Guarantor', director: 'Director', joint: 'Joint Borrower' }[role] || role;
+        showToast(`${body.full_name} added as ${roleLabel}`, 'success');
+        // Hide the entity card and dim borrower field rows (they're now handled)
+        const card = document.getElementById('new-borrower-card');
+        if (card) {
+          card.innerHTML = `<div style="text-align:center;padding:12px;color:#22c55e;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.full_name)} added as ${roleLabel}</div>`;
+          card.style.borderColor = '#22c55e';
+          card.style.background = '#f0fdf4';
+        }
+        // Hide individual borrower field rows since entity was added
+        for (const f of BORROWER_ENTITY_FIELDS) {
+          const row = document.getElementById(`parsed-row-${f}`);
+          if (row) { row.style.opacity = '0.4'; row.style.pointerEvents = 'none'; }
+        }
+      } else {
+        showToast(data.error || 'Failed to add borrower', 'error');
+      }
+    } catch (err) {
+      console.error('[deal-matrix] addParsedAsBorrower error:', err);
+      showToast('Failed to add borrower: ' + err.message, 'error');
+    }
+  };
+
+  /**
+   * Replace the existing Matrix borrower fields with the parsed person (overwrite)
+   */
+  window.replaceBorrowerFromParsed = function() {
+    if (!_lastParsedData) return;
+    let count = 0;
+    for (const f of BORROWER_ENTITY_FIELDS) {
+      if (_lastParsedData[f] != null && _lastParsedData[f] !== '') {
+        if (pushFieldToMatrix(f, _lastParsedData[f])) count++;
+        const row = document.getElementById(`parsed-row-${f}`);
+        if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
+      }
+    }
+    const card = document.getElementById('new-borrower-card');
+    if (card) {
+      card.innerHTML = `<div style="text-align:center;padding:12px;color:#f59e0b;font-weight:700;font-size:13px;">&#8635; Borrower replaced — ${count} fields updated in Matrix</div>`;
+      card.style.borderColor = '#f59e0b';
+      card.style.background = '#fffbeb';
+    }
+    showToast(`Borrower replaced — ${count} fields updated`, 'success');
+  };
+
+  /**
+   * Add the parsed property as an additional property in deal_properties (portfolio)
+   */
+  window.addParsedAsProperty = async function() {
+    if (!_lastParsedData || !_lastParsedData.security_address) {
+      showToast('No property data to add', 'error');
+      return;
+    }
+    const subId = deal.submission_id;
+    const body = {
+      address: _lastParsedData.security_address,
+      postcode: _lastParsedData.security_postcode || null,
+      property_type: _lastParsedData.asset_type || null,
+      tenure: _lastParsedData.property_tenure || null,
+      occupancy: _lastParsedData.occupancy_status || null,
+      current_use: _lastParsedData.current_use || null,
+      market_value: _lastParsedData.current_value ? parseFloat(String(_lastParsedData.current_value).replace(/[£,]/g, '')) || null : null,
+      purchase_price: _lastParsedData.purchase_price ? parseFloat(String(_lastParsedData.purchase_price).replace(/[£,]/g, '')) || null : null
+    };
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/properties`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showToast(`Property added to portfolio: ${body.address.substring(0, 40)}`, 'success');
+        const card = document.getElementById('new-property-card');
+        if (card) {
+          card.innerHTML = `<div style="text-align:center;padding:12px;color:#22c55e;font-weight:700;font-size:13px;">&#10003; ${sanitizeHtml(body.address.substring(0, 50))} added to portfolio</div>`;
+          card.style.borderColor = '#22c55e';
+          card.style.background = '#f0fdf4';
+        }
+        for (const f of PROPERTY_ENTITY_FIELDS) {
+          const row = document.getElementById(`parsed-row-${f}`);
+          if (row) { row.style.opacity = '0.4'; row.style.pointerEvents = 'none'; }
+        }
+      } else {
+        showToast(data.error || 'Failed to add property', 'error');
+      }
+    } catch (err) {
+      console.error('[deal-matrix] addParsedAsProperty error:', err);
+      showToast('Failed to add property: ' + err.message, 'error');
+    }
+  };
+
+  /**
+   * Replace the existing Matrix property fields with the parsed property (overwrite)
+   */
+  window.replacePropertyFromParsed = function() {
+    if (!_lastParsedData) return;
+    let count = 0;
+    for (const f of PROPERTY_ENTITY_FIELDS) {
+      if (_lastParsedData[f] != null && _lastParsedData[f] !== '') {
+        if (pushFieldToMatrix(f, _lastParsedData[f])) count++;
+        const row = document.getElementById(`parsed-row-${f}`);
+        if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
+      }
+    }
+    const card = document.getElementById('new-property-card');
+    if (card) {
+      card.innerHTML = `<div style="text-align:center;padding:12px;color:#f59e0b;font-weight:700;font-size:13px;">&#8635; Property replaced — ${count} fields updated in Matrix</div>`;
+      card.style.borderColor = '#f59e0b';
+      card.style.background = '#fffbeb';
+    }
+    showToast(`Property replaced — ${count} fields updated`, 'success');
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
   // ACCEPT PARSED FIELD(S) → push to Matrix inputs + save to DB
   // ═══════════════════════════════════════════════════════════════════
   function pushFieldToMatrix(key, val) {
@@ -1284,16 +1525,34 @@ export async function renderDealMatrix(deal) {
     }
   };
 
-  // Accept ALL parsed fields at once (skips unresolved conflicts)
+  // Accept ALL parsed fields at once (skips unresolved conflicts & entity-level fields)
   window.acceptAllParsed = function() {
     if (!_lastParsedData) return;
     let count = 0;
     let skippedConflicts = 0;
+    let skippedEntities = 0;
+
+    // Check if entity cards are still active (not yet resolved)
+    const borrowerCardActive = document.getElementById('new-borrower-card')?.style.display !== 'none'
+      && document.getElementById('new-borrower-card')?.querySelector('button');
+    const propertyCardActive = document.getElementById('new-property-card')?.style.display !== 'none'
+      && document.getElementById('new-property-card')?.querySelector('button');
+
     for (const key of ALL_FIELD_KEYS) {
       if (_lastParsedData[key] != null && _lastParsedData[key] !== '') {
         // Skip fields that still have unresolved conflicts
         if (_lastConflicts[key]) {
           skippedConflicts++;
+          continue;
+        }
+        // Skip borrower fields if the entity card is still unresolved
+        if (borrowerCardActive && BORROWER_ENTITY_FIELDS.includes(key)) {
+          skippedEntities++;
+          continue;
+        }
+        // Skip property fields if the entity card is still unresolved
+        if (propertyCardActive && PROPERTY_ENTITY_FIELDS.includes(key)) {
+          skippedEntities++;
           continue;
         }
         if (pushFieldToMatrix(key, _lastParsedData[key])) count++;
@@ -1312,8 +1571,11 @@ export async function renderDealMatrix(deal) {
       }
     }
     calculateCompleteness();
-    const conflictMsg = skippedConflicts > 0 ? ` (${skippedConflicts} conflicting fields skipped — resolve them above)` : '';
-    showToast(`${count} fields accepted and pushed to Matrix${conflictMsg}`, skippedConflicts > 0 ? 'warning' : 'success');
+    const warnings = [];
+    if (skippedConflicts > 0) warnings.push(`${skippedConflicts} conflicts`);
+    if (skippedEntities > 0) warnings.push(`${skippedEntities} entity fields need action above`);
+    const warnMsg = warnings.length > 0 ? ` (${warnings.join(', ')})` : '';
+    showToast(`${count} fields accepted and pushed to Matrix${warnMsg}`, warnings.length > 0 ? 'warning' : 'success');
 
     // Scroll to Matrix section
     const matrixSection = document.getElementById('section-matrix');
