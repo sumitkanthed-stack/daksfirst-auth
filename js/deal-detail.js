@@ -654,7 +654,7 @@ export function renderInternalWorkflowControls(deal) {
 
     // CSS helper classes
     const brokerField = 'background:#f9fafb;border:1px solid #e5e7eb;color:#374151;cursor:not-allowed;';
-    const rmField = 'background:#111827;border:2px solid var(--primary);';
+    const rmField = 'background:#fff;border:2px solid #2563eb;color:#1e3a5f;';
     const rmLabel = '<span style="font-size:9px;background:#1e3a5f;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;">RM TO CONFIRM</span>';
 
     // DF logo — use the actual logo image with SVG fallback
@@ -675,15 +675,15 @@ export function renderInternalWorkflowControls(deal) {
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">
         ${dfLogoHtml}
         <div style="flex:1;">
-          <h4 style="margin:0;color:#F1F5F9;font-size:18px;">Decision In Principle (DIP)</h4>
-          <div style="font-size:11px;color:#666;margin-top:2px;">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG</div>
+          <h4 style="margin:0;color:#1e3a5f;font-size:18px;">Decision In Principle (DIP)</h4>
+          <div style="font-size:11px;color:#4b5563;margin-top:2px;">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;font-size:11px;text-align:right;">
           <span style="background:#e5e7eb;color:#6b7280;padding:3px 8px;border-radius:4px;">Grey = Borrower input</span>
           <span style="background:#1e3a5f;color:#fff;padding:3px 8px;border-radius:4px;">Blue border = RM to confirm</span>
         </div>
       </div>
-      <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the borrower-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
+      <p style="margin:0 0 16px;font-size:12px;color:#4b5563;">Review the borrower-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
 
       <!-- ═══ BORROWER DETAILS ═══ -->
       <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
@@ -737,10 +737,10 @@ export function renderInternalWorkflowControls(deal) {
 
         <!-- Security & Guarantee Structure -->
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-          <h5 style="margin:0 0 8px;color:#60A5FA;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
+          <h5 style="margin:0 0 8px;color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <div>
-              <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
+              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
               <select id="dip-fixed-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
                 <option value="first_and_debenture" selected>First Charge + Debenture</option>
                 <option value="first_charge">First Legal Charge only</option>
@@ -749,7 +749,7 @@ export function renderInternalWorkflowControls(deal) {
               </select>
             </div>
             <div>
-              <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee</label>
+              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee</label>
               <select id="dip-pg-ubo" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
                 <option value="required" selected>PG from UBO — Required</option>
                 <option value="limited">Limited Guarantee</option>
@@ -757,13 +757,13 @@ export function renderInternalWorkflowControls(deal) {
               </select>
             </div>
             <div>
-              <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Additional Security</label>
+              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Additional Security</label>
               <input type="text" id="dip-additional-security" placeholder="e.g. Second charge on another asset" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <span style="font-size:10px;color:#6b7280;">RM to add if applicable</span>
             </div>
           </div>
           <div style="margin-top:8px;">
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
             <input type="text" id="dip-ubo-names" placeholder="Full legal name(s) of UBO / guarantor(s)" value="${sanitizeHtml(deal.borrower_name || '')}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#6b7280;">Must match title holder(s) on the property</span>
           </div>
@@ -771,7 +771,7 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- ═══ PROPERTY SCHEDULE (RM approves each property) ═══ -->
-      <div style="background:#111827;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <h5 id="dip-schedule-header" style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Security Schedule &mdash; ${propList.length} ${propList.length === 1 ? 'Property' : 'Properties'}</h5>
           ${propList.length > 1 ? `<button onclick="window.approveAllDipProperties && window.approveAllDipProperties()" style="padding:5px 14px;background:#15803d;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Approve All</button>` : ''}
@@ -805,7 +805,7 @@ export function renderInternalWorkflowControls(deal) {
           <tfoot>
             <tr style="background:#f0f5ff;font-weight:600;">
               <td colspan="3" style="padding:8px;text-align:right;font-size:12px;">Total Valuation:</td>
-              <td style="padding:8px;font-size:13px;color:#F1F5F9;" id="dip-prop-val-total">£0</td>
+              <td style="padding:8px;font-size:13px;color:#1e3a5f;font-weight:700;" id="dip-prop-val-total">£0</td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -835,20 +835,20 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- ═══ LOAN TERMS (RM CONFIRMS) ═══ -->
-      <div style="background:#111827;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid var(--primary);">
-        <h5 style="margin:0 0 10px;color:#F1F5F9;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Loan Terms ${rmLabel}</h5>
+      <div style="background:#f0f5ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid var(--primary);">
+        <h5 style="margin:0 0 10px;color:#1e3a5f;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Loan Terms ${rmLabel}</h5>
 
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Loan Amount (£) *</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Loan Amount (£) *</label>
             <input type="text" id="dip-loan-amount" value="${dipLoan}" placeholder="Confirm loan amount" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Term (months) *</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Term (months) *</label>
             <input type="number" id="dip-term" value="${dipTerm}" placeholder="e.g. 12" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
             <input type="number" step="0.01" id="dip-rate" value="${dipRate}" placeholder="Min 0.85" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#92400e;">Min 0.85%</span>
           </div>
@@ -856,7 +856,7 @@ export function renderInternalWorkflowControls(deal) {
 
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Interest Servicing *</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Interest Servicing *</label>
             <select id="dip-interest" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <option value="retained" ${dipInterest === 'retained' ? 'selected' : ''}>Retained</option>
               <option value="serviced" ${dipInterest === 'serviced' ? 'selected' : ''}>Serviced</option>
@@ -864,7 +864,7 @@ export function renderInternalWorkflowControls(deal) {
             </select>
           </div>
           <div>
-            <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
+            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
             <input type="number" step="0.01" id="dip-arrangement-fee" value="2.00" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
@@ -875,7 +875,7 @@ export function renderInternalWorkflowControls(deal) {
         </div>
 
         <!-- ═══ RETAINED INTEREST & CLIENT COSTS ═══ -->
-        <div style="background:#1118278f0;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #f59e0b;">
+        <div style="background:#fffbeb;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #f59e0b;">
           <h5 style="margin:0 0 10px;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Day Zero Calculation ${rmLabel}</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
@@ -893,9 +893,9 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- ═══ FEE SCHEDULE (RM sets all fees — disclosed to borrower in DIP) ═══ -->
-      <div style="background:#111827;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7c3aed;">
+      <div style="background:#faf5ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7c3aed;">
         <h5 style="margin:0 0 4px;color:#7c3aed;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Fee Schedule ${rmLabel}</h5>
-        <p style="margin:0 0 12px;font-size:11px;color:#666;">All fees disclosed to borrower. No fee required before DIP issuance. Amounts set by RM.</p>
+        <p style="margin:0 0 12px;font-size:11px;color:#4b5563;">All fees disclosed to borrower. No fee required before DIP issuance. Amounts set by RM.</p>
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:#f5f3ff;">
@@ -960,20 +960,20 @@ export function renderInternalWorkflowControls(deal) {
 
       <!-- ═══ RM CONDITIONS ═══ -->
       <div style="margin-bottom:16px;">
-        <label style="font-size:11px;color:#94A3B8;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
+        <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
         <textarea id="dip-notes" placeholder="Special conditions, valuation requirements, additional info needed..." style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;min-height:80px;"></textarea>
       </div>
 
       <!-- ═══ LIVE SUMMARY ═══ -->
-      <div style="background:#111827df5;padding:14px;border-radius:6px;border:1px solid #fbbf24;margin-bottom:16px;">
+      <div style="background:#fffbeb;padding:14px;border-radius:6px;border:1px solid #fbbf24;margin-bottom:16px;">
         <strong style="font-size:12px;color:#92400e;">DIP Financial Summary (live):</strong>
-        <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#333;"></div>
+        <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#374151;"></div>
       </div>
 
       <!-- ═══ PRE-ISSUE CHECKLIST ═══ -->
-      <div style="background:#111827;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid rgba(255,255,255,0.12);">
-        <h5 style="margin:0 0 10px;color:#94A3B8;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
-        <p style="margin:0 0 10px;font-size:11px;color:#666;">All items must be satisfied before the DIP can be issued.</p>
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
+        <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
+        <p style="margin:0 0 10px;font-size:11px;color:#4b5563;">All items must be satisfied before the DIP can be issued.</p>
         <div id="dip-checklist" style="font-size:12px;line-height:2;"></div>
       </div>
 
