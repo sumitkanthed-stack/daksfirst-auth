@@ -213,6 +213,14 @@ export async function renderDocRepo(submissionId, role) {
   };
   const CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
 
+  // Sort documents by category so they are grouped together
+  const catOrder = { kyc: 0, financial: 1, property: 2, legal: 3, issued: 4, email: 5, other: 6 };
+  docs.sort((a, b) => {
+    const catA = (a.doc_category || a.category || 'other').toLowerCase();
+    const catB = (b.doc_category || b.category || 'other').toLowerCase();
+    return (catOrder[catA] ?? 6) - (catOrder[catB] ?? 6);
+  });
+
   tbody.innerHTML = docs.map((doc, idx) => {
     const cat = (doc.doc_category || doc.category || 'other').toLowerCase();
     const catStyle = catColors[cat] || catColors.other;

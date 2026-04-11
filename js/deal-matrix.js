@@ -799,7 +799,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-required')
       ], isInternalUser)}
 
-      <div id="content-s6" style="max-height:${isDIPStage ? '0' : '8000'}px;overflow:hidden;transition:max-height .35s ease">
+      <div id="content-s6" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Legal / Security -->
         ${renderFieldRow('legal-security', 'Legal / Security', 'Title deeds, searches, mortgage deed',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
@@ -2588,7 +2588,12 @@ export async function renderDealMatrix(deal) {
 
     if (statusEl) {
       const tierName = tierLabels[readiness.tier] || 'Submission';
-      if (readiness.ready) {
+      // If deal is already past received stage, show submitted status instead of "More Info Needed"
+      const alreadySubmitted = currentStage && currentStage !== 'received';
+      if (alreadySubmitted) {
+        statusEl.textContent = 'Submitted — Under Review';
+        statusEl.style.color = '#E8C97A';
+      } else if (readiness.ready) {
         statusEl.textContent = `Ready for ${tierName}`;
         statusEl.style.color = '#34D399';
       } else if (readiness.requiredPct >= 60) {
