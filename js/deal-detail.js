@@ -627,8 +627,10 @@ export function renderInternalWorkflowControls(deal) {
     }
   }
 
-  // ASSIGNED or INFO_GATHERING (RM or Admin) - Issue DIP
-  if (['assigned', 'info_gathering'].includes(stage) && ['rm', 'admin'].includes(currentRole)) {
+  // ASSIGNED, INFO_GATHERING, or DIP_ISSUED (RM or Admin) - DIP Form
+  // At dip_issued: form renders collapsed & read-only for printing/viewing
+  const dipFormStages = ['assigned', 'info_gathering', 'dip_issued'];
+  if (dipFormStages.includes(stage) && ['rm', 'admin'].includes(currentRole)) {
     const dipLoan = deal.loan_amount || '';
     const dipLtv = deal.ltv_requested || '';
     const dipTerm = deal.term_months || '';
@@ -681,7 +683,8 @@ export function renderInternalWorkflowControls(deal) {
       </svg>
     </div>`;
 
-    html += accordion('wf-dip-form', 'DIP Form', 'D', true);
+    const dipFormOpen = stage !== 'dip_issued'; // collapsed after issuance
+    html += accordion('wf-dip-form', 'DIP Form', 'D', dipFormOpen);
     html += `<div class="dip-light-form" style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
@@ -1015,18 +1018,18 @@ export function renderInternalWorkflowControls(deal) {
         <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#374151;"></div>
       </div>
 
-      <!-- ═══ PRE-ISSUE CHECKLIST ═══ -->
-      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
+      <!-- ═══ PRE-ISSUE CHECKLIST (hidden after issuance) ═══ -->
+      ${stage !== 'dip_issued' ? `<div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
         <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
         <p style="margin:0 0 10px;font-size:11px;color:#4b5563;">All items must be satisfied before the DIP can be issued.</p>
         <div id="dip-checklist" style="font-size:12px;line-height:2;"></div>
-      </div>
+      </div>` : ''}
 
       <div style="display:flex;gap:12px;align-items:center;">
-        <button id="btn-issue-dip" onclick="window.issueDip && window.issueDip()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>
+        ${stage !== 'dip_issued' ? `<button id="btn-issue-dip" onclick="window.issueDip && window.issueDip()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>` : ''}
         <button onclick="window.printDipPdf && window.printDipPdf()" style="padding:10px 24px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Download PDF</button>
-        <button onclick="window.declineDeal && window.declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
-        <span id="dip-checklist-count" style="font-size:11px;color:#9ca3af;margin-left:8px;"></span>
+        ${stage !== 'dip_issued' ? `<button onclick="window.declineDeal && window.declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
+        <span id="dip-checklist-count" style="font-size:11px;color:#9ca3af;margin-left:8px;"></span>` : ''}
       </div>
 
       <!-- ═══ DISCLAIMER ═══ -->
@@ -1280,6 +1283,7 @@ export function renderInternalWorkflowControls(deal) {
       (deal.dip_signed_at ? '<span style="font-size:10px;color:#999;margin-left:10px;">Accepted: ' + new Date(deal.dip_signed_at).toLocaleDateString('en-GB') + '</span>' : '') +
       '</div><div style="display:flex;gap:8px;">' +
       '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">View DIP</button>' +
+      '<button onclick="window.printDipPdf && window.printDipPdf()" style="padding:4px 12px;background:#C9A227;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Download PDF</button>' +
       '</div></div>';
   }
 
