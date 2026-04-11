@@ -184,7 +184,7 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
 /**
  * Generate collapsible section header
  */
-function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots) {
+function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots, showRequestInfo = false) {
   // Map icon initials to styles
   const iconStyles = {
     'DM': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
@@ -199,6 +199,10 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
   };
   const style = iconStyles[iconInitial] || { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' };
 
+  const requestInfoBtn = showRequestInfo
+    ? `<button onclick="event.stopPropagation(); window.matrixSendInfoRequest('${sectionId}')" style="padding:3px 8px;border-radius:4px;font-size:9px;font-weight:600;border:1px solid rgba(251,191,36,0.3);background:rgba(251,191,36,0.1);color:#FBBF24;cursor:pointer;margin-left:8px;white-space:nowrap;">Request Info</button>`
+    : '';
+
   return `
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid rgba(255,255,255,0.06)" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
@@ -206,6 +210,7 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
         <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:${style.bg};border-radius:6px;font-size:12px;font-weight:700;color:${style.color};flex-shrink:0">${iconInitial}</div>
         <span style="font-size:12px;font-weight:700;color:#F1F5F9">${sanitizeHtml(title)}</span>
         <span style="font-size:9px;color:#94A3B8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
+        ${requestInfoBtn}
       </div>
       ${statusDots.map(dot => `<div style="padding:11px 6px;display:flex;align-items:center;justify-content:center">${dot}</div>`).join('')}
     </div>
@@ -303,9 +308,10 @@ export async function renderDealMatrix(deal) {
   const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
 
   // Stage mapping — deal_stage values from DB to matrix column index
+  // info_gathering is still DIP phase (RM gathering data before DIP complete)
   const stageIndex = {
-    'received': 0, 'assigned': 0, 'dip_issued': 0,
-    'info_gathering': 1, 'ai_termsheet': 1,
+    'received': 0, 'assigned': 0, 'dip_issued': 0, 'info_gathering': 0,
+    'ai_termsheet': 1,
     'fee_pending': 2, 'fee_paid': 2, 'underwriting': 2,
     'bank_submitted': 2, 'bank_approved': 2,
     'borrower_accepted': 3, 'legal_instructed': 3, 'completed': 3
@@ -441,7 +447,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s1" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Primary Borrower -->
@@ -465,9 +471,6 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
                 ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
               </div>
-              ${isInternalUser ? `<div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px">
-                <button style="padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.06);background:#111827;color:#F1F5F9;cursor:pointer" onclick="window.matrixSendInfoRequest && window.matrixSendInfoRequest('borrower')">📧 Request Info</button>
-              </div>` : ''}
             </div>
           </div>
         </div>
@@ -499,7 +502,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s2" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Financial Summary (editable at DIP) -->
@@ -615,7 +618,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s3" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Property Details -->
@@ -678,7 +681,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s4" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
@@ -744,7 +747,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s5" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Exit Strategy -->
@@ -794,7 +797,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s6" style="max-height:${isDIPStage ? '0' : '8000'}px;overflow:hidden;transition:max-height .35s ease">
         <!-- Legal / Security -->
@@ -845,7 +848,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ])}
+      ], isInternalUser)}
 
       <div id="content-s7" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
@@ -2107,13 +2110,226 @@ export async function renderDealMatrix(deal) {
     console.log('Switching repo tab to:', category);
   };
 
-  window.matrixSendInfoRequest = function(section) {
-    showToast(`Info request sent for ${section}`, 'success');
+  // ── Section name ↔ ID mapping for info requests ──
+  const INFO_REQUEST_SECTIONS = {
+    's1': 'Borrower / KYC',
+    's2': 'Borrower Financials & AML',
+    's3': 'Property / Security',
+    's4': 'Loan Terms & Use of Funds',
+    's5': 'Exit Strategy',
+    's6': 'Legal & Insurance',
+    's7': 'Commercial',
+    's8': 'Documents Issued',
+    'borrower': 'Borrower / KYC',
+    'documents': 'Documents'
   };
 
-  window.matrixResolveInfoRequest = function(requestId) {
-    showToast(`Info request ${requestId} resolved`, 'success');
+  const SECTION_NAME_TO_ID = {};
+  for (const [id, name] of Object.entries(INFO_REQUEST_SECTIONS)) {
+    SECTION_NAME_TO_ID[name] = id;
+  }
+
+  // ── RM: Show modal to send info request with comment ──
+  window.matrixSendInfoRequest = function(section) {
+    const role = getCurrentRole();
+    if (!['admin', 'rm', 'credit', 'compliance'].includes(role)) {
+      showToast('Only internal staff can request information', 'error');
+      return;
+    }
+
+    const sectionName = INFO_REQUEST_SECTIONS[section] || section;
+
+    // Build section dropdown options
+    const sectionOptions = Object.entries(INFO_REQUEST_SECTIONS)
+      .filter(([k]) => k.startsWith('s'))
+      .map(([k, name]) => `<option value="${name}" ${name === sectionName ? 'selected' : ''}>${name}</option>`)
+      .join('');
+
+    // Create modal
+    let modal = document.getElementById('info-request-modal');
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = 'info-request-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+    modal.innerHTML = `
+      <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;width:480px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="font-size:16px;font-weight:700;color:#F1F5F9;margin-bottom:4px;">Request Information from Broker</div>
+        <div style="font-size:11px;color:#94A3B8;margin-bottom:18px;">The broker will see this request and only the relevant section will unlock for editing.</div>
+
+        <label style="font-size:10px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Section</label>
+        <select id="ir-section" style="width:100%;padding:10px 12px;background:#0f1729;color:#F1F5F9;border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:13px;margin-bottom:14px;outline:none;">
+          ${sectionOptions}
+        </select>
+
+        <label style="font-size:10px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">What do you need? <span style="color:#F87171;">*</span></label>
+        <textarea id="ir-message" rows="4" placeholder="e.g. Please provide proof of funds for the deposit and a recent bank statement showing the source..." style="width:100%;padding:10px 12px;background:#0f1729;color:#F1F5F9;border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;"></textarea>
+
+        <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;">
+          <button onclick="document.getElementById('info-request-modal').remove()" style="padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#94A3B8;cursor:pointer;">Cancel</button>
+          <button onclick="window.matrixSubmitInfoRequest()" style="padding:8px 18px;border-radius:8px;font-size:12px;font-weight:700;border:none;background:#D4A853;color:#0B1120;cursor:pointer;">Send Request</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    // Focus the textarea
+    setTimeout(() => document.getElementById('ir-message')?.focus(), 100);
   };
+
+  // ── RM: Submit the info request to backend ──
+  window.matrixSubmitInfoRequest = async function() {
+    const section = document.getElementById('ir-section')?.value;
+    const message = document.getElementById('ir-message')?.value?.trim();
+
+    if (!message) {
+      showToast('Please describe what information you need', 'error');
+      return;
+    }
+
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/matrix/${deal.submission_id}/info-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section, message })
+      });
+
+      if (resp.ok) {
+        document.getElementById('info-request-modal')?.remove();
+        showToast(`Info request sent for ${section}`, 'success');
+        // Refresh the info request banner
+        await loadInfoRequests();
+      } else {
+        const err = await resp.json();
+        showToast(err.error || 'Failed to send request', 'error');
+      }
+    } catch (e) {
+      showToast('Network error sending request', 'error');
+    }
+  };
+
+  // ── Load and display info requests (banner for broker, list for RM) ──
+  async function loadInfoRequests() {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/matrix/${deal.submission_id}/info-requests`);
+      if (!resp.ok) return;
+      const requests = await resp.json();
+      renderInfoRequestBanner(requests);
+    } catch (e) {
+      console.warn('[matrix] Failed to load info requests:', e);
+    }
+  }
+
+  function renderInfoRequestBanner(requests) {
+    const openRequests = requests.filter(r => r.status === 'open');
+    const role = getCurrentRole();
+    const isBroker = ['broker', 'borrower'].includes(role);
+
+    // Remove existing banner
+    const existing = document.getElementById('info-request-banner');
+    if (existing) existing.remove();
+
+    if (openRequests.length === 0) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'info-request-banner';
+    banner.style.cssText = 'padding:14px 26px;background:rgba(251,191,36,0.1);border-top:2px solid rgba(251,191,36,0.3);border-bottom:1px solid rgba(255,255,255,0.06);';
+
+    const title = isBroker
+      ? `<div style="font-size:14px;font-weight:700;color:#FBBF24;margin-bottom:8px;">Action Required — ${openRequests.length} item${openRequests.length > 1 ? 's' : ''} requested by your RM</div>`
+      : `<div style="font-size:14px;font-weight:700;color:#FBBF24;margin-bottom:8px;">${openRequests.length} open info request${openRequests.length > 1 ? 's' : ''}</div>`;
+
+    let itemsHtml = '';
+    for (const req of openRequests) {
+      const date = new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const sectionId = SECTION_NAME_TO_ID[req.section] || '';
+
+      if (isBroker) {
+        itemsHtml += `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.15);border-radius:8px;margin-bottom:6px;">
+            <span style="color:#FBBF24;font-size:14px;flex-shrink:0;margin-top:1px;">&#9888;</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:700;color:#F1F5F9;">${sanitizeHtml(req.section)}</div>
+              <div style="font-size:12px;color:#CBD5E1;margin-top:2px;">${sanitizeHtml(req.message)}</div>
+              <div style="font-size:10px;color:#94A3B8;margin-top:4px;">Requested ${date}</div>
+            </div>
+            ${sectionId ? `<button onclick="window.matrixScrollToSection('${sectionId}')" style="padding:5px 12px;border-radius:6px;font-size:10px;font-weight:600;border:1px solid rgba(251,191,36,0.3);background:rgba(251,191,36,0.15);color:#FBBF24;cursor:pointer;white-space:nowrap;flex-shrink:0;">Go to Section</button>` : ''}
+          </div>`;
+      } else {
+        itemsHtml += `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.15);border-radius:8px;margin-bottom:6px;">
+            <span style="color:#FBBF24;font-size:14px;flex-shrink:0;margin-top:1px;">&#9888;</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:700;color:#F1F5F9;">${sanitizeHtml(req.section)}</div>
+              <div style="font-size:12px;color:#CBD5E1;margin-top:2px;">${sanitizeHtml(req.message)}</div>
+              <div style="font-size:10px;color:#94A3B8;margin-top:4px;">Requested ${date} by ${sanitizeHtml(req.requested_role || 'RM')}</div>
+            </div>
+            <button onclick="window.matrixResolveInfoRequest(${req.id})" style="padding:5px 12px;border-radius:6px;font-size:10px;font-weight:600;border:1px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.15);color:#34D399;cursor:pointer;white-space:nowrap;flex-shrink:0;">Mark Resolved</button>
+          </div>`;
+      }
+    }
+
+    banner.innerHTML = title + itemsHtml;
+
+    // Insert banner right after the completeness bar
+    const completenessBar = document.getElementById('matrix-completeness-bar');
+    if (completenessBar && completenessBar.parentNode) {
+      completenessBar.parentNode.insertBefore(banner, completenessBar.nextSibling);
+    }
+
+    // ── Unlock requested sections for broker ──
+    if (isBroker) {
+      unlockRequestedSections(openRequests);
+    }
+  }
+
+  // ── Unlock only the sections that have open info requests for broker editing ──
+  function unlockRequestedSections(openRequests) {
+    const requestedSectionIds = new Set();
+    for (const req of openRequests) {
+      const sId = SECTION_NAME_TO_ID[req.section];
+      if (sId) requestedSectionIds.add(sId);
+    }
+
+    // Find all inputs/selects/textareas within requested sections and enable them
+    for (const sId of requestedSectionIds) {
+      const content = document.getElementById(`content-${sId}`);
+      if (content) {
+        content.querySelectorAll('input, select, textarea').forEach(el => {
+          el.removeAttribute('disabled');
+          el.removeAttribute('readonly');
+          el.style.opacity = '1';
+        });
+        // Also remove the read-only overlay if one exists
+        const overlay = content.querySelector('.readonly-overlay');
+        if (overlay) overlay.remove();
+      }
+    }
+  }
+
+  // ── RM: Resolve an info request ──
+  window.matrixResolveInfoRequest = async function(requestId) {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/matrix/${deal.submission_id}/info-request/${requestId}/resolve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (resp.ok) {
+        showToast('Info request marked as resolved', 'success');
+        await loadInfoRequests();
+      } else {
+        showToast('Failed to resolve request', 'error');
+      }
+    } catch (e) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  // ── Load info requests on initial render ──
+  loadInfoRequests();
 
   window.matrixUpdateFieldStatus = function(fieldKey, stage, newStatus) {
     const role = getCurrentRole();
