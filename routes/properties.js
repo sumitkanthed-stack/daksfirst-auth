@@ -9,7 +9,7 @@ const { logAudit } = require('../services/audit');
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE PROPERTY (with day1_ltv calculation)
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/:submissionId/properties', authenticateToken, authenticateInternal, async (req, res) => {
+router.post('/:submissionId/properties', authenticateToken, async (req, res) => {
   try {
     const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
             gdv, reinstatement, title_number, solicitor_firm, solicitor_ref, notes } = req.body;

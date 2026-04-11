@@ -8,10 +8,26 @@ import {
 // Re-export state getters so other modules can import them from auth.js
 export { getAuthToken, getCurrentUser, getCurrentRole } from './state.js';
 
+// ═══════════════════════════════════════════════════════════════════
+// SESSION RECOVERY SYSTEM — queue failed requests, re-auth inline, replay
+// ═══════════════════════════════════════════════════════════════════
+let _requestQueue = [];       // queued { url, options, resolve, reject } while session is expired
+let _sessionExpired = false;  // true once refresh fails — blocks further API calls until re-auth
+let _reAuthModalShown = false;
+
 /**
- * Fetch wrapper that adds Authorization header and handles token refresh
+ * Fetch wrapper that adds Authorization header, handles token refresh,
+ * and queues requests during session recovery instead of losing them.
  */
 export async function fetchWithAuth(url, options = {}) {
+  // If session is expired and re-auth modal is showing, queue this request
+  if (_sessionExpired) {
+    return new Promise((resolve, reject) => {
+      _requestQueue.push({ url, options, resolve, reject });
+      console.log(`[auth] Queued request (${_requestQueue.length}): ${options.method || 'GET'} ${url.substring(url.lastIndexOf('/') - 20)}`);
+    });
+  }
+
   const token = getAuthToken();
 
   if (!options.headers) {
@@ -31,10 +47,200 @@ export async function fetchWithAuth(url, options = {}) {
       const newToken = getAuthToken();
       options.headers['Authorization'] = `Bearer ${newToken}`;
       response = await fetch(url, options);
+    } else {
+      // Refresh token also expired — enter session recovery mode
+      _sessionExpired = true;
+      showReAuthModal();
+
+      // Queue THIS request too so it replays after re-auth
+      return new Promise((resolve, reject) => {
+        _requestQueue.push({ url, options, resolve, reject });
+        console.log(`[auth] Session expired. Queued request (${_requestQueue.length}): ${options.method || 'GET'} ${url.substring(url.lastIndexOf('/') - 20)}`);
+      });
     }
   }
 
   return response;
+}
+
+/**
+ * Show inline re-authentication modal — no page redirect, no lost state
+ */
+function showReAuthModal() {
+  if (_reAuthModalShown) return;
+  _reAuthModalShown = true;
+
+  const user = getCurrentUser();
+  const emailHint = user?.email || '';
+  const queueCount = _requestQueue.length;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reauth-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:32px 36px;max-width:420px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,.25);font-family:inherit;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="width:56px;height:56px;border-radius:50%;background:#fef3c7;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
+          <span style="font-size:28px;">&#128274;</span>
+        </div>
+        <div style="font-size:18px;font-weight:700;color:#1e3a5f;">Session Expired</div>
+        <div style="font-size:13px;color:#64748b;margin-top:4px;">Your session has timed out. Log in again to continue — your work is saved.</div>
+      </div>
+
+      <div id="reauth-queue-info" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;">
+        <span style="font-size:12px;color:#1d4ed8;font-weight:600;" id="reauth-queue-count">${queueCount > 0 ? `${queueCount} pending save${queueCount > 1 ? 's' : ''} will resume automatically` : 'Your progress is preserved'}</span>
+      </div>
+
+      <div id="reauth-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#dc2626;font-weight:500;"></div>
+
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Email</label>
+        <input id="reauth-email" type="email" value="${emailHint}" style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b;outline:none;box-sizing:border-box;" />
+      </div>
+
+      <div style="margin-bottom:20px;">
+        <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px;">Password</label>
+        <input id="reauth-password" type="password" style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b;outline:none;box-sizing:border-box;" placeholder="Enter your password" />
+      </div>
+
+      <button id="reauth-submit" style="width:100%;padding:12px;border:none;border-radius:8px;background:#1e3a5f;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;">
+        Log In & Continue
+      </button>
+
+      <div id="reauth-progress" style="display:none;text-align:center;margin-top:12px;">
+        <div style="font-size:12px;color:#64748b;font-weight:600;" id="reauth-progress-text">Replaying saved requests...</div>
+        <div style="background:#e2e8f0;border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
+          <div id="reauth-progress-bar" style="width:0%;height:100%;background:#22c55e;border-radius:4px;transition:width .3s;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Focus password field (email likely pre-filled)
+  setTimeout(() => {
+    const pwField = document.getElementById('reauth-password');
+    if (pwField) pwField.focus();
+  }, 100);
+
+  // Handle submit
+  document.getElementById('reauth-submit').addEventListener('click', handleReAuth);
+  document.getElementById('reauth-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleReAuth();
+  });
+}
+
+/**
+ * Handle re-authentication from the modal
+ */
+async function handleReAuth() {
+  const email = document.getElementById('reauth-email')?.value?.trim();
+  const password = document.getElementById('reauth-password')?.value;
+  const errorEl = document.getElementById('reauth-error');
+  const submitBtn = document.getElementById('reauth-submit');
+
+  if (!email || !password) {
+    if (errorEl) { errorEl.textContent = 'Please enter your email and password.'; errorEl.style.display = 'block'; }
+    return;
+  }
+
+  // Disable button while authenticating
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Authenticating...'; }
+  if (errorEl) errorEl.style.display = 'none';
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      if (errorEl) { errorEl.textContent = data.error || 'Login failed. Please check your credentials.'; errorEl.style.display = 'block'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Log In & Continue'; }
+      return;
+    }
+
+    // Store new credentials
+    if (data.token) setAuthToken(data.token);
+    if (data.refresh_token) setRefreshToken(data.refresh_token);
+    if (data.user) { setCurrentUser(data.user); setCurrentRole(data.user.role); }
+
+    // Session restored — replay queued requests
+    _sessionExpired = false;
+    if (submitBtn) submitBtn.textContent = 'Authenticated! Resuming...';
+
+    await replayQueuedRequests();
+
+    // Remove modal
+    const overlay = document.getElementById('reauth-overlay');
+    if (overlay) overlay.remove();
+    _reAuthModalShown = false;
+
+    showToast(`Session restored — ${_requestQueue.length === 0 ? 'all saves replayed' : 'ready to continue'}`, 'success');
+    _requestQueue = [];
+
+  } catch (err) {
+    console.error('[auth] Re-auth failed:', err);
+    if (errorEl) { errorEl.textContent = 'Network error. Please check your connection.'; errorEl.style.display = 'block'; }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Log In & Continue'; }
+  }
+}
+
+/**
+ * Replay all queued requests with the new token
+ */
+async function replayQueuedRequests() {
+  const queue = [..._requestQueue];
+  _requestQueue = [];
+
+  if (queue.length === 0) return;
+
+  const progressEl = document.getElementById('reauth-progress');
+  const progressBar = document.getElementById('reauth-progress-bar');
+  const progressText = document.getElementById('reauth-progress-text');
+  const queueInfo = document.getElementById('reauth-queue-info');
+
+  if (progressEl) progressEl.style.display = 'block';
+  if (queueInfo) queueInfo.style.display = 'none';
+
+  let completed = 0;
+  let failed = 0;
+
+  for (const req of queue) {
+    try {
+      // Update auth header with fresh token
+      if (!req.options.headers) req.options.headers = {};
+      req.options.headers['Authorization'] = `Bearer ${getAuthToken()}`;
+
+      const response = await fetch(req.url, req.options);
+      req.resolve(response);
+      completed++;
+    } catch (err) {
+      console.error('[auth] Replay failed:', req.url, err);
+      req.reject(err);
+      failed++;
+    }
+
+    // Update progress
+    const pct = Math.round(((completed + failed) / queue.length) * 100);
+    if (progressBar) progressBar.style.width = pct + '%';
+    if (progressText) progressText.textContent = `Replaying saves... ${completed + failed}/${queue.length}`;
+  }
+
+  if (progressText) {
+    progressText.textContent = failed > 0
+      ? `Done — ${completed} saved, ${failed} failed`
+      : `All ${completed} saves completed!`;
+    progressText.style.color = failed > 0 ? '#f59e0b' : '#22c55e';
+  }
+
+  // Brief pause so user sees the completion
+  await new Promise(r => setTimeout(r, 800));
 }
 
 /**
@@ -65,8 +271,7 @@ export async function refreshAccessToken() {
     console.error('Token refresh failed:', err);
   }
 
-  // If refresh failed, clear session
-  clearSession();
+  // If refresh failed, don't clear session — let re-auth modal handle it
   return false;
 }
 

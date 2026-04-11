@@ -9,7 +9,7 @@ const { logAudit } = require('../services/audit');
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE BORROWER
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/:submissionId/borrowers', authenticateToken, authenticateInternal, async (req, res) => {
+router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
   try {
     const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number } = req.body;
     if (!full_name) return res.status(400).json({ error: 'Full name is required' });
