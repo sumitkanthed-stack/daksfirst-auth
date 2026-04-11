@@ -669,7 +669,7 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
 
     html += accordion('wf-dip-form', 'DIP Form', 'D', true);
-    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;color:#1a1a2e;">
+    html += `<div class="dip-light-form" style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">

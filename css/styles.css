@@ -761,6 +761,46 @@
       background: rgba(212,168,83,0.2) !important;
     }
 
+    /* ═══ DIP FORM — force dark text on light background ═══ */
+    .dip-light-form,
+    .dip-light-form * {
+      color: #1a1a2e !important;
+    }
+    .dip-light-form .dip-preserve-color {
+      color: inherit !important;
+    }
+    .dip-light-form label { color: #374151 !important; }
+    .dip-light-form h5 { color: #1e3a5f !important; }
+    .dip-light-form input,
+    .dip-light-form select,
+    .dip-light-form textarea {
+      color: #1a1a2e !important;
+      background: #fff !important;
+    }
+    .dip-light-form input[readonly],
+    .dip-light-form textarea[readonly] {
+      background: #f9fafb !important;
+      color: #374151 !important;
+    }
+    .dip-light-form th { color: #374151 !important; }
+    .dip-light-form td { color: #1a1a2e !important; }
+    .dip-light-form span[style*="color:#92400e"] { color: #92400e !important; }
+    .dip-light-form span[style*="color:#166534"] { color: #166534 !important; }
+    .dip-light-form span[style*="color:#991b1b"] { color: #991b1b !important; }
+    .dip-light-form span[style*="color:#15803d"] { color: #15803d !important; }
+    .dip-light-form button[style*="color:#166534"] { color: #166534 !important; }
+    .dip-light-form button[style*="color:#991b1b"] { color: #991b1b !important; }
+    .dip-light-form button[style*="color:white"] { color: white !important; }
+    .dip-light-form button[onclick] { color: inherit !important; }
+    .dip-light-form [style*="background:#dcfce7"] { color: #166534 !important; }
+    .dip-light-form [style*="background:#fee2e2"] { color: #991b1b !important; }
+    .dip-light-form [style*="background:#15803d"] { color: white !important; }
+    .dip-light-form [style*="background:#e53e3e"] { color: white !important; }
+    .dip-light-form [style*="background:#fef3c7"] { color: #92400e !important; }
+    .dip-light-form [style*="background:#1e3a5f"] { color: #fff !important; }
+    .dip-light-form [style*="background:#eff6ff"] { color: #1e40af !important; }
+    .dip-light-form [style*="background:#e5e7eb"] { color: #6b7280 !important; }
+
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 768px) {
       .dashboard-header-content { flex-direction: column; gap: 12px; }
