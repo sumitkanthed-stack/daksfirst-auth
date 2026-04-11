@@ -2456,12 +2456,14 @@ router.get('/:submissionId/documents-by-category', authenticateToken, async (req
       let query, params;
       if (category) {
         query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
-                        onedrive_download_url
+                        onedrive_download_url,
+                        category_confirmed_by, category_confirmed_at, category_confirmed_name
                  FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 ORDER BY uploaded_at DESC`;
         params = [dealId, category];
       } else {
         query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
-                        onedrive_download_url
+                        onedrive_download_url,
+                        category_confirmed_by, category_confirmed_at, category_confirmed_name
                  FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
         params = [dealId];
       }

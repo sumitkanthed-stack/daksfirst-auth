@@ -266,4 +266,96 @@ router.get('/deals/:submissionId/documents/:docId/download', authenticateToken, 
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// CONFIRM / RECLASSIFY DOCUMENT CATEGORY (RM / Admin only)
+// ═══════════════════════════════════════════════════════════════
+const VALID_DOC_CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
+const CONFIRM_ROLES = ['rm', 'admin'];
+
+// One-time migration: add confirmation columns if they don't exist
+(async () => {
+  try {
+    await pool.query(`
+      ALTER TABLE deal_documents
+        ADD COLUMN IF NOT EXISTS category_confirmed_by INTEGER,
+        ADD COLUMN IF NOT EXISTS category_confirmed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS category_confirmed_name TEXT
+    `);
+    console.log('[docs] category confirmation columns ensured');
+  } catch (e) {
+    console.warn('[docs] Could not add confirmation columns (may already exist):', e.message);
+  }
+})();
+
+router.put('/deals/:submissionId/documents/:docId/confirm-category', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, docId } = req.params;
+    const { doc_category } = req.body;
+
+    // Role check — only RM and admin can confirm
+    if (!CONFIRM_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only RM or Admin can confirm document categories' });
+    }
+
+    // Validate category
+    if (!doc_category || !VALID_DOC_CATEGORIES.includes(doc_category.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid category. Must be one of: ' + VALID_DOC_CATEGORIES.join(', ') });
+    }
+
+    // Verify deal exists
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+    const dealId = dealResult.rows[0].id;
+
+    // Verify document belongs to this deal
+    const docResult = await pool.query(
+      `SELECT id, doc_category FROM deal_documents WHERE id = $1 AND deal_id = $2`,
+      [docId, dealId]
+    );
+    if (docResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const oldCategory = docResult.rows[0].doc_category;
+    const confirmerName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;
+
+    // Update category + set confirmation fields
+    await pool.query(
+      `UPDATE deal_documents
+       SET doc_category = $1,
+           category_confirmed_by = $2,
+           category_confirmed_at = NOW(),
+           category_confirmed_name = $3
+       WHERE id = $4`,
+      [doc_category.toLowerCase(), req.user.userId, confirmerName, docId]
+    );
+
+    // Audit log
+    await logAudit(dealId, 'document_category_confirmed', oldCategory, doc_category.toLowerCase(), {
+      doc_id: docId,
+      confirmed_by: req.user.userId,
+      confirmer_name: confirmerName
+    }, req.user.userId);
+
+    console.log(`[docs] Category confirmed: doc ${docId} → ${doc_category} by ${confirmerName}`);
+
+    res.json({
+      success: true,
+      doc_id: parseInt(docId),
+      doc_category: doc_category.toLowerCase(),
+      category_confirmed_by: req.user.userId,
+      category_confirmed_name: confirmerName,
+      category_confirmed_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[docs] Confirm category error:', error);
+    res.status(500).json({ error: 'Failed to confirm document category' });
+  }
+});
+
 module.exports = router;

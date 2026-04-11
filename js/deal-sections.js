@@ -149,10 +149,12 @@ export function renderSnapshot(deal) {
 // ═══════════════════════════════════════════════════════════════
 // DOCUMENT REPOSITORY — Fetch from API and populate table
 // ═══════════════════════════════════════════════════════════════
-export async function renderDocRepo(submissionId) {
+export async function renderDocRepo(submissionId, role) {
   const tbody = document.getElementById('doc-repo-tbody');
   const countEl = document.getElementById('doc-repo-count');
   if (!tbody) return;
+
+  const canConfirm = ['rm', 'admin'].includes(role);
 
   // Fetch real documents from deal_documents table via API
   let docs = [];
@@ -181,6 +183,7 @@ export async function renderDocRepo(submissionId) {
     issued: 'background:#e0e7ff;color:#3730a3;', email: 'background:#fce7f3;color:#be185d;',
     other: 'background:#f1f5f9;color:#64748b;'
   };
+  const CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
 
   tbody.innerHTML = docs.map((doc, idx) => {
     const cat = (doc.doc_category || doc.category || 'other').toLowerCase();
@@ -190,6 +193,51 @@ export async function renderDocRepo(submissionId) {
     const uploaded = doc.uploaded_at ? formatDate(doc.uploaded_at) : '-';
     const parsed = doc.auto_parsed || doc.parsed ? true : false;
     const source = doc.source || 'Upload';
+    const isConfirmed = !!doc.category_confirmed_at;
+    const confirmedBy = doc.category_confirmed_name || '';
+    const docId = doc.id || 0;
+
+    // Category cell: dropdown + confirm button for RM/admin, or badge + confirmed state for others
+    let categoryCell;
+    if (canConfirm && !isConfirmed) {
+      // RM/Admin sees dropdown to reclassify + confirm button
+      const options = CATEGORIES.map(c =>
+        `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
+      ).join('');
+      categoryCell = `
+        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;${catStyle}">
+          ${options}
+        </select>
+        <button onclick="window.confirmDocCategory(${docId}, '${submissionId}')"
+          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;transition:background .15s;"
+          onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'"
+          title="Confirm this classification">&#10003; Confirm</button>
+        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting RM confirmation</div>`;
+    } else if (canConfirm && isConfirmed) {
+      // RM/Admin sees confirmed badge + option to reclassify
+      const options = CATEGORIES.map(c =>
+        `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
+      ).join('');
+      categoryCell = `
+        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px solid #d1fae5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#dcfce7;color:#166534;">
+          ${options}
+        </select>
+        <button onclick="window.confirmDocCategory(${docId}, '${submissionId}')"
+          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#e2e8f0;color:#64748b;transition:background .15s;"
+          onmouseover="this.style.background='#22c55e';this.style.color='#fff'" onmouseout="this.style.background='#e2e8f0';this.style.color='#64748b'"
+          title="Re-confirm with new category">&#8635; Update</button>
+        <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
+    } else if (isConfirmed) {
+      // Broker/borrower/credit/compliance see confirmed badge (read-only)
+      categoryCell = `
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
+        <div style="font-size:10px;color:#22c55e;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
+    } else {
+      // Not confirmed, non-RM view — show AI-suggested badge
+      categoryCell = `
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
+        <div style="font-size:10px;color:#f59e0b;margin-top:3px;font-style:italic;">AI-suggested</div>`;
+    }
 
     return `<tr style="cursor:pointer;transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
@@ -197,7 +245,7 @@ export async function renderDocRepo(submissionId) {
         ${size ? '<br><span style="font-size:11px;color:#94a3b8;">' + size + '</span>' : ''}
       </td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
-        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
+        ${categoryCell}
       </td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;">${sanitizeHtml(source)}</td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;">${uploaded}</td>
@@ -210,10 +258,35 @@ export async function renderDocRepo(submissionId) {
         ${parsed
           ? '<button onclick="window.viewParsedDoc && window.viewParsedDoc(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;">View Parsed &#8595;</button>'
           : '<button onclick="window.parseDocument && window.parseDocument(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#be185d;">Parse Now</button>'}
-        <button onclick="window.downloadDocumentById && window.downloadDocumentById(${doc.id || 0})" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;margin-left:4px;">&#128229;</button>
+        <button onclick="window.downloadDocumentById && window.downloadDocumentById(${docId})" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;margin-left:4px;">&#128229;</button>
       </td>
     </tr>`;
   }).join('');
+
+  // ── Global handler for category confirmation ──
+  window.confirmDocCategory = async function(docId, subId) {
+    const sel = document.getElementById('doc-cat-' + docId);
+    if (!sel) return;
+    const newCat = sel.value;
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/confirm-category`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc_category: newCat })
+      });
+      if (resp.ok) {
+        showToast('Category confirmed: ' + newCat.toUpperCase(), 'success');
+        // Re-render to update UI state
+        await renderDocRepo(subId, role);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Failed to confirm category', 'error');
+      }
+    } catch (e) {
+      console.error('[doc-repo] Confirm category error:', e);
+      showToast('Failed to confirm category', 'error');
+    }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -476,7 +549,7 @@ export async function renderDealSections(deal, role) {
   // 3. Matrix — handled by deal-matrix.js via dynamic import in deal-detail.js
 
   // 4. Document Repository — fetch from API using submission_id
-  await renderDocRepo(deal.submission_id);
+  await renderDocRepo(deal.submission_id, role);
 
   // 5. Notes
   renderNotesSection(deal);
