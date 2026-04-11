@@ -231,8 +231,14 @@ export async function renderDealMatrix(deal) {
 
   const role = getCurrentRole();
   const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
-  const canEdit = EDITABLE_ROLES.includes(role);
   const currentStage = deal.deal_stage || 'received';
+
+  // Brokers can only edit during 'received' stage (before submission to RM)
+  // After submission (info_gathering+), broker Matrix is read-only — RM/admin can still edit
+  const brokerEditableStages = ['received'];
+  const canEdit = isInternalUser
+    ? EDITABLE_ROLES.includes(role)
+    : (EDITABLE_ROLES.includes(role) && brokerEditableStages.includes(currentStage));
 
   // Safe number helpers
   const num = (v) => v != null ? Number(v) : 0;
@@ -1926,6 +1932,28 @@ export async function renderDealMatrix(deal) {
 
   // Initial calculation
   setTimeout(calculateCompleteness, 500);
+
+  // ── If deal is already past 'received' stage, disable submit button and action buttons for brokers ──
+  if (currentStage !== 'received' && !isInternalUser) {
+    setTimeout(() => {
+      const btn = document.getElementById('matrix-submit-review-btn');
+      if (btn) {
+        btn.innerHTML = '✅ Submitted for Review';
+        btn.style.background = '#86efac';
+        btn.style.color = '#166534';
+        btn.disabled = true;
+        btn.style.cursor = 'default';
+      }
+      // Also show a banner on the completeness bar
+      const compBar = document.getElementById('matrix-completeness-bar');
+      if (compBar) {
+        const banner = document.createElement('div');
+        banner.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 14px;margin-top:10px;font-size:12px;color:#1d4ed8;font-weight:600;text-align:center;';
+        banner.textContent = 'This deal has been submitted for RM review. Matrix is now read-only.';
+        compBar.appendChild(banner);
+      }
+    }, 200);
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // SUBMIT FOR REVIEW — Step 4
