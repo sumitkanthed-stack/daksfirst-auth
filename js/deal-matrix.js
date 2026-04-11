@@ -1848,22 +1848,67 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
   window.reparseProperties = async function(submissionId) {
     if (!submissionId) return;
+
+    // Replace the button with a live status indicator
+    const btnEl = event && event.target;
+    const containerEl = btnEl ? btnEl.closest('div') : null;
+    if (containerEl) {
+      containerEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+          <div style="width:16px;height:16px;border:2px solid #FBBF24;border-top-color:transparent;border-radius:50%;animation:dkf-spin 0.8s linear infinite;"></div>
+          <span style="font-size:11px;color:#FBBF24;font-weight:600;" id="dkf-parse-status">Claude is analysing your documents...</span>
+        </div>
+        <style>@keyframes dkf-spin { to { transform: rotate(360deg); } }</style>
+      `;
+    }
+
+    const updateStatus = (msg) => {
+      const statusEl = document.getElementById('dkf-parse-status');
+      if (statusEl) statusEl.textContent = msg;
+    };
+
     try {
-      showToast('Asking Claude to parse properties...', 'info');
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/reparse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await resp.json();
+
       if (data.success) {
-        showToast('Claude is parsing — reload in 10-15 seconds', 'success');
-        // Auto-reload after delay to show results
-        setTimeout(() => window.location.reload(), 12000);
+        updateStatus('Claude is parsing — checking for results...');
+
+        // Poll every 4 seconds for up to 60 seconds
+        let attempts = 0;
+        const maxAttempts = 15;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          try {
+            updateStatus(`Claude is parsing — checking for results (${attempts}/${maxAttempts})...`);
+            const dealResp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}`);
+            const dealData = await dealResp.json();
+            const deal = dealData.deal || dealData;
+
+            if (deal.properties && deal.properties.length > 0) {
+              clearInterval(pollInterval);
+              updateStatus('Parsing complete — refreshing...');
+              showToast(`Claude parsed ${deal.properties.length} properties successfully`, 'success');
+              setTimeout(() => window.location.reload(), 1000);
+            } else if (attempts >= maxAttempts) {
+              clearInterval(pollInterval);
+              updateStatus('Taking longer than expected — please refresh manually.');
+              showToast('Parsing may still be in progress. Refresh the page in a moment.', 'info');
+            }
+          } catch (pollErr) {
+            console.error('[reparse-poll] Error:', pollErr);
+          }
+        }, 4000);
       } else {
+        updateStatus('Parse failed — ' + (data.message || data.error));
         showToast(data.message || data.error || 'Parse failed', 'error');
       }
     } catch (err) {
       console.error('[reparse] Error:', err);
+      updateStatus('Failed — ' + err.message);
       showToast('Failed to trigger parsing: ' + err.message, 'error');
     }
   };
