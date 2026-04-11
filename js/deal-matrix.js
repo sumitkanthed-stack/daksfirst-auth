@@ -335,6 +335,26 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
 
+    <!-- SUBMIT FOR REVIEW — prominent CTA for brokers -->
+    ${!isInternalUser && currentStage === 'received' ? `
+    <div id="matrix-submit-cta" style="padding:14px 26px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-bottom:2px solid #86efac;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#166534;">Ready to submit?</div>
+          <div style="font-size:11px;color:#15803d;margin-top:2px;">Once your Matrix is complete, submit the deal for RM review to proceed to DIP.</div>
+        </div>
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#22c55e;color:#fff;box-shadow:0 2px 8px rgba(34,197,94,.3);transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">
+          Submit for RM Review &#8594;
+        </button>
+      </div>
+    </div>
+    ` : ''}
+    ${!isInternalUser && currentStage !== 'received' ? `
+    <div style="padding:10px 26px;background:#eff6ff;border-bottom:2px solid #bfdbfe;text-align:center;">
+      <span style="font-size:12px;font-weight:600;color:#1d4ed8;">&#128274; Deal submitted for review — Matrix is read-only</span>
+    </div>
+    ` : ''}
+
     <!-- Column Headers -->
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-bottom:2px solid #e2e8f0;position:sticky;top:0;background:#fff;z-index:20">
       <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding-left:26px;color:#64748b">Information</div>
@@ -1992,6 +2012,16 @@ export async function renderDealMatrix(deal) {
           btn.style.color = '#166534';
           btn.disabled = true;
           btn.style.cursor = 'default';
+        }
+
+        // Replace the top CTA with confirmation banner
+        const cta = document.getElementById('matrix-submit-cta');
+        if (cta) {
+          cta.style.background = '#eff6ff';
+          cta.style.borderColor = '#bfdbfe';
+          cta.innerHTML = `<div style="text-align:center;padding:6px;">
+            <span style="font-size:13px;font-weight:700;color:#1d4ed8;">&#10003; Deal submitted for RM review${data.notification_sent ? ' — RM has been notified' : ''}</span>
+          </div>`;
         }
       } else {
         const err = await resp.json().catch(() => ({}));
