@@ -246,6 +246,17 @@ export async function renderDocRepo(submissionId, role) {
     // Determine if viewable inline (images + PDFs)
     const isViewable = fileType.includes('image') || fileType.includes('pdf') || fileType.includes('png') || fileType.includes('jpg') || fileType.includes('jpeg');
 
+    // Has stored parsed data?
+    const hasParsedData = doc.parsed_data && typeof doc.parsed_data === 'object' && Object.keys(doc.parsed_data).length > 0;
+
+    // Parse / View Data button
+    let parseBtn = '';
+    if (hasParsedData) {
+      parseBtn = `<button onclick="window.viewDocParsedData(${docId})" style="padding:4px 10px;border:1px solid #d1fae5;border-radius:5px;font-size:11px;cursor:pointer;background:#f0fdf4;color:#166534;margin-right:4px;font-weight:600;" title="View extracted data">&#128202; View Data</button>`;
+    } else {
+      parseBtn = `<button onclick="window.parseDocById(${docId})" style="padding:4px 10px;border:1px solid #fef3c7;border-radius:5px;font-size:11px;cursor:pointer;background:#fffbeb;color:#92400e;margin-right:4px;font-weight:600;" title="Extract data with AI">&#9889; Parse</button>`;
+    }
+
     return `<tr style="transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;">
         <strong>${name}</strong>
@@ -266,6 +277,7 @@ export async function renderDocRepo(submissionId, role) {
           : '<span style="color:#cbd5e1;font-size:12px;">&#x2013; Not yet</span>'}
       </td>
       <td style="padding:10px 16px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">
+        ${parseBtn}
         ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#2563eb;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}
         <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;font-weight:600;" title="Download">&#128229; Download</button>
       </td>
@@ -433,6 +445,81 @@ window.viewDocInline = async function(docId, filename, fileType) {
   } catch (err) {
     console.error('[doc-repo] View error:', err);
     showToast('Could not preview document', 'error');
+  }
+};
+
+// Parse a single document by ID — triggers AI extraction and shows results in Parser section
+window.parseDocById = async function(docId) {
+  const subId = _docRepoSubId;
+  const role = _docRepoRole;
+  if (!subId || !docId) return;
+
+  // Show loading state on the button
+  const btn = event && event.target ? event.target : null;
+  const origText = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '&#9203; Parsing...'; btn.disabled = true; btn.style.opacity = '0.6'; }
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-document/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(err.error || 'Parse failed', 'error');
+      if (btn) { btn.innerHTML = origText; btn.disabled = false; btn.style.opacity = '1'; }
+      return;
+    }
+
+    const data = await resp.json();
+
+    if (data.parsed_data && Object.keys(data.parsed_data).length > 0) {
+      // Dispatch event so deal-matrix.js can pick it up and show in Parser section
+      window.dispatchEvent(new CustomEvent('docParsed', { detail: { docId, filename: data.filename, parsedData: data.parsed_data } }));
+      showToast(data.message || 'Document parsed', 'success');
+    } else {
+      showToast(`No data could be extracted from this document (may be an image/scan).`, 'info');
+    }
+
+    // Refresh doc repo to show updated parsed status
+    await renderDocRepo(subId, role);
+  } catch (err) {
+    console.error('[doc-repo] Parse error:', err);
+    showToast('Parse error', 'error');
+    if (btn) { btn.innerHTML = origText; btn.disabled = false; btn.style.opacity = '1'; }
+  }
+};
+
+// View already-parsed data for a document — loads from API and shows in Parser section
+window.viewDocParsedData = async function(docId) {
+  const subId = _docRepoSubId;
+  if (!subId || !docId) return;
+
+  try {
+    // Call parse-document endpoint which returns cached data if available
+    const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-document/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(err.error || 'Could not load parsed data', 'error');
+      return;
+    }
+
+    const data = await resp.json();
+
+    if (data.parsed_data && Object.keys(data.parsed_data).length > 0) {
+      window.dispatchEvent(new CustomEvent('docParsed', { detail: { docId, filename: data.filename, parsedData: data.parsed_data } }));
+      showToast(`Showing extracted data for "${data.filename}"`, 'success');
+    } else {
+      showToast('No parsed data available for this document', 'info');
+    }
+  } catch (err) {
+    console.error('[doc-repo] View parsed data error:', err);
+    showToast('Could not load parsed data', 'error');
   }
 };
 

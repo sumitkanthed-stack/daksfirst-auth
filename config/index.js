@@ -44,8 +44,9 @@ module.exports = {
   // Anthropic AI (for document categorisation)
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
 
-  // n8n webhook
+  // n8n webhooks
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
+  N8N_PARSE_WEBHOOK_URL: process.env.N8N_PARSE_WEBHOOK_URL || '',
 
   // DocuSign
   DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',

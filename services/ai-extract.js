@@ -185,4 +185,157 @@ async function extractSectionData(section, documents) {
   }
 }
 
-module.exports = { extractSectionData, SECTION_SCHEMAS };
+// ═══════════════════════════════════════════════════════════════
+// DEAL-LEVEL EXTRACTION — extract Matrix fields from documents
+// Used as fallback when n8n is not configured
+// ═══════════════════════════════════════════════════════════════
+
+const DEAL_EXTRACTION_PROMPT = `You are Daksfirst's document data extraction engine. You are given the text content of one or more documents uploaded for a UK bridging loan deal.
+
+Extract every deal-relevant field you can find and return ONLY a JSON object with these keys (use null for fields you cannot find):
+
+{
+  "borrower_name": "full name of the borrower / applicant",
+  "borrower_email": "email address",
+  "borrower_phone": "phone number",
+  "borrower_dob": "date of birth (YYYY-MM-DD)",
+  "borrower_nationality": "nationality",
+  "borrower_type": "individual or corporate",
+  "company_name": "company name if corporate borrower",
+  "company_number": "Companies House number",
+  "security_address": "full property address being used as security",
+  "security_postcode": "postcode of the property",
+  "asset_type": "residential, commercial, mixed_use, land_with_planning, hmo, semi_commercial",
+  "property_tenure": "freehold or leasehold",
+  "occupancy_status": "vacant, tenanted, owner_occupied",
+  "current_use": "description of current use",
+  "current_value": "current market value (number only, no currency symbol)",
+  "purchase_price": "purchase price (number only)",
+  "loan_amount": "loan amount requested (number only)",
+  "ltv_requested": "LTV percentage (number only)",
+  "term_months": "loan term in months (number only)",
+  "rate_requested": "interest rate per month as percentage (number only)",
+  "interest_servicing": "rolled_up, serviced, or retained",
+  "loan_purpose": "bridge, refurbishment, acquisition, refinance, auction, development_exit",
+  "use_of_funds": "description of how funds will be used",
+  "refurb_scope": "description of refurbishment works if applicable",
+  "refurb_cost": "refurbishment cost (number only)",
+  "exit_strategy": "how the borrower plans to repay - sale, refinance, development_sale",
+  "deposit_source": "source of the deposit or equity",
+  "existing_charges": "details of any existing charges on the property",
+  "additional_notes": "any other relevant information",
+  "broker_name": "broker name",
+  "broker_company": "broker company name",
+  "broker_fca": "broker FCA number",
+  "confidence": 0.85
+}
+
+RULES:
+- Return ONLY valid JSON, no markdown, no explanation
+- For currency values (current_value, purchase_price, loan_amount, refurb_cost), return the NUMBER only — strip £ signs and commas
+- For percentage values (ltv_requested, rate_requested), return the NUMBER only
+- Set "confidence" to a decimal between 0.0 and 1.0 reflecting how confident you are in the overall extraction
+- Be thorough — extract every field possible from the available text`;
+
+/**
+ * Extract deal fields from a single document's text content
+ * @param {Buffer} buffer - file content
+ * @param {string} mimetype - file MIME type
+ * @param {string} filename - original filename
+ * @param {string} docCategory - confirmed category (kyc, financial, property, etc.)
+ * @returns {Object|null} - extracted fields JSON or null
+ */
+async function extractDealFieldsFromDocument(buffer, mimetype, filename, docCategory) {
+  if (!ANTHROPIC_API_KEY) {
+    console.log('[ai-extract] No ANTHROPIC_API_KEY — cannot extract');
+    return null;
+  }
+
+  const mime = (mimetype || '').toLowerCase();
+  const name = (filename || '').toLowerCase();
+  let text = null;
+
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) {
+    text = await extractPdfText(buffer);
+  } else if (mime === 'text/plain' || name.endsWith('.txt') || name.endsWith('.csv')) {
+    text = buffer.toString('utf-8').substring(0, 6000);
+  }
+
+  if (!text || text.trim().length < 30) {
+    console.log(`[ai-extract] Not enough text from "${filename}" — skipping`);
+    return null;
+  }
+
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+  try {
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-5-20250514',
+      max_tokens: 2000,
+      system: DEAL_EXTRACTION_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Document: "${filename}"\nCategory: ${docCategory || 'unknown'}\n\n--- DOCUMENT TEXT ---\n${text}`
+      }]
+    });
+
+    const raw = (message.content[0]?.text || '').trim();
+    let jsonStr = raw;
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+
+    const parsed = JSON.parse(jsonStr);
+    const fieldCount = Object.keys(parsed).filter(k => parsed[k] != null && parsed[k] !== '' && k !== 'confidence').length;
+    console.log(`[ai-extract] Extracted ${fieldCount} deal fields from "${filename}"`);
+    return parsed;
+  } catch (err) {
+    console.error(`[ai-extract] Deal extraction error for "${filename}":`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Extract deal fields from multiple documents and merge results.
+ * Each document is parsed individually and results are merged.
+ * Returns { merged, perDoc } where perDoc is a Map<docId, parsedData>
+ */
+async function extractDealFieldsFromMultipleDocs(docs) {
+  if (!ANTHROPIC_API_KEY) return { merged: null, perDoc: new Map() };
+
+  const merged = {};
+  let totalConfidence = 0;
+  let confCount = 0;
+  const perDoc = new Map();
+
+  for (const doc of docs) {
+    if (!doc.file_content) continue;
+
+    const result = await extractDealFieldsFromDocument(
+      doc.file_content, doc.file_type, doc.filename, doc.doc_category
+    );
+
+    if (result) {
+      perDoc.set(doc.id, result);
+
+      // Merge into combined result (non-null values overwrite)
+      for (const [key, val] of Object.entries(result)) {
+        if (key === 'confidence') {
+          totalConfidence += (val || 0);
+          confCount++;
+          continue;
+        }
+        if (val != null && val !== '') {
+          merged[key] = val;
+        }
+      }
+    }
+  }
+
+  if (Object.keys(merged).length === 0) return { merged: null, perDoc };
+
+  merged.confidence = confCount > 0 ? totalConfidence / confCount : 0.5;
+  return { merged, perDoc };
+}
+
+module.exports = { extractSectionData, SECTION_SCHEMAS, extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs };

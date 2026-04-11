@@ -1246,6 +1246,16 @@ export async function renderDealMatrix(deal) {
     showParsedResults(parsedData);
   }
 
+  // ── Listen for per-document parse events from Doc Repo ──
+  // deal-sections.js dispatches 'docParsed' when user clicks Parse or View Data on a doc
+  window.addEventListener('docParsed', function(e) {
+    const { docId, filename, parsedData } = e.detail || {};
+    if (parsedData && typeof parsedData === 'object') {
+      console.log(`[deal-matrix] Received parsed data for doc ${docId}: "${filename}"`);
+      showParsedResults(parsedData);
+    }
+  });
+
   // Step 1: Upload Documents — stores files + AI categorises (no field extraction yet)
   window.matrixUploadFiles = async function(files) {
     if (!files || files.length === 0) return;
@@ -1321,7 +1331,12 @@ export async function renderDealMatrix(deal) {
         autoPopulateMatrix(data.parsed_data);
         showToast(`Parsed ${data.total_documents} documents (${data.confirmed_documents} confirmed). Review extracted fields.`, 'success');
       } else {
-        showToast(`${data.total_documents} documents sent for parsing. ${data.unconfirmed_documents > 0 ? data.unconfirmed_documents + ' still unconfirmed.' : ''} AI extraction may take a moment.`, 'info');
+        showToast(data.message || `${data.total_documents} documents processed. ${data.unconfirmed_documents > 0 ? data.unconfirmed_documents + ' still unconfirmed.' : ''}`, 'info');
+      }
+
+      // Refresh Doc Repo to update Parsed status column
+      if (typeof window.refreshDocRepo === 'function') {
+        window.refreshDocRepo();
       }
 
       // Recalculate completeness

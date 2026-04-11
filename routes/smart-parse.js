@@ -9,6 +9,7 @@ const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { categoriseWithAI } = require('../services/ai-categorise');
+const { extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs } = require('../services/ai-extract');
 const config = require('../config');
 
 const upload = multer({
@@ -231,7 +232,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  PARSE CONFIRMED — Run AI extraction AFTER categories are confirmed
-//  This sends the deal's confirmed-category documents to n8n for field extraction
+//  Tries n8n first, falls back to direct Claude API extraction
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/parse-confirmed', authenticateToken, async (req, res) => {
   try {
@@ -259,86 +260,97 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
     const docs = docsResult.rows;
     if (docs.length === 0) return res.status(400).json({ error: 'No documents found for this deal' });
 
-    // Check how many are confirmed vs unconfirmed
     const confirmed = docs.filter(d => d.category_confirmed_at);
     const unconfirmed = docs.filter(d => !d.category_confirmed_at);
 
     console.log(`[parse-confirmed] Deal ${deal_id}: ${confirmed.length} confirmed, ${unconfirmed.length} unconfirmed of ${docs.length} total`);
 
-    // Build file metadata with confirmed categories for n8n
-    const fileMetadata = [];
-    for (const doc of docs) {
-      if (doc.file_content) {
-        fileMetadata.push({
-          filename: doc.filename,
-          mimetype: doc.file_type,
-          size: doc.file_size,
-          doc_category: doc.doc_category || 'other',
-          category_confirmed: !!doc.category_confirmed_at,
-          content_base64: doc.file_content.toString('base64')
-        });
-      }
-    }
-
-    // Build category summary for the AI prompt enhancement
-    const categorySummary = docs.map(d => `- ${d.filename}: ${(d.doc_category || 'other').toUpperCase()}${d.category_confirmed_at ? ' (confirmed)' : ' (suggested)'}`).join('\n');
-
-    // Send to n8n for AI extraction WITH category context
     let parsedData = null;
+
+    // ── Strategy 1: Try n8n webhook ──
     if (N8N_PARSE_WEBHOOK_URL) {
       try {
         console.log('[parse-confirmed] Sending to n8n with confirmed categories...');
+        const fileMetadata = [];
+        for (const doc of docs) {
+          if (doc.file_content) {
+            fileMetadata.push({
+              filename: doc.filename, mimetype: doc.file_type, size: doc.file_size,
+              doc_category: doc.doc_category || 'other',
+              category_confirmed: !!doc.category_confirmed_at,
+              content_base64: doc.file_content.toString('base64')
+            });
+          }
+        }
+        const categorySummary = docs.map(d => `- ${d.filename}: ${(d.doc_category || 'other').toUpperCase()}${d.category_confirmed_at ? ' (confirmed)' : ' (suggested)'}`).join('\n');
+
         const payload = {
           parse_session_id: crypto.randomUUID(),
-          user_id: req.user.userId,
-          user_email: req.user.email,
-          user_role: req.user.role,
-          deal_id: deal.submission_id,
-          category_context: categorySummary,
-          files: fileMetadata,
-          timestamp: new Date().toISOString()
+          user_id: req.user.userId, user_email: req.user.email, user_role: req.user.role,
+          deal_id: deal.submission_id, category_context: categorySummary,
+          files: fileMetadata, timestamp: new Date().toISOString()
         };
 
         const parseResp = await fetch(N8N_PARSE_WEBHOOK_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
-          },
+          headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026' },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(120000)
         });
 
         if (parseResp.ok) {
           const n8nResult = await parseResp.json();
-          console.log('[parse-confirmed] AI extraction returned:', JSON.stringify(n8nResult).substring(0, 500));
+          console.log('[parse-confirmed] n8n returned:', JSON.stringify(n8nResult).substring(0, 500));
           parsedData = n8nResult.parsed_data || n8nResult || null;
         } else {
-          const errText = await parseResp.text();
-          console.error('[parse-confirmed] n8n error:', parseResp.status, errText.substring(0, 200));
+          console.error('[parse-confirmed] n8n error:', parseResp.status);
         }
       } catch (err) {
         console.error('[parse-confirmed] n8n webhook failed:', err.message);
       }
-    } else {
-      console.log('[parse-confirmed] N8N_PARSE_WEBHOOK_URL not configured');
     }
 
-    // Mark all documents as parsed if we got data back
-    if (parsedData) {
+    // ── Strategy 2: Direct Claude API extraction (fallback) ──
+    if (!parsedData) {
+      console.log('[parse-confirmed] Using direct Claude API extraction as fallback...');
       try {
-        await pool.query(
-          `UPDATE deal_documents SET parsed_at = NOW() WHERE deal_id = $1 AND parsed_at IS NULL`,
-          [deal.id]
-        );
-        console.log(`[parse-confirmed] Marked ${docs.length} documents as parsed`);
-      } catch (markErr) {
-        console.warn('[parse-confirmed] Could not mark parsed_at:', markErr.message);
+        const { merged, perDoc } = await extractDealFieldsFromMultipleDocs(docs);
+        parsedData = merged;
+
+        // Store per-document parsed data in DB
+        for (const [docId, docParsed] of perDoc) {
+          try {
+            await pool.query(
+              `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
+              [JSON.stringify(docParsed), docId]
+            );
+          } catch (pdErr) {
+            console.warn(`[parse-confirmed] Could not store parsed_data for doc ${docId}:`, pdErr.message);
+          }
+        }
+
+        if (parsedData) {
+          console.log(`[parse-confirmed] Claude extracted ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} merged fields`);
+        }
+      } catch (extractErr) {
+        console.error('[parse-confirmed] Direct extraction failed:', extractErr.message);
       }
     }
 
+    // Mark ALL documents as parsed (parsed_at) even if extraction returned limited data
+    try {
+      await pool.query(
+        `UPDATE deal_documents SET parsed_at = COALESCE(parsed_at, NOW()) WHERE deal_id = $1`,
+        [deal.id]
+      );
+      console.log(`[parse-confirmed] Marked documents as parsed`);
+    } catch (markErr) {
+      console.warn('[parse-confirmed] Could not mark parsed_at:', markErr.message);
+    }
+
     await logAudit(deal.id, 'parse_confirmed_triggered', null, 'parse_with_categories',
-      { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length }, req.user.userId);
+      { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length,
+        extraction_method: N8N_PARSE_WEBHOOK_URL ? 'n8n' : 'claude_direct' }, req.user.userId);
 
     res.json({
       success: true,
@@ -347,12 +359,90 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
       unconfirmed_documents: unconfirmed.length,
       parsed_data: parsedData || null,
       message: parsedData
-        ? `Parsed ${docs.length} documents with category context. Review extracted fields below.`
-        : 'Documents sent for parsing. AI extraction is processing.'
+        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted. Review below.`
+        : `Documents marked as parsed but no text could be extracted (images/scans may need OCR).`
     });
   } catch (error) {
     console.error('[parse-confirmed] Error:', error);
     res.status(500).json({ error: 'Failed to parse documents' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARSE SINGLE DOCUMENT — extract fields from one document
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
+  try {
+    const { docId } = req.params;
+
+    // Get the document with its deal
+    const docResult = await pool.query(
+      `SELECT dd.id, dd.deal_id, dd.filename, dd.file_type, dd.file_size, dd.file_content, dd.doc_category, dd.parsed_data,
+              ds.submission_id, ds.user_id, ds.borrower_user_id
+       FROM deal_documents dd
+       JOIN deal_submissions ds ON ds.id = dd.deal_id
+       WHERE dd.id = $1`,
+      [docId]
+    );
+
+    if (docResult.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+    const doc = docResult.rows[0];
+
+    // Check access
+    const isOwner = doc.user_id === req.user.userId || doc.borrower_user_id === req.user.userId;
+    const isInternal = INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
+
+    // If already parsed and we have stored data, return it
+    if (doc.parsed_data && Object.keys(doc.parsed_data).length > 0) {
+      console.log(`[parse-document] Returning cached parsed_data for doc ${docId}`);
+      return res.json({
+        success: true,
+        doc_id: parseInt(docId),
+        filename: doc.filename,
+        parsed_data: doc.parsed_data,
+        cached: true,
+        message: `Showing previously extracted data for "${doc.filename}".`
+      });
+    }
+
+    // Extract using direct Claude API
+    if (!doc.file_content) {
+      return res.status(400).json({ error: 'Document content not available for parsing' });
+    }
+
+    console.log(`[parse-document] Extracting fields from "${doc.filename}" (${doc.file_type})...`);
+    const parsedData = await extractDealFieldsFromDocument(
+      doc.file_content, doc.file_type, doc.filename, doc.doc_category
+    );
+
+    // Store result and mark as parsed
+    try {
+      await pool.query(
+        `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
+        [parsedData ? JSON.stringify(parsedData) : null, docId]
+      );
+    } catch (storeErr) {
+      console.warn(`[parse-document] Could not store parsed_data:`, storeErr.message);
+    }
+
+    await logAudit(doc.deal_id, 'document_parsed', null, doc.filename,
+      { doc_id: docId, fields_extracted: parsedData ? Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length : 0 },
+      req.user.userId);
+
+    res.json({
+      success: true,
+      doc_id: parseInt(docId),
+      filename: doc.filename,
+      parsed_data: parsedData || {},
+      cached: false,
+      message: parsedData
+        ? `Extracted ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields from "${doc.filename}".`
+        : `Could not extract text from "${doc.filename}" (may be an image/scan needing OCR).`
+    });
+  } catch (error) {
+    console.error('[parse-document] Error:', error);
+    res.status(500).json({ error: 'Failed to parse document' });
   }
 });
 

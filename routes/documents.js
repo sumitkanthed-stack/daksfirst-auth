@@ -280,7 +280,8 @@ const CONFIRM_ROLES = ['broker', 'borrower', 'rm', 'admin'];
         ADD COLUMN IF NOT EXISTS category_confirmed_by INTEGER,
         ADD COLUMN IF NOT EXISTS category_confirmed_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS category_confirmed_name TEXT,
-        ADD COLUMN IF NOT EXISTS parsed_at TIMESTAMPTZ
+        ADD COLUMN IF NOT EXISTS parsed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS parsed_data JSONB
     `);
     console.log('[docs] category confirmation columns ensured');
   } catch (e) {
