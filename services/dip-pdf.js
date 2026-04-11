@@ -236,10 +236,11 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
 
       /** Small coloured badge (for role/status) */
       function drawBadge(text, x, bY, bgColor, textColor) {
-        const badgeW = doc.widthOfString(text, { font: 'Helvetica-Bold', fontSize: 6 }) + 10;
-        doc.roundedRect(x, bY, badgeW, 10, 3).fill(bgColor);
+        doc.font('Helvetica-Bold').fontSize(6);
+        const badgeW = doc.widthOfString(text) + 12;
+        doc.rect(x, bY, badgeW, 10).fill(bgColor);
         doc.font('Helvetica-Bold').fontSize(6).fillColor(textColor);
-        doc.text(text, x + 5, bY + 2, { width: badgeW - 10 });
+        doc.text(text, x + 6, bY + 2, { width: badgeW - 12 });
         return badgeW;
       }
 
