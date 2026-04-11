@@ -2460,13 +2460,19 @@ router.get('/:submissionId/documents-by-category', authenticateToken, async (req
       if (category) {
         query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
                         onedrive_download_url,
-                        category_confirmed_by, category_confirmed_at, category_confirmed_name, parsed_at, parsed_data
+                        category_confirmed_by, category_confirmed_at, category_confirmed_name,
+                        accepted_at, accepted_by, accepted_name,
+                        doc_expiry_date, doc_issue_date,
+                        parsed_at, parsed_data
                  FROM deal_documents WHERE deal_id = $1 AND doc_category = $2 ORDER BY uploaded_at DESC`;
         params = [dealId, category];
       } else {
         query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
                         onedrive_download_url,
-                        category_confirmed_by, category_confirmed_at, category_confirmed_name, parsed_at, parsed_data
+                        category_confirmed_by, category_confirmed_at, category_confirmed_name,
+                        accepted_at, accepted_by, accepted_name,
+                        doc_expiry_date, doc_issue_date,
+                        parsed_at, parsed_data
                  FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
         params = [dealId];
       }

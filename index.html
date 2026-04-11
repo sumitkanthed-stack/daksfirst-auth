@@ -830,14 +830,13 @@
               </div>
             </div>
             <div class="deal-section-body collapsed" id="body-doc-repo">
-              <!-- Action bar: Confirm All + Parse All Confirmed -->
+              <!-- Action bar: contextual buttons + category filter tabs -->
               <div id="doc-repo-actions" style="padding:10px 16px;background:#0F172A;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-                <div style="font-size:12px;color:#34D399;font-weight:600;">Step 2: Review AI-suggested categories and confirm. Then parse to extract deal data.</div>
-                <div style="display:flex;gap:8px;">
-                  <button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All Categories</button>
-                  <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse All Confirmed</button>
-                </div>
+                <div id="doc-repo-action-msg" style="font-size:12px;color:#34D399;font-weight:600;"></div>
+                <div id="doc-repo-action-btns" style="display:flex;gap:8px;"></div>
               </div>
+              <!-- Category filter tabs -->
+              <div id="doc-repo-filter-tabs" style="padding:6px 16px;background:#0a0f1a;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:4px;flex-wrap:wrap;"></div>
               <div id="doc-repo-table-container">
                 <table id="doc-repo-table" style="width:100%;border-collapse:collapse;font-size:13px;">
                   <thead>
@@ -845,8 +844,8 @@
                       <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Document</th>
                       <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Category</th>
                       <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Uploaded</th>
-                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Confirmed</th>
-                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Parsed</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Status</th>
+                      <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Validity</th>
                       <th style="text-align:left;padding:10px 16px;color:#94A3B8;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid rgba(255,255,255,0.06);">Actions</th>
                     </tr>
                   </thead>

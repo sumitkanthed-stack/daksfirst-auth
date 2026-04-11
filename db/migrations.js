@@ -123,6 +123,13 @@ async function runMigrations() {
       await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_category VARCHAR(50);`);
       await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS uploaded_by INT REFERENCES users(id);`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_docs_category ON deal_documents(doc_category);`);
+      // Accepted state — locks the document after verification
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS accepted_by INT REFERENCES users(id);`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS accepted_name VARCHAR(200);`);
+      // Document validity dates — expiry for KYC, issue date for valuations/statements
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_expiry_date DATE;`);
+      await pool.query(`ALTER TABLE deal_documents ADD COLUMN IF NOT EXISTS doc_issue_date DATE;`);
     } catch (err) {
       console.log('[migrate] Note on doc_category:', err.message.substring(0, 60));
     }

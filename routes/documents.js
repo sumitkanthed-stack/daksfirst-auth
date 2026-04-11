@@ -316,23 +316,27 @@ router.put('/deals/:submissionId/documents/:docId/confirm-category', authenticat
 
     // Verify document belongs to this deal
     const docResult = await pool.query(
-      `SELECT id, doc_category FROM deal_documents WHERE id = $1 AND deal_id = $2`,
+      `SELECT id, doc_category, accepted_at FROM deal_documents WHERE id = $1 AND deal_id = $2`,
       [docId, dealId]
     );
     if (docResult.rows.length === 0) {
       return res.status(404).json({ error: 'Document not found' });
     }
 
+    // If document is accepted, re-categorising resets acceptance (needs re-verification)
+    const wasAccepted = !!docResult.rows[0].accepted_at;
     const oldCategory = docResult.rows[0].doc_category;
     const confirmerName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;
 
     // Update category + set confirmation fields
+    // If re-categorising an accepted doc, reset acceptance so it needs re-verification
     await pool.query(
       `UPDATE deal_documents
        SET doc_category = $1,
            category_confirmed_by = $2,
            category_confirmed_at = NOW(),
            category_confirmed_name = $3
+           ${wasAccepted ? ', accepted_at = NULL, accepted_by = NULL, accepted_name = NULL' : ''}
        WHERE id = $4`,
       [doc_category.toLowerCase(), req.user.userId, confirmerName, docId]
     );
@@ -357,6 +361,59 @@ router.put('/deals/:submissionId/documents/:docId/confirm-category', authenticat
   } catch (error) {
     console.error('[docs] Confirm category error:', error);
     res.status(500).json({ error: 'Failed to confirm document category' });
+  }
+});
+
+// ── Accept document — locks it so category can't be changed without re-verification ──
+router.put('/deals/:submissionId/documents/:docId/accept', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, docId } = req.params;
+
+    // Only internal users can accept
+    if (!['admin', 'rm', 'credit', 'compliance'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only internal staff can accept documents' });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const docResult = await pool.query(
+      `SELECT id, category_confirmed_at FROM deal_documents WHERE id = $1 AND deal_id = $2`,
+      [docId, dealId]
+    );
+    if (docResult.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+
+    if (!docResult.rows[0].category_confirmed_at) {
+      return res.status(400).json({ error: 'Document must be confirmed before it can be accepted' });
+    }
+
+    const accepterName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;
+
+    await pool.query(
+      `UPDATE deal_documents
+       SET accepted_at = NOW(),
+           accepted_by = $1,
+           accepted_name = $2
+       WHERE id = $3`,
+      [req.user.userId, accepterName, docId]
+    );
+
+    await logAudit(dealId, 'document_accepted', null, null, {
+      doc_id: docId,
+      accepted_by: req.user.userId,
+      accepter_name: accepterName
+    }, req.user.userId);
+
+    console.log(`[docs] Document accepted: doc ${docId} by ${accepterName}`);
+
+    res.json({ success: true, doc_id: parseInt(docId), accepted_at: new Date().toISOString() });
+  } catch (error) {
+    console.error('[docs] Accept error:', error);
+    res.status(500).json({ error: 'Failed to accept document' });
   }
 });
 

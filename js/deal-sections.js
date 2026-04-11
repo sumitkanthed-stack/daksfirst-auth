@@ -174,7 +174,7 @@ export function renderSnapshot(deal, role) {
 let _docRepoSubId = null;
 let _docRepoRole = null;
 
-export async function renderDocRepo(submissionId, role) {
+export async function renderDocRepo(submissionId, role, filterCategory) {
   const tbody = document.getElementById('doc-repo-tbody');
   const countEl = document.getElementById('doc-repo-count');
   if (!tbody) return;
@@ -184,6 +184,7 @@ export async function renderDocRepo(submissionId, role) {
   _docRepoRole = role;
 
   const canConfirm = ['broker', 'borrower', 'rm', 'admin'].includes(role);
+  const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
 
   // Fetch real documents from deal_documents table via API
   let docs = [];
@@ -199,44 +200,109 @@ export async function renderDocRepo(submissionId, role) {
     }
   }
 
+  // Cache all docs for filtering
+  window._docRepoAllDocs = docs;
+
   if (countEl) countEl.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : '');
 
-  if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:30px;text-align:center;color:#64748B;">No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com</td></tr>';
+  // ── Contextual action bar ──
+  const actionMsg = document.getElementById('doc-repo-action-msg');
+  const actionBtns = document.getElementById('doc-repo-action-btns');
+  const unconfirmedCount = docs.filter(d => !d.category_confirmed_at).length;
+  const unparsedConfirmed = docs.filter(d => d.category_confirmed_at && !d.parsed_at).length;
+
+  if (actionMsg) {
+    if (unconfirmedCount > 0) {
+      actionMsg.textContent = `${unconfirmedCount} document${unconfirmedCount !== 1 ? 's' : ''} awaiting category confirmation.`;
+      actionMsg.style.color = '#FBBF24';
+    } else if (unparsedConfirmed > 0) {
+      actionMsg.textContent = `All categories confirmed. ${unparsedConfirmed} document${unparsedConfirmed !== 1 ? 's' : ''} ready to parse.`;
+      actionMsg.style.color = '#34D399';
+    } else if (docs.length > 0) {
+      actionMsg.textContent = 'All documents confirmed and parsed.';
+      actionMsg.style.color = '#34D399';
+    } else {
+      actionMsg.textContent = 'Upload documents to get started.';
+      actionMsg.style.color = '#64748B';
+    }
+  }
+  if (actionBtns) {
+    let btns = '';
+    if (unconfirmedCount > 0) {
+      btns += `<button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All (${unconfirmedCount})</button>`;
+    }
+    if (unparsedConfirmed > 0) {
+      btns += `<button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse Confirmed (${unparsedConfirmed})</button>`;
+    }
+    actionBtns.innerHTML = btns;
+  }
+
+  // ── Category filter tabs ──
+  const filterTabs = document.getElementById('doc-repo-filter-tabs');
+  if (filterTabs) {
+    const catCounts = { all: docs.length };
+    docs.forEach(d => {
+      const c = (d.doc_category || d.category || 'other').toLowerCase();
+      catCounts[c] = (catCounts[c] || 0) + 1;
+    });
+    const catLabels = { all: 'All', kyc: 'KYC/ID', financial: 'Financial', property: 'Property', legal: 'Legal', issued: 'Issued', email: 'Email', other: 'Other' };
+    const activeCat = filterCategory || 'all';
+    const tabOrder = ['all', 'kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
+    filterTabs.innerHTML = tabOrder.filter(c => c === 'all' || catCounts[c]).map(c => {
+      const isActive = c === activeCat;
+      const bg = isActive ? '#D4A853' : 'rgba(255,255,255,0.04)';
+      const color = isActive ? '#0B1120' : '#64748B';
+      return `<button onclick="window.filterDocRepo && window.filterDocRepo('${c}')" style="padding:4px 12px;border:none;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;background:${bg};color:${color};transition:all .12s;">${catLabels[c] || c.toUpperCase()} (${catCounts[c] || 0})</button>`;
+    }).join('');
+  }
+
+  // ── Apply category filter ──
+  let filteredDocs = docs;
+  if (filterCategory && filterCategory !== 'all') {
+    filteredDocs = docs.filter(d => (d.doc_category || d.category || 'other').toLowerCase() === filterCategory);
+  }
+
+  if (filteredDocs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:30px;text-align:center;color:#64748B;">${docs.length === 0 ? 'No documents yet. Upload files via the Matrix buttons or forward emails to deals@daksfirst.com' : 'No documents in this category.'}</td></tr>`;
     return;
   }
 
   const catColors = {
-    kyc: 'background:rgba(96,165,250,0.1);color:#60A5FA;', financial: 'background:#dcfce7;color:#166534;',
-    property: 'background:#fef3c7;color:#92400e;', legal: 'background:#f3e8ff;color:#6b21a8;',
-    issued: 'background:#e0e7ff;color:#3730a3;', email: 'background:#fce7f3;color:#be185d;',
-    other: 'background:#f1f5f9;color:#64748b;'
+    kyc: 'background:rgba(96,165,250,0.1);color:#60A5FA;', financial: 'background:rgba(52,211,153,0.1);color:#34D399;',
+    property: 'background:rgba(251,191,36,0.1);color:#FBBF24;', legal: 'background:rgba(167,139,250,0.1);color:#A78BFA;',
+    issued: 'background:rgba(129,140,248,0.1);color:#818CF8;', email: 'background:rgba(244,114,182,0.1);color:#F472B6;',
+    other: 'background:rgba(148,163,184,0.1);color:#94A3B8;'
   };
   const CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
 
-  // Sort documents by category so they are grouped together
+  // Sort documents by category
   const catOrder = { kyc: 0, financial: 1, property: 2, legal: 3, issued: 4, email: 5, other: 6 };
-  docs.sort((a, b) => {
+  filteredDocs.sort((a, b) => {
     const catA = (a.doc_category || a.category || 'other').toLowerCase();
     const catB = (b.doc_category || b.category || 'other').toLowerCase();
     return (catOrder[catA] ?? 6) - (catOrder[catB] ?? 6);
   });
 
-  tbody.innerHTML = docs.map((doc, idx) => {
+  tbody.innerHTML = filteredDocs.map((doc) => {
     const cat = (doc.doc_category || doc.category || 'other').toLowerCase();
     const catStyle = catColors[cat] || catColors.other;
     const name = sanitizeHtml(doc.filename || doc.file_name || doc.original_name || 'Document');
     const size = doc.file_size ? (doc.file_size / 1024 < 1024 ? Math.round(doc.file_size / 1024) + ' KB' : (doc.file_size / 1048576).toFixed(1) + ' MB') : '';
     const uploaded = doc.uploaded_at ? formatDate(doc.uploaded_at) : '-';
     const isConfirmed = !!doc.category_confirmed_at;
-    const confirmedBy = doc.category_confirmed_name || '';
+    const isAccepted = !!doc.accepted_at;
     const isParsed = !!doc.parsed_at;
     const docId = doc.id || 0;
     const fileType = (doc.file_type || '').toLowerCase();
 
-    // Category cell: dropdown + confirm for those who can, badge for read-only
+    // ── Category cell ──
     let categoryCell;
-    if (canConfirm && !isConfirmed) {
+    if (isAccepted) {
+      // Accepted = locked. Show badge only, no dropdown.
+      categoryCell = `
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
+        <div style="font-size:10px;color:#818CF8;margin-top:3px;">&#128274; Accepted</div>`;
+    } else if (canConfirm && !isConfirmed) {
       const options = CATEGORIES.map(c =>
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
@@ -248,31 +314,59 @@ export async function renderDocRepo(submissionId, role) {
           style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#34D399;color:#111827;transition:background .15s;"
           onmouseover="this.style.background='#2fb589'" onmouseout="this.style.background='#34D399'"
           title="Confirm this classification">&#10003; Confirm</button>
-        <div style="font-size:10px;color:#FBBF24;margin-top:3px;font-style:italic;">AI-suggested &mdash; awaiting confirmation</div>`;
+        <div style="font-size:10px;color:#FBBF24;margin-top:3px;font-style:italic;">AI-suggested</div>`;
     } else if (canConfirm && isConfirmed) {
       const options = CATEGORIES.map(c =>
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c.toUpperCase()}</option>`
       ).join('');
       categoryCell = `
-        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px #34D399;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;">
+        <select id="doc-cat-${docId}" style="padding:3px 6px;border:1px rgba(52,211,153,0.3);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;">
           ${options}
         </select>
         <button onclick="window.confirmDocCategory(${docId})"
-          style="margin-left:6px;padding:3px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94A3B8;transition:background .15s;"
-          onmouseover="this.style.background='#34D399';this.style.color='#111827'" onmouseout="this.style.background='rgba(255,255,255,0.06)';this.style.color='#94A3B8'"
-          title="Re-classify">&#8635; Update</button>
-        <div style="font-size:10px;color:#34D399;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
-    } else if (isConfirmed) {
-      categoryCell = `
-        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
-        <div style="font-size:10px;color:#34D399;margin-top:3px;">&#10003; Confirmed by ${sanitizeHtml(confirmedBy)}</div>`;
+          style="margin-left:4px;padding:3px 8px;border:none;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.06);color:#94A3B8;"
+          title="Re-classify">&#8635;</button>
+        ${isInternalUser ? `<button onclick="window.acceptDoc(${docId})" style="margin-left:4px;padding:3px 8px;border:none;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(129,140,248,0.15);color:#818CF8;" title="Accept — locks category and marks as verified">&#128274; Accept</button>` : ''}
+        <div style="font-size:10px;color:#34D399;margin-top:3px;">&#10003; Confirmed</div>`;
     } else {
       categoryCell = `
-        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>
-        <div style="font-size:10px;color:#FBBF24;margin-top:3px;font-style:italic;">AI-suggested</div>`;
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;${catStyle}">${cat.toUpperCase()}</span>`;
     }
 
-    // Determine if viewable inline (images + PDFs)
+    // ── Status cell (combined confirmed + parsed) ──
+    let statusCell;
+    if (isAccepted) {
+      statusCell = '<span style="color:#818CF8;font-weight:700;font-size:11px;">&#128274; Accepted</span>';
+    } else if (isParsed && isConfirmed) {
+      statusCell = '<span style="color:#34D399;font-weight:700;font-size:11px;">&#10003; Ready</span>';
+    } else if (isConfirmed) {
+      statusCell = '<span style="color:#FBBF24;font-size:11px;">Confirmed</span>';
+    } else {
+      statusCell = '<span style="color:#64748B;font-size:11px;">Pending</span>';
+    }
+
+    // ── Validity cell (expiry/issue dates) ──
+    const expiryDate = doc.doc_expiry_date || doc.expiry_date;
+    const issueDate = doc.doc_issue_date || doc.issue_date;
+    let validityCell = '';
+    if (expiryDate) {
+      const expiry = new Date(expiryDate);
+      const now = new Date();
+      const daysLeft = Math.round((expiry - now) / 86400000);
+      if (daysLeft < 0) {
+        validityCell = `<span style="color:#F87171;font-size:11px;font-weight:600;">Expired</span><br><span style="font-size:10px;color:#64748B;">${formatDate(expiryDate)}</span>`;
+      } else if (daysLeft < 90) {
+        validityCell = `<span style="color:#FBBF24;font-size:11px;font-weight:600;">Expires ${daysLeft}d</span><br><span style="font-size:10px;color:#64748B;">${formatDate(expiryDate)}</span>`;
+      } else {
+        validityCell = `<span style="color:#34D399;font-size:11px;">Valid</span><br><span style="font-size:10px;color:#64748B;">Exp: ${formatDate(expiryDate)}</span>`;
+      }
+    } else if (issueDate) {
+      validityCell = `<span style="font-size:10px;color:#64748B;">Issued: ${formatDate(issueDate)}</span>`;
+    } else {
+      validityCell = '<span style="color:#64748B;font-size:10px;">—</span>';
+    }
+
+    // Viewable inline?
     const isViewable = fileType.includes('image') || fileType.includes('pdf') || fileType.includes('png') || fileType.includes('jpg') || fileType.includes('jpeg');
 
     // Has stored parsed data?
@@ -281,34 +375,30 @@ export async function renderDocRepo(submissionId, role) {
     // Parse / View Data button
     let parseBtn = '';
     if (hasParsedData) {
-      parseBtn = `<button onclick="window.viewDocParsedData(${docId})" style="padding:4px 10px;border:1px #34D399;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;font-weight:600;" title="View extracted data">&#128202; View Data</button>`;
+      parseBtn = `<button onclick="window.viewDocParsedData(${docId})" style="padding:4px 10px;border:1px solid rgba(52,211,153,0.3);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;font-weight:600;" title="View extracted data">&#128202; Data</button>`;
     } else {
-      parseBtn = `<button onclick="window.parseDocById(${docId})" style="padding:4px 10px;border:1px #D4A853;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#FBBF24;margin-right:4px;font-weight:600;" title="Extract data with AI">&#9889; Parse</button>`;
+      parseBtn = `<button onclick="window.parseDocById(${docId})" style="padding:4px 10px;border:1px solid rgba(212,168,83,0.3);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#FBBF24;margin-right:4px;font-weight:600;" title="Extract data with AI">&#9889; Parse</button>`;
     }
 
-    return `<tr style="transition:background .1s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
-        <strong>${name}</strong>
-        ${size ? '<br><span style="font-size:11px;color:#64748B;">' + size + '</span>' : ''}
+    return `<tr data-doc-cat="${cat}" style="transition:background .1s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">
+        <strong style="font-size:12px;">${name}</strong>
+        ${size ? '<br><span style="font-size:10px;color:#64748B;">' + size + '</span>' : ''}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">
         ${categoryCell}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);font-size:12px;">${uploaded}</td>
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
-        ${isConfirmed
-          ? '<span style="color:#34D399;font-weight:700;font-size:12px;">&#10003; Confirmed</span>'
-          : '<span style="color:#FBBF24;font-size:12px;">Pending</span>'}
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:11px;color:#94A3B8;">${uploaded}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">
+        ${statusCell}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);">
-        ${isParsed
-          ? '<span style="color:#34D399;font-weight:700;font-size:12px;">&#10003; Parsed</span>'
-          : '<span style="color:rgba(255,255,255,0.06);font-size:12px;">&#x2013; Not yet</span>'}
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">
+        ${validityCell}
       </td>
-      <td style="padding:10px 16px;border-bottom:1px rgba(255,255,255,0.06);white-space:nowrap;">
+      <td style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);white-space:nowrap;">
         ${parseBtn}
-        ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;font-weight:600;" title="Preview">&#128065; View</button>` : ''}
-        <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;font-weight:600;" title="Download">&#128229; Download</button>
+        ${isViewable ? `<button onclick="window.viewDocInline(${docId}, '${sanitizeHtml(name)}', '${fileType}')" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;font-weight:600;" title="Preview">&#128065;</button>` : ''}
+        <button onclick="window.downloadDocById(${docId})" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.06);border-radius:5px;font-size:11px;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;font-weight:600;" title="Download">&#128229;</button>
       </td>
     </tr>`;
   }).join('');
@@ -384,6 +474,42 @@ window.confirmAllDocCategories = async function() {
     await renderDocRepo(subId, role);
   } else {
     showToast('No documents to confirm', 'error');
+  }
+};
+
+// Filter doc repo by category
+window._docRepoActiveFilter = 'all';
+window.filterDocRepo = async function(category) {
+  window._docRepoActiveFilter = category || 'all';
+  await renderDocRepo(_docRepoSubId, _docRepoRole, category);
+};
+
+// Refresh doc repo (preserves current filter)
+window.refreshDocRepo = async function() {
+  await renderDocRepo(_docRepoSubId, _docRepoRole, window._docRepoActiveFilter);
+};
+
+// Accept document — locks it. Only internal users.
+window.acceptDoc = async function(docId) {
+  const subId = _docRepoSubId;
+  const role = _docRepoRole;
+  if (!subId || !docId) return;
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/documents/${docId}/accept`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (resp.ok) {
+      showToast('Document accepted and locked', 'success');
+      await renderDocRepo(subId, role, window._docRepoActiveFilter);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast(err.error || 'Failed to accept document', 'error');
+    }
+  } catch (e) {
+    console.error('[doc-repo] Accept error:', e);
+    showToast('Failed to accept document', 'error');
   }
 };
 
