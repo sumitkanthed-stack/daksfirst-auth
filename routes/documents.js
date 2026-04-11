@@ -19,9 +19,9 @@ const upload = multer({
 // LIST DOCUMENTS FOR A DEAL
 router.get('/deals/:dealId/documents', authenticateToken, async (req, res) => {
   try {
-    // Verify ownership
+    // Verify ownership — dealId param is UUID submission_id
     const dealResult = await pool.query(
-      'SELECT id FROM deal_submissions WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM deal_submissions WHERE submission_id = $1 AND user_id = $2',
       [req.params.dealId, req.user.userId]
     );
 
@@ -32,7 +32,7 @@ router.get('/deals/:dealId/documents', authenticateToken, async (req, res) => {
     const result = await pool.query(
       `SELECT id, filename, file_type, file_size, onedrive_download_url, uploaded_at
        FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at DESC`,
-      [req.params.dealId]
+      [dealResult.rows[0].id]
     );
 
     res.json({ success: true, documents: result.rows });
@@ -51,9 +51,9 @@ router.post('/deals/:dealId/upload', authenticateToken, upload.any(), async (req
       return res.status(400).json({ error: 'No files provided' });
     }
 
-    // Verify deal ownership
+    // Verify deal ownership — dealId param is the UUID submission_id
     const dealResult = await pool.query(
-      `SELECT id, submission_id FROM deal_submissions WHERE id = $1 AND user_id = $2`,
+      `SELECT id, submission_id FROM deal_submissions WHERE submission_id = $1 AND user_id = $2`,
       [req.params.dealId, req.user.userId]
     );
 
@@ -82,14 +82,14 @@ router.post('/deals/:dealId/upload', authenticateToken, upload.any(), async (req
       try {
         const oneDriveInfo = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
 
-        // Store reference in DB with file content
+        // Store reference in DB with file content (use numeric deal.id, not UUID)
         const docResult = await pool.query(
           `INSERT INTO deal_documents
            (deal_id, filename, file_type, file_size, file_content, onedrive_item_id, onedrive_path, onedrive_download_url)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, filename, file_size, uploaded_at`,
           [
-            req.params.dealId,
+            deal.id,
             file.originalname,
             file.mimetype,
             file.size,
@@ -136,9 +136,9 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
       return res.status(400).json({ error: 'No files provided' });
     }
 
-    // Verify deal exists
+    // Verify deal exists — dealId param is the UUID submission_id
     const dealResult = await pool.query(
-      `SELECT id, submission_id FROM deal_submissions WHERE id = $1`,
+      `SELECT id, submission_id FROM deal_submissions WHERE submission_id = $1`,
       [req.params.dealId]
     );
 
@@ -173,7 +173,7 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, filename, file_size, uploaded_at`,
           [
-            req.params.dealId,
+            deal.id,
             file.originalname,
             file.mimetype,
             file.size,
@@ -185,7 +185,7 @@ router.post('/admin/deals/:dealId/upload', authenticateToken, authenticateIntern
         );
 
         uploadedDocs.push(docResult.rows[0]);
-        await logAudit(req.params.dealId, 'document_uploaded', null, file.originalname,
+        await logAudit(deal.id, 'document_uploaded', null, file.originalname,
           { uploaded_by: req.user.userId, file_type: file.mimetype }, req.user.userId);
 
         console.log('[admin-upload] File uploaded:', file.originalname);
