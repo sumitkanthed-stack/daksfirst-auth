@@ -2097,12 +2097,12 @@ export async function renderDealMatrix(deal) {
         nice: ['source_of_wealth']
       },
       'Property / Security': {
-        required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure'],
-        nice: ['current_value', 'occupancy_status', 'current_use']
+        required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'occupancy_status', 'current_use'],
+        nice: []
       },
       'Loan Terms': {
-        required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
-        nice: ['ltv_requested', 'drawdown_date', 'use_of_funds']
+        required: ['loan_amount', 'ltv_requested', 'term_months', 'interest_servicing', 'loan_purpose', 'use_of_funds', 'drawdown_date'],
+        nice: []
       },
       'Exit Strategy': {
         required: ['exit_strategy'],
@@ -2366,41 +2366,56 @@ export async function renderDealMatrix(deal) {
    * Update all DIP column pills (section headers + field rows) based on actual field values
    */
   function updateDipPills() {
-    // Map section IDs → the fields they contain for DIP pill calculation
-    const SEC_FIELDS = {
-      s1: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality', 'company_name', 'company_number'],
-      s2: ['estimated_net_worth', 'source_of_wealth', 'deposit_source', 'existing_charges', 'concurrent_transactions'],
-      s3: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'purchase_price', 'occupancy_status', 'current_use'],
-      s4: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose', 'ltv_requested', 'drawdown_date', 'use_of_funds'],
-      s5: ['exit_strategy', 'additional_notes'],
-      s7: ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months']
+    // ── Derive relevant fields from STAGE_VALIDATION for current tier ──
+    const tier = getValidationTier();
+    const tierSections = STAGE_VALIDATION[tier] || STAGE_VALIDATION.dip;
+
+    // Collect ALL fields (required + nice) for each validation section at this tier
+    function getTierFields(sectionName) {
+      const cfg = tierSections[sectionName];
+      if (!cfg) return [];
+      return [...(cfg.required || []), ...(cfg.nice || [])];
+    }
+
+    // Map section names → section header IDs
+    const SECTION_ID_MAP = {
+      'Borrower / KYC': 's1',
+      'Borrower Financials': 's2',
+      'Property / Security': 's3',
+      'Loan Terms': 's4',
+      'Exit Strategy': 's5',
+      'Fees': 's7',
+      'AML & Source of Funds': 's2'  // AML fields roll up into s2 header
     };
 
-    // Map field rows → the specific fields they represent
-    const ROW_FIELDS = {
-      'primary-borrower': ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'],
-      'guarantors': [],
-      'financial-summary': ['estimated_net_worth', 'source_of_wealth'],
-      'assets': [],
-      'liabilities': [],
-      'income': [],
-      'expenses': [],
-      'aml-source-funds': ['deposit_source', 'existing_charges', 'concurrent_transactions'],
-      'property-details': ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'occupancy_status', 'current_use'],
-      'property-valuation': ['current_value', 'purchase_price'],
-      'loan-terms': ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
-      'use-of-funds': ['use_of_funds', 'ltv_requested', 'drawdown_date'],
-      'exit-strategy': ['exit_strategy'],
-      'refinance-evidence': [],
-      'fees': ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee'],
-      'credit-approval': []
+    // Map field rows → which validation sections they draw from, and which specific fields
+    const ROW_SECTION_MAP = {
+      'primary-borrower': { section: 'Borrower / KYC', fields: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'] },
+      'guarantors': { section: null, fields: [] },
+      'financial-summary': { section: 'Borrower Financials', fields: ['estimated_net_worth', 'source_of_wealth'] },
+      'assets': { section: null, fields: [] },
+      'liabilities': { section: null, fields: [] },
+      'income': { section: null, fields: [] },
+      'expenses': { section: null, fields: [] },
+      'aml-source-funds': { section: 'AML & Source of Funds', fields: ['deposit_source', 'existing_charges', 'concurrent_transactions'] },
+      'property-details': { section: 'Property / Security', fields: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'occupancy_status', 'current_use'] },
+      'property-valuation': { section: 'Property / Security', fields: ['current_value', 'purchase_price'] },
+      'loan-terms': { section: 'Loan Terms', fields: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'] },
+      'use-of-funds': { section: 'Loan Terms', fields: ['use_of_funds', 'ltv_requested', 'drawdown_date'] },
+      'exit-strategy': { section: 'Exit Strategy', fields: ['exit_strategy', 'additional_notes'] },
+      'refinance-evidence': { section: null, fields: [] },
+      'fees': { section: 'Fees', fields: ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months'] },
+      'credit-approval': { section: null, fields: [] }
     };
 
-    // Helper: determine pill status from a set of fields
-    function getPillStatus(fields) {
-      if (!fields || fields.length === 0) return { status: 'not-started', count: 0 };
-      const filled = fields.filter(k => fieldHasValue(k)).length;
-      if (filled === fields.length) return { status: 'complete', count: filled };
+    // Helper: determine pill status — only count fields that exist in the current tier
+    function getPillStatus(allFields, sectionName) {
+      const tierFields = sectionName ? getTierFields(sectionName) : [];
+      // Filter: only count fields that matter at this stage
+      const relevant = sectionName ? allFields.filter(f => tierFields.includes(f)) : allFields;
+      if (!relevant || relevant.length === 0) return { status: 'not-started', count: 0 };
+      const filled = relevant.filter(k => fieldHasValue(k)).length;
+      if (filled === relevant.length) return { status: 'complete', count: filled };
       if (filled > 0) return { status: 'incomplete', count: filled };
       return { status: 'not-started', count: 0 };
     }
@@ -2412,22 +2427,32 @@ export async function renderDealMatrix(deal) {
       'not-started': { bg: '#f1f5f9', color: '#94a3b8' }
     };
 
-    // Update section header dots
-    for (const [secId, fields] of Object.entries(SEC_FIELDS)) {
+    // ── Update section header dots ──
+    // Aggregate all tier fields per section header ID
+    const secAgg = {};
+    for (const [sectionName, secId] of Object.entries(SECTION_ID_MAP)) {
+      const fields = getTierFields(sectionName);
+      if (!secAgg[secId]) secAgg[secId] = [];
+      secAgg[secId].push(...fields);
+    }
+    for (const [secId, fields] of Object.entries(secAgg)) {
       const el = document.getElementById('dip-sec-' + secId);
       if (!el) continue;
-      const { status, count } = getPillStatus(fields);
+      // Deduplicate
+      const unique = [...new Set(fields)];
+      const filled = unique.filter(k => fieldHasValue(k)).length;
+      const status = unique.length === 0 ? 'not-started' : filled === unique.length ? 'complete' : filled > 0 ? 'incomplete' : 'not-started';
       const c = pillColors[status] || pillColors['not-started'];
       el.style.background = c.bg;
       el.style.color = c.color;
-      el.textContent = count > 0 ? count : '—';
+      el.textContent = filled > 0 ? filled : '—';
     }
 
-    // Update field row DIP pills
-    for (const [rowKey, fields] of Object.entries(ROW_FIELDS)) {
+    // ── Update field row DIP pills ──
+    for (const [rowKey, config] of Object.entries(ROW_SECTION_MAP)) {
       const el = document.getElementById('dip-fpill-' + rowKey);
       if (!el) continue;
-      const { status } = getPillStatus(fields);
+      const { status } = getPillStatus(config.fields, config.section);
       const pillLabel = status === 'complete' ? 'complete' : status === 'incomplete' ? 'incomplete' : 'not started';
       const pillStatus = status === 'complete' ? 'approved' : status === 'incomplete' ? 'under-review' : 'not-started';
       el.innerHTML = renderPill(pillStatus, pillLabel);
