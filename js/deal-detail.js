@@ -2011,12 +2011,18 @@ export function renderExternalWorkflowControls(deal) {
         '</div>';
     } else if (!creditApproved) {
       // Credit hasn't approved yet — borrower must wait
-      html += '<div style="background:#111827beb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
+      html += '<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
         '<p style="font-size:14px;margin-bottom:4px;"><strong>DIP Under Review</strong></p>' +
-        '<p style="font-size:13px;color:#555;">Your deal is currently being reviewed by our credit team. You will be notified once a decision has been made and your DIP is ready for acceptance.</p>' +
+        '<p style="font-size:13px;color:#94A3B8;">Your deal is currently being reviewed by our credit team. You will be notified once a decision has been made and your DIP is ready for acceptance.</p>' +
+        '</div>';
+    } else if (!deal.dip_issued_at) {
+      // Credit approved but DIP document not yet generated
+      html += '<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
+        '<p style="font-size:14px;margin-bottom:4px;"><strong>DIP Approved — Document Being Prepared</strong></p>' +
+        '<p style="font-size:13px;color:#94A3B8;">Great news — your deal has been approved in principle. Our team is now preparing your DIP document. You will be able to review and accept it once it is ready.</p>' +
         '</div>';
     } else {
-      // Credit approved — show DIP PDF and Accept button
+      // Credit approved AND DIP document issued — show PDF and Accept button
       html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
         '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Approved — Please Review & Accept</strong></p>' +
         '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been approved by our credit team. Please review the DIP document below and click Accept to proceed with your application.</p>' +
