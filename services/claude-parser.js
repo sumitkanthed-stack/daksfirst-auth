@@ -489,7 +489,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
       [dealId, analysisJson]
     );
 
-    // Store parsed properties
+    // ── 6a. Store parsed properties ──
     if (mergedAnalysis.parsedProperties && Array.isArray(mergedAnalysis.parsedProperties) && mergedAnalysis.parsedProperties.length > 0) {
       const claudeProperties = mergedAnalysis.parsedProperties.map(p => ({
         address: p.address || '',
@@ -502,6 +502,147 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
       }));
       await syncDealProperties(pool, dealId, claudeProperties, { force: true });
       console.log(`[claude-parser] Stored ${claudeProperties.length} properties for deal ${dealId}`);
+    }
+
+    // ── 6b. Write borrowers to deal_borrowers table ──
+    if (mergedAnalysis.borrowers && Array.isArray(mergedAnalysis.borrowers) && mergedAnalysis.borrowers.length > 0) {
+      // Clear old claude-parsed borrowers, then insert fresh
+      await pool.query(`DELETE FROM deal_borrowers WHERE deal_id = $1 AND kyc_status = 'pending'`, [dealId]);
+      for (const b of mergedAnalysis.borrowers) {
+        if (!b.full_name) continue;
+        await pool.query(
+          `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, kyc_status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+           ON CONFLICT DO NOTHING`,
+          [dealId, b.full_name, b.date_of_birth || null, b.nationality || null,
+           b.email || null, b.phone || null, b.role || 'primary',
+           mergedAnalysis.company?.borrower_type || 'individual',
+           mergedAnalysis.company?.name || null, mergedAnalysis.company?.company_number || null]
+        );
+      }
+      // Update primary borrower on deal_submissions
+      const primary = mergedAnalysis.borrowers.find(b => b.role === 'primary') || mergedAnalysis.borrowers[0];
+      if (primary) {
+        await pool.query(
+          `UPDATE deal_submissions SET
+             borrower_name = COALESCE(NULLIF($2, ''), borrower_name),
+             borrower_email = COALESCE(NULLIF($3, ''), borrower_email),
+             borrower_phone = COALESCE(NULLIF($4, ''), borrower_phone),
+             borrower_dob = COALESCE($5, borrower_dob),
+             borrower_nationality = COALESCE(NULLIF($6, ''), borrower_nationality),
+             updated_at = NOW()
+           WHERE id = $1`,
+          [dealId, primary.full_name || '', primary.email || '', primary.phone || '',
+           primary.date_of_birth || null, primary.nationality || '']
+        );
+      }
+      console.log(`[claude-parser] Stored ${mergedAnalysis.borrowers.length} borrowers for deal ${dealId}`);
+    }
+
+    // ── 6c. Write company details ──
+    if (mergedAnalysis.company && mergedAnalysis.company.name) {
+      await pool.query(
+        `UPDATE deal_submissions SET
+           company_name = COALESCE(NULLIF($2, ''), company_name),
+           company_number = COALESCE(NULLIF($3, ''), company_number),
+           borrower_type = COALESCE(NULLIF($4, ''), borrower_type),
+           borrower_company = COALESCE(NULLIF($2, ''), borrower_company),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, mergedAnalysis.company.name || '', mergedAnalysis.company.company_number || '',
+         mergedAnalysis.company.borrower_type || '']
+      );
+      console.log(`[claude-parser] Updated company: ${mergedAnalysis.company.name}`);
+    }
+
+    // ── 6d. Write loan terms ──
+    if (mergedAnalysis.loan) {
+      const l = mergedAnalysis.loan;
+      await pool.query(
+        `UPDATE deal_submissions SET
+           loan_amount = COALESCE(NULLIF($2, 0), loan_amount),
+           ltv_requested = COALESCE(NULLIF($3, 0), ltv_requested),
+           term_months = COALESCE(NULLIF($4, 0), term_months),
+           loan_purpose = COALESCE(NULLIF($5, ''), loan_purpose),
+           exit_strategy = COALESCE(NULLIF($6, ''), exit_strategy),
+           use_of_funds = COALESCE(NULLIF($7, ''), use_of_funds),
+           interest_servicing = COALESCE(NULLIF($8, ''), interest_servicing),
+           existing_charges = COALESCE(NULLIF($9, ''), existing_charges),
+           deposit_source = COALESCE(NULLIF($10, ''), deposit_source),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, l.loan_amount || 0, l.ltv_requested || 0, l.term_months || 0,
+         l.loan_purpose || '', l.exit_strategy || '', l.use_of_funds || '',
+         l.interest_servicing || '', l.existing_charges || '', l.deposit_source || '']
+      );
+      console.log(`[claude-parser] Updated loan terms for deal ${dealId}`);
+    }
+
+    // ── 6e. Write solicitor details ──
+    if (mergedAnalysis.solicitor && mergedAnalysis.solicitor.firm_name) {
+      await pool.query(
+        `UPDATE deal_submissions SET
+           lawyer_firm = COALESCE(NULLIF($2, ''), lawyer_firm),
+           lawyer_email = COALESCE(NULLIF($3, ''), lawyer_email),
+           lawyer_contact = COALESCE(NULLIF($4, ''), lawyer_contact),
+           lawyer_reference = COALESCE(NULLIF($5, ''), lawyer_reference),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, mergedAnalysis.solicitor.firm_name || '', mergedAnalysis.solicitor.contact_email || '',
+         mergedAnalysis.solicitor.contact_name || '', mergedAnalysis.solicitor.solicitor_ref || '']
+      );
+      console.log(`[claude-parser] Updated solicitor: ${mergedAnalysis.solicitor.firm_name}`);
+    }
+
+    // ── 6f. Write refurbishment details ──
+    if (mergedAnalysis.refurbishment && mergedAnalysis.refurbishment.total_refurb_cost > 0) {
+      await pool.query(
+        `UPDATE deal_submissions SET
+           refurb_cost = COALESCE(NULLIF($2, 0), refurb_cost),
+           refurb_scope = COALESCE(NULLIF($3, ''), refurb_scope),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, mergedAnalysis.refurbishment.total_refurb_cost || 0,
+         mergedAnalysis.refurbishment.scope_of_works || '']
+      );
+      console.log(`[claude-parser] Updated refurb: £${mergedAnalysis.refurbishment.total_refurb_cost}`);
+    }
+
+    // ── 6g. Write broker details ──
+    if (mergedAnalysis.broker && mergedAnalysis.broker.name) {
+      await pool.query(
+        `UPDATE deal_submissions SET
+           broker_name = COALESCE(NULLIF($2, ''), broker_name),
+           broker_company = COALESCE(NULLIF($3, ''), broker_company),
+           broker_fca = COALESCE(NULLIF($4, ''), broker_fca),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, mergedAnalysis.broker.name || '', mergedAnalysis.broker.company || '',
+         mergedAnalysis.broker.fca_number || '']
+      );
+      console.log(`[claude-parser] Updated broker: ${mergedAnalysis.broker.name}`);
+    }
+
+    // ── 6h. Store redemption, insurance, planning in matrix_data JSONB ──
+    const matrixExtras = {};
+    if (mergedAnalysis.redemption && (mergedAnalysis.redemption.existing_lender || mergedAnalysis.redemption.outstanding_balance > 0)) {
+      matrixExtras.redemption = mergedAnalysis.redemption;
+    }
+    if (mergedAnalysis.insurance && (mergedAnalysis.insurance.insurer || mergedAnalysis.insurance.reinstatement_value > 0)) {
+      matrixExtras.insurance = mergedAnalysis.insurance;
+    }
+    if (mergedAnalysis.planning && (mergedAnalysis.planning.planning_ref || mergedAnalysis.planning.approval_status)) {
+      matrixExtras.planning = mergedAnalysis.planning;
+    }
+    if (Object.keys(matrixExtras).length > 0) {
+      await pool.query(
+        `UPDATE deal_submissions SET
+           matrix_data = COALESCE(matrix_data, '{}'::jsonb) || $2::jsonb,
+           updated_at = NOW()
+         WHERE id = $1`,
+        [dealId, JSON.stringify(matrixExtras)]
+      );
+      console.log(`[claude-parser] Stored matrix extras: ${Object.keys(matrixExtras).join(', ')}`);
     }
 
     // Update deal status
