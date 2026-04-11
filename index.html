@@ -715,152 +715,263 @@
         <div class="deal-detail-layout">
          <div class="deal-detail-container">
           <div class="breadcrumb">
-            <a class="breadcrumb-link" onclick="['admin','rm','credit','compliance'].includes(currentRole) ? showAdminPanel() : showDashboard()">Dashboard</a>
+            <a class="breadcrumb-link" onclick="(window.getCurrentRole && ['admin','rm','credit','compliance'].includes(window.getCurrentRole())) ? showAdminPanel() : showDashboard()">Dashboard</a>
             <span>/</span>
             <span id="breadcrumb-ref">Deal Details</span>
           </div>
 
-          <!-- Deal Header Bar — Compact -->
-          <div style="background:#fff;padding:12px 20px;border-bottom:2px solid #1e3a5f;display:flex;align-items:center;justify-content:space-between;gap:16px;">
-            <div style="flex:1;min-width:0;">
-              <div class="detail-title" id="detail-property-address" style="font-size:16px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Property Address</div>
+          <!-- ═══════════════════════════════════════════════════════════ -->
+          <!-- VERTICAL SECTION STACK — Role-gated deal view            -->
+          <!-- ═══════════════════════════════════════════════════════════ -->
+
+          <!-- ══ 1. SNAPSHOT ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-snapshot">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('snapshot')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#eff6ff;color:#2563eb;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128200;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Snapshot</div><div style="font-size:11px;color:#64748b;">Deal summary at a glance</div></div>
+              </div>
+              <div class="deal-section-chevron open" id="chev-snapshot">&#9658;</div>
             </div>
-            <div style="display:flex;align-items:center;gap:14px;flex-shrink:0;font-size:12px;">
-              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">REF</span><span id="detail-ref-id" style="font-weight:600;color:#374151;font-family:monospace;">-</span></div>
-              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">STATUS</span><span id="detail-status-badge" class="status-badge status-received" style="font-size:11px;">Received</span></div>
-              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">STAGE</span><span id="detail-stage-badge" class="stage-badge" style="font-size:11px;">DIP</span></div>
-              <div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;display:block;">SUBMITTED</span><span id="detail-date" style="font-weight:500;color:#374151;">-</span></div>
+            <div class="deal-section-body" id="body-snapshot">
+              <div id="snapshot-hero" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#f8fafc,#eff6ff);border-bottom:1px solid #e2e8f0;">
+                <div id="detail-property-address" style="font-size:15px;font-weight:700;color:#1e3a5f;max-width:65%;">Property Address</div>
+                <div style="display:flex;gap:8px;">
+                  <span id="detail-stage-badge" class="stage-badge" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;">DIP</span>
+                  <span id="detail-status-badge" class="status-badge status-received" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;">Received</span>
+                </div>
+              </div>
+              <div id="snapshot-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e2e8f0;">
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Loan Amount</div><div id="snap-loan" style="font-size:16px;font-weight:700;color:#1e3a5f;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Day 1 LTV</div><div id="snap-ltv" style="font-size:16px;font-weight:700;color:#059669;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Property Value</div><div id="snap-value" style="font-size:16px;font-weight:700;color:#1e3a5f;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Term</div><div id="snap-term" style="font-size:16px;font-weight:700;color:#1e293b;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Rate</div><div id="snap-rate" style="font-size:16px;font-weight:700;color:#1e293b;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Borrower</div><div id="snap-borrower" style="font-size:13px;font-weight:600;color:#1e293b;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Exit Strategy</div><div id="snap-exit" style="font-size:13px;font-weight:600;color:#1e293b;margin-top:3px;">-</div></div>
+                <div style="background:#fff;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Submitted</div><div id="detail-date" style="font-size:13px;font-weight:500;color:#374151;margin-top:3px;">-</div></div>
+              </div>
+              <div id="snapshot-pipeline" style="padding:10px 20px;display:flex;gap:4px;align-items:center;background:#fafbfc;flex-wrap:wrap;">
+                <span style="font-size:10px;color:#64748b;font-weight:600;margin-right:4px;">STAGE</span>
+              </div>
+              <!-- Hidden ref for JS compat -->
+              <span id="detail-ref-id" style="display:none;">-</span>
             </div>
           </div>
 
-          <!-- Detail Tabs Navigation — Matrix-first layout -->
-          <div class="detail-tabs-nav">
-            <div class="detail-tabs-group">
-              <button class="detail-tab active" data-dtab="dtab-matrix" onclick="switchDetailTab(this)" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;border:none;font-weight:700;padding:8px 18px;">&#128202; Deal Matrix</button>
+          <!-- ══ 2. MATRIX ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-matrix">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('matrix')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#dbeafe;color:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128202;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Deal Information Matrix</div><div style="font-size:11px;color:#64748b;">Field-by-field status tracking across all stages</div></div>
+              </div>
+              <div class="deal-section-chevron open" id="chev-matrix">&#9658;</div>
             </div>
-            <div class="detail-tabs-group" style="border-left:1px solid #e2e8f0;margin-left:6px;padding-left:6px;">
-              <span class="detail-tabs-label" style="font-size:10px;color:#94a3b8;">Intake Data</span>
-              <button class="detail-tab" data-dtab="dtab-overview" onclick="switchDetailTab(this)">Overview</button>
-              <button class="detail-tab" data-dtab="dtab-borrower" onclick="switchDetailTab(this)">Borrower</button>
-              <button class="detail-tab" data-dtab="dtab-property" onclick="switchDetailTab(this)">Property</button>
-              <button class="detail-tab" data-dtab="dtab-funds" onclick="switchDetailTab(this)">Use of Funds</button>
-            </div>
-            <div class="detail-tabs-group" style="border-left:1px solid #e2e8f0;margin-left:6px;padding-left:6px;">
-              <button class="detail-tab" data-dtab="dtab-documents" onclick="switchDetailTab(this)">Documents</button>
-              <button class="detail-tab" data-dtab="dtab-analysis" onclick="switchDetailTab(this)">Analysis</button>
+            <div class="deal-section-body" id="body-matrix">
+              <div id="dtab-matrix-content" style="padding:0;">
+                <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
+              </div>
             </div>
           </div>
 
-          <!-- TAB: Deal Information Matrix (DEFAULT) -->
-          <div id="dtab-matrix" class="detail-tab-panel active">
-            <div id="dtab-matrix-content" style="padding:0;">
-              <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
+          <!-- ══ 3. DOCUMENT REPOSITORY ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-doc-repo">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('doc-repo')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128193;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Document Repository</div><div style="font-size:11px;color:#64748b;">Filing cabinet — all deal documents, emails, text</div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span id="doc-repo-count" style="background:#1e3a5f;color:#fff;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0 files</span>
+                <div class="deal-section-chevron open" id="chev-doc-repo">&#9658;</div>
+              </div>
+            </div>
+            <div class="deal-section-body" id="body-doc-repo">
+              <div id="doc-repo-table-container">
+                <table id="doc-repo-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <thead>
+                    <tr style="background:#f8fafc;">
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;border-bottom:2px solid #e2e8f0;">Document</th>
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Category</th>
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Source</th>
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Uploaded</th>
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Parsed</th>
+                      <th style="text-align:left;padding:10px 16px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600;border-bottom:2px solid #e2e8f0;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="doc-repo-tbody">
+                    <tr><td colspan="6" style="padding:30px;text-align:center;color:#94a3b8;">No documents yet</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="upload-zone" style="padding:12px 16px;background:#fffdf5;border-top:2px dashed #c9a84c;display:flex;align-items:center;gap:12px;font-size:12px;color:#92400e;cursor:pointer;" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
+                &#128206; <strong>Drop files, paste emails, or forward to deals@daksfirst.com</strong> — PDF, DOCX, XLSX, JPG, PNG, EML &middot; Max 25MB
+                <input type="file" id="file-input" multiple style="display:none;" onchange="handleFileSelect(event)">
+              </div>
+              <!-- Hidden compat: old documents-list -->
+              <div id="documents-list" style="display:none;"></div>
             </div>
           </div>
 
-          <!-- TAB: Overview -->
-          <div id="dtab-overview" class="detail-tab-panel">
-            <div class="detail-panel">
-              <div class="detail-content">
-                <div class="detail-grid">
-                  <div class="detail-item"><div class="detail-item-label">Loan Amount</div><div class="detail-item-value" id="detail-loan-amount">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">LTV</div><div class="detail-item-value" id="detail-ltv">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Property Value</div><div class="detail-item-value" id="detail-property-value">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Loan Purpose</div><div class="detail-item-value" id="detail-loan-purpose">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Term</div><div class="detail-item-value" id="detail-term">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Interest Servicing</div><div class="detail-item-value" id="detail-interest-servicing">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Drawdown Date</div><div class="detail-item-value" id="detail-drawdown-date">-</div></div>
-                  <div class="detail-item"><div class="detail-item-label">Asset Type</div><div class="detail-item-value" id="detail-asset-type">-</div></div>
+          <!-- ══ 4. PARSER ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-parser">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('parser')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#fce7f3;color:#be185d;display:flex;align-items:center;justify-content:center;font-size:16px;">&#129302;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted data from documents and emails</div></div>
+              </div>
+              <div class="deal-section-chevron" id="chev-parser">&#9658;</div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-parser">
+              <div id="parser-content" style="padding:20px;">
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+                  <div style="font-size:10px;color:#3b82f6;font-weight:600;text-transform:uppercase;">Select a document</div>
+                  <div style="font-size:13px;color:#1e3a5f;margin-top:4px;">Click "View Parsed" on any document above to see extracted data here</div>
                 </div>
-                <div style="margin-top:25px;">
-                  <div class="detail-item"><div class="detail-item-label">Exit Strategy</div><div class="detail-item-value" id="detail-exit-strategy" style="white-space:pre-wrap;">-</div></div>
-                </div>
-                <div style="margin-top:20px;">
-                  <div class="detail-item"><div class="detail-item-label">Existing Charges</div><div class="detail-item-value" id="detail-existing-charges" style="white-space:pre-wrap;">-</div></div>
-                </div>
-                <div style="margin-top:20px;">
-                  <div class="detail-item"><div class="detail-item-label">Notes</div><div class="detail-item-value" id="detail-notes" style="white-space:pre-wrap;">-</div></div>
+                <div id="parser-fields" style="display:none;"></div>
+                <div id="parser-actions" style="display:none;margin-top:16px;">
+                  <button onclick="window.acceptAllParsed && window.acceptAllParsed()" style="padding:8px 18px;background:#22c55e;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#10003; Accept All &amp; Auto-Fill Matrix</button>
+                  <button onclick="window.reviewParsedFields && window.reviewParsedFields()" style="padding:8px 18px;background:#fff;color:#1e3a5f;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-left:8px;">Review Field by Field</button>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB: Borrower -->
-          <div id="dtab-borrower" class="detail-tab-panel">
-            <div class="detail-panel"><div class="detail-content">
-              <div class="detail-grid">
-                <div class="detail-item"><div class="detail-item-label">Full Name</div><div class="detail-item-value" id="detail-borrower-name">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Date of Birth</div><div class="detail-item-value" id="detail-borrower-dob">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Nationality</div><div class="detail-item-value" id="detail-borrower-nationality">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Country of Residence</div><div class="detail-item-value" id="detail-borrower-jurisdiction">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Borrower Type</div><div class="detail-item-value" id="detail-borrower-type">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Company Name</div><div class="detail-item-value" id="detail-company-name">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Companies House No.</div><div class="detail-item-value" id="detail-company-number">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Email</div><div class="detail-item-value" id="detail-borrower-email">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Phone</div><div class="detail-item-value" id="detail-borrower-phone">-</div></div>
+          <!-- ══ 5. NOTES / COMMENTS / EDITS ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,credit,compliance,admin" id="section-notes">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('notes')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#e0e7ff;color:#3730a3;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128172;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Notes / Comments / Edits</div><div style="font-size:11px;color:#64748b;">Discussion centre — all parties</div></div>
               </div>
-            </div></div>
-          </div>
-
-          <!-- TAB: Property -->
-          <div id="dtab-property" class="detail-tab-panel">
-            <div class="detail-panel"><div class="detail-content">
-              <div class="detail-grid">
-                <div class="detail-item" style="grid-column:span 2;"><div class="detail-item-label">Address</div><div class="detail-item-value" id="detail-prop-address">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Postcode</div><div class="detail-item-value" id="detail-prop-postcode">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Property Type</div><div class="detail-item-value" id="detail-prop-type">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Market Value</div><div class="detail-item-value" id="detail-prop-value">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Purchase Price</div><div class="detail-item-value" id="detail-prop-purchase">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Tenure</div><div class="detail-item-value" id="detail-prop-tenure">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Occupancy</div><div class="detail-item-value" id="detail-prop-occupancy">-</div></div>
-                <div class="detail-item"><div class="detail-item-label">Current Use</div><div class="detail-item-value" id="detail-prop-use">-</div></div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span id="notes-count" style="background:#3730a3;color:#fff;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0</span>
+                <div class="deal-section-chevron" id="chev-notes">&#9658;</div>
               </div>
-            </div></div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-notes">
+              <div id="notes-thread" style="padding:16px 20px;max-height:500px;overflow-y:auto;">
+                <p style="color:#94a3b8;text-align:center;padding:20px 0;font-size:13px;">No notes yet. Start the conversation below.</p>
+              </div>
+              <div style="border-top:1px solid #e2e8f0;padding:14px 20px;display:flex;gap:10px;align-items:flex-end;">
+                <textarea id="note-input" placeholder="Add a note or comment..." style="flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:13px;font-family:inherit;resize:vertical;min-height:50px;"></textarea>
+                <button onclick="window.sendDealNote && window.sendDealNote()" style="padding:10px 18px;background:#1e3a5f;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Send</button>
+              </div>
+            </div>
           </div>
 
-          <!-- TAB: Use of Funds -->
-          <div id="dtab-funds" class="detail-tab-panel">
-            <div class="detail-panel"><div class="detail-content">
-              <div class="detail-item"><div class="detail-item-label">Use of Funds</div><div class="detail-item-value" id="detail-use-of-funds" style="white-space:pre-wrap;">-</div></div>
-              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Refurbishment Scope</div><div class="detail-item-value" id="detail-refurb-scope" style="white-space:pre-wrap;">-</div></div>
-              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Refurbishment Cost</div><div class="detail-item-value" id="detail-refurb-cost">-</div></div>
-              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Deposit Source</div><div class="detail-item-value" id="detail-deposit-source" style="white-space:pre-wrap;">-</div></div>
-              <div style="margin-top:20px;" class="detail-item"><div class="detail-item-label">Concurrent Transactions</div><div class="detail-item-value" id="detail-concurrent" style="white-space:pre-wrap;">-</div></div>
-            </div></div>
+          <!-- ══ 6. ANALYSIS ══ -->
+          <div class="deal-section" data-roles="rm,credit,compliance,admin" id="section-analysis">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('analysis')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#f3e8ff;color:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128269;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Analysis</div><div style="font-size:11px;color:#64748b;">Credit memo, risk assessment, conditions precedent</div></div>
+              </div>
+              <div class="deal-section-chevron" id="chev-analysis">&#9658;</div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-analysis">
+              <div id="analysis-content" style="padding:20px;">
+                <p style="color:#94a3b8;text-align:center;padding:30px 0;">Analysis results will appear here once the credit review is complete.</p>
+              </div>
+            </div>
           </div>
 
-          <!-- TAB: Documents -->
-          <div id="dtab-documents" class="detail-tab-panel">
-            <div class="detail-panel">
-              <div class="detail-content">
-                <div class="section-header">Uploaded Documents</div>
-                <div id="documents-list" class="documents-list"></div>
-                <div style="margin-top: 25px;">
-                  <div class="section-header">Upload New Document</div>
-                  <div id="upload-zone" class="upload-zone" ondrop="handleDocumentDrop(event)" ondragover="handleDocumentDragOver(event)" ondragleave="handleDocumentDragLeave(event)" onclick="document.getElementById('file-input').click()">
-                    <div class="upload-icon">&#128206;</div>
-                    <div class="upload-text">Drag and drop files or click to browse</div>
-                    <div class="upload-subtext">PDF, DOCX, XLSX, JPG, PNG — Max 25MB per file, 10 files per deal</div>
-                    <input type="file" id="file-input" multiple style="display:none;" onchange="handleFileSelect(event)">
+          <!-- ══ 7. FEE ══ -->
+          <div class="deal-section" data-roles="broker,borrower,rm,admin" id="section-fee">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('fee')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128176;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Fees</div><div style="font-size:11px;color:#64748b;">Fee schedule, payments, and tracking</div></div>
+              </div>
+              <div class="deal-section-chevron" id="chev-fee">&#9658;</div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-fee">
+              <div id="fee-content" style="padding:0;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <thead>
+                    <tr style="background:#f5f3ff;">
+                      <th style="text-align:left;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">Fee Type</th>
+                      <th style="text-align:right;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">Amount</th>
+                      <th style="text-align:left;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">When Due</th>
+                      <th style="text-align:left;padding:10px 16px;color:#6b21a8;font-size:11px;text-transform:uppercase;border-bottom:2px solid #7c3aed;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fee-table-body">
+                    <tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8;">Fee schedule will appear once loan terms are confirmed.</td></tr>
+                  </tbody>
+                </table>
+                <!-- Admin-only: Fee Allocation -->
+                <div id="fee-allocation-block" style="display:none;padding:16px 20px;background:#faf5ff;border-top:2px solid #7c3aed;">
+                  <div style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;margin-bottom:10px;">Fee Earned &amp; Allocation</div>
+                  <div id="fee-allocation-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:13px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══ 8. FUNDING ══ -->
+          <div class="deal-section" data-roles="credit,compliance,admin" id="section-funding">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('funding')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#dcfce7;color:#166534;display:flex;align-items:center;justify-content:center;font-size:16px;">&#127974;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Funding</div><div style="font-size:11px;color:#64748b;">Funding bucket — GB Bank Warehouse or Whole Loan</div></div>
+              </div>
+              <div class="deal-section-chevron" id="chev-funding">&#9658;</div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-funding">
+              <div id="funding-content" style="padding:20px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                  <div id="bucket-gbb" style="padding:20px;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('gbb')">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                      <div style="font-size:14px;font-weight:700;color:#1e3a5f;">&#127974; GB Bank Warehouse Facility</div>
+                      <span id="gbb-selected-badge" style="display:none;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;">SELECTED</span>
+                    </div>
+                    <div style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.5;">90/10 advance structure. Must meet GBB criteria: England/Wales, residential/commercial, LTV &lt;75%, term &le;24m, no development.</div>
+                    <div style="font-size:24px;font-weight:800;color:#c9a84c;margin-top:8px;">90 / 10</div>
+                    <div id="gbb-amounts" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
+                  </div>
+                  <div id="bucket-wl" style="padding:20px;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all .15s;" onclick="window.selectFundingBucket && window.selectFundingBucket('wl')">
+                    <div style="font-size:14px;font-weight:700;color:#1e3a5f;">&#128188; Whole Loan Facility</div>
+                    <div style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.5;">For deals outside warehouse criteria. Daksfirst funds 100% from own balance sheet or external capital deal-by-deal.</div>
+                    <div style="font-size:24px;font-weight:800;color:#94a3b8;margin-top:8px;">100 / 0</div>
+                    <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Full risk on Daksfirst balance sheet</div>
                   </div>
                 </div>
+                <div id="gbb-eligibility" style="background:#f0fff4;padding:14px;border-radius:8px;border:1px solid #86efac;font-size:13px;display:none;"></div>
               </div>
             </div>
           </div>
 
-          <!-- TAB: Analysis -->
-          <div id="dtab-analysis" class="detail-tab-panel">
-            <div id="analysis-section" class="detail-panel">
-              <div class="detail-content">
-                <div class="section-header">Credit Analysis Results</div>
-                <div id="analysis-content">
-                  <p style="color:var(--text-light);text-align:center;padding:30px 0;">Analysis results will appear here once the credit review is complete.</p>
-                </div>
+          <!-- ══ 9. ADMIN — ASSIGNMENT & ALLOCATION ══ -->
+          <div class="deal-section" data-roles="admin" id="section-admin">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('admin-extra')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#fee2e2;color:#dc2626;display:flex;align-items:center;justify-content:center;font-size:16px;">&#9881;</div>
+                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Assignment &amp; Allocation</div><div style="font-size:11px;color:#64748b;">Staff assignment, deal controls</div></div>
               </div>
+              <div class="deal-section-chevron" id="chev-admin-extra">&#9658;</div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-admin-extra">
+              <div id="admin-assignments" style="padding:20px;"></div>
             </div>
           </div>
 
-          <!-- Matrix panel moved to top as default -->
+          <!-- Hidden containers for backward-compatible JS field population -->
+          <div style="display:none!important;">
+            <span id="detail-loan-amount"></span><span id="detail-ltv"></span><span id="detail-property-value"></span>
+            <span id="detail-loan-purpose"></span><span id="detail-term"></span><span id="detail-interest-servicing"></span>
+            <span id="detail-drawdown-date"></span><span id="detail-asset-type"></span><span id="detail-exit-strategy"></span>
+            <span id="detail-existing-charges"></span><span id="detail-notes"></span>
+            <span id="detail-borrower-name"></span><span id="detail-borrower-dob"></span><span id="detail-borrower-nationality"></span>
+            <span id="detail-borrower-jurisdiction"></span><span id="detail-borrower-type"></span><span id="detail-company-name"></span>
+            <span id="detail-company-number"></span><span id="detail-borrower-email"></span><span id="detail-borrower-phone"></span>
+            <span id="detail-prop-address"></span><span id="detail-prop-postcode"></span><span id="detail-prop-type"></span>
+            <span id="detail-prop-value"></span><span id="detail-prop-purchase"></span><span id="detail-prop-tenure"></span>
+            <span id="detail-prop-occupancy"></span><span id="detail-prop-use"></span>
+            <span id="detail-use-of-funds"></span><span id="detail-refurb-scope"></span><span id="detail-refurb-cost"></span>
+            <span id="detail-deposit-source"></span><span id="detail-concurrent"></span>
+          </div>
 
           <!-- Phase 2 tabs removed from UI — replaced by Deal Matrix. Hidden so JS references don't error. -->
           <div style="display:none!important">
@@ -1065,8 +1176,8 @@
 
           </div><!-- /hidden Phase 2 wrapper -->
 
-          <!-- Workflow Controls (visible to internal staff only) -->
-          <div id="workflow-controls" style="display:none;margin-top:20px;"></div>
+          <!-- Workflow Controls — rendered inside Admin section by deal-detail.js -->
+          <div id="workflow-controls" style="display:none;"></div>
 
          </div>
 

@@ -4,7 +4,8 @@ import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
 import { switchDetailTab } from './onboarding.js';
-// import { renderDocPanel } from './doc-panel.js'; // Sidebar removed — Matrix handles documents
+// import { renderDocPanel } from './doc-panel.js'; // Sidebar removed
+import { renderDealSections } from './deal-sections.js';
 
 /**
  * Show deal detail screen
@@ -38,7 +39,8 @@ export async function showDealDetail(dealId) {
     window.currentDealId = dealId;
     window.currentDealData = deal;
 
-    // Document sidebar removed — Matrix handles documents now
+    // ── Render vertical section stack (role-gated) ──
+    renderDealSections(deal, currentRole);
 
     // Set logged-in user info in header
     document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
@@ -273,14 +275,18 @@ export async function showDealDetail(dealId) {
       }
     }
 
-    // Phase 2 tabs removed — replaced by Deal Matrix
-
-    // ── WORKFLOW CONTROLS ──
+    // ── WORKFLOW CONTROLS — render into admin section body ──
     const workflowPanel = document.getElementById('workflow-controls');
+    const adminBody = document.getElementById('admin-assignments');
     if (workflowPanel) {
       if (isInternal) {
         workflowPanel.style.display = 'block';
         renderInternalWorkflowControls(deal);
+        // Move workflow controls into admin section
+        if (adminBody) {
+          adminBody.insertAdjacentElement('afterend', workflowPanel);
+          workflowPanel.style.padding = '0 20px 20px';
+        }
       } else if (['broker', 'borrower'].includes(currentRole)) {
         workflowPanel.style.display = 'block';
         renderExternalWorkflowControls(deal);
@@ -288,10 +294,6 @@ export async function showDealDetail(dealId) {
         workflowPanel.style.display = 'none';
       }
     }
-
-    // Default to Matrix tab
-    const matrixTab = document.querySelector('.detail-tab[data-dtab="dtab-matrix"]');
-    if (matrixTab) switchDetailTab(matrixTab);
 
     showScreen('screen-deal-detail');
   } catch (err) {

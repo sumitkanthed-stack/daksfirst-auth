@@ -175,6 +175,7 @@ window.doLogin = async function() {
   if (success) {
     const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
     const { getCurrentRole } = await import('./state.js');
+    window.getCurrentRole = getCurrentRole; // expose for inline onclick handlers
     const role = getCurrentRole();
     if (internalRoles.includes(role)) {
       showAdminPanel();

@@ -257,8 +257,28 @@
       width: 100%; padding: 0;
     }
 
-    /* ── Document Sidebar removed — Matrix handles documents ── */
+    /* ── Document Sidebar removed ── */
     .deal-doc-sidebar { display: none !important; }
+
+    /* ═══ DEAL SECTIONS (vertical stack) ═══ */
+    .deal-section {
+      background: #fff; border-radius: 10px; margin-top: 14px;
+      border: 1px solid #e2e8f0; overflow: hidden;
+    }
+    .deal-section.hidden-section { display: none; }
+    .deal-section-header {
+      padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; user-select: none; transition: background 0.1s;
+    }
+    .deal-section-header:hover { background: #f8fafc; }
+    .deal-section-chevron {
+      font-size: 12px; color: #94a3b8; transition: transform 0.2s, color 0.2s, background 0.2s;
+      width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+      border-radius: 6px; background: #f1f5f9;
+    }
+    .deal-section-chevron.open { transform: rotate(90deg); color: #2563eb; background: #dbeafe; }
+    .deal-section-body { border-top: 1px solid #f1f5f9; }
+    .deal-section-body.collapsed { max-height: 0; overflow: hidden; }
     .doc-panel-header {
       background: var(--primary); color: #fff; padding: 14px 16px;
       position: sticky; top: 0; z-index: 2;
