@@ -2107,11 +2107,8 @@ export async function renderDealMatrix(deal) {
       'Exit Strategy': {
         required: ['exit_strategy'],
         nice: ['additional_notes']
-      },
-      'Fees': {
-        required: ['arrangement_fee_pct'],
-        nice: ['broker_fee_pct', 'commitment_fee']
       }
+      // Fees/Commercial excluded from DIP — RM responsibility, not broker
     },
 
     // ── INDICATIVE TERM SHEET: RM issues ITS — needs more detail ──
