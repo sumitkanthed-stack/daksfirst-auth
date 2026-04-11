@@ -583,11 +583,14 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     // ── 6d. Write loan terms ──
     if (mergedAnalysis.loan) {
       const l = mergedAnalysis.loan;
+      const loanAmt = parseFloat(l.loan_amount) || 0;
+      const ltv = parseFloat(l.ltv_requested) || 0;
+      const termMonths = parseInt(l.term_months) || 0;  // INT column — must be whole number
       await pool.query(
         `UPDATE deal_submissions SET
-           loan_amount = COALESCE(NULLIF($2, 0), loan_amount),
-           ltv_requested = COALESCE(NULLIF($3, 0), ltv_requested),
-           term_months = COALESCE(NULLIF($4, 0), term_months),
+           loan_amount = COALESCE(NULLIF($2::numeric, 0), loan_amount),
+           ltv_requested = COALESCE(NULLIF($3::numeric, 0), ltv_requested),
+           term_months = COALESCE(NULLIF($4::int, 0), term_months),
            loan_purpose = COALESCE(NULLIF($5, ''), loan_purpose),
            exit_strategy = COALESCE(NULLIF($6, ''), exit_strategy),
            use_of_funds = COALESCE(NULLIF($7, ''), use_of_funds),
@@ -596,11 +599,11 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
            deposit_source = COALESCE(NULLIF($10, ''), deposit_source),
            updated_at = NOW()
          WHERE id = $1`,
-        [dealId, l.loan_amount || 0, l.ltv_requested || 0, l.term_months || 0,
+        [dealId, loanAmt, ltv, termMonths,
          l.loan_purpose || '', l.exit_strategy || '', l.use_of_funds || '',
          l.interest_servicing || '', l.existing_charges || '', l.deposit_source || '']
       );
-      await updateProgress('wrote_loan', `Saved loan terms: £${l.loan_amount || 0}, ${l.term_months || 0} months`);
+      await updateProgress('wrote_loan', `Saved loan terms: £${loanAmt.toLocaleString()}, ${termMonths} months, LTV ${ltv}%`);
     }
 
     // ── 6e. Write solicitor details ──
@@ -620,15 +623,15 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     }
 
     // ── 6f. Write refurbishment details ──
-    if (mergedAnalysis.refurbishment && mergedAnalysis.refurbishment.total_refurb_cost > 0) {
+    if (mergedAnalysis.refurbishment && parseFloat(mergedAnalysis.refurbishment.total_refurb_cost) > 0) {
+      const refurbCost = parseFloat(mergedAnalysis.refurbishment.total_refurb_cost) || 0;
       await pool.query(
         `UPDATE deal_submissions SET
-           refurb_cost = COALESCE(NULLIF($2, 0), refurb_cost),
+           refurb_cost = COALESCE(NULLIF($2::numeric, 0), refurb_cost),
            refurb_scope = COALESCE(NULLIF($3, ''), refurb_scope),
            updated_at = NOW()
          WHERE id = $1`,
-        [dealId, mergedAnalysis.refurbishment.total_refurb_cost || 0,
-         mergedAnalysis.refurbishment.scope_of_works || '']
+        [dealId, refurbCost, mergedAnalysis.refurbishment.scope_of_works || '']
       );
       await updateProgress('wrote_refurb', `Saved refurb: £${mergedAnalysis.refurbishment.total_refurb_cost}`);
     }
