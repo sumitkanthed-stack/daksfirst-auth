@@ -14,9 +14,10 @@ import { getCurrentRole } from './state.js';
 // ═══════════════════════════════════════════════════════════════════
 
 const EDITABLE_ROLES = ['broker', 'borrower', 'rm', 'admin'];
-const inputStyle = 'width:100%;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;color:#1e293b;background:#fff;transition:border-color .15s;outline:none;';
+const inputStyle = 'width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;color:#1e293b;background:#fff;transition:border-color .15s;outline:none;font-family:inherit;';
 const inputFocusClass = 'matrix-editable';
-const readonlyStyle = 'font-size:11px;color:#1e293b;padding:6px 0;';
+const readonlyStyle = 'font-size:14px;color:#1e293b;padding:8px 0;';
+const labelStyle = 'font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px';
 
 function renderEditableField(dbField, label, value, inputType, canEdit, options) {
   const safeVal = sanitizeHtml(String(value || ''));
@@ -26,13 +27,13 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
     // Read-only display
     if (inputType === 'select' && options) {
       const selected = options.find(o => o.value === value);
-      return `<div style="margin-bottom:8px">
-        <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px">${sanitizeHtml(label)}</label>
+      return `<div style="margin-bottom:12px">
+        <label style="${labelStyle}">${sanitizeHtml(label)}</label>
         <div style="${readonlyStyle}">${sanitizeHtml(selected ? selected.label : value || '—')}</div>
       </div>`;
     }
-    return `<div style="margin-bottom:8px">
-      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px">${sanitizeHtml(label)}</label>
+    return `<div style="margin-bottom:12px">
+      <label style="${labelStyle}">${sanitizeHtml(label)}</label>
       <div style="${readonlyStyle}">${safeVal || '—'}</div>
     </div>`;
   }
@@ -40,8 +41,8 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
   // Editable input
   if (inputType === 'select' && options) {
     const optHtml = options.map(o => `<option value="${sanitizeHtml(o.value)}" ${o.value === value ? 'selected' : ''}>${sanitizeHtml(o.label)}</option>`).join('');
-    return `<div style="margin-bottom:8px">
-      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
+    return `<div style="margin-bottom:12px">
+      <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
       <select id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}cursor:pointer;" onchange="window.matrixSaveField('${dbField}', this.value)">
         <option value="">— Select —</option>${optHtml}
       </select>
@@ -49,17 +50,17 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
   }
 
   if (inputType === 'textarea') {
-    return `<div style="margin-bottom:8px">
-      <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
-      <textarea id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}min-height:60px;resize:vertical;" onblur="window.matrixSaveField('${dbField}', this.value)">${safeVal}</textarea>
+    return `<div style="margin-bottom:12px">
+      <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
+      <textarea id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}min-height:80px;resize:vertical;" onblur="window.matrixSaveField('${dbField}', this.value)">${safeVal}</textarea>
     </div>`;
   }
 
   const typeAttr = inputType === 'money' ? 'text' : (inputType || 'text');
   const placeholder = inputType === 'money' ? 'e.g. 1,500,000' : inputType === 'date' ? 'YYYY-MM-DD' : '';
 
-  return `<div style="margin-bottom:8px">
-    <label style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px" for="${id}">${sanitizeHtml(label)}</label>
+  return `<div style="margin-bottom:12px">
+    <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
     <input id="${id}" type="${typeAttr}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}" value="${safeVal}" placeholder="${placeholder}" onblur="window.matrixSaveField('${dbField}', this.value)" />
   </div>`;
 }
@@ -169,7 +170,7 @@ function renderDocumentDetailPanel(docId, docData, documentTrail = []) {
     <div style="padding:8px 26px 14px 50px">
       <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="font-size:11px;font-weight:700;color:#334155">${sanitizeHtml(docData.name || 'Document')}</div>
+          <div style="font-size:14px;font-weight:700;color:#334155">${sanitizeHtml(docData.name || 'Document')}</div>
           <div style="font-size:8px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px">${docData.status || 'pending'}</div>
         </div>
 
@@ -367,7 +368,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Primary Borrower</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Primary Borrower</div>
                 ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
@@ -432,7 +433,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Source of Funds & AML</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Source of Funds & AML</div>
                 ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
@@ -469,7 +470,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Property / Security Details</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Property / Security Details</div>
                 ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
@@ -498,7 +499,7 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-valuation">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
-              <div style="font-size:11px;font-weight:700;color:#334155;margin-bottom:12px">Valuation & Pricing</div>
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Valuation & Pricing</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('current_value', 'Current Value (£)', deal.current_value, 'money', canEdit)}
                 ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
@@ -532,7 +533,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Loan Structure</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Loan Structure</div>
                 ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
@@ -558,7 +559,7 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-use-of-funds">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
-              <div style="font-size:11px;font-weight:700;color:#334155;margin-bottom:12px">Purpose & Use of Funds</div>
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Purpose & Use of Funds</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
                   { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
@@ -598,7 +599,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Exit Strategy</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Exit Strategy</div>
                 ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr;gap:8px;">
@@ -672,7 +673,7 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:11px;font-weight:700;color:#334155">Fee Structure</div>
+                <div style="font-size:14px;font-weight:700;color:#334155">Fee Structure</div>
                 ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
@@ -731,7 +732,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="padding:16px 26px;border-top:1px solid #e2e8f0;background:#f8fafc">
-      <div style="font-size:11px;font-weight:700;color:#334155;margin-bottom:10px">Document Repository</div>
+      <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:10px">Document Repository</div>
 
       <!-- Category tabs -->
       <div style="display:flex;gap:1px;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
