@@ -265,6 +265,14 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
 
     console.log(`[parse-confirmed] Deal ${deal_id}: ${confirmed.length} confirmed, ${unconfirmed.length} unconfirmed of ${docs.length} total`);
 
+    // ── DIAGNOSTIC: Check file_content status for each document ──
+    for (const doc of docs) {
+      const hasContent = doc.file_content && doc.file_content.length > 0;
+      const contentType = doc.file_content ? `Buffer(${doc.file_content.length})` : 'NULL';
+      console.log(`[parse-confirmed] Doc ${doc.id} "${doc.filename}" — type: ${doc.file_type}, size: ${doc.file_size}, content: ${contentType}, category: ${doc.doc_category}`);
+    }
+    console.log(`[parse-confirmed] ANTHROPIC_API_KEY set: ${!!process.env.ANTHROPIC_API_KEY}, N8N_PARSE_WEBHOOK_URL set: ${!!N8N_PARSE_WEBHOOK_URL}`);
+
     let parsedData = null;
 
     // ── Strategy 1: Try n8n webhook ──
@@ -312,9 +320,11 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
 
     // ── Strategy 2: Direct Claude API extraction (fallback) ──
     if (!parsedData) {
-      console.log('[parse-confirmed] Using direct Claude API extraction as fallback...');
+      console.log(`[parse-confirmed] Using direct Claude API extraction as fallback for ${docs.length} docs...`);
+      console.log(`[parse-confirmed] Docs with file_content: ${docs.filter(d => d.file_content && d.file_content.length > 0).length}/${docs.length}`);
       try {
         const { merged, perDoc } = await extractDealFieldsFromMultipleDocs(docs);
+        console.log(`[parse-confirmed] Extraction result: merged=${merged ? Object.keys(merged).length + ' fields' : 'null'}, perDoc=${perDoc.size} docs with data`);
         parsedData = merged;
 
         // Store per-document parsed data in DB
