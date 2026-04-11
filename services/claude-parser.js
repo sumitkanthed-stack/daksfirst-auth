@@ -265,10 +265,23 @@ function deduplicateProperties(properties) {
   if (!Array.isArray(properties) || properties.length === 0) return properties;
 
   const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Extract just the street-level identifier: number + street name (e.g. "129 Rannoch Road" or "Apartment No.82")
+  // Strips descriptions like "4 Bedroom Terraced House" that cause false non-matches
+  const extractStreetKey = (addr) => {
+    if (!addr) return '';
+    const clean = addr.toLowerCase().trim();
+    // Try to match: number/unit + street name (first 2-3 meaningful words)
+    // "129 Rannoch Road, 4 Bedroom Terraced House, London" → "129 rannoch road"
+    // "Apartment No.82, 2 Bedroom River Front Apartment, King Henrys Reach" → "apartment no82"
+    const parts = clean.split(/[,;]/)[0].trim(); // take everything before first comma
+    return normalize(parts).substring(0, 25);     // normalise + cap at 25 chars
+  };
+
   const scoreProperty = (p) => {
     let score = 0;
-    if (p.market_value && p.market_value > 0) score += 3;
-    if (p.purchase_price && p.purchase_price > 0) score += 2;
+    if (p.market_value && parseFloat(p.market_value) > 0) score += 3;
+    if (p.purchase_price && parseFloat(p.purchase_price) > 0) score += 2;
     if (p.tenure) score += 1;
     if (p.property_type) score += 1;
     if (p.title_number) score += 1;
@@ -279,10 +292,10 @@ function deduplicateProperties(properties) {
 
   const seen = new Map(); // key → best property
   for (const prop of properties) {
-    // Build a dedup key from postcode + first meaningful part of address
+    // Build dedup key: postcode + street-level address (before first comma)
     const pc = normalize(prop.postcode);
-    const addr = normalize(prop.address).substring(0, 30); // first 30 normalised chars
-    const key = `${pc}::${addr}`;
+    const street = extractStreetKey(prop.address);
+    const key = `${pc}::${street}`;
 
     const existing = seen.get(key);
     if (!existing || scoreProperty(prop) > scoreProperty(existing)) {
