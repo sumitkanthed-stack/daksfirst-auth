@@ -645,19 +645,19 @@ export function renderInternalWorkflowControls(deal) {
     const dipPurpose = sanitizeHtml(deal.loan_purpose || '');
     const dipInterest = deal.interest_servicing || 'retained';
 
-    // Parse multiple properties from address
-    const fullAddr = sanitizeHtml(deal.security_address || '');
-    const propList = fullAddr.includes(';') ? fullAddr.split(';').map(a => a.trim()).filter(Boolean) : [fullAddr];
-    const postcodes = (deal.security_postcode || '').split(',').map(p => p.trim()).filter(Boolean);
-
-    // Match property valuations from deal_properties table
-    const propValuations = propList.map((addr, i) => {
-      // Try to match by index first (most reliable if same order)
-      if (properties[i] && properties[i].market_value) return parseFloat(properties[i].market_value);
-      // Fallback: try address substring match
-      const match = properties.find(p => p.address && addr.toLowerCase().includes(p.address.substring(0, 20).toLowerCase()));
-      return match && match.market_value ? parseFloat(match.market_value) : 0;
-    });
+    // ── Property data: deal_properties table is the single source of truth (Claude-parsed) ──
+    let propList, postcodes, propValuations;
+    if (properties.length > 0) {
+      // Claude has parsed — use deal_properties directly
+      propList = properties.map(p => sanitizeHtml(p.address || '-'));
+      postcodes = properties.map(p => p.postcode || '-');
+      propValuations = properties.map(p => p.market_value ? parseFloat(p.market_value) : 0);
+    } else {
+      // Not yet parsed — show raw data as single entry (no regex, no guessing)
+      propList = [sanitizeHtml(deal.security_address || 'Awaiting AI property parsing')];
+      postcodes = [deal.security_postcode || '-'];
+      propValuations = [0];
+    }
 
     // Borrower type logic
     const bType = (deal.borrower_type || 'individual').toLowerCase();

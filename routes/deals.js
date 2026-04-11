@@ -11,6 +11,7 @@ const { notifyDealEvent } = require('../services/notifications');
 const { generateDipPdf } = require('../services/dip-pdf');
 // const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
+const { syncDealProperties } = require('../services/property-parser');
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  FIELD LOCK & SNAPSHOT SYSTEM
@@ -188,7 +189,29 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
-    res.json({ deal: result.rows[0] });
+    const deal = result.rows[0];
+
+    // Include properties from deal_properties table (source of truth for per-property data)
+    const propsResult = await pool.query(
+      `SELECT id, address, postcode, property_type, tenure, occupancy, current_use,
+              market_value, purchase_price, gdv, reinstatement, day1_ltv, title_number,
+              solicitor_firm, solicitor_ref, notes
+       FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
+      [deal.id]
+    );
+    deal.properties = propsResult.rows;
+
+    // Include portfolio summary
+    if (propsResult.rows.length > 0) {
+      const totalValue = propsResult.rows.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0);
+      deal.portfolio_summary = {
+        count: propsResult.rows.length,
+        total_value: totalValue,
+        postcodes: [...new Set(propsResult.rows.map(p => p.postcode).filter(Boolean))]
+      };
+    }
+
+    res.json({ deal });
   } catch (err) {
     console.error('[deals] Get single deal error:', err);
     res.status(500).json({ error: 'Failed to load deal' });
@@ -261,6 +284,7 @@ router.post('/submit', authenticateToken, validate('dealSubmit'), async (req, re
 
     const deal = result.rows[0];
     console.log('[deal] Created:', deal.submission_id);
+    // Properties will be parsed by Claude via n8n — no regex here
 
     // Log audit trail
     await logAudit(deal.id, 'deal_submitted', null, 'received',
@@ -571,9 +595,13 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       });
     }
 
-    // 2. Get borrowers for this deal (for the DIP PDF)
+    // 2. Get borrowers + properties for this deal (for the DIP PDF)
     const borrowersResult = await pool.query(
       `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`,
+      [dealId]
+    );
+    const propertiesResult = await pool.query(
+      `SELECT address, postcode, market_value, property_type, tenure FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
       [dealId]
     );
     const dipDataWithBorrowers = {
@@ -584,7 +612,8 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
         role: b.role,
         email: b.email,
         kyc_verified: b.kyc_status === 'verified'
-      }))
+      })),
+      properties: propertiesResult.rows
     };
 
     // 3. Generate DIP PDF (branded)
@@ -1633,9 +1662,12 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       values
     );
 
-    await logAudit(result.rows[0].id, 'matrix_fields_updated', null, null,
+    const updatedDealId = result.rows[0].id;
+
+    await logAudit(updatedDealId, 'matrix_fields_updated', null, null,
       { fields_updated: Object.keys(updates).filter(k => allowedFields.includes(k)), updated_by: userId, role }, userId);
 
+    // Properties are parsed by Claude via n8n — no regex re-sync here
     console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', setClauses.length - 1, 'fields');
     res.json({ success: true, fields_updated: setClauses.length - 1 });
   } catch (error) {

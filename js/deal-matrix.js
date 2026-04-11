@@ -640,9 +640,52 @@ export async function renderDealMatrix(deal) {
                 <div style="font-size:14px;font-weight:700;color:#F1F5F9">Property / Security Details</div>
                 ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
+
+              ${(deal.properties && deal.properties.length > 0) ? `
+              <!-- ── Individual Properties (from deal_properties table — source of truth) ── -->
+              <div style="margin-bottom:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Security Schedule — ${deal.properties.length} ${deal.properties.length === 1 ? 'Property' : 'Properties'}</span>
+                  <span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.1);padding:2px 8px;border-radius:4px;font-weight:600;">AUTO-PARSED</span>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                  <thead>
+                    <tr style="background:rgba(255,255,255,0.04);">
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">#</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Address</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Postcode</th>
+                      <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Value (£)</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Tenure</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${deal.properties.map((p, i) => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                      <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
+                      <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.market_value ? '£' + Number(p.market_value).toLocaleString() : '—'}</td>
+                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
+                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:4px;">
+                <span style="font-size:10px;color:#6B7280;">Shared property details (applies to all properties):</span>
+              </div>
+              ` : `
+              <!-- ── Raw address fields (no deal_properties rows yet) ── -->
+              <div style="margin-bottom:8px;padding:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:6px;">
+                <span style="font-size:10px;color:#FBBF24;font-weight:600;">⚠ Awaiting AI property parsing — showing raw data</span>
+                ${isInternalUser ? `<button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="margin-left:8px;padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Ask Claude to Parse</button>` : ''}
+              </div>
+              `}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${(deal.properties && deal.properties.length > 0) ? '' : `
                 ${renderEditableField('security_address', 'Security Address', deal.security_address, 'text', canEdit)}
                 ${renderEditableField('security_postcode', 'Postcode', deal.security_postcode, 'text', canEdit)}
+                `}
                 ${renderEditableField('asset_type', 'Asset Type', deal.asset_type, 'select', canEdit, [
                   { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' },
                   { value: 'mixed_use', label: 'Mixed Use' }, { value: 'hmo', label: 'HMO' },
@@ -1798,6 +1841,31 @@ export async function renderDealMatrix(deal) {
       card.style.background = 'rgba(251,191,36,0.1)';
     }
     showToast(`Property replaced — ${count} fields updated`, 'success');
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // REPARSE PROPERTIES — backfill deal_properties from raw address data
+  // ═══════════════════════════════════════════════════════════════════
+  window.reparseProperties = async function(submissionId) {
+    if (!submissionId) return;
+    try {
+      showToast('Asking Claude to parse properties...', 'info');
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/reparse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showToast('Claude is parsing — reload in 10-15 seconds', 'success');
+        // Auto-reload after delay to show results
+        setTimeout(() => window.location.reload(), 12000);
+      } else {
+        showToast(data.message || data.error || 'Parse failed', 'error');
+      }
+    } catch (err) {
+      console.error('[reparse] Error:', err);
+      showToast('Failed to trigger parsing: ' + err.message, 'error');
+    }
   };
 
   // ═══════════════════════════════════════════════════════════════════

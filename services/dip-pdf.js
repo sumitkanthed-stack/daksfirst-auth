@@ -91,17 +91,15 @@ function buildDipHtml(deal, dipData, options) {
     ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // Build property rows — prefer deal_properties table (has individual postcodes & valuations)
+  // Build property rows — deal_properties table is the single source of truth (Claude-parsed)
   const dbProperties = dipData.properties || [];
-  const fallbackAddresses = (deal.security_address || '').split(';').filter(a => a.trim());
-  const fallbackPostcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
 
   let propRowsHtml = '';
   let totalVal = 0;
-  const propCount = dbProperties.length || fallbackAddresses.length || 1;
+  const propCount = dbProperties.length || 1;
 
   if (dbProperties.length > 0) {
-    // Use deal_properties table — most reliable source (has per-property postcode)
+    // Claude has parsed — use deal_properties directly
     dbProperties.forEach((prop, idx) => {
       const val = parseFloat(prop.market_value || 0);
       totalVal += val;
@@ -112,33 +110,13 @@ function buildDipHtml(deal, dipData, options) {
         <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(val)}</td>
       </tr>`;
     });
-  } else if (fallbackAddresses.length > 0) {
-    // Fallback to semicolon-separated deal fields
-    fallbackAddresses.forEach((addr, idx) => {
-      const pc = fallbackPostcodes[idx] || '\u2014';
-      let val;
-      if (dipData.property_values && dipData.property_values[idx]) {
-        val = parseFloat(dipData.property_values[idx]);
-      } else if (fallbackAddresses.length === 1) {
-        val = totalPropertyVal;
-      } else {
-        const perProp = Math.floor(totalPropertyVal / fallbackAddresses.length);
-        val = (idx === fallbackAddresses.length - 1) ? totalPropertyVal - perProp * (fallbackAddresses.length - 1) : perProp;
-      }
-      totalVal += val;
-      propRowsHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
-        <td style="padding:6px 8px;font-weight:600;">${idx + 1}</td>
-        <td style="padding:6px 8px;">${esc(addr.trim())}</td>
-        <td style="padding:6px 8px;">${esc(pc.trim())}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(val)}</td>
-      </tr>`;
-    });
   } else {
+    // Not yet parsed — show raw data as single row (no regex, no guessing)
     totalVal = totalPropertyVal;
     propRowsHtml = `<tr style="border-bottom:1px solid #f0f0f0;">
       <td style="padding:6px 8px;font-weight:600;">1</td>
       <td style="padding:6px 8px;">${esc(deal.security_address || 'TBC')}</td>
-      <td style="padding:6px 8px;">${esc(deal.security_postcode || '\u2014')}</td>
+      <td style="padding:6px 8px;">${esc(fullPostcode)}</td>
       <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(totalPropertyVal)}</td>
     </tr>`;
   }

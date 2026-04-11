@@ -3,6 +3,7 @@ const router = express.Router();
 
 const pool = require('../db/pool');
 const config = require('../config');
+const { syncDealProperties } = require('../services/property-parser');
 
 const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
 
@@ -146,6 +147,27 @@ router.post('/analysis-complete', async (req, res) => {
       `UPDATE deal_submissions SET status = 'completed', updated_at = NOW() WHERE id = $1`,
       [dealId]
     );
+
+    // ── Claude-parsed properties: if analysisJson contains parsedProperties, store them ──
+    // Claude is the smartest parser — its output takes priority over regex
+    try {
+      const analysis = typeof analysisJson === 'string' ? JSON.parse(analysisJson) : (analysisJson || {});
+      if (analysis.parsedProperties && Array.isArray(analysis.parsedProperties) && analysis.parsedProperties.length > 0) {
+        const claudeProperties = analysis.parsedProperties.map(p => ({
+          address: p.address || '',
+          postcode: p.postcode || null,
+          market_value: p.market_value ? parseFloat(p.market_value) : null,
+          property_type: p.property_type || null,
+          tenure: p.tenure || null,
+          source: 'claude_parsed'
+        }));
+        // Force overwrite — Claude's parsing is superior to regex
+        await syncDealProperties(pool, dealId, claudeProperties, { force: true });
+        console.log(`[webhook-analysis] Claude parsed ${claudeProperties.length} properties for deal ${dealId}`);
+      }
+    } catch (parseErr) {
+      console.error('[webhook-analysis] Property parsing from Claude failed (non-blocking):', parseErr.message);
+    }
 
     console.log('[webhook-analysis] Analysis stored for deal:', dealId);
     res.json({ success: true, message: 'Analysis results stored' });
