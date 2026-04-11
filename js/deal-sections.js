@@ -147,14 +147,27 @@ export function renderSnapshot(deal) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DOCUMENT REPOSITORY — Populate table with deal documents
+// DOCUMENT REPOSITORY — Fetch from API and populate table
 // ═══════════════════════════════════════════════════════════════
-export function renderDocRepo(documents) {
+export async function renderDocRepo(submissionId) {
   const tbody = document.getElementById('doc-repo-tbody');
   const countEl = document.getElementById('doc-repo-count');
   if (!tbody) return;
 
-  const docs = documents || [];
+  // Fetch real documents from deal_documents table via API
+  let docs = [];
+  if (submissionId) {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/documents-by-category`, { method: 'GET' });
+      if (resp.ok) {
+        const data = await resp.json();
+        docs = data.documents || [];
+      }
+    } catch (e) {
+      console.warn('[doc-repo] Failed to fetch documents:', e);
+    }
+  }
+
   if (countEl) countEl.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : '');
 
   if (docs.length === 0) {
@@ -170,12 +183,12 @@ export function renderDocRepo(documents) {
   };
 
   tbody.innerHTML = docs.map((doc, idx) => {
-    const cat = (doc.category || doc.doc_category || 'other').toLowerCase();
+    const cat = (doc.doc_category || doc.category || 'other').toLowerCase();
     const catStyle = catColors[cat] || catColors.other;
-    const name = sanitizeHtml(doc.original_name || doc.file_name || 'Document');
+    const name = sanitizeHtml(doc.filename || doc.file_name || doc.original_name || 'Document');
     const size = doc.file_size ? (doc.file_size / 1024 < 1024 ? Math.round(doc.file_size / 1024) + ' KB' : (doc.file_size / 1048576).toFixed(1) + ' MB') : '';
-    const uploaded = doc.created_at ? formatDate(doc.created_at) : '-';
-    const parsed = doc.parsed ? true : false;
+    const uploaded = doc.uploaded_at ? formatDate(doc.uploaded_at) : '-';
+    const parsed = doc.auto_parsed || doc.parsed ? true : false;
     const source = doc.source || 'Upload';
 
     return `<tr style="cursor:pointer;transition:background .1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
@@ -197,7 +210,7 @@ export function renderDocRepo(documents) {
         ${parsed
           ? '<button onclick="window.viewParsedDoc && window.viewParsedDoc(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;">View Parsed &#8595;</button>'
           : '<button onclick="window.parseDocument && window.parseDocument(' + idx + ')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#be185d;">Parse Now</button>'}
-        <button onclick="window.downloadDocument && window.downloadDocument('${sanitizeHtml(doc.id || '')}')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;margin-left:4px;">&#128229;</button>
+        <button onclick="window.downloadDocumentById && window.downloadDocumentById(${doc.id || 0})" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:#1e3a5f;margin-left:4px;">&#128229;</button>
       </td>
     </tr>`;
   }).join('');
@@ -453,7 +466,7 @@ window.sendDealNote = function() {
 // ═══════════════════════════════════════════════════════════════
 // MASTER RENDER — Called from deal-detail.js
 // ═══════════════════════════════════════════════════════════════
-export function renderDealSections(deal, role) {
+export async function renderDealSections(deal, role) {
   // 1. Role gating
   applyRoleGating(role);
 
@@ -462,8 +475,8 @@ export function renderDealSections(deal, role) {
 
   // 3. Matrix — handled by deal-matrix.js via dynamic import in deal-detail.js
 
-  // 4. Document Repository
-  renderDocRepo(deal.documents || []);
+  // 4. Document Repository — fetch from API using submission_id
+  await renderDocRepo(deal.submission_id);
 
   // 5. Notes
   renderNotesSection(deal);

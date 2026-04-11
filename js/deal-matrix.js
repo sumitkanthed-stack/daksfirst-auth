@@ -545,7 +545,7 @@ export async function renderDealMatrix(deal) {
   `;
 
   // ═══════════════════════════════════════════════════════════════════
-  // DOCUMENT REPOSITORY
+  // DOCUMENT REPOSITORY (within Matrix — categorised view of uploaded docs)
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
