@@ -109,13 +109,15 @@ async function fireWebhook(dealId, submissionId, dealData, userData) {
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/analysis-complete', async (req, res) => {
   try {
-    const { submissionId, creditMemoUrl, termsheetUrl, gbbMemoUrl, analysisJson } = req.body;
+    const { submissionId, creditMemoUrl, termsheetUrl, gbbMemoUrl, analysisJson,
+            batch_number, total_batches } = req.body;
 
     if (!submissionId) {
       return res.status(400).json({ error: 'submissionId is required' });
     }
 
-    console.log('[webhook-analysis] Analysis complete for:', submissionId);
+    const batchLabel = batch_number ? ` (batch ${batch_number}/${total_batches})` : '';
+    console.log(`[webhook-analysis] Analysis complete for: ${submissionId}${batchLabel}`);
 
     // Get deal ID from submission_id
     const dealResult = await pool.query(
@@ -128,19 +130,84 @@ router.post('/analysis-complete', async (req, res) => {
     }
 
     const dealId = dealResult.rows[0].id;
+    const isBatch = batch_number && total_batches;
+    const isFirstBatch = !isBatch || batch_number === 1;
 
-    // Store analysis results
-    await pool.query(
-      `INSERT INTO analysis_results (deal_id, credit_memo_url, termsheet_url, gbb_memo_url, analysis_json)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (deal_id) DO UPDATE SET
-         credit_memo_url = EXCLUDED.credit_memo_url,
-         termsheet_url = EXCLUDED.termsheet_url,
-         gbb_memo_url = EXCLUDED.gbb_memo_url,
-         analysis_json = EXCLUDED.analysis_json,
-         completed_at = NOW()`,
-      [dealId, creditMemoUrl || null, termsheetUrl || null, gbbMemoUrl || null, analysisJson || null]
-    );
+    // ── Store / merge analysis results ──
+    if (isFirstBatch) {
+      // First batch (or non-batch): upsert the full analysis
+      await pool.query(
+        `INSERT INTO analysis_results (deal_id, credit_memo_url, termsheet_url, gbb_memo_url, analysis_json)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (deal_id) DO UPDATE SET
+           credit_memo_url = COALESCE(EXCLUDED.credit_memo_url, analysis_results.credit_memo_url),
+           termsheet_url = COALESCE(EXCLUDED.termsheet_url, analysis_results.termsheet_url),
+           gbb_memo_url = COALESCE(EXCLUDED.gbb_memo_url, analysis_results.gbb_memo_url),
+           analysis_json = EXCLUDED.analysis_json,
+           completed_at = NOW()`,
+        [dealId, creditMemoUrl || null, termsheetUrl || null, gbbMemoUrl || null, analysisJson || null]
+      );
+    } else {
+      // Subsequent batches: merge analysisJson into existing
+      try {
+        const existing = await pool.query(
+          `SELECT analysis_json FROM analysis_results WHERE deal_id = $1`, [dealId]
+        );
+        const existingData = existing.rows[0]?.analysis_json
+          ? (typeof existing.rows[0].analysis_json === 'string' ? JSON.parse(existing.rows[0].analysis_json) : existing.rows[0].analysis_json)
+          : {};
+        const newData = typeof analysisJson === 'string' ? JSON.parse(analysisJson) : (analysisJson || {});
+
+        // Merge: append arrays (borrowers, parsedProperties), fill nulls for objects
+        const merged = { ...existingData };
+
+        // Append array fields
+        for (const arrKey of ['borrowers', 'parsedProperties']) {
+          if (Array.isArray(newData[arrKey]) && newData[arrKey].length > 0) {
+            merged[arrKey] = [...(merged[arrKey] || []), ...newData[arrKey]];
+          }
+        }
+        // Merge object fields: new non-null values fill existing nulls
+        for (const objKey of ['company', 'loan', 'redemption', 'refurbishment', 'solicitor', 'insurance', 'planning', 'broker']) {
+          if (newData[objKey] && typeof newData[objKey] === 'object') {
+            merged[objKey] = merged[objKey] || {};
+            for (const [k, v] of Object.entries(newData[objKey])) {
+              if (v !== null && v !== 0 && v !== '' && (merged[objKey][k] === null || merged[objKey][k] === 0 || merged[objKey][k] === undefined)) {
+                merged[objKey][k] = v;
+              }
+            }
+          }
+        }
+        // Append notes
+        if (newData.notes) {
+          merged.notes = merged.notes ? merged.notes + '\n' + newData.notes : newData.notes;
+        }
+        // Keep higher confidence
+        if (newData.confidence && (!merged.confidence || newData.confidence > merged.confidence)) {
+          merged.confidence = newData.confidence;
+        }
+        // Append extraction summary
+        if (newData.extraction_summary) {
+          merged.extraction_summary = merged.extraction_summary
+            ? merged.extraction_summary + ' | Batch ' + batch_number + ': ' + newData.extraction_summary
+            : newData.extraction_summary;
+        }
+
+        await pool.query(
+          `UPDATE analysis_results SET analysis_json = $1, completed_at = NOW() WHERE deal_id = $2`,
+          [JSON.stringify(merged), dealId]
+        );
+        console.log(`[webhook-analysis] Merged batch ${batch_number} into existing results for deal ${dealId}`);
+      } catch (mergeErr) {
+        console.error('[webhook-analysis] Batch merge failed, storing as standalone:', mergeErr.message);
+        await pool.query(
+          `INSERT INTO analysis_results (deal_id, analysis_json)
+           VALUES ($1, $2)
+           ON CONFLICT (deal_id) DO UPDATE SET analysis_json = EXCLUDED.analysis_json, completed_at = NOW()`,
+          [dealId, analysisJson || null]
+        );
+      }
+    }
 
     // Update deal status
     await pool.query(
@@ -148,8 +215,7 @@ router.post('/analysis-complete', async (req, res) => {
       [dealId]
     );
 
-    // ── Claude-parsed properties: if analysisJson contains parsedProperties, store them ──
-    // Claude is the smartest parser — its output takes priority over regex
+    // ── Claude-parsed properties: extract and store ──
     try {
       const analysis = typeof analysisJson === 'string' ? JSON.parse(analysisJson) : (analysisJson || {});
       if (analysis.parsedProperties && Array.isArray(analysis.parsedProperties) && analysis.parsedProperties.length > 0) {
@@ -161,16 +227,16 @@ router.post('/analysis-complete', async (req, res) => {
           tenure: p.tenure || null,
           source: 'claude_parsed'
         }));
-        // Force overwrite — Claude's parsing is superior to regex
-        await syncDealProperties(pool, dealId, claudeProperties, { force: true });
-        console.log(`[webhook-analysis] Claude parsed ${claudeProperties.length} properties for deal ${dealId}`);
+        // First batch: force overwrite. Subsequent batches: append only
+        await syncDealProperties(pool, dealId, claudeProperties, { force: isFirstBatch });
+        console.log(`[webhook-analysis] Claude parsed ${claudeProperties.length} properties for deal ${dealId}${batchLabel}`);
       }
     } catch (parseErr) {
       console.error('[webhook-analysis] Property parsing from Claude failed (non-blocking):', parseErr.message);
     }
 
-    console.log('[webhook-analysis] Analysis stored for deal:', dealId);
-    res.json({ success: true, message: 'Analysis results stored' });
+    console.log(`[webhook-analysis] Analysis stored for deal: ${dealId}${batchLabel}`);
+    res.json({ success: true, message: `Analysis results stored${batchLabel}` });
   } catch (error) {
     console.error('[webhook-analysis] Error:', error);
     res.status(500).json({ error: 'Failed to store analysis results' });
