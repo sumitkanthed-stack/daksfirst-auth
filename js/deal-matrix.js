@@ -1070,6 +1070,8 @@ export async function renderDealMatrix(deal) {
   let _lastParsedData = null; // store for Accept All
   let _lastConflicts = {};    // store conflicts from multi-doc extraction
   let _lastCoreFields = [];   // core structure fields list from backend
+  let _pendingNewBorrower = null;  // stored when entity card renders — survives data overwrites
+  let _pendingNewProperty = null;  // stored when entity card renders — survives data overwrites
 
   // Core structure fields (mirrored from backend — used for UI tagging)
   const CORE_STRUCTURE_FIELDS = [
@@ -1177,6 +1179,19 @@ export async function renderDealMatrix(deal) {
 
       // ── NEW PERSON DETECTED card ──
       if (sectionName === 'Borrower / KYC' && hasNewBorrower) {
+        // Snapshot borrower data NOW — _lastParsedData may get overwritten by later events
+        _pendingNewBorrower = {
+          borrower_name: parsedData.borrower_name,
+          borrower_type: parsedData.borrower_type || 'individual',
+          borrower_email: parsedData.borrower_email || null,
+          borrower_phone: parsedData.borrower_phone || null,
+          borrower_dob: parsedData.borrower_dob || null,
+          borrower_nationality: parsedData.borrower_nationality || null,
+          borrower_jurisdiction: parsedData.borrower_jurisdiction || null,
+          company_name: parsedData.company_name || null,
+          company_number: parsedData.company_number || null
+        };
+        console.log('[deal-matrix] Stored _pendingNewBorrower:', _pendingNewBorrower);
         const parsedType = parsedData.borrower_type || 'individual';
         const parsedCompany = parsedData.company_name ? ` (${parsedData.company_name})` : '';
         const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
@@ -1214,6 +1229,18 @@ export async function renderDealMatrix(deal) {
 
       // ── NEW PROPERTY DETECTED card ──
       if (sectionName === 'Property' && hasNewProperty) {
+        // Snapshot property data NOW — _lastParsedData may get overwritten by later events
+        _pendingNewProperty = {
+          security_address: parsedData.security_address,
+          security_postcode: parsedData.security_postcode || null,
+          asset_type: parsedData.asset_type || null,
+          property_tenure: parsedData.property_tenure || null,
+          occupancy_status: parsedData.occupancy_status || null,
+          current_use: parsedData.current_use || null,
+          current_value: parsedData.current_value || null,
+          purchase_price: parsedData.purchase_price || null
+        };
+        console.log('[deal-matrix] Stored _pendingNewProperty:', _pendingNewProperty);
         const parsedPostcode = parsedData.security_postcode ? `, ${parsedData.security_postcode}` : '';
         const parsedAssetType = parsedData.asset_type ? ` (${parsedData.asset_type})` : '';
         const btnStyle = 'padding:6px 14px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s;';
@@ -1350,22 +1377,25 @@ export async function renderDealMatrix(deal) {
    * Add the parsed person as a new borrower/guarantor/director in deal_borrowers
    */
   window.addParsedAsBorrower = async function(role) {
-    if (!_lastParsedData || !_lastParsedData.borrower_name) {
+    // Use _pendingNewBorrower (snapshot from render time) — _lastParsedData may have been overwritten
+    const src = _pendingNewBorrower || _lastParsedData || {};
+    console.log('[deal-matrix] addParsedAsBorrower called, role:', role, '_pendingNewBorrower:', _pendingNewBorrower, '_lastParsedData borrower_name:', _lastParsedData?.borrower_name);
+    if (!src.borrower_name) {
       showToast('No borrower data to add', 'error');
       return;
     }
     const subId = deal.submission_id;
     const body = {
       role: role,
-      full_name: _lastParsedData.borrower_name,
-      borrower_type: _lastParsedData.borrower_type || 'individual',
-      email: _lastParsedData.borrower_email || null,
-      phone: _lastParsedData.borrower_phone || null,
-      date_of_birth: _lastParsedData.borrower_dob || null,
-      nationality: _lastParsedData.borrower_nationality || null,
-      jurisdiction: _lastParsedData.borrower_jurisdiction || null,
-      company_name: _lastParsedData.company_name || null,
-      company_number: _lastParsedData.company_number || null
+      full_name: src.borrower_name,
+      borrower_type: src.borrower_type || 'individual',
+      email: src.borrower_email || null,
+      phone: src.borrower_phone || null,
+      date_of_birth: src.borrower_dob || null,
+      nationality: src.borrower_nationality || null,
+      jurisdiction: src.borrower_jurisdiction || null,
+      company_name: src.company_name || null,
+      company_number: src.company_number || null
     };
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/borrowers`, {
@@ -1402,11 +1432,12 @@ export async function renderDealMatrix(deal) {
    * Replace the existing Matrix borrower fields with the parsed person (overwrite)
    */
   window.replaceBorrowerFromParsed = function() {
-    if (!_lastParsedData) return;
+    const src = _pendingNewBorrower || _lastParsedData;
+    if (!src) return;
     let count = 0;
     for (const f of BORROWER_ENTITY_FIELDS) {
-      if (_lastParsedData[f] != null && _lastParsedData[f] !== '') {
-        if (pushFieldToMatrix(f, _lastParsedData[f])) count++;
+      if (src[f] != null && src[f] !== '') {
+        if (pushFieldToMatrix(f, src[f])) count++;
         const row = document.getElementById(`parsed-row-${f}`);
         if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
       }
@@ -1424,20 +1455,23 @@ export async function renderDealMatrix(deal) {
    * Add the parsed property as an additional property in deal_properties (portfolio)
    */
   window.addParsedAsProperty = async function() {
-    if (!_lastParsedData || !_lastParsedData.security_address) {
+    // Use _pendingNewProperty (snapshot from render time) — _lastParsedData may have been overwritten
+    const src = _pendingNewProperty || _lastParsedData || {};
+    console.log('[deal-matrix] addParsedAsProperty called, _pendingNewProperty:', _pendingNewProperty, '_lastParsedData security_address:', _lastParsedData?.security_address);
+    if (!src.security_address) {
       showToast('No property data to add', 'error');
       return;
     }
     const subId = deal.submission_id;
     const body = {
-      address: _lastParsedData.security_address,
-      postcode: _lastParsedData.security_postcode || null,
-      property_type: _lastParsedData.asset_type || null,
-      tenure: _lastParsedData.property_tenure || null,
-      occupancy: _lastParsedData.occupancy_status || null,
-      current_use: _lastParsedData.current_use || null,
-      market_value: _lastParsedData.current_value ? parseFloat(String(_lastParsedData.current_value).replace(/[£,]/g, '')) || null : null,
-      purchase_price: _lastParsedData.purchase_price ? parseFloat(String(_lastParsedData.purchase_price).replace(/[£,]/g, '')) || null : null
+      address: src.security_address,
+      postcode: src.security_postcode || null,
+      property_type: src.asset_type || null,
+      tenure: src.property_tenure || null,
+      occupancy: src.occupancy_status || null,
+      current_use: src.current_use || null,
+      market_value: src.current_value ? parseFloat(String(src.current_value).replace(/[£,]/g, '')) || null : null,
+      purchase_price: src.purchase_price ? parseFloat(String(src.purchase_price).replace(/[£,]/g, '')) || null : null
     };
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${subId}/properties`, {
@@ -1471,11 +1505,12 @@ export async function renderDealMatrix(deal) {
    * Replace the existing Matrix property fields with the parsed property (overwrite)
    */
   window.replacePropertyFromParsed = function() {
-    if (!_lastParsedData) return;
+    const src = _pendingNewProperty || _lastParsedData;
+    if (!src) return;
     let count = 0;
     for (const f of PROPERTY_ENTITY_FIELDS) {
-      if (_lastParsedData[f] != null && _lastParsedData[f] !== '') {
-        if (pushFieldToMatrix(f, _lastParsedData[f])) count++;
+      if (src[f] != null && src[f] !== '') {
+        if (pushFieldToMatrix(f, src[f])) count++;
         const row = document.getElementById(`parsed-row-${f}`);
         if (row) { row.style.background = '#f0fdf4'; row.style.borderColor = '#bbf7d0'; }
       }
