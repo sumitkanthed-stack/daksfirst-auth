@@ -270,7 +270,7 @@ router.get('/deals/:submissionId/documents/:docId/download', authenticateToken, 
 // CONFIRM / RECLASSIFY DOCUMENT CATEGORY (RM / Admin only)
 // ═══════════════════════════════════════════════════════════════
 const VALID_DOC_CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
-const CONFIRM_ROLES = ['rm', 'admin'];
+const CONFIRM_ROLES = ['broker', 'borrower', 'rm', 'admin'];
 
 // One-time migration: add confirmation columns if they don't exist
 (async () => {
@@ -294,7 +294,7 @@ router.put('/deals/:submissionId/documents/:docId/confirm-category', authenticat
 
     // Role check — only RM and admin can confirm
     if (!CONFIRM_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only RM or Admin can confirm document categories' });
+      return res.status(403).json({ error: 'You do not have permission to confirm document categories' });
     }
 
     // Validate category

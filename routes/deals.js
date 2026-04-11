@@ -2485,4 +2485,107 @@ router.get('/:submissionId/documents-by-category', authenticateToken, async (req
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  SUBMIT FOR REVIEW — Customer/broker marks deal ready for RM review
+//  Triggers email + SMS notification to assigned RM
+// ═══════════════════════════════════════════════════════════════════════════
+router.put('/:submissionId/submit-for-review', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { completeness } = req.body; // frontend sends completeness %
+
+    // Fetch deal
+    const dealResult = await pool.query(
+      `SELECT id, submission_id, user_id, borrower_user_id, assigned_rm, deal_stage,
+              borrower_name, security_address, loan_amount, ltv_requested
+       FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Access check — only deal owner, borrower, or internal
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const config = require('../config');
+    const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
+
+    // Update deal stage to info_gathering (RM needs to review)
+    const prevStage = deal.deal_stage;
+    await pool.query(
+      `UPDATE deal_submissions SET deal_stage = 'info_gathering', updated_at = NOW() WHERE id = $1`,
+      [deal.id]
+    );
+
+    const submitterName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;
+
+    // Audit log
+    const { logAudit } = require('../services/audit');
+    await logAudit(deal.id, 'deal_submitted_for_review', prevStage, 'info_gathering', {
+      submitted_by: req.user.userId,
+      submitter_name: submitterName,
+      submitter_role: req.user.role,
+      completeness: completeness || null
+    }, req.user.userId);
+
+    // ── Send RM notification (email) ──
+    let notificationSent = false;
+    if (deal.assigned_rm) {
+      try {
+        // Get RM's email
+        const rmResult = await pool.query(
+          `SELECT email, first_name, last_name, phone FROM users WHERE id = $1`,
+          [deal.assigned_rm]
+        );
+
+        if (rmResult.rows.length > 0) {
+          const rm = rmResult.rows[0];
+          const { sendDealEmail } = require('../services/email');
+
+          const dealData = {
+            submission_id: deal.submission_id,
+            borrower_name: deal.borrower_name,
+            security_address: deal.security_address,
+            loan_amount: deal.loan_amount,
+            ltv_requested: deal.ltv_requested,
+            submitted_by_name: submitterName,
+            submitted_by_role: req.user.role,
+            completeness: completeness || 'N/A'
+          };
+
+          await sendDealEmail('deal_submitted_for_review', dealData, rm.email);
+          notificationSent = true;
+          console.log(`[submit-review] RM notification sent to ${rm.email} for deal ${submissionId}`);
+
+          // Also try SMS if RM has a phone number
+          try {
+            const { sendDealSms } = require('../services/sms');
+            if (rm.phone) {
+              await sendDealSms('deal_review_needed', dealData, rm.phone);
+              console.log(`[submit-review] SMS sent to RM ${rm.phone}`);
+            }
+          } catch (smsErr) {
+            console.warn('[submit-review] SMS failed (non-critical):', smsErr.message);
+          }
+        }
+      } catch (notifyErr) {
+        console.error('[submit-review] Notification error (non-critical):', notifyErr.message);
+      }
+    } else {
+      console.warn(`[submit-review] No RM assigned to deal ${submissionId} — skipping notification`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Deal submitted for review' + (notificationSent ? ' — RM has been notified' : ''),
+      deal_stage: 'info_gathering',
+      notification_sent: notificationSent,
+      submission_id: submissionId
+    });
+  } catch (error) {
+    console.error('[submit-review] Error:', error);
+    res.status(500).json({ error: 'Failed to submit deal for review' });
+  }
+});
+
 module.exports = router;

@@ -881,8 +881,8 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
-    <!-- Hidden file input for Upload & Parse -->
-    <input type="file" id="matrix-parse-file-input" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.txt,.csv" style="display:none" onchange="window.matrixUploadAndParse && window.matrixUploadAndParse(this.files)" />
+    <!-- Hidden file input for Upload -->
+    <input type="file" id="matrix-parse-file-input" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.txt,.csv" style="display:none" onchange="window.matrixUploadFiles && window.matrixUploadFiles(this.files)" />
 
     <!-- Paste Broker Pack modal (hidden by default) -->
     <div id="matrix-paste-modal" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#f5f3ff;">
@@ -896,16 +896,33 @@ export async function renderDealMatrix(deal) {
 
     <!-- Parse progress indicator (hidden by default) -->
     <div id="matrix-parse-progress" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#eff6ff;text-align:center;">
-      <div style="font-size:14px;font-weight:700;color:#2563eb;margin-bottom:6px;" id="matrix-parse-status">Parsing documents...</div>
-      <div style="font-size:12px;color:#64748b;">AI is extracting deal information. This may take up to 2 minutes.</div>
+      <div style="font-size:14px;font-weight:700;color:#2563eb;margin-bottom:6px;" id="matrix-parse-status">Processing...</div>
+      <div style="font-size:12px;color:#64748b;">AI is working. This may take up to 2 minutes.</div>
       <div style="margin-top:10px;height:4px;background:#dbeafe;border-radius:4px;overflow:hidden;"><div style="height:100%;width:0%;background:#2563eb;border-radius:4px;animation:matrixParseBar 90s linear forwards;" id="matrix-parse-bar"></div></div>
     </div>
 
-    <div style="padding:12px 26px;border-top:1px solid #e2e8f0;background:#1e3a5f;display:flex;align-items:center;justify-content:space-between">
-      <div style="display:flex;gap:8px">
-        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#2563eb;color:#fff;cursor:pointer;transition:all .12s">📤 Upload & Parse</button>
-        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#7c3aed;color:#fff;cursor:pointer;transition:all .12s">📋 Paste Broker Pack</button>
-        <button onclick="window.matrixReParseAll && window.matrixReParseAll()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#64748b;color:#fff;cursor:pointer;transition:all .12s">🔄 Re-Parse All</button>
+    <!-- COMPLETENESS INDICATOR -->
+    <div id="matrix-completeness-bar" style="padding:14px 26px;border-top:1px solid #e2e8f0;background:#f0fdf4;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;color:#166534;">Matrix Completeness</div>
+        <div style="font-size:14px;font-weight:800;color:#166534;" id="matrix-completeness-pct">0%</div>
+      </div>
+      <div style="height:8px;background:#dcfce7;border-radius:4px;overflow:hidden;">
+        <div id="matrix-completeness-fill" style="height:100%;width:0%;background:#22c55e;border-radius:4px;transition:width 0.5s ease;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#64748b;">
+        <span id="matrix-completeness-detail">0 of 0 key fields completed</span>
+        <span id="matrix-completeness-status" style="font-weight:600;"></span>
+      </div>
+    </div>
+
+    <!-- ACTION BUTTONS BAR -->
+    <div style="padding:12px 26px;border-top:1px solid #e2e8f0;background:#1e3a5f;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#2563eb;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">📤 Upload Documents</button>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#7c3aed;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">📋 Paste Broker Pack</button>
+        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#f59e0b;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">🔍 Parse Confirmed Docs</button>
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#22c55e;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">✅ Submit for Review</button>
       </div>
       <div style="display:flex;gap:12px;font-size:8px;color:#cbd5e1">
         <span>Last Parsed: <span id="matrix-last-parsed">never</span></span>
@@ -913,8 +930,6 @@ export async function renderDealMatrix(deal) {
         <span>Fields Auto-Filled: <span id="matrix-fields-filled">0</span></span>
         <span>•</span>
         <span>Confidence: <span id="matrix-confidence">0%</span></span>
-        <span>•</span>
-        <span>Manual Overrides: 0</span>
       </div>
     </div>
   `;
@@ -1088,11 +1103,11 @@ export async function renderDealMatrix(deal) {
     showToast(`${fieldsPopulated} fields auto-filled from parsed data`, 'success');
   }
 
-  // Upload & Parse — file upload flow
-  window.matrixUploadAndParse = async function(files) {
+  // Step 1: Upload Documents — stores files + AI categorises (no field extraction yet)
+  window.matrixUploadFiles = async function(files) {
     if (!files || files.length === 0) return;
 
-    showParseProgress(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} and parsing...`);
+    showParseProgress(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} and categorising...`);
 
     try {
       const formData = new FormData();
@@ -1110,6 +1125,50 @@ export async function renderDealMatrix(deal) {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Upload failed', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      const docCount = (data.documents || []).length;
+
+      // If n8n also returned parsed data (backward compat), auto-fill
+      if (data.parsed_data) {
+        autoPopulateMatrix(data.parsed_data);
+      }
+
+      showToast(`${docCount} file${docCount !== 1 ? 's' : ''} uploaded and categorised. Please confirm categories in Document Repository, then click "Parse Confirmed Docs".`, 'success');
+
+      // Refresh the Document Repository section to show new docs with category confirmation
+      if (typeof window.refreshDocRepo === 'function') {
+        window.refreshDocRepo();
+      }
+    } catch (e) {
+      hideParseProgress();
+      console.error('[matrix-upload] Upload error:', e);
+      showToast('Connection error during upload', 'error');
+    }
+
+    // Reset file input
+    const input = document.getElementById('matrix-parse-file-input');
+    if (input) input.value = '';
+  };
+
+  // Step 3: Parse Confirmed — sends confirmed-category docs to n8n for field extraction
+  window.matrixParseConfirmed = async function() {
+    showParseProgress('Parsing confirmed documents — extracting deal data...');
+
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-confirmed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deal_id: deal.submission_id })
+      });
+
+      hideParseProgress();
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
         showToast(err.error || 'Parse failed', 'error');
         return;
       }
@@ -1117,18 +1176,18 @@ export async function renderDealMatrix(deal) {
       const data = await resp.json();
       if (data.parsed_data) {
         autoPopulateMatrix(data.parsed_data);
+        showToast(`Parsed ${data.total_documents} documents (${data.confirmed_documents} confirmed). Review extracted fields.`, 'success');
       } else {
-        showToast('Files uploaded but no data could be extracted. Try Paste Broker Pack instead.', 'error');
+        showToast(`${data.total_documents} documents sent for parsing. ${data.unconfirmed_documents > 0 ? data.unconfirmed_documents + ' still unconfirmed.' : ''} AI extraction may take a moment.`, 'info');
       }
+
+      // Recalculate completeness
+      calculateCompleteness();
     } catch (e) {
       hideParseProgress();
-      console.error('[matrix-parse] Upload error:', e);
+      console.error('[matrix-parse-confirmed] Error:', e);
       showToast('Connection error during parsing', 'error');
     }
-
-    // Reset file input
-    const input = document.getElementById('matrix-parse-file-input');
-    if (input) input.value = '';
   };
 
   // Paste Broker Pack — text paste flow
@@ -1260,6 +1319,122 @@ export async function renderDealMatrix(deal) {
       return;
     }
     showToast(`Document ${docId} verified`, 'success');
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // COMPLETENESS CALCULATION
+  // ═══════════════════════════════════════════════════════════════════
+  const KEY_FIELDS = [
+    'borrower_name', 'borrower_email', 'borrower_phone', 'borrower_type',
+    'security_address', 'security_postcode', 'asset_type', 'current_value',
+    'loan_amount', 'ltv_requested', 'term_months', 'rate_requested',
+    'loan_purpose', 'exit_strategy', 'interest_servicing',
+    'property_tenure', 'occupancy_status'
+  ];
+
+  function calculateCompleteness() {
+    let filled = 0;
+    for (const key of KEY_FIELDS) {
+      const el = document.getElementById(`mf-${key}`);
+      if (el && el.value && el.value.trim() !== '') filled++;
+    }
+    const pct = Math.round((filled / KEY_FIELDS.length) * 100);
+
+    const pctEl = document.getElementById('matrix-completeness-pct');
+    const fillEl = document.getElementById('matrix-completeness-fill');
+    const detailEl = document.getElementById('matrix-completeness-detail');
+    const statusEl = document.getElementById('matrix-completeness-status');
+
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (fillEl) fillEl.style.width = pct + '%';
+    if (detailEl) detailEl.textContent = `${filled} of ${KEY_FIELDS.length} key fields completed`;
+
+    if (statusEl) {
+      if (pct >= 90) {
+        statusEl.textContent = 'Ready for Review';
+        statusEl.style.color = '#22c55e';
+      } else if (pct >= 60) {
+        statusEl.textContent = 'Good Progress';
+        statusEl.style.color = '#f59e0b';
+      } else {
+        statusEl.textContent = 'More Information Needed';
+        statusEl.style.color = '#dc2626';
+      }
+    }
+
+    return pct;
+  }
+
+  // Recalculate completeness whenever a field is saved
+  const origSaveField = window.matrixSaveField;
+  window.matrixSaveField = async function(fieldKey, value) {
+    await origSaveField(fieldKey, value);
+    calculateCompleteness();
+  };
+
+  // Initial calculation
+  setTimeout(calculateCompleteness, 500);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SUBMIT FOR REVIEW — Step 4
+  // ═══════════════════════════════════════════════════════════════════
+  window.matrixSubmitForReview = async function() {
+    const pct = calculateCompleteness();
+
+    if (pct < 50) {
+      showToast('Please complete at least 50% of key fields before submitting for review.', 'error');
+      return;
+    }
+
+    if (pct < 90) {
+      if (!confirm(`Matrix is ${pct}% complete. Some fields are still missing. Submit anyway?`)) return;
+    }
+
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}/submit-for-review`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completeness: pct })
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const msg = data.notification_sent
+          ? 'Deal submitted for review — RM has been notified via email.'
+          : 'Deal submitted for review. No RM assigned yet — an admin will pick it up.';
+        showToast(msg, 'success');
+
+        // Update submit button to show submitted state
+        const btn = document.getElementById('matrix-submit-review-btn');
+        if (btn) {
+          btn.innerHTML = '✅ Submitted for Review';
+          btn.style.background = '#86efac';
+          btn.style.color = '#166534';
+          btn.disabled = true;
+          btn.style.cursor = 'default';
+        }
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Failed to submit for review', 'error');
+      }
+    } catch (e) {
+      console.error('[matrix-submit] Error:', e);
+      showToast('Connection error', 'error');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // REFRESH DOC REPO — called after upload to refresh document list
+  // ═══════════════════════════════════════════════════════════════════
+  window.refreshDocRepo = async function() {
+    // Dynamic import to avoid circular dependency
+    try {
+      const { renderDocRepo } = await import('./deal-sections.js');
+      const role = getCurrentRole();
+      await renderDocRepo(deal.submission_id, role);
+    } catch (e) {
+      console.warn('[matrix] Could not refresh doc repo:', e);
+    }
   };
 
   // Initialize all sections as closed except first one

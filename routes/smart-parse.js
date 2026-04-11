@@ -8,6 +8,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
+const { categoriseWithAI } = require('../services/ai-categorise');
 const config = require('../config');
 
 const upload = multer({
@@ -91,16 +92,31 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       }
     }
 
-    // Save file records to deal_documents — always, even without OneDrive, and save file_content (BYTEA)
+    // Save file records to deal_documents with AI-suggested categories
+    const savedDocs = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         const matchingUpload = uploadedFiles.find(u => u.filename === file.originalname);
 
-        // Add file_content column if it doesn't exist, then save the file
+        // AI-categorise the document (fast Haiku call)
+        let suggestedCategory = null;
         try {
-          await pool.query(
-            `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, file_content, onedrive_item_id, onedrive_path, onedrive_download_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          suggestedCategory = await categoriseWithAI(file);
+          // Map ai-categorise keys to our simpler category set
+          const categoryMap = { kyc: 'kyc', financials_aml: 'financial', valuation: 'property', use_of_funds: 'financial', exit_evidence: 'legal', other_conditions: 'other', general: 'other' };
+          suggestedCategory = categoryMap[suggestedCategory] || suggestedCategory || 'other';
+          console.log(`[smart-parse] AI categorised "${file.originalname}" → ${suggestedCategory}`);
+        } catch (catErr) {
+          console.warn(`[smart-parse] AI categorisation failed for ${file.originalname}:`, catErr.message);
+          suggestedCategory = 'other';
+        }
+
+        // Save file with suggested category
+        try {
+          const docResult = await pool.query(
+            `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, file_content, doc_category, onedrive_item_id, onedrive_path, onedrive_download_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING id, filename, doc_category`,
             [
               existingDeal ? existingDeal.id : null,
               parseSessionId,
@@ -108,17 +124,20 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
               file.mimetype,
               file.size,
               file.buffer, // Stored as BYTEA
+              suggestedCategory,
               matchingUpload ? matchingUpload.onedrive_item_id : null,
               matchingUpload ? matchingUpload.onedrive_path : null,
               matchingUpload ? matchingUpload.onedrive_download_url : null
             ]
           );
+          savedDocs.push(docResult.rows[0]);
         } catch (err) {
-          if (err.message.includes('file_content')) {
-            // Column doesn't exist yet, try without it
-            await pool.query(
+          if (err.message.includes('file_content') || err.message.includes('doc_category')) {
+            // Columns may not exist yet, try minimal insert
+            const docResult = await pool.query(
               `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               RETURNING id, filename`,
               [
                 existingDeal ? existingDeal.id : null,
                 parseSessionId,
@@ -130,12 +149,13 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
                 matchingUpload ? matchingUpload.onedrive_download_url : null
               ]
             );
+            savedDocs.push({ ...docResult.rows[0], doc_category: suggestedCategory });
           } else {
             throw err;
           }
         }
       }
-      console.log(`[smart-parse] Saved ${req.files.length} file records to deal_documents (parse_session_id: ${parseSessionId})`);
+      console.log(`[smart-parse] Saved ${req.files.length} file records with AI categories (parse_session_id: ${parseSessionId})`);
     }
 
     // Send to n8n parse webhook for AI extraction
@@ -189,7 +209,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — returning files without AI parsing');
     }
 
-    // Return the result
+    // Return the result — includes AI categories for each file + parsed data if available
     res.json({
       success: true,
       parse_session_id: parseSessionId,
@@ -197,14 +217,129 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       files_received: (req.files || []).length,
       has_whatsapp_text: !!whatsapp_text,
       existing_deal: existingDeal ? existingDeal.submission_id : null,
-      parsed_data: parsedData || null, // The AI-extracted structured data
-      message: parsedData
-        ? 'Files parsed successfully. Please review the extracted data.'
-        : 'Files uploaded. AI parsing is not configured — please fill in the deal details manually.'
+      documents: savedDocs, // [{id, filename, doc_category}] — AI-suggested categories
+      parsed_data: parsedData || null, // The AI-extracted structured data (if n8n responded)
+      message: savedDocs.length > 0
+        ? 'Files uploaded and categorised. Please confirm document categories, then parse to extract deal data.'
+        : (parsedData ? 'Text parsed successfully.' : 'Upload complete.')
     });
   } catch (error) {
     console.error('[smart-parse] Error:', error);
     res.status(500).json({ error: 'Failed to process uploaded files' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARSE CONFIRMED — Run AI extraction AFTER categories are confirmed
+//  This sends the deal's confirmed-category documents to n8n for field extraction
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/parse-confirmed', authenticateToken, async (req, res) => {
+  try {
+    const { deal_id } = req.body;
+    if (!deal_id) return res.status(400).json({ error: 'deal_id is required' });
+
+    // Verify deal access
+    const dealCheck = await pool.query(
+      `SELECT id, submission_id, user_id, borrower_user_id FROM deal_submissions WHERE submission_id = $1`,
+      [deal_id]
+    );
+    if (dealCheck.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealCheck.rows[0];
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const isInternal = INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
+
+    // Fetch all deal documents with their confirmed categories
+    const docsResult = await pool.query(
+      `SELECT id, filename, file_type, file_size, file_content, doc_category, category_confirmed_at
+       FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at`,
+      [deal.id]
+    );
+
+    const docs = docsResult.rows;
+    if (docs.length === 0) return res.status(400).json({ error: 'No documents found for this deal' });
+
+    // Check how many are confirmed vs unconfirmed
+    const confirmed = docs.filter(d => d.category_confirmed_at);
+    const unconfirmed = docs.filter(d => !d.category_confirmed_at);
+
+    console.log(`[parse-confirmed] Deal ${deal_id}: ${confirmed.length} confirmed, ${unconfirmed.length} unconfirmed of ${docs.length} total`);
+
+    // Build file metadata with confirmed categories for n8n
+    const fileMetadata = [];
+    for (const doc of docs) {
+      if (doc.file_content) {
+        fileMetadata.push({
+          filename: doc.filename,
+          mimetype: doc.file_type,
+          size: doc.file_size,
+          doc_category: doc.doc_category || 'other',
+          category_confirmed: !!doc.category_confirmed_at,
+          content_base64: doc.file_content.toString('base64')
+        });
+      }
+    }
+
+    // Build category summary for the AI prompt enhancement
+    const categorySummary = docs.map(d => `- ${d.filename}: ${(d.doc_category || 'other').toUpperCase()}${d.category_confirmed_at ? ' (confirmed)' : ' (suggested)'}`).join('\n');
+
+    // Send to n8n for AI extraction WITH category context
+    let parsedData = null;
+    if (N8N_PARSE_WEBHOOK_URL) {
+      try {
+        console.log('[parse-confirmed] Sending to n8n with confirmed categories...');
+        const payload = {
+          parse_session_id: crypto.randomUUID(),
+          user_id: req.user.userId,
+          user_email: req.user.email,
+          user_role: req.user.role,
+          deal_id: deal.submission_id,
+          category_context: categorySummary,
+          files: fileMetadata,
+          timestamp: new Date().toISOString()
+        };
+
+        const parseResp = await fetch(N8N_PARSE_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(120000)
+        });
+
+        if (parseResp.ok) {
+          const n8nResult = await parseResp.json();
+          console.log('[parse-confirmed] AI extraction returned:', JSON.stringify(n8nResult).substring(0, 500));
+          parsedData = n8nResult.parsed_data || n8nResult || null;
+        } else {
+          const errText = await parseResp.text();
+          console.error('[parse-confirmed] n8n error:', parseResp.status, errText.substring(0, 200));
+        }
+      } catch (err) {
+        console.error('[parse-confirmed] n8n webhook failed:', err.message);
+      }
+    } else {
+      console.log('[parse-confirmed] N8N_PARSE_WEBHOOK_URL not configured');
+    }
+
+    await logAudit(deal.id, 'parse_confirmed_triggered', null, 'parse_with_categories',
+      { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length }, req.user.userId);
+
+    res.json({
+      success: true,
+      total_documents: docs.length,
+      confirmed_documents: confirmed.length,
+      unconfirmed_documents: unconfirmed.length,
+      parsed_data: parsedData || null,
+      message: parsedData
+        ? `Parsed ${docs.length} documents with category context. Review extracted fields below.`
+        : 'Documents sent for parsing. AI extraction is processing.'
+    });
+  } catch (error) {
+    console.error('[parse-confirmed] Error:', error);
+    res.status(500).json({ error: 'Failed to parse documents' });
   }
 });
 

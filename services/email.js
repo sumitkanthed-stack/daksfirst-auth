@@ -145,6 +145,60 @@ function getEmailTemplate(eventType, dealData = {}) {
           </div>
         </div>
       `
+    },
+
+    // ── RM NOTIFICATION — Deal submitted for review ──
+    'deal_submitted_for_review': {
+      subject: `Action Required: Deal ${dealData.submission_id || ''} Submitted for Review`,
+      body: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:${brandColor};color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+            <h1 style="margin:0;font-size:22px;">New Deal for Review</h1>
+          </div>
+          <div style="padding:30px;background:#f9f9f9;border:1px solid #e0e0e0;border-top:none;">
+            <p>A deal has been submitted for your review.</p>
+            <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;width:40%;">Deal Ref</td>
+                <td style="padding:10px;">${dealData.submission_id || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;">Borrower</td>
+                <td style="padding:10px;">${dealData.borrower_name || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;">Property</td>
+                <td style="padding:10px;">${dealData.security_address || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;">Loan Amount</td>
+                <td style="padding:10px;">&pound;${(dealData.loan_amount || 0).toLocaleString('en-GB')}</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;">LTV</td>
+                <td style="padding:10px;">${dealData.ltv_requested || 'N/A'}%</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:10px;font-weight:bold;color:#666;">Submitted By</td>
+                <td style="padding:10px;">${dealData.submitted_by_name || 'N/A'} (${dealData.submitted_by_role || 'N/A'})</td>
+              </tr>
+              <tr>
+                <td style="padding:10px;font-weight:bold;color:#666;">Completeness</td>
+                <td style="padding:10px;">${dealData.completeness || 'N/A'}%</td>
+              </tr>
+            </table>
+            <p style="text-align:center;margin-top:20px;">
+              <a href="https://apply.daksfirst.com" style="background:${accentColor};color:white;padding:14px 35px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold;font-size:15px;">Review Deal Now</a>
+            </p>
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e0e0e0;">
+            <p style="color:#666;font-size:13px;">
+              Daksfirst Limited | Bridging Finance, Built for Professionals<br>
+              8 Hill Street, Mayfair, London W1J 5NG<br>
+              portal@daksfirst.com
+            </p>
+          </div>
+        </div>
+      `
     }
   };
 

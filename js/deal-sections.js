@@ -154,7 +154,7 @@ export async function renderDocRepo(submissionId, role) {
   const countEl = document.getElementById('doc-repo-count');
   if (!tbody) return;
 
-  const canConfirm = ['rm', 'admin'].includes(role);
+  const canConfirm = ['broker', 'borrower', 'rm', 'admin'].includes(role);
 
   // Fetch real documents from deal_documents table via API
   let docs = [];
