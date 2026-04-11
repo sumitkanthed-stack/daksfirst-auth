@@ -119,54 +119,81 @@ router.delete('/:submissionId/properties/:propertyId', authenticateToken, authen
 router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(
-      `SELECT id, security_address, security_postcode, current_value, asset_type, property_tenure
+      `SELECT id, security_address, security_postcode, current_value, asset_type, property_tenure,
+              loan_amount, borrower_name, exit_strategy, loan_term_months, loan_purpose
        FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const deal = dealResult.rows[0];
 
-    if (!deal.security_address) {
-      return res.json({ success: false, message: 'No address data to parse' });
-    }
-
     // Fire n8n webhook for data parsing (Smart Parse — Data Parsing workflow)
     const config = require('../config');
     const N8N_WEBHOOK_URL = config.N8N_DATA_PARSE_URL || config.N8N_WEBHOOK_URL;
 
-    if (N8N_WEBHOOK_URL) {
-      const webhookResp = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
-        },
-        body: JSON.stringify({
-          trigger: 'property_reparse',
-          submissionId: req.params.submissionId,
-          dealId: deal.id,
-          security: {
-            address: deal.security_address,
-            postcode: deal.security_postcode,
-            asset_type: deal.asset_type,
-            current_value: deal.current_value,
-            tenure: deal.property_tenure
-          },
-          callbackUrl: 'https://daksfirst-auth.onrender.com/api/webhooks/analysis-complete'
-        }),
-        signal: AbortSignal.timeout(30000)
-      });
-
-      if (webhookResp.ok) {
-        await logAudit(deal.id, 'property_reparse_triggered', null, null,
-          { triggered_by: req.user.userId }, req.user.userId);
-        console.log(`[properties] Reparse triggered via n8n for deal ${req.params.submissionId}`);
-        return res.json({ success: true, message: 'Property parsing triggered — Claude is working on it. Reload in a few seconds.' });
-      } else {
-        return res.status(502).json({ error: 'n8n webhook failed — try again' });
-      }
-    } else {
+    if (!N8N_WEBHOOK_URL) {
       return res.status(503).json({ error: 'n8n webhook not configured' });
+    }
+
+    // ── Fetch all uploaded documents for this deal ──
+    const docsResult = await pool.query(
+      `SELECT id, filename, file_type, file_content, onedrive_download_url, doc_category
+       FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at ASC`,
+      [deal.id]
+    );
+
+    // Build files array — base64-encode BYTEA content for Claude
+    const files = docsResult.rows.map(doc => ({
+      filename: doc.filename,
+      file_type: doc.file_type || 'application/octet-stream',
+      doc_category: doc.doc_category || null,
+      content_base64: doc.file_content ? Buffer.from(doc.file_content).toString('base64') : null,
+      onedrive_url: doc.onedrive_download_url || null
+    }));
+
+    if (files.length === 0 && !deal.security_address) {
+      return res.json({ success: false, message: 'No documents or address data to parse' });
+    }
+
+    console.log(`[properties] Sending ${files.length} documents to n8n for parsing (deal ${req.params.submissionId})`);
+
+    const webhookResp = await fetch(N8N_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
+      },
+      body: JSON.stringify({
+        trigger: 'data_parse',
+        submissionId: req.params.submissionId,
+        dealId: deal.id,
+        deal: {
+          borrower_name: deal.borrower_name,
+          loan_amount: deal.loan_amount,
+          exit_strategy: deal.exit_strategy,
+          loan_term_months: deal.loan_term_months,
+          loan_purpose: deal.loan_purpose
+        },
+        security: {
+          address: deal.security_address,
+          postcode: deal.security_postcode,
+          asset_type: deal.asset_type,
+          current_value: deal.current_value,
+          tenure: deal.property_tenure
+        },
+        files: files,
+        callbackUrl: 'https://daksfirst-auth.onrender.com/api/webhooks/analysis-complete'
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+
+    if (webhookResp.ok) {
+      await logAudit(deal.id, 'property_reparse_triggered', null, null,
+        { triggered_by: req.user.userId, file_count: files.length }, req.user.userId);
+      console.log(`[properties] Reparse triggered via n8n for deal ${req.params.submissionId} (${files.length} files)`);
+      return res.json({ success: true, message: `Parsing triggered with ${files.length} documents — Claude is working on it.` });
+    } else {
+      return res.status(502).json({ error: 'n8n webhook failed — try again' });
     }
   } catch (error) {
     console.error('[properties] Reparse error:', error);
