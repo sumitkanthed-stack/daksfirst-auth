@@ -178,8 +178,8 @@ function buildDipHtml(deal, dipData, options) {
   cpItems.push('Evidence of source of deposit & funds');
   cpItems.push('Payment of all applicable fees');
 
-  const cpHtml = cpItems.map((c, i) => `<div style="padding:4px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:6px;">
-    <span style="color:#1e3a5f;font-weight:600;min-width:18px;">${i + 1}.</span>
+  const cpHtml = cpItems.map((c, i) => `<div style="padding:2px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:4px;font-size:11px;">
+    <span style="color:#1e3a5f;font-weight:600;min-width:16px;">${i + 1}.</span>
     <span>${esc(c)}</span>
   </div>`).join('');
 
@@ -194,10 +194,10 @@ function buildDipHtml(deal, dipData, options) {
   ];
 
   const feeRowsHtml = feeRows.map(f => `<tr style="border-bottom:1px solid #f3f4f6;${f.highlight ? 'background:#fefce8;' : ''}">
-    <td style="padding:8px;${f.sub ? 'padding-left:24px;color:#92400e;' : 'font-weight:600;'}">${esc(f.name)}</td>
-    <td style="padding:8px;text-align:right;font-weight:600;${f.sub ? 'color:#92400e;' : ''}">${f.amount}</td>
-    <td style="padding:8px;font-size:11px;color:#60A5FA;">${esc(f.when)}</td>
-    <td style="padding:8px;font-size:11px;">${esc(f.trigger)}</td>
+    <td style="padding:5px 6px;${f.sub ? 'padding-left:20px;color:#92400e;' : 'font-weight:600;'}">${esc(f.name)}</td>
+    <td style="padding:5px 6px;text-align:right;font-weight:600;${f.sub ? 'color:#92400e;' : ''}">${f.amount}</td>
+    <td style="padding:5px 6px;font-size:10px;color:#60A5FA;">${esc(f.when)}</td>
+    <td style="padding:5px 6px;font-size:10px;">${esc(f.trigger)}</td>
   </tr>`).join('');
 
   // DIP conditions / notes
@@ -230,62 +230,62 @@ function buildDipHtml(deal, dipData, options) {
   /* ── HEADER BAR ── */
   .header-bar {
     background: #1F3864;
-    padding: 14px 28px;
+    padding: 12px 24px;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
   }
-  .header-bar img { width: 42px; height: 42px; }
+  .header-bar img { width: 38px; height: 38px; }
   .header-bar .title-area { flex: 1; }
-  .header-bar h1 { color: #fff; font-size: 20px; margin: 0; letter-spacing: 1px; }
-  .header-bar .tagline { color: #C9A227; font-size: 9px; font-style: italic; margin-top: 2px; }
-  .header-bar .info-right { text-align: right; font-size: 8px; }
+  .header-bar h1 { color: #fff; font-size: 18px; margin: 0; letter-spacing: 1px; }
+  .header-bar .tagline { color: #C9A227; font-size: 8px; font-style: italic; margin-top: 2px; }
+  .header-bar .info-right { text-align: right; font-size: 7.5px; }
   .header-bar .info-right .addr { color: #fff; }
-  .header-bar .info-right .fca { color: #C9A227; margin-top: 3px; }
+  .header-bar .info-right .fca { color: #C9A227; margin-top: 2px; }
 
-  .gold-bar { height: 3px; background: #C9A227; }
+  .gold-bar { height: 2px; background: #C9A227; }
 
   /* ── DIP BODY ── */
   .dip-body {
     background: #f0f5ff;
-    padding: 20px 28px;
+    padding: 14px 24px;
   }
 
   .dip-title {
     text-align: center;
-    margin-bottom: 6px;
-    padding-bottom: 12px;
+    margin-bottom: 4px;
+    padding-bottom: 8px;
     border-bottom: 2px solid #2563eb;
   }
-  .dip-title h2 { font-size: 18px; color: #1e3a5f; margin: 0 0 2px; }
-  .dip-title .subtitle { font-size: 11px; color: #4b5563; }
+  .dip-title h2 { font-size: 16px; color: #1e3a5f; margin: 0 0 1px; }
+  .dip-title .subtitle { font-size: 9px; color: #4b5563; }
 
   /* Reference strip */
   .ref-strip {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    font-size: 12px;
+    margin-bottom: 10px;
+    font-size: 11px;
   }
   .ref-strip .deal-ref {
     font-weight: 700;
-    font-size: 13px;
+    font-size: 12px;
     color: #1e3a5f;
-    padding: 4px 12px;
+    padding: 3px 10px;
     border: 2px solid #1e3a5f;
     border-radius: 4px;
   }
   .ref-strip .date { color: #6b7280; }
 
-  .intro-text { margin: 0 0 16px; font-size: 12px; color: #4b5563; }
+  .intro-text { margin: 0 0 10px; font-size: 11px; color: #4b5563; }
 
   /* ── SECTION BLOCKS ── */
   .section {
     background: #f9fafb;
-    padding: 14px;
-    border-radius: 6px;
-    margin-bottom: 16px;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
     border: 1px solid #e5e7eb;
   }
   .section.blue {
@@ -309,12 +309,12 @@ function buildDipHtml(deal, dipData, options) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 7px;
   }
   .section-header h5 {
     margin: 0;
     color: #374151;
-    font-size: 12px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -327,21 +327,21 @@ function buildDipHtml(deal, dipData, options) {
   .grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    font-size: 13px;
-    margin-bottom: 12px;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 8px;
   }
   .grid-3 {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
-    font-size: 13px;
-    margin-bottom: 12px;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 8px;
   }
 
   .field-box {
-    padding: 10px;
-    border-radius: 6px;
+    padding: 7px 8px;
+    border-radius: 5px;
     background: #fff;
     border: 1px solid #e5e7eb;
   }
@@ -350,11 +350,11 @@ function buildDipHtml(deal, dipData, options) {
   .field-box.green { background: #f0fff4; border-color: #86efac; }
 
   .field-label {
-    font-size: 10px;
+    font-size: 9px;
     color: #6b7280;
     display: block;
     font-weight: 600;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
   }
   .field-label.blue { color: #1e40af; }
   .field-label.amber { color: #92400e; }
@@ -362,38 +362,38 @@ function buildDipHtml(deal, dipData, options) {
   .field-label.green { color: #15803d; }
 
   .field-value {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     color: #1a1a2e;
   }
   .field-value.navy { color: #1e3a5f; }
-  .field-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .field-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
 
   /* ── TABLES ── */
   table.dip-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 11px;
   }
   table.dip-table thead tr { background: #f3f4f6; }
   table.dip-table th {
     text-align: left;
-    padding: 6px 8px;
+    padding: 4px 6px;
     border-bottom: 1px solid #e5e7eb;
     font-weight: 600;
-    font-size: 11px;
+    font-size: 10px;
     color: #6b7280;
   }
   table.dip-table td {
-    padding: 6px 8px;
+    padding: 4px 6px;
     border-bottom: 1px solid #f3f4f6;
   }
 
   /* ── BADGES ── */
   .badge {
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 10px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     display: inline-block;
   }
@@ -402,13 +402,13 @@ function buildDipHtml(deal, dipData, options) {
   .red-notice {
     background: #fef2f2;
     border: 1px solid #fca5a5;
-    padding: 10px 14px;
-    border-radius: 6px;
-    margin-bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 5px;
+    margin-bottom: 8px;
     text-align: center;
   }
   .red-notice p {
-    font-size: 10px;
+    font-size: 9px;
     color: #991b1b;
     font-weight: 600;
     margin: 0;
@@ -418,39 +418,39 @@ function buildDipHtml(deal, dipData, options) {
   .sig-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-top: 16px;
+    gap: 20px;
+    margin-top: 10px;
   }
   .sig-block {
     border-top: 1px solid #6b7280;
-    padding-top: 6px;
+    padding-top: 4px;
   }
-  .sig-block .label { font-size: 10px; font-weight: 700; color: #1e3a5f; }
-  .sig-block .name { font-size: 11px; color: #374151; margin-top: 2px; }
+  .sig-block .label { font-size: 9px; font-weight: 700; color: #1e3a5f; }
+  .sig-block .name { font-size: 10px; color: #374151; margin-top: 1px; }
 
   /* ── FOOTER ── */
   .footer-bar {
     border-top: 2px solid #C9A227;
-    padding: 8px 28px;
+    padding: 6px 24px;
     text-align: center;
-    font-size: 8px;
+    font-size: 7px;
     color: #6b7280;
-    line-height: 1.6;
-    margin-top: 12px;
+    line-height: 1.5;
+    margin-top: 8px;
   }
 
   .disclaimer {
-    margin-top: 16px;
-    padding: 12px;
+    margin-top: 10px;
+    padding: 8px 10px;
     background: #f9fafb;
-    border-radius: 6px;
+    border-radius: 5px;
     border: 1px solid #e5e7eb;
   }
   .disclaimer p {
     margin: 0;
-    font-size: 10px;
+    font-size: 9px;
     color: #6b7280;
-    line-height: 1.5;
+    line-height: 1.4;
   }
 
   /* Ensure colour-printing on all browsers */
@@ -770,9 +770,9 @@ function buildDipHtml(deal, dipData, options) {
     </div>
 
     <!-- ═══ ACKNOWLEDGEMENT ═══ -->
-    <div style="margin-bottom:12px;">
-      <h5 style="margin:0 0 6px;color:#1e3a5f;font-size:13px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
-      <p style="font-size:12px;color:#374151;line-height:1.5;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
+    <div style="margin-bottom:8px;">
+      <h5 style="margin:0 0 4px;color:#1e3a5f;font-size:11px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
+      <p style="font-size:11px;color:#374151;line-height:1.4;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
     </div>
 
     <!-- ═══ SIGNATURES ═══ -->
