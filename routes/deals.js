@@ -1501,7 +1501,7 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'company_name', 'company_number',
       'security_address', 'security_postcode', 'asset_type', 'current_value',
       'loan_amount', 'ltv_requested', 'loan_purpose', 'exit_strategy',
-      'term_months', 'rate_requested', 'additional_notes',
+      'term_months', 'additional_notes',
       'drawdown_date', 'interest_servicing', 'existing_charges',
       'property_tenure', 'occupancy_status', 'current_use',
       'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
@@ -1513,7 +1513,7 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       ...clientFields,
       'broker_name', 'broker_company', 'broker_fca',
       'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
-      'retained_interest_months'
+      'retained_interest_months', 'rate_requested'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;

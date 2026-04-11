@@ -681,7 +681,7 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('loan_amount', 'Loan Amount (£)', deal.loan_amount, 'money', canEdit)}
                 ${renderEditableField('ltv_requested', 'LTV Requested (%)', deal.ltv_requested, 'text', canEdit)}
                 ${renderEditableField('term_months', 'Term (months)', deal.term_months, 'text', canEdit)}
-                ${renderEditableField('rate_requested', 'Rate (%/month)', deal.rate_requested, 'text', canEdit)}
+                ${renderEditableField('rate_requested', 'Rate (%/month)', deal.rate_requested, 'text', isInternalUser && canEdit)}
                 ${renderEditableField('interest_servicing', 'Interest Servicing', deal.interest_servicing, 'select', canEdit, [
                   { value: 'retained', label: 'Retained (deducted upfront)' },
                   { value: 'serviced', label: 'Serviced (monthly payments)' },
