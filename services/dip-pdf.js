@@ -1,14 +1,9 @@
 /**
- * DIP PDF Generator — Daksfirst Tight 1-Page Layout
+ * DIP PDF Generator — Daksfirst
  *
- * Generates a compact, professional Decision in Principle (DIP) PDF
- * that fits on 1-2 pages max. Matches the HTML preview design.
- *
- * - Navy header bar with white DF logo
- * - Gold divider
- * - Compact 2-column grids and tables
- * - Multiple sections: Borrower, Security Schedule, Loan Terms, Fees, etc.
- * - Footer on every page
+ * Fully dynamic, data-driven layout.
+ * Handles any deal shape: variable property counts, borrower types,
+ * missing fields, long text, and automatic page breaks.
  */
 
 const PDFDocument = require('pdfkit');
@@ -24,13 +19,11 @@ const LGREY   = '#F8FAFC';
 const LGREY2  = '#F3F4F6';
 const MGREY   = '#6b7280';
 const DGREY   = '#E5E7EB';
-const BLACK   = '#000000';
 const RED     = '#991b1b';
 const REDBG   = '#fef2f2';
 const AMBER   = '#fffbeb';
 const BLUE    = '#eff6ff';
 const TXT     = '#1a1a2e';
-const MUTED   = '#555555';
 const GREEN   = '#166534';
 
 // ── Helper Functions ──
@@ -70,6 +63,14 @@ function dealRefFromId(submissionId, createdAt) {
   return `DF-${yy}${mm}-${xxxx}`;
 }
 
+function feeLine(raw, loanAmt) {
+  const v = parseFloat(raw || 0);
+  if (isNaN(v) || v === 0) return '—';
+  // Treat values under 50 as percentages
+  if (v > 0 && v < 50) return money(Math.round(loanAmt * v / 100)) + ' (' + v.toFixed(2) + '%)';
+  return money(v);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // GENERATE DIP PDF
 // ═══════════════════════════════════════════════════════════════════
@@ -97,392 +98,458 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
       doc.addPage();
 
       // ── Page dimensions ──
-      const pw = doc.page.width;  // 595
-      const ph = doc.page.height; // 842
-      const M = 40;               // side margin
+      const pw = doc.page.width;   // 595
+      const ph = doc.page.height;  // 842
+      const M = 40;                // side margin
       const W = pw - M * 2;       // content width ~515
+      const FOOTER_ZONE = 55;     // reserved for footer
       let y = 0;
       let pageNum = 1;
 
       // ── Deal reference ──
       const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
 
-      // ── Helper: check if page needs break ──
+      // ── Borrower type ──
+      const bType = (deal.borrower_type || 'individual').toLowerCase();
+      const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
+
+      // ── Parse addresses ──
+      const addresses = (deal.security_address || '').split(';').filter(a => a.trim());
+      const postcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
+
+      // ── Loan amount (used in fees) ──
+      const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
+
+      // ────────────────────────────────────────────────────
+      // REUSABLE DRAWING HELPERS
+      // ────────────────────────────────────────────────────
+
+      /** Check if `needed` px fits, else new page */
       function checkPage(needed) {
-        if (y + needed > ph - 60) {
+        if (y + needed > ph - FOOTER_ZONE) {
           addFooter(pageNum);
           doc.addPage();
           pageNum++;
-          y = 45;
+          y = 20;
         }
       }
 
-      // ── Helper: page footer ──
+      /** Draw page footer */
       function addFooter(pNum) {
         const fy = ph - 50;
-        // Gold line
         doc.moveTo(M, fy).lineTo(M + W, fy).strokeColor(GOLD).lineWidth(2).stroke();
-        // Footer text
         doc.font('Helvetica').fontSize(6).fillColor(MGREY);
         doc.text(
           'Daksfirst Limited  |  8 Hill Street, Mayfair, London W1J 5NG  |  FCA Reg: 937220  |  portal@daksfirst.com',
           M, fy + 4, { width: W, align: 'center' }
         );
-        doc.fontSize(6);
         doc.text(
           'This DIP is indicative only and does not constitute a formal offer. Subject to full underwriting, valuation & legal due diligence.',
           M, fy + 12, { width: W, align: 'center' }
         );
       }
 
-      // ── Header Bar (navy, ~45px) ──
-      doc.rect(0, 0, pw, 45).fill(NAVY);
+      /** Full-width section bar */
+      function sectionBar(text, bgColor) {
+        bgColor = bgColor || NAVY;
+        checkPage(14);
+        doc.rect(M, y, W, 12).fill(bgColor);
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(WHITE);
+        doc.text(text.toUpperCase(), M + 4, y + 2, { width: W - 8 });
+        y += 13;
+      }
 
-      // Logo (embed on left)
+      /** Partial-width section bar at specific X */
+      function sectionBarAt(text, xPos, width, bgColor) {
+        bgColor = bgColor || NAVY;
+        doc.rect(xPos, y, width, 12).fill(bgColor);
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(WHITE);
+        doc.text(text.toUpperCase(), xPos + 4, y + 2, { width: width - 8 });
+      }
+
+      /**
+       * Draw a 2-column key/value grid from an array.
+       * items: [[label, value, highlight?], ...]
+       * Returns nothing — advances y automatically.
+       */
+      function drawGrid(items, cellH) {
+        cellH = cellH || 14;
+        const halfW = (W - 2) / 2;
+        const rows = Math.ceil(items.length / 2);
+        checkPage(rows * cellH + 4);
+
+        items.forEach((item, idx) => {
+          const row = Math.floor(idx / 2);
+          const col = idx % 2;
+          const cx = M + col * (halfW + 2);
+          const cy = y + row * cellH;
+          const highlight = item[2] === true;
+          const bg = highlight ? BLUE : (col === 1 ? LGREY : WHITE);
+
+          doc.rect(cx, cy, halfW, cellH).fill(bg).stroke({ color: DGREY, width: 0.5 });
+          doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
+          doc.text(item[0], cx + 4, cy + 1, { width: halfW - 8 });
+          doc.font('Helvetica-Bold').fontSize(highlight ? 8.5 : 7.5).fillColor(highlight ? NAVY : TXT);
+          doc.text(clean(item[1]), cx + 4, cy + 7, { width: halfW - 8 });
+        });
+
+        y += rows * cellH + 4;
+      }
+
+      /**
+       * Draw a table from an array of row arrays.
+       * cols: [{label, width, align?}]  rows: [[val, val, ...]]
+       * Options: headerBg, rowH, highlightFn(rowIdx, rowData)
+       */
+      function drawTable(cols, rows, opts) {
+        opts = opts || {};
+        const rowH = opts.rowH || 9;
+        const headerH = opts.headerH || 9;
+
+        // Header
+        checkPage(headerH + rowH * Math.min(rows.length, 3));
+        doc.rect(M, y, W, headerH).fill(opts.headerBg || LGREY2);
+        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(MGREY);
+        let cx = M;
+        cols.forEach(col => {
+          doc.text(col.label, cx + 3, y + 1.5, { width: col.width - 6, align: col.align || 'left' });
+          cx += col.width;
+        });
+        y += headerH;
+
+        // Rows
+        rows.forEach((row, ridx) => {
+          checkPage(rowH);
+          const highlight = opts.highlightFn ? opts.highlightFn(ridx, row) : false;
+          const bg = highlight ? AMBER : (ridx % 2 === 0 ? WHITE : LGREY2);
+          doc.rect(M, y, W, rowH).fill(bg);
+
+          cx = M;
+          row.forEach((val, cidx) => {
+            const col = cols[cidx];
+            const isFirst = cidx === 0;
+            doc.font(isFirst && !highlight ? 'Helvetica-Bold' : 'Helvetica').fontSize(6.5).fillColor(TXT);
+            doc.text(String(val), cx + 3, y + 1.5, { width: col.width - 6, align: col.align || 'left' });
+            cx += col.width;
+          });
+          y += rowH;
+        });
+      }
+
+
+      // ════════════════════════════════════════════════════
+      //  PAGE CONTENT
+      // ════════════════════════════════════════════════════
+
+      // ── HEADER BAR ──
+      doc.rect(0, 0, pw, 45).fill(NAVY);
       try {
         const logoBuf = Buffer.from(LOGO_B64, 'base64');
         doc.image(logoBuf, M, 7, { width: 32, height: 32 });
-      } catch (e) {
-        console.warn('[dip-pdf] Logo embedding failed:', e.message);
-      }
+      } catch (e) { /* logo failed, continue */ }
 
-      // Company name + tagline (center-left after logo)
       doc.font('Helvetica-Bold').fontSize(14).fillColor(WHITE);
       doc.text('DAKSFIRST', M + 38, 9, { width: 150 });
       doc.font('Helvetica').fontSize(8).fillColor(GOLD);
-      doc.text('Bridging Finance, Built for Professionals', M + 38, 27, { width: 150 });
+      doc.text('Bridging Finance, Built for Professionals', M + 38, 27, { width: 200 });
 
-      // Contact info (right side)
       doc.font('Helvetica').fontSize(7).fillColor(WHITE);
-      doc.text('8 Hill Street, Mayfair, London W1J 5NG', M + W - 140, 10, { width: 135, align: 'right' });
+      doc.text('8 Hill Street, Mayfair, London W1J 5NG', M + W - 145, 10, { width: 140, align: 'right' });
       doc.fontSize(7).fillColor(GOLD);
-      doc.text('FCA 937220  |  portal@daksfirst.com', M + W - 140, 26, { width: 135, align: 'right' });
+      doc.text('FCA 937220  |  portal@daksfirst.com', M + W - 145, 26, { width: 140, align: 'right' });
 
       y = 48;
 
-      // ── Gold divider ──
+      // ── GOLD DIVIDER ──
       doc.moveTo(0, y).lineTo(pw, y).strokeColor(GOLD).lineWidth(3).stroke();
       y += 6;
 
-      // ── Title + Tagline ──
+      // ── TITLE ──
       doc.font('Helvetica-Bold').fontSize(18).fillColor(NAVY);
       doc.text('DECISION IN PRINCIPLE', M, y, { width: W, align: 'center' });
       y += 16;
       doc.font('Helvetica-Oblique').fontSize(8).fillColor(MGREY);
       doc.text('Senior Secured Real Estate Credit & Structured Finance', M, y, { width: W, align: 'center' });
-      y += 10;
+      y += 12;
 
-      // ── Reference strip ──
+      // ── REFERENCE STRIP ──
       checkPage(14);
       doc.rect(0, y, pw, 12).fill(LGREY).stroke({ color: DGREY, width: 0.5 });
       doc.font('Helvetica-Bold').fontSize(10).fillColor(NAVY);
       doc.text(dealRef, M + 8, y + 1, { width: 100 });
+
       doc.font('Helvetica').fontSize(8).fillColor(MGREY);
       const issueDate = options.issuedAt
         ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
         : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      doc.text('Issued: ' + issueDate, M + W / 2 - 40, y + 2, { width: 80, align: 'center' });
+      doc.text('Issued: ' + issueDate, M + W / 2 - 50, y + 2, { width: 100, align: 'center' });
 
-      const bType = (deal.borrower_type || 'individual').toLowerCase();
-      const isCorp = bType === 'corporate' || bType === 'spv' || bType === 'ltd' || bType === 'llp';
       const badgeText = isCorp ? 'CORPORATE SPV' : 'INDIVIDUAL';
       doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
       doc.text(badgeText, M + W - 120, y + 3, { width: 110, align: 'right' });
+      y += 15;
 
-      y += 14;
 
-      // ── BORROWER DETAILS ──
-      checkPage(50);
-      sectionBar('BORROWER DETAILS', y);
-      y += 14;
+      // ══════════════════════════════════════════════
+      //  1. BORROWER DETAILS
+      // ══════════════════════════════════════════════
+      sectionBar('BORROWER DETAILS');
 
-      // 2-column grid: Corporate (blue) | UBO (amber)
-      const cellH = 28;
-      const cellW = (W - 4) / 2;
+      const halfW = (W - 4) / 2;
+      const bCellH = 30;
+      checkPage(bCellH + 6);
 
-      // Left: Corporate
-      doc.rect(M, y, cellW, cellH).fill(BLUE).stroke({ color: DGREY, width: 0.5 });
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(MGREY);
-      doc.text('CORPORATE ENTITY', M + 6, y + 2, { width: cellW - 12 });
-      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
-      doc.text(clean(deal.borrower_company || deal.company_name), M + 6, y + 10, { width: cellW - 12 });
-      doc.font('Helvetica').fontSize(7).fillColor(MGREY);
-      doc.text('Co. No: ' + clean(deal.company_number), M + 6, y + 20, { width: cellW - 12 });
+      if (isCorp) {
+        // Left: Corporate
+        doc.rect(M, y, halfW, bCellH).fill(BLUE).stroke({ color: DGREY, width: 0.5 });
+        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
+        doc.text('CORPORATE ENTITY', M + 6, y + 2, { width: halfW - 12 });
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
+        doc.text(clean(deal.borrower_company || deal.company_name), M + 6, y + 10, { width: halfW - 12 });
+        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
+        doc.text('Co. No: ' + clean(deal.company_number), M + 6, y + 21, { width: halfW - 12 });
 
-      // Right: UBO
-      doc.rect(M + cellW + 4, y, cellW, cellH).fill(AMBER).stroke({ color: DGREY, width: 0.5 });
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(MGREY);
-      doc.text('ULTIMATE BENEFICIAL OWNER', M + cellW + 10, y + 2, { width: cellW - 12 });
-      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
-      doc.text(clean(deal.borrower_name), M + cellW + 10, y + 10, { width: cellW - 12 });
-      doc.font('Helvetica').fontSize(7).fillColor(MGREY);
-      const contactInfo = clean(deal.borrower_email) + ' • ' + clean(deal.borrower_phone);
-      doc.text(contactInfo.replace('— • —', '—'), M + cellW + 10, y + 20, { width: cellW - 12 });
+        // Right: UBO
+        doc.rect(M + halfW + 4, y, halfW, bCellH).fill(AMBER).stroke({ color: DGREY, width: 0.5 });
+        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
+        doc.text('ULTIMATE BENEFICIAL OWNER', M + halfW + 10, y + 2, { width: halfW - 16 });
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
+        doc.text(clean(deal.borrower_name), M + halfW + 10, y + 10, { width: halfW - 16 });
+        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
+        const contact = [clean(deal.borrower_email), clean(deal.borrower_phone)].filter(v => v !== '—').join(' • ') || '—';
+        doc.text(contact, M + halfW + 10, y + 21, { width: halfW - 16 });
+      } else {
+        // Individual — full width
+        doc.rect(M, y, W, bCellH).fill(BLUE).stroke({ color: DGREY, width: 0.5 });
+        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
+        doc.text('BORROWER', M + 6, y + 2, { width: W - 12 });
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY);
+        doc.text(clean(deal.borrower_name), M + 6, y + 10, { width: W - 12 });
+        doc.font('Helvetica').fontSize(7).fillColor(MGREY);
+        const contact = [clean(deal.borrower_email), clean(deal.borrower_phone)].filter(v => v !== '—').join(' • ') || '—';
+        doc.text(contact, M + 6, y + 21, { width: W - 12 });
+      }
+      y += bCellH + 3;
 
-      y += cellH + 4;
-
-      // If borrowers array, add Parties sub-table
+      // Parties sub-table (only if multiple borrowers)
       if (dipData.borrowers && dipData.borrowers.length > 1) {
-        checkPage(40);
-        doc.rect(M, y, W, 2).fill(LGREY2);
-        y += 2;
+        checkPage(12 + dipData.borrowers.length * 9);
         doc.font('Helvetica-Bold').fontSize(7).fillColor(MGREY);
         doc.text('PARTIES TO THE DIP', M + 6, y, { width: W - 12 });
         y += 10;
 
-        // Mini table: Name | Role | KYC
         dipData.borrowers.forEach((bor, idx) => {
-          const rowBg = idx % 2 === 0 ? WHITE : LGREY2;
-          doc.rect(M, y, W, 8).fill(rowBg);
+          checkPage(9);
+          doc.rect(M, y, W, 8).fill(idx % 2 === 0 ? WHITE : LGREY2);
           doc.font('Helvetica').fontSize(7).fillColor(TXT);
-          doc.text(clean(bor.name), M + 6, y + 2, { width: W / 3 });
-          doc.text(bor.role || '—', M + W / 3 + 6, y + 2, { width: W / 3 });
-          doc.text(bor.kyc_verified ? 'Verified' : 'Pending', M + 2 * W / 3 + 6, y + 2, { width: W / 3 - 12 });
+          doc.text(clean(bor.name), M + 6, y + 1, { width: W / 3 });
+          doc.text(bor.role || '—', M + W / 3 + 6, y + 1, { width: W / 3 });
+          doc.text(bor.kyc_verified ? 'Verified' : 'Pending', M + 2 * W / 3 + 6, y + 1, { width: W / 3 - 12 });
           y += 8;
         });
-        y += 4;
+        y += 3;
       }
 
-      // ── SECURITY SCHEDULE ──
-      checkPage(80);
-      sectionBar('SECURITY SCHEDULE', y);
-      y += 14;
 
-      // Parse security address & postcode (semicolon-separated)
-      const addresses = (deal.security_address || '').split(';').filter(a => a.trim());
-      const postcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
+      // ══════════════════════════════════════════════
+      //  2. SECURITY SCHEDULE
+      // ══════════════════════════════════════════════
+      sectionBar('SECURITY SCHEDULE');
 
-      // Property table header
-      const tableColWidths = [20, W * 0.45, 60, 80];
-      doc.rect(M, y, W, 8).fill(LGREY2);
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(MGREY);
-      doc.text('#', M + 2, y + 1, { width: 18 });
-      doc.text('ADDRESS', M + 22, y + 1, { width: tableColWidths[1] - 4 });
-      doc.text('POSTCODE', M + tableColWidths[0] + tableColWidths[1] + 4, y + 1, { width: 58 });
-      doc.text('VALUATION', M + tableColWidths[0] + tableColWidths[1] + 62 + 2, y + 1, { width: 76, align: 'right' });
-      y += 8;
-
-      // Property rows
-      let totalVal = 0;
-      addresses.forEach((addr, idx) => {
-        const postcode = postcodes[idx] || '—';
-        const val = dipData.property_values && dipData.property_values[idx]
-          ? dipData.property_values[idx]
-          : (idx === 0 && dipData.property_value ? dipData.property_value : 0);
-        totalVal += parseFloat(val || 0);
-
-        const rowBg = idx % 2 === 0 ? WHITE : LGREY2;
-        doc.rect(M, y, W, 10).fill(rowBg);
-        doc.font('Helvetica-Bold').fontSize(7).fillColor(TXT);
-        doc.text(String(idx + 1), M + 2, y + 2, { width: 18 });
-        doc.font('Helvetica').fontSize(7).fillColor(TXT);
-        doc.text(clean(addr.trim()), M + 22, y + 2, { width: tableColWidths[1] - 4 });
-        doc.text(clean(postcode.trim()), M + tableColWidths[0] + tableColWidths[1] + 4, y + 2, { width: 58 });
-        doc.text(money(val), M + tableColWidths[0] + tableColWidths[1] + 62 + 2, y + 2, { width: 76, align: 'right' });
-        y += 10;
-      });
-
-      // Total row
-      doc.rect(M, y, W, 8).fill(BLUE);
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
-      doc.text('TOTAL PORTFOLIO VALUATION', M + tableColWidths[0] + tableColWidths[1] + 4, y + 1, { width: 118 });
-      doc.text(money(totalVal || dipData.property_value), M + tableColWidths[0] + tableColWidths[1] + 62 + 2, y + 1, { width: 76, align: 'right' });
-      y += 8;
-      y += 4;
-
-      // Asset detail grid below property table
-      checkPage(22);
-      const assetH = 5.5;
-      const assetW = (W - 2) / 2;
-      const assetDetails = [
-        ['ASSET TYPE', humanize(deal.asset_type)],
-        ['TENURE', clean(deal.property_tenure)],
-        ['PURCHASE PRICE', money(deal.purchase_price)],
-        ['CURRENT USE / OCCUPANCY', clean(deal.current_use || deal.occupancy_status)]
+      // Property table — dynamic rows
+      const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
+      const propCols = [
+        { label: '#', width: 22 },
+        { label: 'ADDRESS', width: W * 0.45 },
+        { label: 'POSTCODE', width: 65 },
+        { label: 'VALUATION', width: W - 22 - W * 0.45 - 65, align: 'right' }
       ];
 
-      assetDetails.forEach((item, idx) => {
-        const row = Math.floor(idx / 2);
-        const col = idx % 2;
-        const cellX = M + col * (assetW + 2);
-        const cellY = y + row * (assetH + 0.5);
+      const propRows = [];
+      let totalVal = 0;
+      if (addresses.length > 0) {
+        addresses.forEach((addr, idx) => {
+          const pc = postcodes[idx] || '—';
+          let val;
+          if (dipData.property_values && dipData.property_values[idx]) {
+            val = parseFloat(dipData.property_values[idx]);
+          } else if (addresses.length === 1) {
+            val = totalPropertyVal;
+          } else {
+            // Split evenly — last property gets remainder so total is exact
+            const perProp = Math.floor(totalPropertyVal / addresses.length);
+            val = (idx === addresses.length - 1) ? totalPropertyVal - perProp * (addresses.length - 1) : perProp;
+          }
+          totalVal += val;
+          propRows.push([String(idx + 1), clean(addr.trim()), clean(pc.trim()), money(val)]);
+        });
+      } else {
+        // No addresses parsed — show single row with whatever data we have
+        totalVal = totalPropertyVal;
+        propRows.push(['1', clean(deal.security_address || 'TBC'), clean(deal.security_postcode || '—'), money(totalPropertyVal)]);
+      }
 
-        const isBg = idx % 2 === 1;
-        doc.rect(cellX, cellY, assetW, assetH).fill(isBg ? LGREY : WHITE).stroke({ color: DGREY, width: 0.5 });
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
-        doc.text(item[0], cellX + 3, cellY + 0.5, { width: assetW - 6 });
-        doc.font('Helvetica').fontSize(7).fillColor(TXT);
-        doc.text(clean(item[1]), cellX + 3, cellY + 3, { width: assetW - 6 });
-      });
-      y += 12;
-      y += 3;
+      drawTable(propCols, propRows, { rowH: 10 });
 
-      // ── INDICATIVE LOAN TERMS ──
-      checkPage(60);
-      sectionBar('INDICATIVE LOAN TERMS', y);
-      y += 14;
+      // Total row
+      checkPage(10);
+      doc.rect(M, y, W, 9).fill(BLUE);
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
+      doc.text('TOTAL PORTFOLIO VALUATION', M + 6, y + 1.5, { width: W * 0.6 });
+      doc.text(money(totalVal || totalPropertyVal), M + W * 0.6, y + 1.5, { width: W * 0.4 - 6, align: 'right' });
+      y += 11;
 
-      const loanTerms = [
+      // Asset details grid — dynamic
+      const assetItems = [
+        ['ASSET TYPE', humanize(deal.asset_type)],
+        ['TENURE', humanize(deal.property_tenure)],
+        ['PURCHASE PRICE', money(deal.purchase_price)],
+        ['CURRENT USE / OCCUPANCY', clean(deal.current_use || deal.occupancy_status)]
+      ].filter(item => item[1] !== '—'); // only show fields that have data
+
+      if (assetItems.length > 0) drawGrid(assetItems, 14);
+
+
+      // ══════════════════════════════════════════════
+      //  3. INDICATIVE LOAN TERMS
+      // ══════════════════════════════════════════════
+      sectionBar('INDICATIVE LOAN TERMS');
+
+      const loanTermItems = [
         ['GROSS LOAN AMOUNT', money(dipData.loan_amount || deal.loan_amount), true],
         ['LTV', pct(dipData.ltv || deal.ltv_requested), true],
         ['TERM', clean(dipData.term_months || deal.term_months) + ' months', false],
         ['INTEREST RATE', pct(dipData.rate_monthly || deal.rate_requested) + ' per month', false],
         ['INTEREST SERVICING', clean(dipData.interest_servicing || 'Retained'), false],
-        ['RETAINED PERIOD', (dipData.retained_months || '—') + ' months', false],
+        ['RETAINED PERIOD', clean(dipData.retained_months || '—') + ' months', false],
         ['EXIT STRATEGY', clean(dipData.exit_strategy || deal.exit_strategy), false],
         ['LOAN PURPOSE', clean(deal.loan_purpose), false]
       ];
 
-      loanTerms.forEach((item, idx) => {
-        const row = Math.floor(idx / 2);
-        const col = idx % 2;
-        const cellX = M + col * (assetW + 2);
-        const cellY = y + row * 10;
+      drawGrid(loanTermItems, 14);
 
-        const highlight = item[2] === true;
-        const bg = highlight ? BLUE : (idx % 2 === 1 ? LGREY : WHITE);
-        doc.rect(cellX, cellY, assetW, 10).fill(bg).stroke({ color: DGREY, width: 0.5 });
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
-        doc.text(item[0], cellX + 3, cellY + 1, { width: assetW - 6 });
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(highlight ? NAVY : TXT);
-        doc.text(clean(item[1]), cellX + 3, cellY + 4.5, { width: assetW - 6 });
-      });
-      y += 40 + 4;
 
-      // ── TWO-COLUMN: SECURITY & GUARANTEES | CONDITIONS PRECEDENT ──
-      checkPage(100);
-      const colW = (W - 4) / 2;
+      // ══════════════════════════════════════════════
+      //  4. SECURITY & GUARANTEES | CONDITIONS PRECEDENT (side-by-side)
+      // ══════════════════════════════════════════════
 
-      // LEFT: Security & Guarantees
-      sectionBarPos('SECURITY & GUARANTEES', M, y, colW);
-      y += 12;
-
+      // Build both arrays first so we can compute height
       const secItems = [
-        ['FIRST LEGAL CHARGE', clean(deal.security_address ? 'Over all ' + addresses.length + ' properties' : 'Over the security property')],
+        ['FIRST LEGAL CHARGE', addresses.length > 1 ? 'Over all ' + addresses.length + ' properties' : 'Over the security property'],
         ['DEBENTURE', isCorp ? 'Required (corporate borrower)' : 'N/A'],
         ['PERSONAL GUARANTEE', isCorp ? 'Required from UBO' : 'N/A']
       ];
 
-      secItems.forEach((item, idx) => {
-        const bg = idx % 2 === 0 ? WHITE : LGREY2;
-        doc.rect(M, y, colW, 10).fill(bg).stroke({ color: DGREY, width: 0.5 });
-        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
-        doc.text(item[0], M + 3, y + 1, { width: colW - 6 });
-        doc.font('Helvetica').fontSize(7).fillColor(TXT);
-        doc.text(clean(item[1]), M + 3, y + 4.5, { width: colW - 6 });
-        y += 10;
-      });
-
-      // RIGHT: Conditions Precedent (overlapping y)
-      y -= 30;
-      sectionBarPos('CONDITIONS PRECEDENT', M + colW + 4, y, colW);
-      y += 12;
-
-      const conditions = [
+      const cpItems = [
         'Satisfactory independent valuation',
         'Clear title search — no encumbrances',
         'Legal due diligence by Lender\'s solicitors',
         'First legal charge in favour of Lender',
-        'Buildings insurance — Lender\'s interest noted',
-        'Personal guarantee from UBO',
-        'KYC/AML documentation for all parties',
-        'Evidence of source of deposit & funds',
-        'Payment of all applicable fees'
+        'Buildings insurance — Lender\'s interest noted'
       ];
+      if (isCorp) {
+        cpItems.push('Personal guarantee from UBO');
+        cpItems.push('Debenture over corporate assets');
+      }
+      cpItems.push('KYC/AML documentation for all parties');
+      cpItems.push('Evidence of source of deposit & funds');
+      cpItems.push('Payment of all applicable fees');
 
-      conditions.forEach((c, idx) => {
-        const bg = idx % 2 === 0 ? WHITE : LGREY2;
-        doc.rect(M + colW + 4, y, colW, 9).fill(bg).stroke({ color: DGREY, width: 0.5 });
+      const secRowH = 11;
+      const cpRowH = 9;
+      const leftHeight = 12 + secItems.length * secRowH;
+      const rightHeight = 12 + cpItems.length * cpRowH;
+      const sideBySideH = Math.max(leftHeight, rightHeight);
+      const colW = (W - 4) / 2;
+
+      checkPage(sideBySideH + 4);
+      const sby = y; // anchor Y
+
+      // LEFT: Security
+      sectionBarAt('SECURITY & GUARANTEES', M, colW);
+      let ly = sby + 12;
+      secItems.forEach((item, idx) => {
+        doc.rect(M, ly, colW, secRowH).fill(idx % 2 === 0 ? WHITE : LGREY2).stroke({ color: DGREY, width: 0.5 });
+        doc.font('Helvetica-Bold').fontSize(6).fillColor(MGREY);
+        doc.text(item[0], M + 3, ly + 1, { width: colW - 6 });
+        doc.font('Helvetica').fontSize(7).fillColor(TXT);
+        doc.text(clean(item[1]), M + 3, ly + 5, { width: colW - 6 });
+        ly += secRowH;
+      });
+
+      // RIGHT: CPs
+      sectionBarAt('CONDITIONS PRECEDENT', M + colW + 4, colW);
+      let ry = sby + 12;
+      cpItems.forEach((c, idx) => {
+        doc.rect(M + colW + 4, ry, colW, cpRowH).fill(idx % 2 === 0 ? WHITE : LGREY2).stroke({ color: DGREY, width: 0.5 });
         doc.font('Helvetica-Bold').fontSize(6).fillColor(NAVY);
-        doc.text((idx + 1) + '.', M + colW + 7, y + 1.5, { width: 10 });
+        doc.text((idx + 1) + '.', M + colW + 7, ry + 1.5, { width: 12 });
         doc.font('Helvetica').fontSize(6.5).fillColor(TXT);
-        doc.text(c, M + colW + 20, y + 1.5, { width: colW - 23 });
-        y += 9;
+        doc.text(c, M + colW + 20, ry + 1.5, { width: colW - 23 });
+        ry += cpRowH;
       });
 
-      y += 4;
+      y = Math.max(ly, ry) + 4;
 
-      // ── FEE SCHEDULE ──
-      checkPage(80);
-      sectionBar('FEE SCHEDULE', y);
-      y += 14;
 
-      const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
+      // ══════════════════════════════════════════════
+      //  5. FEE SCHEDULE
+      // ══════════════════════════════════════════════
+      sectionBar('FEE SCHEDULE');
 
-      // Fee table header
-      doc.rect(M, y, W, 8).fill(LGREY2);
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(MGREY);
-      doc.text('FEE', M + 3, y + 1.5, { width: 100 });
-      doc.text('AMOUNT', M + 110, y + 1.5, { width: 80 });
-      doc.text('WHEN DUE', M + 200, y + 1.5, { width: 90 });
-      doc.text('PAYMENT', M + 300, y + 1.5, { width: W - 310 });
-      y += 8;
+      const arrFee = parseFloat(dipData.arrangement_fee || deal.arrangement_fee || 2);
+      const brkFee = parseFloat(dipData.broker_fee || deal.broker_fee || 1);
 
-      const fees = [
-        ['Onboarding Fee', money(dipData.fee_onboarding || 0), 'After DIP acceptance', 'Before Credit Review', false],
-        ['Commitment Fee', money(dipData.fee_commitment || 0), 'After Termsheet', 'Before Underwriting', false],
-        ['Arrangement Fee', feeLine(dipData.arrangement_fee, loanAmt), 'On completion', 'Deducted from advance', true],
-        ['  └─ of which Broker', feeLine(dipData.broker_fee, loanAmt), 'On completion', 'From arrangement fee', true],
-        ['Exit Fee', pct(1.00) + ' of loan', 'On redemption', 'Payable on exit', false],
-        ['Extension Fee', pct(1.00) + ' of loan', 'If term extended', 'Per extension period', false]
+      const feeCols = [
+        { label: 'FEE', width: 110 },
+        { label: 'AMOUNT', width: 95 },
+        { label: 'WHEN DUE', width: 105 },
+        { label: 'PAYMENT', width: W - 310 }
+      ];
+      const feeRows = [
+        ['Onboarding Fee',   money(dipData.fee_onboarding || 0), 'After DIP acceptance', 'Before Credit Review'],
+        ['Commitment Fee',   money(dipData.fee_commitment || 0), 'After Termsheet',      'Before Underwriting'],
+        ['Arrangement Fee',  feeLine(arrFee, loanAmt),           'On completion',         'Deducted from advance'],
+        ['    of which Broker', feeLine(brkFee, loanAmt),       'On completion',         'From arrangement fee'],
+        ['Exit Fee',         pct(1.00) + ' of loan',             'On redemption',         'Payable on exit'],
+        ['Extension Fee',    pct(1.00) + ' of loan',             'If term extended',      'Per extension period']
       ];
 
-      fees.forEach((f, idx) => {
-        const bg = f[4] ? AMBER : (idx % 2 === 0 ? WHITE : LGREY2);
-        doc.rect(M, y, W, 8).fill(bg);
-        doc.font(f[4] ? 'Helvetica' : 'Helvetica-Bold').fontSize(6.5).fillColor(TXT);
-        doc.text(f[0], M + 3, y + 1.5, { width: 107 });
-        doc.font('Helvetica').fontSize(6.5).fillColor(TXT);
-        doc.text(f[1], M + 110, y + 1.5, { width: 90 });
-        doc.text(f[2], M + 200, y + 1.5, { width: 100 });
-        doc.text(f[3], M + 300, y + 1.5, { width: W - 310 });
-        y += 8;
+      drawTable(feeCols, feeRows, {
+        rowH: 9,
+        highlightFn: (idx) => idx === 2 || idx === 3
       });
-      y += 4;
+      y += 2;
 
-      // ── THIRD-PARTY COSTS ──
-      checkPage(50);
-      sectionBar('ESTIMATED THIRD-PARTY COSTS', y, MGREY);
-      y += 14;
+
+      // ══════════════════════════════════════════════
+      //  6. THIRD-PARTY COSTS
+      // ══════════════════════════════════════════════
+      sectionBar('ESTIMATED THIRD-PARTY COSTS', MGREY);
 
       doc.font('Helvetica-Oblique').fontSize(7).fillColor(MGREY);
       doc.text('These are not Daksfirst fees. Third-party costs borne by borrower, disclosed for budgeting only.', M + 3, y, { width: W - 6 });
-      y += 12;
+      y += 11;
 
-      const tpCosts = [
-        ['Valuation Fee', money(dipData.valuation_cost || 0), 'Paid directly by client to valuer'],
-        ['Legal Fee', money(dipData.legal_cost || 0), 'Via undertaking from client\'s solicitors']
+      const tpCols = [
+        { label: 'COST', width: 110 },
+        { label: 'EST. AMOUNT', width: 95 },
+        { label: 'NOTE', width: W - 205 }
       ];
+      const tpRows = [
+        ['Valuation Fee', money(dipData.valuation_cost || 0), 'Paid directly by client to valuer'],
+        ['Legal Fee',     money(dipData.legal_cost || 0),     'Via undertaking from client\'s solicitors']
+      ];
+      drawTable(tpCols, tpRows, { rowH: 9 });
+      y += 3;
 
-      tpCosts.forEach((c, idx) => {
-        const bg = idx % 2 === 0 ? WHITE : LGREY2;
-        doc.rect(M, y, W, 8).fill(bg);
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(TXT);
-        doc.text(c[0], M + 3, y + 1.5, { width: 100 });
-        doc.font('Helvetica').fontSize(6.5).fillColor(TXT);
-        doc.text(c[1], M + 110, y + 1.5, { width: 80 });
-        doc.font('Helvetica-Oblique').fontSize(6).fillColor(MGREY);
-        doc.text(c[2], M + 200, y + 1.5, { width: W - 210 });
-        y += 8;
-      });
-      y += 6;
 
-      // ── PAYMENT DETAILS ──
-      checkPage(50);
-      sectionBar('HOW TO PROCEED — PAYMENT DETAILS', y, GREEN);
-      y += 14;
+      // ══════════════════════════════════════════════
+      //  7. PAYMENT DETAILS
+      // ══════════════════════════════════════════════
+      sectionBar('HOW TO PROCEED — PAYMENT DETAILS', GREEN);
 
-      // 2-column: instructions | bank details
-      const instructH = 22;
-      doc.rect(M, y, (W - 2) / 2, instructH).fill(WHITE).stroke({ color: DGREY, width: 0.5 });
-      doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text('To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference as payment reference.', M + 3, y + 2, { width: (W - 2) / 2 - 6 });
-      doc.font('Helvetica-Oblique').fontSize(6).fillColor(MGREY);
-      doc.text('Upon receipt, Daksfirst will commence credit review.', M + 3, y + 13, { width: (W - 2) / 2 - 6 });
-
-      // Bank details
-      doc.rect(M + (W - 2) / 2 + 2, y, (W - 2) / 2, instructH).fill(LGREY).stroke({ color: DGREY, width: 0.5 });
-      doc.font('Helvetica').fontSize(6.5).fillColor(MGREY);
+      const payHalfW = (W - 4) / 2;
       const bankLines = [
         ['Account Name:', 'Daksfirst Limited'],
         ['Bank:', 'HSBC'],
@@ -491,84 +558,83 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
         ['IBAN:', 'GB64HBUK40024590300721'],
         ['Reference:', dealRef]
       ];
-      let by = y + 2;
+      const payBoxH = Math.max(30, bankLines.length * 5 + 6);
+      checkPage(payBoxH + 4);
+
+      // Left: instructions
+      doc.rect(M, y, payHalfW, payBoxH).fill(WHITE).stroke({ color: DGREY, width: 0.5 });
+      doc.font('Helvetica').fontSize(7).fillColor(TXT);
+      doc.text('To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference as payment reference.', M + 4, y + 3, { width: payHalfW - 8 });
+      doc.font('Helvetica-Oblique').fontSize(6).fillColor(MGREY);
+      doc.text('Upon receipt, Daksfirst will commence credit review.', M + 4, y + 18, { width: payHalfW - 8 });
+
+      // Right: bank details
+      const bankX = M + payHalfW + 4;
+      doc.rect(bankX, y, payHalfW, payBoxH).fill(LGREY).stroke({ color: DGREY, width: 0.5 });
+      let bankY = y + 3;
       bankLines.forEach(line => {
-        doc.text(line[0], M + (W - 2) / 2 + 5, by, { width: 70 });
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(NAVY);
-        doc.text(line[1], M + (W - 2) / 2 + 75, by, { width: (W - 2) / 2 - 80 });
         doc.font('Helvetica').fontSize(6.5).fillColor(MGREY);
-        by += 3.5;
+        doc.text(line[0], bankX + 4, bankY, { width: 65 });
+        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(NAVY);
+        doc.text(line[1], bankX + 70, bankY, { width: payHalfW - 78 });
+        bankY += 5;
       });
+      y += payBoxH + 5;
 
-      y += instructH + 4;
 
-      // ── RED NOTICE BOX ──
+      // ══════════════════════════════════════════════
+      //  8. RED NOTICE
+      // ══════════════════════════════════════════════
       checkPage(20);
       doc.rect(M, y, W, 16).fill(REDBG).stroke({ color: '#fca5a5', width: 1 });
       doc.font('Helvetica-Bold').fontSize(6.5).fillColor(RED);
-      doc.text('IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.', M + 4, y + 2, { width: W - 8, align: 'center' });
-      y += 18;
+      doc.text(
+        'IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.',
+        M + 4, y + 2, { width: W - 8, align: 'center' }
+      );
+      y += 19;
 
-      // ── BORROWER ACKNOWLEDGEMENT ──
-      checkPage(24);
+
+      // ══════════════════════════════════════════════
+      //  9. ACKNOWLEDGEMENT + SIGNATURES
+      // ══════════════════════════════════════════════
+      checkPage(50);
       doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY);
       doc.text('BORROWER ACKNOWLEDGEMENT', M, y, { width: W });
-      y += 8;
+      y += 9;
       doc.font('Helvetica').fontSize(7).fillColor(TXT);
       doc.text('By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.', M, y, { width: W });
-      y += 12;
+      y += 14;
 
-      // ── SIGNATURE BLOCK ──
-      checkPage(28);
+      // Signature block
+      checkPage(34);
       const sigW = (W - 4) / 2;
 
-      // Borrower signature
       doc.moveTo(M, y + 14).lineTo(M + sigW, y + 14).strokeColor(MGREY).lineWidth(0.5).stroke();
       doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
       doc.text('Borrower Signature', M, y + 16);
       doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text(clean(deal.borrower_name), M, y + 22);
-      doc.text(clean(deal.borrower_company || deal.company_name), M, y + 27);
+      doc.text(clean(deal.borrower_name), M, y + 23);
+      if (isCorp) doc.text(clean(deal.borrower_company || deal.company_name), M, y + 29);
 
-      // Lender signature
       const sigX2 = M + sigW + 4;
       doc.moveTo(sigX2, y + 14).lineTo(sigX2 + sigW, y + 14).strokeColor(MGREY).lineWidth(0.5).stroke();
       doc.font('Helvetica-Bold').fontSize(7).fillColor(NAVY);
       doc.text('For and on behalf of the Lender', sigX2, y + 16);
       doc.font('Helvetica').fontSize(7).fillColor(TXT);
-      doc.text('Daksfirst Bridging 1 Ltd', sigX2, y + 22);
-
-      y += 32;
+      doc.text('Daksfirst Bridging 1 Ltd', sigX2, y + 23);
+      y += 34;
 
       // ── FCA DISCLAIMER ──
-      checkPage(8);
+      y += 4;
+      checkPage(12);
       doc.font('Helvetica-Oblique').fontSize(6).fillColor(MGREY);
       doc.text('Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.', M, y, { width: W, align: 'center' });
 
-      // ── Add footer ──
+      // ── FOOTER ──
       addFooter(pageNum);
 
       doc.end();
-
-      // ── Helper: section bar (with optional bg color) ──
-      function sectionBar(text, yPos, bgColor = NAVY) {
-        doc.rect(M, yPos, W, 12).fill(bgColor);
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(WHITE);
-        doc.text(text.toUpperCase(), M + 4, yPos + 2, { width: W - 8 });
-      }
-
-      function sectionBarPos(text, xPos, yPos, width, bgColor = NAVY) {
-        doc.rect(xPos, yPos, width, 12).fill(bgColor);
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(WHITE);
-        doc.text(text.toUpperCase(), xPos + 4, yPos + 2, { width: width - 8 });
-      }
-
-      function feeLine(raw, loanAmt) {
-        const v = parseFloat(raw || 0);
-        if (isNaN(v) || v === 0) return '—';
-        if (v > 0 && v < 50) return money(Math.round(loanAmt * v / 100)) + ' (' + v.toFixed(2) + '%)';
-        return money(v);
-      }
 
     } catch (err) {
       reject(err);
