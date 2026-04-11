@@ -731,7 +731,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('snapshot')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#1E3A5F;color:#60A5FA;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128200;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Snapshot</div><div style="font-size:11px;color:#64748b;">Deal summary at a glance</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Snapshot</div><div style="font-size:11px;color:#64748b;">Deal summary at a glance</div></div>
               </div>
               <div class="deal-section-chevron open" id="chev-snapshot">&#9658;</div>
             </div>
@@ -766,11 +766,11 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('matrix')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#1E3A5F;color:#60A5FA;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128202;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Deal Information Matrix</div><div style="font-size:11px;color:#64748b;">Field-by-field status tracking across all stages</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Deal Information Matrix</div><div style="font-size:11px;color:#64748b;">Field-by-field status tracking across all stages</div></div>
               </div>
-              <div class="deal-section-chevron open" id="chev-matrix">&#9658;</div>
+              <div class="deal-section-chevron" id="chev-matrix">&#9658;</div>
             </div>
-            <div class="deal-section-body" id="body-matrix">
+            <div class="deal-section-body collapsed" id="body-matrix">
               <div id="dtab-matrix-content" style="padding:0;">
                 <p style="color:#64748b;text-align:center;padding:40px 0;">Loading Deal Information Matrix...</p>
               </div>
@@ -782,17 +782,17 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('doc-repo')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#D4A853;color:#0B1120;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128193;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Document Repository</div><div style="font-size:11px;color:#64748b;">Filing cabinet — all deal documents, emails, text</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Document Repository</div><div style="font-size:11px;color:#64748b;">Filing cabinet — all deal documents, emails, text</div></div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <span id="doc-repo-count" style="background:#D4A853;color:#0B1120;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0 files</span>
-                <div class="deal-section-chevron open" id="chev-doc-repo">&#9658;</div>
+                <div class="deal-section-chevron" id="chev-doc-repo">&#9658;</div>
               </div>
             </div>
-            <div class="deal-section-body" id="body-doc-repo">
+            <div class="deal-section-body collapsed" id="body-doc-repo">
               <!-- Action bar: Confirm All + Parse All Confirmed -->
               <div id="doc-repo-actions" style="padding:10px 16px;background:#0F172A;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-                <div style="font-size:12px;color:#166534;font-weight:600;">Step 2: Review AI-suggested categories and confirm. Then parse to extract deal data.</div>
+                <div style="font-size:12px;color:#34D399;font-weight:600;">Step 2: Review AI-suggested categories and confirm. Then parse to extract deal data.</div>
                 <div style="display:flex;gap:8px;">
                   <button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All Categories</button>
                   <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse All Confirmed</button>
@@ -829,7 +829,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('parser')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#831843;color:#F472B6;display:flex;align-items:center;justify-content:center;font-size:16px;">&#129302;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted data from documents and emails</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted data from documents and emails</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-parser">&#9658;</div>
             </div>
@@ -853,7 +853,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('notes')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#312E81;color:#A5B4FC;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128172;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Notes / Comments / Edits</div><div style="font-size:11px;color:#64748b;">Discussion centre — all parties</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Notes / Comments / Edits</div><div style="font-size:11px;color:#64748b;">Discussion centre — all parties</div></div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <span id="notes-count" style="background:#D4A853;color:#0B1120;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">0</span>
@@ -876,7 +876,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('analysis')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#5B21B6;color:#D8B4FE;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128269;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Analysis</div><div style="font-size:11px;color:#64748b;">Credit memo, risk assessment, conditions precedent</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Analysis</div><div style="font-size:11px;color:#64748b;">Credit memo, risk assessment, conditions precedent</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-analysis">&#9658;</div>
             </div>
@@ -892,7 +892,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('fee')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#D4A853;color:#0B1120;display:flex;align-items:center;justify-content:center;font-size:16px;">&#128176;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Fees</div><div style="font-size:11px;color:#64748b;">Fee schedule, payments, and tracking</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Fees</div><div style="font-size:11px;color:#64748b;">Fee schedule, payments, and tracking</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-fee">&#9658;</div>
             </div>
@@ -925,7 +925,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('funding')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#065F46;color:#86EFAC;display:flex;align-items:center;justify-content:center;font-size:16px;">&#127974;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Funding</div><div style="font-size:11px;color:#64748b;">Funding bucket — GB Bank Warehouse or Whole Loan</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Funding</div><div style="font-size:11px;color:#64748b;">Funding bucket — GB Bank Warehouse or Whole Loan</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-funding">&#9658;</div>
             </div>
@@ -958,7 +958,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('admin-extra')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:#7F1D1D;color:#FCA5A5;display:flex;align-items:center;justify-content:center;font-size:16px;">&#9881;</div>
-                <div><div style="font-size:14px;font-weight:700;color:#1e293b;">Assignment &amp; Allocation</div><div style="font-size:11px;color:#64748b;">Staff assignment, deal controls</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Assignment &amp; Allocation</div><div style="font-size:11px;color:#64748b;">Staff assignment, deal controls</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-admin-extra">&#9658;</div>
             </div>

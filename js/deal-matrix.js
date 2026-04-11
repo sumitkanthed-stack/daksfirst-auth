@@ -166,7 +166,7 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
   return `
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-top:1px solid rgba(255,255,255,0.04);transition:background .1s;cursor:pointer;${activeBackground}" onclick="window.matrixToggleDetail && window.matrixToggleDetail('detail-${fieldKey}')">
       <div style="padding:8px 12px 8px 50px;display:flex;align-items:center;gap:6px;${conditionalClass}">
-        <span style="font-size:12px;width:16px;text-align:center;flex-shrink:0">📋</span>
+        <span style="font-size:12px;width:16px;text-align:center;flex-shrink:0;font-weight:700">L</span>
         <div>
           <div style="font-size:11px;font-weight:500;color:#F1F5F9">${prefix}${sanitizeHtml(fieldName)}</div>
           <span style="font-size:9px;color:#94A3B8;font-weight:400;display:block">${sanitizeHtml(fieldDesc)}</span>
@@ -184,12 +184,26 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
 /**
  * Generate collapsible section header
  */
-function renderSectionHeader(sectionId, icon, title, subtitle, statusDots) {
+function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots) {
+  // Map icon initials to styles
+  const iconStyles = {
+    'DM': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
+    'B': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
+    'F': { bg: 'rgba(212,168,83,0.15)', color: '#D4A853' },
+    'P': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' },
+    'L': { bg: 'rgba(168,85,247,0.1)', color: '#A855F7' },
+    'E': { bg: 'rgba(251,146,60,0.1)', color: '#FB923C' },
+    'LG': { bg: 'rgba(148,163,184,0.1)', color: '#94A3B8' },
+    'C': { bg: 'rgba(212,168,83,0.15)', color: '#D4A853' },
+    'D': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' }
+  };
+  const style = iconStyles[iconInitial] || { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' };
+
   return `
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid rgba(255,255,255,0.06)" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
         <div id="chevron-${sectionId}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:rgba(212,168,83,0.15);border-radius:5px;font-size:9px;color:#D4A853;transition:transform .2s,background .2s;flex-shrink:0;transform:rotate(90deg)">▸</div>
-        <span style="font-size:14px">${icon}</span>
+        <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:${style.bg};border-radius:6px;font-size:12px;font-weight:700;color:${style.color};flex-shrink:0">${iconInitial}</div>
         <span style="font-size:12px;font-weight:700;color:#F1F5F9">${sanitizeHtml(title)}</span>
         <span style="font-size:9px;color:#94A3B8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
       </div>
@@ -305,7 +319,7 @@ export async function renderDealMatrix(deal) {
   let html = `
     <!-- Header -->
     <div style="padding:20px 26px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:12px">
-      <div style="width:36px;height:36px;background:linear-gradient(135deg,#D4A853,#E8C97A);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#0B1120;font-size:16px">📊</div>
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,#D4A853,#E8C97A);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#0B1120;font-size:16px;font-weight:700">DM</div>
       <div>
         <h2 style="font-size:16px;font-weight:700;color:#F1F5F9">Deal Information Matrix</h2>
         <div style="font-size:11px;color:#94A3B8;margin-top:1px">Live status tracking · ${sanitizeHtml(deal.borrower_name || 'Deal')} · £${fmtM(deal.loan_amount)}M</div>
@@ -421,7 +435,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s1', '👤', 'Borrower / KYC', 'Comprehensive identity verification', [
+      ${renderSectionHeader('s1', 'B', 'Borrower / KYC', 'Comprehensive identity verification', [
         renderStatusDot(0, 'not-started', 'dip-sec-s1'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -479,7 +493,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s2', '💰', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
+      ${renderSectionHeader('s2', 'F', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
         renderStatusDot(0, 'not-started', 'dip-sec-s2'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -595,7 +609,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s3', '🏘️', 'Property / Security', 'Property details and valuation', [
+      ${renderSectionHeader('s3', 'P', 'Property / Security', 'Property details and valuation', [
         renderStatusDot(0, 'not-started', 'dip-sec-s3'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -658,7 +672,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s4', '📋', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
+      ${renderSectionHeader('s4', 'L', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
         renderStatusDot(0, 'not-started', 'dip-sec-s4'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -724,7 +738,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s5', '🚪', 'Exit Strategy', 'Refinance or sale plan', [
+      ${renderSectionHeader('s5', 'E', 'Exit Strategy', 'Refinance or sale plan', [
         renderStatusDot(0, 'not-started', 'dip-sec-s5'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -774,7 +788,7 @@ export async function renderDealMatrix(deal) {
   const isDIPStage = currentStageIdx === 0;
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06);${isDIPStage ? 'opacity:.45' : ''}">
-      ${renderSectionHeader('s6', '⚖️', 'Legal & Insurance', 'Security and insurance requirements', [
+      ${renderSectionHeader('s6', 'LG', 'Legal & Insurance', 'Security and insurance requirements', [
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required'),
         renderStatusDot(0, 'not-required'),
@@ -811,7 +825,7 @@ export async function renderDealMatrix(deal) {
 
       ${isDIPStage ? `
         <div style="padding:16px 50px;text-align:center">
-          <div style="font-size:20px;margin-bottom:3px">📋</div>
+          <div style="font-size:14px;margin-bottom:3px;font-weight:700">L</div>
           <div style="font-size:10px;font-weight:600;color:#94A3B8">Not required at DIP stage</div>
           <div style="font-size:9px;color:rgba(255,255,255,0.06);margin-top:1px">Will be required for Formal Offer</div>
         </div>
@@ -825,7 +839,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s7', '💼', 'Commercial', 'Fees and credit approval', [
+      ${renderSectionHeader('s7', 'C', 'Commercial', 'Fees and credit approval', [
         renderStatusDot(0, 'not-started', 'dip-sec-s7'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -876,7 +890,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s8', '📄', 'Documents Issued', 'Deal documentation status', [
+      ${renderSectionHeader('s8', 'D', 'Documents Issued', 'Deal documentation status', [
         renderStatusDot(deal.dip_signed ? 1 : 0, deal.dip_signed ? 'signed' : 'not-started'),
         renderStatusDot(deal.ts_signed ? 1 : 0, deal.ts_signed ? 'signed' : 'not-started'),
         renderStatusDot(deal.fl_signed ? 1 : 0, deal.fl_signed ? 'signed' : 'not-started'),
@@ -959,7 +973,7 @@ export async function renderDealMatrix(deal) {
 
       <!-- Document table placeholder -->
       <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:12px;font-size:9px;color:#64748B;text-align:center">
-        <div style="font-size:16px;margin-bottom:4px">📄</div>
+        <div style="font-size:14px;margin-bottom:4px;font-weight:700">D</div>
         Documents will appear here once uploaded
       </div>
 
@@ -1015,10 +1029,10 @@ export async function renderDealMatrix(deal) {
     <!-- ACTION BUTTONS BAR -->
     <div style="padding:12px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#111827;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">📤 Upload Documents</button>
-        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">📋 Paste Broker Pack</button>
-        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">🔍 Parse Confirmed Docs</button>
-        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">✅ Submit for Review</button>
+        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 1: Upload documents for AI categorisation">Upload Documents</button>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
+        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Step 3: Parse confirmed documents and extract deal data">Parse Confirmed Docs</button>
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
       </div>
       <div style="display:flex;gap:12px;font-size:8px;color:rgba(255,255,255,0.06)">
         <span>Last Parsed: <span id="matrix-last-parsed">never</span></span>

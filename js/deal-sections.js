@@ -186,7 +186,7 @@ export async function renderDocRepo(submissionId, role) {
   }
 
   const catColors = {
-    kyc: 'background:#dbeafe;color:#1e40af;', financial: 'background:#dcfce7;color:#166534;',
+    kyc: 'background:rgba(96,165,250,0.1);color:#60A5FA;', financial: 'background:#dcfce7;color:#166534;',
     property: 'background:#fef3c7;color:#92400e;', legal: 'background:#f3e8ff;color:#6b21a8;',
     issued: 'background:#e0e7ff;color:#3730a3;', email: 'background:#fce7f3;color:#be185d;',
     other: 'background:#f1f5f9;color:#64748b;'
@@ -653,11 +653,11 @@ window.selectFundingBucket = function(bucket) {
   const wl = document.getElementById('bucket-wl');
   const gbbBadge = document.getElementById('gbb-selected-badge');
   if (bucket === 'gbb') {
-    if (gbb) { gbb.style.borderColor = '#1e3a5f'; gbb.style.background = '#f0f5ff'; gbb.style.boxShadow = '0 0 0 3px rgba(30,58,95,0.1)'; }
+    if (gbb) { gbb.style.borderColor = 'rgba(212,168,83,0.25)'; gbb.style.background = 'rgba(212,168,83,0.08)'; gbb.style.boxShadow = '0 0 0 3px rgba(212,168,83,0.15)'; }
     if (wl) { wl.style.borderColor = 'rgba(255,255,255,0.06)'; wl.style.background = ''; wl.style.boxShadow = ''; }
     if (gbbBadge) gbbBadge.style.display = 'inline';
   } else {
-    if (wl) { wl.style.borderColor = '#1e3a5f'; wl.style.background = '#f0f5ff'; wl.style.boxShadow = '0 0 0 3px rgba(30,58,95,0.1)'; }
+    if (wl) { wl.style.borderColor = 'rgba(212,168,83,0.25)'; wl.style.background = 'rgba(212,168,83,0.08)'; wl.style.boxShadow = '0 0 0 3px rgba(212,168,83,0.15)'; }
     if (gbb) { gbb.style.borderColor = 'rgba(255,255,255,0.06)'; gbb.style.background = ''; gbb.style.boxShadow = ''; }
     if (gbbBadge) gbbBadge.style.display = 'none';
   }
@@ -695,7 +695,7 @@ export function renderAdminSection(deal) {
       <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;">
         <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:12px;">Deal Controls</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          <button onclick="window.advanceDealStage && window.advanceDealStage()" style="width:100%;padding:10px;background:#111827;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#1e3a5f;">&#9654; Advance Stage</button>
+          <button onclick="window.advanceDealStage && window.advanceDealStage()" style="width:100%;padding:10px;background:#111827;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#94A3B8;">&#9654; Advance Stage</button>
           <button onclick="window.holdDeal && window.holdDeal()" style="width:100%;padding:10px;background:#111827;border:2px solid #f59e0b;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#92400e;">&#9208; Hold Deal</button>
           <button onclick="window.declineDeal && window.declineDeal()" style="width:100%;padding:10px;background:#111827;border:2px solid #dc2626;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:#dc2626;">&#10005; Decline Deal</button>
         </div>
