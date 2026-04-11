@@ -1969,8 +1969,9 @@ export function renderExternalWorkflowControls(deal) {
   // Map internal stages → simplified borrower stage
   const stageMap = {
     received: 'submitted', assigned: 'submitted',
+    info_gathering: 'submitted',
     dip_issued: 'dip_issued',
-    info_gathering: 'dip_issued', ai_termsheet: 'dip_issued',
+    ai_termsheet: 'dip_issued',
     fee_pending: 'fee_required', fee_paid: 'processing',
     underwriting: 'processing', bank_submitted: 'processing',
     bank_approved: 'approved', borrower_accepted: 'approved',
@@ -2025,52 +2026,10 @@ export function renderExternalWorkflowControls(deal) {
         '</div>';
     }
   } else if (stage === 'info_gathering') {
-    const dipData = deal.ai_termsheet_data || {};
-    const extLoan = dipData.loan_amount || deal.loan_amount || 0;
-    const extRate = dipData.rate_monthly || deal.rate_requested || 0;
-    const extTerm = dipData.term_months || deal.term_months || 0;
-    const extArrFee = dipData.arrangement_fee_pct || 2;
-    const extRetainedMo = dipData.retained_months || 6;
-    const extRetainedInt = extLoan * (extRate / 100) * extRetainedMo;
-    const extArrFeeAmt = extLoan * (extArrFee / 100);
-    const extValCost = dipData.valuation_cost || 0;
-    const extLegalCost = dipData.legal_cost || 0;
-    const extBrokerFeePct = dipData.broker_fee_pct || 0;
-    const extBrokerFee = extLoan * (extBrokerFeePct / 100);
-    const extClientDayZero = extLoan - extRetainedInt - extArrFeeAmt - extValCost - extLegalCost;
-
-    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;margin-bottom:16px;">
-      <p style="font-size:14px;margin-bottom:12px;"><strong>DIP Approved!</strong> — We have approved a Decision in Principle for your deal.</p>
-
-      <div style="background:#111827;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #d1fae5;">
-        <h5 style="margin:0 0 8px;font-size:12px;color:#047857;text-transform:uppercase;font-weight:600;">Approved Terms</h5>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
-          <div>Gross Loan: <strong>£${formatNumber(extLoan)}</strong></div>
-          <div>LTV: <strong>${formatPct(dipData.ltv || deal.ltv_requested || 0)}%</strong></div>
-          <div>Term: <strong>${extTerm} months</strong></div>
-          <div>Rate: <strong>${formatPct(extRate)}%/m</strong></div>
-          <div>Interest: <strong>${sanitizeHtml(dipData.interest_servicing || deal.interest_servicing || 'Retained')}</strong></div>
-          <div>Arr. Fee: <strong>${formatPct(extArrFee)}%</strong></div>
-        </div>
-
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #d1fae5;">
-          <h5 style="margin:0 0 8px;font-size:12px;color:#047857;text-transform:uppercase;font-weight:600;">Day Zero Breakdown</h5>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;">
-            <div>Retained Interest (${extRetainedMo}m): <strong>£${formatNumber(extRetainedInt)}</strong></div>
-            <div>Arrangement Fee: <strong>£${formatNumber(extArrFeeAmt)}</strong></div>
-            ${extValCost > 0 ? `<div>Valuation Cost: <strong>£${formatNumber(extValCost)}</strong></div>` : ''}
-            ${extLegalCost > 0 ? `<div>Legal Cost: <strong>£${formatNumber(extLegalCost)}</strong></div>` : ''}
-          </div>
-          ${extBrokerFeePct > 0 ? `<div style="margin-top:6px;font-size:13px;padding:6px 8px;background:#111827beb;border-radius:4px;">Broker Fee (${formatPct(extBrokerFeePct)}%): <strong>£${formatNumber(extBrokerFee)}</strong></div>` : ''}
-          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #d1fae5;font-size:14px;">
-            Net Day Zero to Client: <strong style="color:#047857;font-size:16px;">£${formatNumber(extClientDayZero)}</strong>
-          </div>
-        </div>
-
-        ${dipData.credit_decision && dipData.credit_decision.conditions ? '<div style="margin-top:8px;font-size:12px;"><strong>Conditions:</strong> ' + sanitizeHtml(dipData.credit_decision.conditions) + '</div>' : ''}
-      </div>
-
-      <button onclick="window.acceptDipExternal && window.acceptDipExternal()" style="padding:10px 24px;background:#48bb78;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Accept DIP & Continue</button>
+    // Info gathering = RM collecting additional data. DIP not yet issued.
+    html += `<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;margin-bottom:16px;">
+      <p style="font-size:14px;margin-bottom:4px;"><strong>Additional Information Required</strong></p>
+      <p style="font-size:13px;color:#94A3B8;">Our team is reviewing your submission and may need additional documents or information. Your broker/RM will be in touch with specific requests. Please check the Deal Matrix for any outstanding items.</p>
     </div>`;
   } else if (stage === 'ai_termsheet') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
