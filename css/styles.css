@@ -283,6 +283,9 @@
     /* Matrix editable field styles */
     .matrix-editable:focus { border-color: #2563eb !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
     .matrix-editable:hover { border-color: #94a3b8; }
+
+    /* Parse progress bar animation */
+    @keyframes matrixParseBar { from { width: 0%; } to { width: 95%; } }
     .doc-panel-header {
       background: var(--primary); color: #fff; padding: 14px 16px;
       position: sticky; top: 0; z-index: 2;

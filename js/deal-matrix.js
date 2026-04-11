@@ -881,18 +881,38 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   html += `
+    <!-- Hidden file input for Upload & Parse -->
+    <input type="file" id="matrix-parse-file-input" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.txt,.csv" style="display:none" onchange="window.matrixUploadAndParse && window.matrixUploadAndParse(this.files)" />
+
+    <!-- Paste Broker Pack modal (hidden by default) -->
+    <div id="matrix-paste-modal" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#f5f3ff;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:700;color:#7c3aed;">Paste Broker Pack / Email / WhatsApp</div>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='none'" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:#fff;color:#64748b;">Cancel</button>
+      </div>
+      <textarea id="matrix-paste-text" placeholder="Paste the broker pack, email, or WhatsApp message here..." style="width:100%;min-height:120px;padding:12px;border:1px solid #d8b4fe;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+      <button onclick="window.matrixParsePastedText && window.matrixParsePastedText()" style="margin-top:10px;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;border:none;background:#7c3aed;color:#fff;cursor:pointer;">Parse Text</button>
+    </div>
+
+    <!-- Parse progress indicator (hidden by default) -->
+    <div id="matrix-parse-progress" style="display:none;padding:16px 26px;border-top:1px solid #e2e8f0;background:#eff6ff;text-align:center;">
+      <div style="font-size:14px;font-weight:700;color:#2563eb;margin-bottom:6px;" id="matrix-parse-status">Parsing documents...</div>
+      <div style="font-size:12px;color:#64748b;">AI is extracting deal information. This may take up to 2 minutes.</div>
+      <div style="margin-top:10px;height:4px;background:#dbeafe;border-radius:4px;overflow:hidden;"><div style="height:100%;width:0%;background:#2563eb;border-radius:4px;animation:matrixParseBar 90s linear forwards;" id="matrix-parse-bar"></div></div>
+    </div>
+
     <div style="padding:12px 26px;border-top:1px solid #e2e8f0;background:#1e3a5f;display:flex;align-items:center;justify-content:space-between">
       <div style="display:flex;gap:8px">
-        <button style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#2563eb;color:#fff;cursor:pointer;transition:all .12s">📤 Upload & Parse</button>
-        <button style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#7c3aed;color:#fff;cursor:pointer;transition:all .12s">📋 Paste Broker Pack</button>
-        <button style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#64748b;color:#fff;cursor:pointer;transition:all .12s">🔄 Re-Parse All</button>
+        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#2563eb;color:#fff;cursor:pointer;transition:all .12s">📤 Upload & Parse</button>
+        <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#7c3aed;color:#fff;cursor:pointer;transition:all .12s">📋 Paste Broker Pack</button>
+        <button onclick="window.matrixReParseAll && window.matrixReParseAll()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#64748b;color:#fff;cursor:pointer;transition:all .12s">🔄 Re-Parse All</button>
       </div>
       <div style="display:flex;gap:12px;font-size:8px;color:#cbd5e1">
-        <span>Last Parsed: never</span>
+        <span>Last Parsed: <span id="matrix-last-parsed">never</span></span>
         <span>•</span>
-        <span>Fields Auto-Filled: 0</span>
+        <span>Fields Auto-Filled: <span id="matrix-fields-filled">0</span></span>
         <span>•</span>
-        <span>Confidence: 0%</span>
+        <span>Confidence: <span id="matrix-confidence">0%</span></span>
         <span>•</span>
         <span>Manual Overrides: 0</span>
       </div>
@@ -973,6 +993,236 @@ export async function renderDealMatrix(deal) {
       console.error('[matrix-save] Error saving field:', fieldKey, e);
       if (el) el.style.borderColor = '#dc2626';
       showToast('Connection error saving field', 'error');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PARSE FUNCTIONS — Upload & Parse, Paste Broker Pack, Re-Parse All
+  // ═══════════════════════════════════════════════════════════════════
+
+  function showParseProgress(message) {
+    const progress = document.getElementById('matrix-parse-progress');
+    const status = document.getElementById('matrix-parse-status');
+    const bar = document.getElementById('matrix-parse-bar');
+    if (progress) progress.style.display = 'block';
+    if (status) status.textContent = message || 'Parsing documents...';
+    if (bar) { bar.style.width = '0%'; bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = 'matrixParseBar 90s linear forwards'; }
+    // Hide paste modal
+    const modal = document.getElementById('matrix-paste-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function hideParseProgress() {
+    const progress = document.getElementById('matrix-parse-progress');
+    if (progress) progress.style.display = 'none';
+  }
+
+  // Auto-populate Matrix fields from parsed JSON
+  function autoPopulateMatrix(parsedData) {
+    if (!parsedData || typeof parsedData !== 'object') return;
+
+    const confidence = parsedData.confidence != null ? Math.round(parsedData.confidence * 100) : null;
+    let fieldsPopulated = 0;
+
+    // Map of parsed_data keys to Matrix input IDs (mf-<dbField>)
+    const fieldMap = [
+      'borrower_name', 'borrower_email', 'borrower_phone', 'borrower_dob',
+      'borrower_nationality', 'borrower_type', 'company_name', 'company_number',
+      'security_address', 'security_postcode', 'asset_type', 'property_tenure',
+      'occupancy_status', 'current_use', 'current_value', 'purchase_price',
+      'loan_amount', 'ltv_requested', 'term_months', 'rate_requested',
+      'interest_servicing', 'drawdown_date', 'loan_purpose', 'use_of_funds',
+      'refurb_scope', 'refurb_cost', 'exit_strategy', 'additional_notes',
+      'deposit_source', 'existing_charges', 'concurrent_transactions',
+      'broker_name', 'broker_company', 'broker_fca',
+      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months'
+    ];
+
+    for (const key of fieldMap) {
+      const val = parsedData[key];
+      if (val == null || val === '') continue;
+
+      const el = document.getElementById(`mf-${key}`);
+      if (!el) continue;
+
+      // Set value
+      if (el.tagName === 'SELECT') {
+        el.value = String(val);
+      } else if (el.tagName === 'TEXTAREA') {
+        el.value = String(val);
+      } else {
+        el.value = String(val);
+      }
+
+      // Visual indicator — highlight auto-filled fields with amber border + AI badge
+      el.style.borderColor = '#f59e0b';
+      el.style.background = '#fffbeb';
+
+      // Add confidence badge next to the field if not already there
+      const badge = el.parentElement.querySelector('.ai-confidence-badge');
+      if (!badge && confidence != null) {
+        const badgeColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
+        const badgeHtml = document.createElement('div');
+        badgeHtml.className = 'ai-confidence-badge';
+        badgeHtml.style.cssText = 'display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;';
+        badgeHtml.innerHTML = `<span style="padding:1px 6px;border-radius:4px;background:${badgeColor};color:#fff;font-size:9px;">AI</span> <span style="color:${badgeColor};">${confidence}% confidence</span>`;
+        el.parentElement.appendChild(badgeHtml);
+      }
+
+      // Trigger save to DB
+      window.matrixSaveField(key, String(val));
+      fieldsPopulated++;
+    }
+
+    // Update stats bar
+    const lastParsed = document.getElementById('matrix-last-parsed');
+    const fieldsFilled = document.getElementById('matrix-fields-filled');
+    const confEl = document.getElementById('matrix-confidence');
+    if (lastParsed) lastParsed.textContent = 'just now';
+    if (fieldsFilled) fieldsFilled.textContent = String(fieldsPopulated);
+    if (confEl && confidence != null) {
+      confEl.textContent = confidence + '%';
+      confEl.style.color = confidence >= 80 ? '#86efac' : confidence >= 50 ? '#fde68a' : '#fca5a5';
+    }
+
+    showToast(`${fieldsPopulated} fields auto-filled from parsed data`, 'success');
+  }
+
+  // Upload & Parse — file upload flow
+  window.matrixUploadAndParse = async function(files) {
+    if (!files || files.length === 0) return;
+
+    showParseProgress(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} and parsing...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('deal_id', deal.submission_id);
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      hideParseProgress();
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Parse failed', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      if (data.parsed_data) {
+        autoPopulateMatrix(data.parsed_data);
+      } else {
+        showToast('Files uploaded but no data could be extracted. Try Paste Broker Pack instead.', 'error');
+      }
+    } catch (e) {
+      hideParseProgress();
+      console.error('[matrix-parse] Upload error:', e);
+      showToast('Connection error during parsing', 'error');
+    }
+
+    // Reset file input
+    const input = document.getElementById('matrix-parse-file-input');
+    if (input) input.value = '';
+  };
+
+  // Paste Broker Pack — text paste flow
+  window.matrixParsePastedText = async function() {
+    const textarea = document.getElementById('matrix-paste-text');
+    const text = textarea ? textarea.value.trim() : '';
+    if (!text) {
+      showToast('Paste some text first', 'error');
+      return;
+    }
+
+    showParseProgress('Parsing pasted text...');
+
+    try {
+      const formData = new FormData();
+      formData.append('deal_id', deal.submission_id);
+      formData.append('whatsapp_text', text);
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      hideParseProgress();
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Parse failed', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      if (data.parsed_data) {
+        autoPopulateMatrix(data.parsed_data);
+        if (textarea) textarea.value = '';
+      } else {
+        showToast('Could not extract structured data from the text.', 'error');
+      }
+    } catch (e) {
+      hideParseProgress();
+      console.error('[matrix-parse] Paste error:', e);
+      showToast('Connection error during parsing', 'error');
+    }
+  };
+
+  // Re-Parse All — re-trigger parsing on existing deal documents
+  window.matrixReParseAll = async function() {
+    showParseProgress('Re-parsing all deal documents...');
+
+    try {
+      // Fetch existing documents, then re-upload them for parsing
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}/documents-by-category`, { method: 'GET' });
+      if (!resp.ok) {
+        hideParseProgress();
+        showToast('Could not fetch existing documents', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      const docs = data.documents || [];
+      if (docs.length === 0) {
+        hideParseProgress();
+        showToast('No documents to re-parse. Upload files first.', 'error');
+        return;
+      }
+
+      // Send deal_id to trigger re-parse of stored documents
+      const formData = new FormData();
+      formData.append('deal_id', deal.submission_id);
+      formData.append('reparse', 'true');
+
+      const parseResp = await fetchWithAuth(`${API_BASE}/api/smart-parse/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      hideParseProgress();
+
+      if (!parseResp.ok) {
+        const err = await parseResp.json().catch(() => ({}));
+        showToast(err.error || 'Re-parse failed', 'error');
+        return;
+      }
+
+      const parseData = await parseResp.json();
+      if (parseData.parsed_data) {
+        autoPopulateMatrix(parseData.parsed_data);
+      } else {
+        showToast('Re-parse completed but no data extracted.', 'error');
+      }
+    } catch (e) {
+      hideParseProgress();
+      console.error('[matrix-reparse] Error:', e);
+      showToast('Connection error during re-parse', 'error');
     }
   };
 
