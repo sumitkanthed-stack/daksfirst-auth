@@ -338,12 +338,13 @@ export async function renderDealMatrix(deal) {
     <!-- SUBMIT FOR REVIEW — prominent CTA for brokers -->
     ${!isInternalUser && currentStage === 'received' ? `
     <div id="matrix-submit-cta" style="padding:14px 26px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-bottom:2px solid #86efac;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div style="flex:1;min-width:240px;">
           <div style="font-size:14px;font-weight:700;color:#166534;">Ready to submit?</div>
-          <div style="font-size:11px;color:#15803d;margin-top:2px;">Once your Matrix is complete, submit the deal for RM review to proceed to DIP.</div>
+          <div style="font-size:11px;color:#15803d;margin-top:2px;margin-bottom:10px;">Complete the required fields below, then submit for RM review to proceed to DIP.</div>
+          <div id="dip-readiness-checklist" style="display:flex;flex-direction:column;gap:3px;"></div>
         </div>
-        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#22c55e;color:#fff;box-shadow:0 2px 8px rgba(34,197,94,.3);transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">
+        <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#94a3b8;color:#fff;box-shadow:0 2px 8px rgba(34,197,94,.3);transition:all .15s;white-space:nowrap;opacity:0.5;" disabled onmouseover="if(!this.disabled)this.style.background='#16a34a'" onmouseout="if(!this.disabled)this.style.background='#22c55e'">
           Submit for RM Review &#8594;
         </button>
       </div>
@@ -444,6 +445,33 @@ export async function renderDealMatrix(deal) {
       ])}
 
       <div id="content-s2" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
+        <!-- Financial Summary (editable at DIP) -->
+        ${renderFieldRow('financial-summary', 'Financial Summary', 'Estimated net worth and source of wealth',
+          ['under-review', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-financial-summary">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#334155">Financial Summary</div>
+                ${canEdit ? '<span style="font-size:8px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#64748b;font-weight:600;background:#f1f5f9;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <p style="font-size:11px;color:#64748b;margin:0 0 10px;">Provide an estimate of the borrower's net worth. This is not verified at DIP stage — just an indication for the RM.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('estimated_net_worth', 'Estimated Net Worth (£)', deal.estimated_net_worth, 'number', canEdit)}
+                ${renderEditableField('source_of_wealth', 'Source of Wealth', deal.source_of_wealth, 'select', canEdit, [
+                  { value: 'employment', label: 'Employment / Salary' },
+                  { value: 'business', label: 'Business Ownership' },
+                  { value: 'property', label: 'Property Portfolio' },
+                  { value: 'investments', label: 'Investments / Trading' },
+                  { value: 'inheritance', label: 'Inheritance' },
+                  { value: 'other', label: 'Other' }
+                ])}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Assets -->
         ${renderFieldRow('assets', 'Assets', 'Real estate, investments, cash, vehicles',
           ['under-review', 'not-started', 'not-started', 'not-started'])}
@@ -784,15 +812,15 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
-        <!-- Credit Approval -->
+        <!-- Credit Approval — NOT at DIP stage, belongs in Formal Offer -->
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-required', 'not-started', isDIPStage ? 'not-started' : 'under-review', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-credit-approval">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
               <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Credit Approval</div>
-              <p style="font-size:13px;color:#94a3b8;margin:0;">Internal credit committee sign-off. This is populated automatically after the AI analysis and RM/Credit review.</p>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">${isDIPStage ? 'Not required at DIP stage. Credit committee sign-off happens after AI analysis and RM review at the Formal Offer stage.' : 'Internal credit committee sign-off. This is populated automatically after the AI analysis and RM/Credit review.'}</p>
             </div>
           </div>
         </div>
@@ -1077,7 +1105,8 @@ export async function renderDealMatrix(deal) {
     concurrent_transactions: 'Concurrent Transactions',
     broker_name: 'Broker Name', broker_company: 'Broker Company', broker_fca: 'Broker FCA',
     arrangement_fee_pct: 'Arrangement Fee %', broker_fee_pct: 'Broker Fee %',
-    commitment_fee: 'Commitment Fee', retained_interest_months: 'Retained Interest (months)'
+    commitment_fee: 'Commitment Fee', retained_interest_months: 'Retained Interest (months)',
+    estimated_net_worth: 'Est. Net Worth', source_of_wealth: 'Source of Wealth'
   };
 
   const FIELD_SECTIONS = {
@@ -1900,23 +1929,135 @@ export async function renderDealMatrix(deal) {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // COMPLETENESS CALCULATION
+  // DIP READINESS — section-by-section validation
   // ═══════════════════════════════════════════════════════════════════
-  const KEY_FIELDS = [
-    'borrower_name', 'borrower_email', 'borrower_phone', 'borrower_type',
-    'security_address', 'security_postcode', 'asset_type', 'current_value',
-    'loan_amount', 'ltv_requested', 'term_months', 'rate_requested',
-    'loan_purpose', 'exit_strategy', 'interest_servicing',
-    'property_tenure', 'occupancy_status'
-  ];
 
-  function calculateCompleteness() {
-    let filled = 0;
-    for (const key of KEY_FIELDS) {
-      const el = document.getElementById(`mf-${key}`);
-      if (el && el.value && el.value.trim() !== '') filled++;
+  // Required fields per section for DIP submission
+  const DIP_SECTIONS = {
+    'Borrower / KYC': {
+      required: ['borrower_name', 'borrower_type'],
+      conditional: [
+        // If corporate/spv/llp, company name + number are required
+        { fields: ['company_name', 'company_number'], when: () => {
+          const bt = document.getElementById('mf-borrower_type')?.value;
+          return bt && bt !== 'individual';
+        }},
+        // Must have at least email OR phone
+        { fields: ['borrower_email'], atLeastOne: ['borrower_email', 'borrower_phone'] }
+      ],
+      nice: ['borrower_dob', 'borrower_nationality']
+    },
+    'Borrower Financials': {
+      required: ['estimated_net_worth'],
+      nice: ['source_of_wealth']
+    },
+    'Property / Security': {
+      required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure'],
+      nice: ['current_value', 'occupancy_status', 'current_use']
+    },
+    'Loan Terms': {
+      required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
+      nice: ['ltv_requested', 'drawdown_date', 'use_of_funds']
+    },
+    'Exit Strategy': {
+      required: ['exit_strategy'],
+      nice: ['additional_notes']
+    },
+    'Fees': {
+      required: ['arrangement_fee_pct'],
+      nice: ['broker_fee_pct', 'commitment_fee']
     }
-    const pct = Math.round((filled / KEY_FIELDS.length) * 100);
+  };
+
+  // All key fields (flat list for overall completeness)
+  const KEY_FIELDS = Object.values(DIP_SECTIONS).flatMap(s => [...(s.required || []), ...(s.nice || [])]);
+
+  /**
+   * Check if a Matrix field has a value
+   */
+  function fieldHasValue(key) {
+    const el = document.getElementById(`mf-${key}`);
+    return el && el.value && el.value.trim() !== '' && el.value.trim() !== '— Select —';
+  }
+
+  /**
+   * Calculate DIP readiness — returns { ready, pct, sections: { name: { status, missing, filled, total } } }
+   */
+  function calculateDipReadiness() {
+    const result = { ready: true, sections: {}, totalRequired: 0, totalFilled: 0 };
+
+    for (const [name, config] of Object.entries(DIP_SECTIONS)) {
+      const section = { status: 'ready', missing: [], filled: 0, total: 0 };
+
+      // Check required fields
+      for (const key of config.required) {
+        section.total++;
+        if (fieldHasValue(key)) {
+          section.filled++;
+        } else {
+          section.missing.push(key);
+        }
+      }
+
+      // Check conditional fields
+      if (config.conditional) {
+        for (const cond of config.conditional) {
+          if (cond.when && !cond.when()) continue; // condition not met, skip
+
+          if (cond.atLeastOne) {
+            // At least one of these must be filled
+            section.total++;
+            const anyFilled = cond.atLeastOne.some(k => fieldHasValue(k));
+            if (anyFilled) {
+              section.filled++;
+            } else {
+              section.missing.push(cond.atLeastOne.join(' or '));
+            }
+          } else if (cond.fields) {
+            for (const key of cond.fields) {
+              section.total++;
+              if (fieldHasValue(key)) {
+                section.filled++;
+              } else {
+                section.missing.push(key);
+              }
+            }
+          }
+        }
+      }
+
+      // Determine section status
+      if (section.missing.length === 0) {
+        section.status = 'ready';
+      } else if (section.filled > 0) {
+        section.status = 'partial';
+      } else {
+        section.status = 'empty';
+      }
+
+      if (section.missing.length > 0) result.ready = false;
+      result.totalRequired += section.total;
+      result.totalFilled += section.filled;
+      result.sections[name] = section;
+    }
+
+    // Overall completeness (includes nice-to-have fields)
+    let allFilled = 0;
+    for (const key of KEY_FIELDS) {
+      if (fieldHasValue(key)) allFilled++;
+    }
+    result.pct = Math.round((allFilled / KEY_FIELDS.length) * 100);
+    result.requiredPct = result.totalRequired > 0 ? Math.round((result.totalFilled / result.totalRequired) * 100) : 0;
+
+    return result;
+  }
+
+  /**
+   * Update the completeness bar AND the CTA readiness indicator
+   */
+  function calculateCompleteness() {
+    const readiness = calculateDipReadiness();
+    const pct = readiness.pct;
 
     const pctEl = document.getElementById('matrix-completeness-pct');
     const fillEl = document.getElementById('matrix-completeness-fill');
@@ -1925,18 +2066,55 @@ export async function renderDealMatrix(deal) {
 
     if (pctEl) pctEl.textContent = pct + '%';
     if (fillEl) fillEl.style.width = pct + '%';
-    if (detailEl) detailEl.textContent = `${filled} of ${KEY_FIELDS.length} key fields completed`;
+    if (detailEl) detailEl.textContent = `${readiness.totalFilled} of ${readiness.totalRequired} required fields completed`;
 
     if (statusEl) {
-      if (pct >= 90) {
-        statusEl.textContent = 'Ready for Review';
+      if (readiness.ready) {
+        statusEl.textContent = 'Ready for Submission';
         statusEl.style.color = '#22c55e';
-      } else if (pct >= 60) {
-        statusEl.textContent = 'Good Progress';
+      } else if (readiness.requiredPct >= 60) {
+        statusEl.textContent = 'Almost Ready';
         statusEl.style.color = '#f59e0b';
       } else {
         statusEl.textContent = 'More Information Needed';
         statusEl.style.color = '#dc2626';
+      }
+    }
+
+    // Update the CTA section readiness checklist if it exists
+    const checklistEl = document.getElementById('dip-readiness-checklist');
+    if (checklistEl) {
+      let checkHtml = '';
+      for (const [name, sec] of Object.entries(readiness.sections)) {
+        const icon = sec.status === 'ready' ? '&#10003;' : sec.status === 'partial' ? '&#9888;' : '&#10005;';
+        const color = sec.status === 'ready' ? '#22c55e' : sec.status === 'partial' ? '#f59e0b' : '#dc2626';
+        const bg = sec.status === 'ready' ? '#f0fdf4' : sec.status === 'partial' ? '#fffbeb' : '#fef2f2';
+        const missingText = sec.missing.length > 0
+          ? sec.missing.map(k => FIELD_LABELS[k] || k.replace(/_/g, ' ')).join(', ')
+          : '';
+        checkHtml += `
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-radius:6px;background:${bg};margin-bottom:3px;">
+            <span style="font-size:13px;color:${color};font-weight:700;flex-shrink:0;">${icon}</span>
+            <div style="flex:1;">
+              <span style="font-size:12px;font-weight:600;color:#1e293b;">${name}</span>
+              ${missingText ? `<div style="font-size:10px;color:${color};margin-top:1px;">Missing: ${missingText}</div>` : ''}
+            </div>
+          </div>`;
+      }
+      checklistEl.innerHTML = checkHtml;
+    }
+
+    // Enable/disable submit button based on readiness
+    const submitCta = document.querySelector('#matrix-submit-cta button');
+    if (submitCta && currentStage === 'received') {
+      if (readiness.ready) {
+        submitCta.disabled = false;
+        submitCta.style.opacity = '1';
+        submitCta.style.background = '#22c55e';
+      } else {
+        submitCta.disabled = true;
+        submitCta.style.opacity = '0.5';
+        submitCta.style.background = '#94a3b8';
       }
     }
 
@@ -1979,22 +2157,29 @@ export async function renderDealMatrix(deal) {
   // SUBMIT FOR REVIEW — Step 4
   // ═══════════════════════════════════════════════════════════════════
   window.matrixSubmitForReview = async function() {
-    const pct = calculateCompleteness();
+    const readiness = calculateDipReadiness();
+    const pct = readiness.pct;
 
-    if (pct < 50) {
-      showToast('Please complete at least 50% of key fields before submitting for review.', 'error');
+    if (!readiness.ready) {
+      // Build a per-section error message
+      const incomplete = Object.entries(readiness.sections)
+        .filter(([, s]) => s.status !== 'ready')
+        .map(([name, s]) => {
+          const missing = s.missing.map(k => FIELD_LABELS[k] || k.replace(/_/g, ' ')).join(', ');
+          return `• ${name}: missing ${missing}`;
+        });
+      showToast('Cannot submit yet — please complete all required fields:\n' + incomplete.join('\n'), 'error');
       return;
     }
 
-    if (pct < 90) {
-      if (!confirm(`Matrix is ${pct}% complete. Some fields are still missing. Submit anyway?`)) return;
-    }
+    // All required fields filled — confirm with user
+    if (!confirm('All required sections are complete. Submit this deal for RM review?')) return;
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}/submit-for-review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completeness: pct })
+        body: JSON.stringify({ completeness: pct, readiness_sections: readiness.sections })
       });
 
       if (resp.ok) {

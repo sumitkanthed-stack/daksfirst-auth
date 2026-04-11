@@ -1396,13 +1396,14 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
       'drawdown_date', 'interest_servicing', 'existing_charges',
       'property_tenure', 'occupancy_status', 'current_use',
       'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
-      'deposit_source', 'concurrent_transactions'
+      'deposit_source', 'concurrent_transactions',
+      'estimated_net_worth', 'source_of_wealth'
     ];
 
     // Numeric fields that need parsing
     const numericFields = [
       'current_value', 'loan_amount', 'ltv_requested', 'term_months',
-      'rate_requested', 'purchase_price', 'refurb_cost'
+      'rate_requested', 'purchase_price', 'refurb_cost', 'estimated_net_worth'
     ];
 
     // Build dynamic SET clause — only for allowed fields present in the body
@@ -1504,7 +1505,8 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'drawdown_date', 'interest_servicing', 'existing_charges',
       'property_tenure', 'occupancy_status', 'current_use',
       'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
-      'deposit_source', 'concurrent_transactions'
+      'deposit_source', 'concurrent_transactions',
+      'estimated_net_worth', 'source_of_wealth'
     ];
 
     const rmFields = [
@@ -1520,7 +1522,8 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
     const numericFields = [
       'current_value', 'loan_amount', 'ltv_requested', 'term_months',
       'rate_requested', 'purchase_price', 'refurb_cost',
-      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months'
+      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months',
+      'estimated_net_worth'
     ];
 
     // Build SET clause
