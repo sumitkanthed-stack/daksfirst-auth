@@ -391,6 +391,15 @@ export async function renderDealMatrix(deal) {
         <!-- Guarantor(s) -->
         ${renderFieldRow('guarantors', 'Guarantor(s)', 'Co-signatory, personal guarantees',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-guarantors">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Guarantor Details</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Guarantor information will be captured here. Upload guarantor ID and proof of address via the Document Repository.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -413,17 +422,53 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('assets', 'Assets', 'Real estate, investments, cash, vehicles',
           ['under-review', 'not-started', 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-assets">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Assets Schedule</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload asset statements via Document Repository. Parsed data will auto-populate here.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Liabilities -->
         ${renderFieldRow('liabilities', 'Liabilities', 'Mortgages, loans, credit commitments',
           ['submitted', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-liabilities">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Liabilities Schedule</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload mortgage statements and credit reports via Document Repository. Parsed data will auto-populate here.</p>
+            </div>
+          </div>
+        </div>
 
         <!-- Income -->
         ${renderFieldRow('income', 'Income', 'Employment, rental, investment income',
           ['approved', 'not-started', 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-income">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Income Schedule</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload payslips, tax returns, or rental statements via Document Repository. Parsed data will auto-populate here.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Expenses -->
         ${renderFieldRow('expenses', 'Expenses', 'Housing, living costs, financial commitments',
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-expenses">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Expenses Schedule</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload bank statements via Document Repository. Parsed data will auto-populate here.</p>
+            </div>
+          </div>
+        </div>
 
         <!-- AML & Source of Funds -->
         ${renderFieldRow('aml-source-funds', 'AML & Source of Funds', 'Source of funds, wealth, PEP screening, tax residency',
@@ -613,6 +658,15 @@ export async function renderDealMatrix(deal) {
         <!-- Refinance Evidence (conditional) -->
         ${renderFieldRow('refinance-evidence', 'Refinance Evidence', 'Lender offer, pre-approval',
           ['not-started', 'not-started', 'not-started', 'not-started'], true)}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-refinance-evidence">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Refinance Evidence</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Upload lender DIP, mortgage offer, or broker confirmation via Document Repository.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -636,9 +690,27 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('legal-security', 'Legal / Security', 'Title deeds, searches, mortgage deed',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-legal-security">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Legal & Security</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Title deeds, Land Registry searches, mortgage deed, and legal opinion. Upload via Document Repository — required at Formal Offer stage.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Insurance -->
         ${renderFieldRow('insurance', 'Insurance', 'Buildings insurance, landlord insurance',
           ['not-required', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-insurance">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Insurance</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Buildings insurance and landlord insurance evidence. Upload via Document Repository — required at Formal Offer stage.</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       ${isDIPStage ? `
@@ -689,6 +761,15 @@ export async function renderDealMatrix(deal) {
         <!-- Credit Approval -->
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
           ['approved', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-credit-approval">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:12px">Credit Approval</div>
+              <p style="font-size:13px;color:#94a3b8;margin:0;">Internal credit committee sign-off. This is populated automatically after the AI analysis and RM/Credit review.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -711,17 +792,53 @@ export async function renderDealMatrix(deal) {
         ${renderFieldRow('dip-document', 'Data Information Package (DIP)', 'Initial deal summary and requirements',
           [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-dip-document">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Data Information Package (DIP)</div>
+              <div style="font-size:13px;color:#64748b;">${deal.dip_signed ? 'Signed and issued.' : deal.dip_issued_at ? 'Issued — awaiting signature.' : 'Will be generated once all required fields are populated.'}</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Indicative TS -->
         ${renderFieldRow('indicative-ts', 'Indicative Term Sheet', 'Initial lending terms and conditions',
           ['locked', deal.ts_signed ? 'signed' : 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-indicative-ts">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Indicative Term Sheet</div>
+              <div style="font-size:13px;color:#64748b;">${deal.ts_signed ? 'Signed and accepted.' : 'Generated after DIP is signed and commitment fee is paid.'}</div>
+            </div>
+          </div>
+        </div>
 
         <!-- Formal Offer -->
         ${renderFieldRow('formal-offer', 'Formal Offer Letter', 'Final binding lending terms',
           ['locked', 'locked', deal.fl_signed ? 'signed' : 'not-started', 'not-started'])}
 
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-formal-offer">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Formal Offer Letter</div>
+              <div style="font-size:13px;color:#64748b;">${deal.fl_signed ? 'Signed — proceeding to legal.' : 'Issued after underwriting and bank approval.'}</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Execution & Completion -->
         ${renderFieldRow('execution-completion', 'Execution & Completion', 'Legal docs and completion statement',
           ['locked', 'locked', 'locked', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-execution-completion">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+              <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px">Execution & Completion</div>
+              <div style="font-size:13px;color:#64748b;">Final legal documentation and completion statement. Generated at the execution stage.</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
