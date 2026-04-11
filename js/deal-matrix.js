@@ -19,9 +19,36 @@ const inputFocusClass = 'matrix-editable';
 const readonlyStyle = 'font-size:14px;color:#1e293b;padding:8px 0;';
 const labelStyle = 'font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px';
 
+// Format number with commas: 1500000 → "1,500,000"
+function formatWithCommas(val) {
+  if (!val && val !== 0) return '';
+  const num = String(val).replace(/,/g, '').replace(/[^0-9.\-]/g, '');
+  if (!num || isNaN(num)) return String(val);
+  const parts = num.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.');
+}
+
+// Strip commas for saving: "1,500,000" → "1500000"
+function stripCommas(val) {
+  return String(val || '').replace(/,/g, '');
+}
+
+// Validation rules per input type
+const FIELD_VALIDATORS = {
+  money: { regex: /^[\d,]+\.?\d{0,2}$/, msg: 'Enter a valid amount (e.g. 1,500,000)' },
+  number: { regex: /^[\d,]+\.?\d*$/, msg: 'Enter a valid number' },
+  email: { regex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, msg: 'Enter a valid email address' },
+  tel: { regex: /^[\d\s\+\-\(\)]{7,20}$/, msg: 'Enter a valid phone number' },
+  date: { regex: /^\d{4}-\d{2}-\d{2}$/, msg: 'Enter date as YYYY-MM-DD' },
+  percentage: { regex: /^\d{1,3}(\.\d{1,2})?$/, msg: 'Enter a valid percentage (e.g. 2.5)' }
+};
+
 function renderEditableField(dbField, label, value, inputType, canEdit, options) {
   const safeVal = sanitizeHtml(String(value || ''));
   const id = `mf-${dbField}`;
+  const isMoney = inputType === 'money' || inputType === 'number';
+  const displayVal = isMoney ? formatWithCommas(safeVal) : safeVal;
 
   if (!canEdit) {
     // Read-only display
@@ -34,7 +61,7 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
     }
     return `<div style="margin-bottom:12px">
       <label style="${labelStyle}">${sanitizeHtml(label)}</label>
-      <div style="${readonlyStyle}">${safeVal || '—'}</div>
+      <div style="${readonlyStyle}">${isMoney && safeVal ? '£' + formatWithCommas(safeVal) : (safeVal || '—')}</div>
     </div>`;
   }
 
@@ -52,16 +79,31 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
   if (inputType === 'textarea') {
     return `<div style="margin-bottom:12px">
       <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
-      <textarea id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}min-height:80px;resize:vertical;" onblur="window.matrixSaveField('${dbField}', this.value)">${safeVal}</textarea>
+      <textarea id="${id}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}min-height:80px;resize:vertical;" onblur="window.matrixValidateAndSave('${dbField}', this.value, 'text')">${safeVal}</textarea>
     </div>`;
   }
 
-  const typeAttr = inputType === 'money' ? 'text' : (inputType || 'text');
-  const placeholder = inputType === 'money' ? 'e.g. 1,500,000' : inputType === 'date' ? 'YYYY-MM-DD' : '';
+  if (isMoney) {
+    // Money/number field — shows commas while typing, saves raw number
+    return `<div style="margin-bottom:12px">
+      <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
+      <input id="${id}" type="text" inputmode="numeric" data-field="${dbField}" data-type="money" class="${inputFocusClass}" style="${inputStyle}" value="${displayVal}" placeholder="e.g. 1,500,000"
+        oninput="this.value=this.value.replace(/[^0-9.,]/g,'')"
+        onfocus="this.select()"
+        onblur="window.matrixValidateAndSave('${dbField}', this.value, 'money')" />
+      <div id="err-${dbField}" style="font-size:10px;color:#dc2626;margin-top:2px;display:none;"></div>
+    </div>`;
+  }
+
+  const typeAttr = inputType || 'text';
+  const placeholder = inputType === 'date' ? 'YYYY-MM-DD' : '';
+  const dataType = inputType === 'email' ? 'email' : inputType === 'tel' ? 'tel' : inputType === 'date' ? 'date' : 'text';
 
   return `<div style="margin-bottom:12px">
     <label style="${labelStyle}" for="${id}">${sanitizeHtml(label)}</label>
-    <input id="${id}" type="${typeAttr}" data-field="${dbField}" class="${inputFocusClass}" style="${inputStyle}" value="${safeVal}" placeholder="${placeholder}" onblur="window.matrixSaveField('${dbField}', this.value)" />
+    <input id="${id}" type="${typeAttr}" data-field="${dbField}" data-type="${dataType}" class="${inputFocusClass}" style="${inputStyle}" value="${safeVal}" placeholder="${placeholder}"
+      onblur="window.matrixValidateAndSave('${dbField}', this.value, '${dataType}')" />
+    <div id="err-${dbField}" style="font-size:10px;color:#dc2626;margin-top:2px;display:none;"></div>
   </div>`;
 }
 
@@ -458,7 +500,7 @@ export async function renderDealMatrix(deal) {
               </div>
               <p style="font-size:11px;color:#64748b;margin:0 0 10px;">Provide an estimate of the borrower's net worth. This is not verified at DIP stage — just an indication for the RM.</p>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('estimated_net_worth', 'Estimated Net Worth (£)', deal.estimated_net_worth, 'number', canEdit)}
+                ${renderEditableField('estimated_net_worth', 'Estimated Net Worth (£)', deal.estimated_net_worth, 'money', canEdit)}
                 ${renderEditableField('source_of_wealth', 'Source of Wealth', deal.source_of_wealth, 'select', canEdit, [
                   { value: 'employment', label: 'Employment / Salary' },
                   { value: 'business', label: 'Business Ownership' },
@@ -1034,6 +1076,104 @@ export async function renderDealMatrix(deal) {
     }
   };
 
+  // ── Scroll to a DIP section from the readiness checklist ──
+  window.matrixScrollToSection = function(sectionId) {
+    const header = document.querySelector(`[data-section-header="${sectionId}"]`);
+    const content = document.getElementById(`content-${sectionId}`);
+    if (header) {
+      // Open section if closed
+      if (content && content.style.maxHeight === '0px') {
+        window.matrixToggleSection(sectionId);
+      }
+      // Smooth scroll to section header
+      header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Brief highlight flash
+      header.style.background = '#fef9c3';
+      setTimeout(() => { header.style.background = ''; }, 1500);
+    }
+  };
+
+  // ── Validate and save — wraps matrixSaveField with type checks ──
+  window.matrixValidateAndSave = function(fieldKey, rawValue, dataType) {
+    const el = document.getElementById(`mf-${fieldKey}`);
+    const errEl = document.getElementById(`err-${fieldKey}`);
+
+    // Clear previous error
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (el) el.style.borderColor = '#e2e8f0';
+
+    // Empty is always valid (not a required-check — readiness handles that)
+    const trimmed = String(rawValue || '').trim();
+    if (!trimmed) {
+      window.matrixSaveField(fieldKey, '');
+      return;
+    }
+
+    // Money: format with commas for display, save raw number
+    if (dataType === 'money') {
+      const raw = stripCommas(trimmed);
+      if (!/^\d+\.?\d{0,2}$/.test(raw)) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Enter a valid amount (e.g. 1,500,000)'; errEl.style.display = 'block'; }
+        return;
+      }
+      // Update display with commas
+      if (el) el.value = formatWithCommas(raw);
+      window.matrixSaveField(fieldKey, raw);
+      return;
+    }
+
+    // Email validation
+    if (dataType === 'email') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Enter a valid email address'; errEl.style.display = 'block'; }
+        return;
+      }
+    }
+
+    // Phone validation
+    if (dataType === 'tel') {
+      if (!/^[\d\s\+\-\(\)]{7,20}$/.test(trimmed)) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Enter a valid phone number'; errEl.style.display = 'block'; }
+        return;
+      }
+    }
+
+    // Date validation
+    if (dataType === 'date') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Enter date as YYYY-MM-DD'; errEl.style.display = 'block'; }
+        return;
+      }
+    }
+
+    // Percentage fields
+    if (fieldKey.includes('_pct') || fieldKey.includes('ltv')) {
+      const num = parseFloat(trimmed);
+      if (isNaN(num) || num < 0 || num > 100) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Enter a percentage between 0 and 100'; errEl.style.display = 'block'; }
+        return;
+      }
+    }
+
+    // Term months — sanity check
+    if (fieldKey === 'term_months') {
+      const num = parseInt(trimmed, 10);
+      if (isNaN(num) || num < 1 || num > 60) {
+        if (el) el.style.borderColor = '#dc2626';
+        if (errEl) { errEl.textContent = 'Term must be 1–60 months'; errEl.style.display = 'block'; }
+        return;
+      }
+    }
+
+    // All good — save
+    window.matrixSaveField(fieldKey, trimmed);
+  };
+
   // ── Matrix field auto-save on blur ──
   window.matrixSaveField = async function(fieldKey, value) {
     const submissionId = deal.submission_id;
@@ -1053,6 +1193,8 @@ export async function renderDealMatrix(deal) {
           el.style.borderColor = '#22c55e';
           setTimeout(() => { el.style.borderColor = '#e2e8f0'; }, 1200);
         }
+        // Recalculate completeness after every save
+        calculateCompleteness();
       } else {
         const err = await resp.json().catch(() => ({}));
         if (el) el.style.borderColor = '#dc2626';
@@ -1932,45 +2074,123 @@ export async function renderDealMatrix(deal) {
   // DIP READINESS — section-by-section validation
   // ═══════════════════════════════════════════════════════════════════
 
-  // Required fields per section for DIP submission
-  const DIP_SECTIONS = {
-    'Borrower / KYC': {
-      required: ['borrower_name', 'borrower_type'],
-      conditional: [
-        // If corporate/spv/llp, company name + number are required
-        { fields: ['company_name', 'company_number'], when: () => {
-          const bt = document.getElementById('mf-borrower_type')?.value;
-          return bt && bt !== 'individual';
-        }},
-        // Must have at least email OR phone
-        { fields: ['borrower_email'], atLeastOne: ['borrower_email', 'borrower_phone'] }
-      ],
-      nice: ['borrower_dob', 'borrower_nationality']
+  // ── Stage-aware validation tiers ──
+  // DIP = simple (broker fills basics), ITS = detailed, Formal = comprehensive
+  const isCorporate = () => {
+    const bt = document.getElementById('mf-borrower_type')?.value;
+    return bt && bt !== 'individual';
+  };
+
+  const STAGE_VALIDATION = {
+    // ── DIP: broker submits for RM review ──
+    dip: {
+      'Borrower / KYC': {
+        required: ['borrower_name', 'borrower_type'],
+        conditional: [
+          { fields: ['company_name', 'company_number'], when: isCorporate },
+          { fields: ['borrower_email'], atLeastOne: ['borrower_email', 'borrower_phone'] }
+        ],
+        nice: ['borrower_dob', 'borrower_nationality']
+      },
+      'Borrower Financials': {
+        required: ['estimated_net_worth'],
+        nice: ['source_of_wealth']
+      },
+      'Property / Security': {
+        required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure'],
+        nice: ['current_value', 'occupancy_status', 'current_use']
+      },
+      'Loan Terms': {
+        required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
+        nice: ['ltv_requested', 'drawdown_date', 'use_of_funds']
+      },
+      'Exit Strategy': {
+        required: ['exit_strategy'],
+        nice: ['additional_notes']
+      },
+      'Fees': {
+        required: ['arrangement_fee_pct'],
+        nice: ['broker_fee_pct', 'commitment_fee']
+      }
     },
-    'Borrower Financials': {
-      required: ['estimated_net_worth'],
-      nice: ['source_of_wealth']
+
+    // ── INDICATIVE TERM SHEET: RM issues ITS — needs more detail ──
+    its: {
+      'Borrower / KYC': {
+        required: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'],
+        conditional: [
+          { fields: ['company_name', 'company_number', 'borrower_jurisdiction'], when: isCorporate }
+        ]
+      },
+      'Borrower Financials': {
+        required: ['estimated_net_worth', 'source_of_wealth']
+      },
+      'Property / Security': {
+        required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'occupancy_status', 'current_use'],
+        nice: ['purchase_price']
+      },
+      'Loan Terms': {
+        required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose', 'ltv_requested', 'drawdown_date'],
+        nice: ['use_of_funds']
+      },
+      'Exit Strategy': {
+        required: ['exit_strategy'],
+        nice: ['additional_notes']
+      },
+      'Fees': {
+        required: ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee'],
+        nice: ['retained_interest_months']
+      },
+      'AML & Source of Funds': {
+        required: ['deposit_source'],
+        nice: ['existing_charges', 'concurrent_transactions']
+      }
     },
-    'Property / Security': {
-      required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure'],
-      nice: ['current_value', 'occupancy_status', 'current_use']
-    },
-    'Loan Terms': {
-      required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
-      nice: ['ltv_requested', 'drawdown_date', 'use_of_funds']
-    },
-    'Exit Strategy': {
-      required: ['exit_strategy'],
-      nice: ['additional_notes']
-    },
-    'Fees': {
-      required: ['arrangement_fee_pct'],
-      nice: ['broker_fee_pct', 'commitment_fee']
+
+    // ── FORMAL OFFER: full underwriting — everything required ──
+    formal: {
+      'Borrower / KYC': {
+        required: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'],
+        conditional: [
+          { fields: ['company_name', 'company_number', 'borrower_jurisdiction'], when: isCorporate }
+        ]
+      },
+      'Borrower Financials': {
+        required: ['estimated_net_worth', 'source_of_wealth']
+      },
+      'Property / Security': {
+        required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'occupancy_status', 'current_use', 'purchase_price']
+      },
+      'Loan Terms': {
+        required: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose', 'ltv_requested', 'drawdown_date', 'use_of_funds']
+      },
+      'Exit Strategy': {
+        required: ['exit_strategy', 'additional_notes']
+      },
+      'Fees': {
+        required: ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months']
+      },
+      'AML & Source of Funds': {
+        required: ['deposit_source', 'existing_charges', 'concurrent_transactions']
+      }
     }
   };
 
+  // Resolve which tier we're in based on deal stage
+  function getValidationTier() {
+    const stage = currentStage || 'received';
+    if (['received', 'info_gathering'].includes(stage)) return 'dip';
+    if (['dip_issued', 'ai_termsheet', 'fee_pending'].includes(stage)) return 'its';
+    return 'formal'; // underwriting, bank_submission, etc.
+  }
+
+  // Get current sections for the active tier
+  function getCurrentSections() {
+    return STAGE_VALIDATION[getValidationTier()];
+  }
+
   // All key fields (flat list for overall completeness)
-  const KEY_FIELDS = Object.values(DIP_SECTIONS).flatMap(s => [...(s.required || []), ...(s.nice || [])]);
+  const KEY_FIELDS = Object.values(STAGE_VALIDATION.formal).flatMap(s => [...(s.required || []), ...(s.nice || [])]);
 
   /**
    * Check if a Matrix field has a value
@@ -1981,12 +2201,14 @@ export async function renderDealMatrix(deal) {
   }
 
   /**
-   * Calculate DIP readiness — returns { ready, pct, sections: { name: { status, missing, filled, total } } }
+   * Calculate readiness for current stage — returns { ready, pct, tier, sections: { name: { status, missing, filled, total } } }
    */
   function calculateDipReadiness() {
-    const result = { ready: true, sections: {}, totalRequired: 0, totalFilled: 0 };
+    const tier = getValidationTier();
+    const sections = getCurrentSections();
+    const result = { ready: true, tier, sections: {}, totalRequired: 0, totalFilled: 0 };
 
-    for (const [name, config] of Object.entries(DIP_SECTIONS)) {
+    for (const [name, config] of Object.entries(sections)) {
       const section = { status: 'ready', missing: [], filled: 0, total: 0 };
 
       // Check required fields
@@ -2068,21 +2290,34 @@ export async function renderDealMatrix(deal) {
     if (fillEl) fillEl.style.width = pct + '%';
     if (detailEl) detailEl.textContent = `${readiness.totalFilled} of ${readiness.totalRequired} required fields completed`;
 
+    const tierLabels = { dip: 'DIP Submission', its: 'Indicative Term Sheet', formal: 'Formal Offer' };
+
     if (statusEl) {
+      const tierName = tierLabels[readiness.tier] || 'Submission';
       if (readiness.ready) {
-        statusEl.textContent = 'Ready for Submission';
+        statusEl.textContent = `Ready for ${tierName}`;
         statusEl.style.color = '#22c55e';
       } else if (readiness.requiredPct >= 60) {
-        statusEl.textContent = 'Almost Ready';
+        statusEl.textContent = `Almost Ready — ${tierName}`;
         statusEl.style.color = '#f59e0b';
       } else {
-        statusEl.textContent = 'More Information Needed';
+        statusEl.textContent = `More Info Needed — ${tierName}`;
         statusEl.style.color = '#dc2626';
       }
     }
 
     // Update the CTA section readiness checklist if it exists
     const checklistEl = document.getElementById('dip-readiness-checklist');
+    // Map DIP section names → Matrix section IDs for scroll navigation
+    const SECTION_SCROLL_MAP = {
+      'Borrower / KYC': 's1',
+      'Borrower Financials': 's2',
+      'Property / Security': 's3',
+      'Loan Terms': 's4',
+      'Exit Strategy': 's5',
+      'Fees': 's7',
+      'AML & Source of Funds': 's2'  // AML is within Borrower Financials section
+    };
     if (checklistEl) {
       let checkHtml = '';
       for (const [name, sec] of Object.entries(readiness.sections)) {
@@ -2092,12 +2327,18 @@ export async function renderDealMatrix(deal) {
         const missingText = sec.missing.length > 0
           ? sec.missing.map(k => FIELD_LABELS[k] || k.replace(/_/g, ' ')).join(', ')
           : '';
+        const scrollTarget = SECTION_SCROLL_MAP[name] || '';
+        const clickable = sec.status !== 'ready' && scrollTarget;
+        const cursorStyle = clickable ? 'cursor:pointer;' : '';
+        const clickHandler = clickable ? `onclick="window.matrixScrollToSection('${scrollTarget}')"` : '';
+        const hoverTitle = clickable ? `title="Click to go to ${name} section"` : '';
         checkHtml += `
-          <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-radius:6px;background:${bg};margin-bottom:3px;">
+          <div ${clickHandler} ${hoverTitle} style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-radius:6px;background:${bg};margin-bottom:3px;${cursorStyle}transition:opacity .15s;" ${clickable ? 'onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1"' : ''}>
             <span style="font-size:13px;color:${color};font-weight:700;flex-shrink:0;">${icon}</span>
             <div style="flex:1;">
               <span style="font-size:12px;font-weight:600;color:#1e293b;">${name}</span>
               ${missingText ? `<div style="font-size:10px;color:${color};margin-top:1px;">Missing: ${missingText}</div>` : ''}
+              ${clickable ? '<div style="font-size:9px;color:#2563eb;margin-top:2px;">Click to complete ↓</div>' : ''}
             </div>
           </div>`;
       }
@@ -2121,14 +2362,7 @@ export async function renderDealMatrix(deal) {
     return pct;
   }
 
-  // Recalculate completeness whenever a field is saved
-  const origSaveField = window.matrixSaveField;
-  window.matrixSaveField = async function(fieldKey, value) {
-    await origSaveField(fieldKey, value);
-    calculateCompleteness();
-  };
-
-  // Initial calculation
+  // Initial completeness calculation on load
   setTimeout(calculateCompleteness, 500);
 
   // ── If deal is already past 'received' stage, disable submit button and action buttons for brokers ──
