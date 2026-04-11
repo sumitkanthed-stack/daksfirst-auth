@@ -837,9 +837,9 @@
                   <div style="font-size:13px;color:#1e3a5f;margin-top:4px;">Click "View Parsed" on any document above to see extracted data here</div>
                 </div>
                 <div id="parser-fields" style="display:none;"></div>
-                <div id="parser-actions" style="display:none;margin-top:16px;">
-                  <button onclick="window.acceptAllParsed && window.acceptAllParsed()" style="padding:8px 18px;background:#22c55e;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#10003; Accept All &amp; Auto-Fill Matrix</button>
-                  <button onclick="window.reviewParsedFields && window.reviewParsedFields()" style="padding:8px 18px;background:#fff;color:#1e3a5f;border:2px solid #1e3a5f;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-left:8px;">Review Field by Field</button>
+                <div id="parser-actions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+                  <button onclick="window.acceptAllParsed && window.acceptAllParsed()" style="padding:10px 22px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">&#10003; Accept All &amp; Fill Matrix</button>
+                  <button onclick="document.getElementById('section-matrix').scrollIntoView({behavior:'smooth',block:'start'})" style="padding:10px 22px;background:#fff;color:#1e3a5f;border:2px solid #1e3a5f;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#8593; Go to Matrix</button>
                 </div>
               </div>
             </div>

@@ -1032,61 +1032,122 @@ export async function renderDealMatrix(deal) {
     if (progress) progress.style.display = 'none';
   }
 
-  // Auto-populate Matrix fields from parsed JSON
-  function autoPopulateMatrix(parsedData) {
+  // ═══════════════════════════════════════════════════════════════════
+  // FIELD LABELS — human-readable names for parsed keys
+  // ═══════════════════════════════════════════════════════════════════
+  const FIELD_LABELS = {
+    borrower_name: 'Borrower Name', borrower_email: 'Email', borrower_phone: 'Phone',
+    borrower_dob: 'Date of Birth', borrower_nationality: 'Nationality', borrower_type: 'Borrower Type',
+    company_name: 'Company Name', company_number: 'Company Number',
+    security_address: 'Property Address', security_postcode: 'Postcode',
+    asset_type: 'Asset Type', property_tenure: 'Tenure', occupancy_status: 'Occupancy',
+    current_use: 'Current Use', current_value: 'Current Value', purchase_price: 'Purchase Price',
+    loan_amount: 'Loan Amount', ltv_requested: 'LTV %', term_months: 'Term (months)',
+    rate_requested: 'Rate %/month', interest_servicing: 'Interest Servicing',
+    drawdown_date: 'Drawdown Date', loan_purpose: 'Purpose', use_of_funds: 'Use of Funds',
+    refurb_scope: 'Refurb Scope', refurb_cost: 'Refurb Cost',
+    exit_strategy: 'Exit Strategy', additional_notes: 'Notes',
+    deposit_source: 'Source of Deposit', existing_charges: 'Existing Charges',
+    concurrent_transactions: 'Concurrent Transactions',
+    broker_name: 'Broker Name', broker_company: 'Broker Company', broker_fca: 'Broker FCA',
+    arrangement_fee_pct: 'Arrangement Fee %', broker_fee_pct: 'Broker Fee %',
+    commitment_fee: 'Commitment Fee', retained_interest_months: 'Retained Interest (months)'
+  };
+
+  const FIELD_SECTIONS = {
+    'Borrower / KYC': ['borrower_name', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality', 'borrower_type', 'company_name', 'company_number'],
+    'Property': ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'occupancy_status', 'current_use', 'current_value', 'purchase_price'],
+    'Loan Terms': ['loan_amount', 'ltv_requested', 'term_months', 'rate_requested', 'interest_servicing', 'drawdown_date', 'loan_purpose', 'use_of_funds', 'refurb_scope', 'refurb_cost'],
+    'Exit / AML': ['exit_strategy', 'deposit_source', 'existing_charges', 'concurrent_transactions', 'additional_notes'],
+    'Broker / Commercial': ['broker_name', 'broker_company', 'broker_fca', 'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months']
+  };
+
+  const ALL_FIELD_KEYS = Object.values(FIELD_SECTIONS).flat();
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SHOW PARSED DATA IN PARSER SECTION — review before accepting
+  // ═══════════════════════════════════════════════════════════════════
+  let _lastParsedData = null; // store for Accept All
+
+  function showParsedResults(parsedData) {
     if (!parsedData || typeof parsedData !== 'object') return;
+    _lastParsedData = parsedData;
 
     const confidence = parsedData.confidence != null ? Math.round(parsedData.confidence * 100) : null;
-    let fieldsPopulated = 0;
+    const parserFields = document.getElementById('parser-fields');
+    const parserActions = document.getElementById('parser-actions');
+    const parserContent = document.getElementById('parser-content');
+    if (!parserFields) return;
 
-    // Map of parsed_data keys to Matrix input IDs (mf-<dbField>)
-    const fieldMap = [
-      'borrower_name', 'borrower_email', 'borrower_phone', 'borrower_dob',
-      'borrower_nationality', 'borrower_type', 'company_name', 'company_number',
-      'security_address', 'security_postcode', 'asset_type', 'property_tenure',
-      'occupancy_status', 'current_use', 'current_value', 'purchase_price',
-      'loan_amount', 'ltv_requested', 'term_months', 'rate_requested',
-      'interest_servicing', 'drawdown_date', 'loan_purpose', 'use_of_funds',
-      'refurb_scope', 'refurb_cost', 'exit_strategy', 'additional_notes',
-      'deposit_source', 'existing_charges', 'concurrent_transactions',
-      'broker_name', 'broker_company', 'broker_fca',
-      'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months'
-    ];
+    // Count extracted fields
+    const extracted = ALL_FIELD_KEYS.filter(k => parsedData[k] != null && parsedData[k] !== '');
+    const confColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
 
-    for (const key of fieldMap) {
-      const val = parsedData[key];
-      if (val == null || val === '') continue;
+    // Build summary header
+    let html = `
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#1e3a5f;">AI Extraction Results</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;">${extracted.length} fields extracted from your documents</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${confidence != null ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:${confColor};">${confidence}%</div><div style="font-size:9px;color:#64748b;font-weight:600;">CONFIDENCE</div></div>` : ''}
+          <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#2563eb;">${extracted.length}</div><div style="font-size:9px;color:#64748b;font-weight:600;">FIELDS</div></div>
+        </div>
+      </div>`;
 
-      const el = document.getElementById(`mf-${key}`);
-      if (!el) continue;
+    // Build grouped field table
+    for (const [sectionName, fields] of Object.entries(FIELD_SECTIONS)) {
+      const sectionFields = fields.filter(k => parsedData[k] != null && parsedData[k] !== '');
+      if (sectionFields.length === 0) continue;
 
-      // Set value
-      if (el.tagName === 'SELECT') {
-        el.value = String(val);
-      } else if (el.tagName === 'TEXTAREA') {
-        el.value = String(val);
-      } else {
-        el.value = String(val);
+      html += `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;padding:6px 0;border-bottom:1px solid #e2e8f0;margin-bottom:6px;">${sectionName}</div>`;
+
+      for (const key of sectionFields) {
+        const label = FIELD_LABELS[key] || key;
+        let val = String(parsedData[key]);
+        // Format currency values
+        if (['current_value', 'purchase_price', 'loan_amount', 'refurb_cost', 'commitment_fee'].includes(key) && !isNaN(parseFloat(val.replace(/[£,]/g, '')))) {
+          const num = parseFloat(val.replace(/[£,]/g, ''));
+          val = '\u00A3' + num.toLocaleString('en-GB');
+        }
+        if (['ltv_requested', 'rate_requested', 'arrangement_fee_pct', 'broker_fee_pct'].includes(key)) {
+          val = val + '%';
+        }
+
+        html += `
+          <div style="display:flex;align-items:center;padding:7px 12px;border-radius:6px;margin-bottom:3px;background:#fff;border:1px solid #f1f5f9;" id="parsed-row-${key}">
+            <div style="width:180px;font-size:12px;color:#64748b;font-weight:600;flex-shrink:0;">${label}</div>
+            <div style="flex:1;font-size:13px;color:#1e293b;font-weight:500;">${val}</div>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button onclick="window.acceptParsedField('${key}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#22c55e;color:#fff;" title="Accept and fill Matrix">&#10003;</button>
+              <button onclick="document.getElementById('parsed-row-${key}').style.display='none'" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:#fee2e2;color:#dc2626;" title="Reject this value">&#10005;</button>
+            </div>
+          </div>`;
       }
+      html += `</div>`;
+    }
 
-      // Visual indicator — highlight auto-filled fields with amber border + AI badge
-      el.style.borderColor = '#f59e0b';
-      el.style.background = '#fffbeb';
+    parserFields.innerHTML = html;
+    parserFields.style.display = 'block';
+    if (parserActions) parserActions.style.display = 'flex';
 
-      // Add confidence badge next to the field if not already there
-      const badge = el.parentElement.querySelector('.ai-confidence-badge');
-      if (!badge && confidence != null) {
-        const badgeColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
-        const badgeHtml = document.createElement('div');
-        badgeHtml.className = 'ai-confidence-badge';
-        badgeHtml.style.cssText = 'display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;';
-        badgeHtml.innerHTML = `<span style="padding:1px 6px;border-radius:4px;background:${badgeColor};color:#fff;font-size:9px;">AI</span> <span style="color:${badgeColor};">${confidence}% confidence</span>`;
-        el.parentElement.appendChild(badgeHtml);
-      }
+    // Remove the "Select a document" placeholder
+    const placeholder = parserContent ? parserContent.querySelector('.bg-blue') : null;
+    const infoBox = parserContent ? parserContent.querySelector('div[style*="background:#eff6ff"]') : null;
+    if (infoBox && infoBox.textContent.includes('Select a document')) infoBox.style.display = 'none';
 
-      // Trigger save to DB
-      window.matrixSaveField(key, String(val));
-      fieldsPopulated++;
+    // Auto-open Parser section and scroll to it
+    const parserBody = document.getElementById('body-parser');
+    if (parserBody) {
+      parserBody.classList.remove('collapsed');
+      parserBody.style.maxHeight = 'none';
+    }
+    const parserSection = document.getElementById('section-parser');
+    if (parserSection) {
+      parserSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // Update stats bar
@@ -1094,13 +1155,95 @@ export async function renderDealMatrix(deal) {
     const fieldsFilled = document.getElementById('matrix-fields-filled');
     const confEl = document.getElementById('matrix-confidence');
     if (lastParsed) lastParsed.textContent = 'just now';
-    if (fieldsFilled) fieldsFilled.textContent = String(fieldsPopulated);
+    if (fieldsFilled) fieldsFilled.textContent = String(extracted.length);
     if (confEl && confidence != null) {
       confEl.textContent = confidence + '%';
       confEl.style.color = confidence >= 80 ? '#86efac' : confidence >= 50 ? '#fde68a' : '#fca5a5';
     }
+  }
 
-    showToast(`${fieldsPopulated} fields auto-filled from parsed data`, 'success');
+  // ═══════════════════════════════════════════════════════════════════
+  // ACCEPT PARSED FIELD(S) → push to Matrix inputs + save to DB
+  // ═══════════════════════════════════════════════════════════════════
+  function pushFieldToMatrix(key, val) {
+    const el = document.getElementById(`mf-${key}`);
+    if (!el) return false;
+
+    el.value = String(val);
+    el.style.borderColor = '#f59e0b';
+    el.style.background = '#fffbeb';
+
+    // Add AI badge if not there
+    const confidence = _lastParsedData && _lastParsedData.confidence != null ? Math.round(_lastParsedData.confidence * 100) : null;
+    const badge = el.parentElement.querySelector('.ai-confidence-badge');
+    if (!badge && confidence != null) {
+      const badgeColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
+      const badgeHtml = document.createElement('div');
+      badgeHtml.className = 'ai-confidence-badge';
+      badgeHtml.style.cssText = 'display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;';
+      badgeHtml.innerHTML = `<span style="padding:1px 6px;border-radius:4px;background:${badgeColor};color:#fff;font-size:9px;">AI</span> <span style="color:${badgeColor};">${confidence}%</span>`;
+      el.parentElement.appendChild(badgeHtml);
+    }
+
+    window.matrixSaveField(key, String(val));
+    return true;
+  }
+
+  // Accept a single parsed field
+  window.acceptParsedField = function(key) {
+    if (!_lastParsedData || !_lastParsedData[key]) return;
+    if (pushFieldToMatrix(key, _lastParsedData[key])) {
+      // Mark row as accepted visually
+      const row = document.getElementById(`parsed-row-${key}`);
+      if (row) {
+        row.style.background = '#f0fdf4';
+        row.style.borderColor = '#bbf7d0';
+        const btns = row.querySelectorAll('button');
+        btns.forEach(b => b.remove());
+        const accepted = document.createElement('span');
+        accepted.style.cssText = 'font-size:10px;font-weight:700;color:#22c55e;';
+        accepted.textContent = '\u2713 Accepted';
+        row.querySelector('div:last-child') || row.appendChild(accepted);
+        row.appendChild(accepted);
+      }
+      showToast(`${FIELD_LABELS[key] || key} accepted`, 'success');
+    }
+  };
+
+  // Accept ALL parsed fields at once
+  window.acceptAllParsed = function() {
+    if (!_lastParsedData) return;
+    let count = 0;
+    for (const key of ALL_FIELD_KEYS) {
+      if (_lastParsedData[key] != null && _lastParsedData[key] !== '') {
+        if (pushFieldToMatrix(key, _lastParsedData[key])) count++;
+        // Mark row
+        const row = document.getElementById(`parsed-row-${key}`);
+        if (row) {
+          row.style.background = '#f0fdf4';
+          row.style.borderColor = '#bbf7d0';
+          const btns = row.querySelectorAll('button');
+          btns.forEach(b => b.remove());
+          const accepted = document.createElement('span');
+          accepted.style.cssText = 'font-size:10px;font-weight:700;color:#22c55e;';
+          accepted.textContent = '\u2713 Accepted';
+          row.appendChild(accepted);
+        }
+      }
+    }
+    calculateCompleteness();
+    showToast(`${count} fields accepted and pushed to Matrix`, 'success');
+
+    // Scroll to Matrix section
+    const matrixSection = document.getElementById('section-matrix');
+    if (matrixSection) {
+      setTimeout(() => matrixSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 500);
+    }
+  };
+
+  // Legacy compatibility — autoPopulateMatrix now routes through Parser display
+  function autoPopulateMatrix(parsedData) {
+    showParsedResults(parsedData);
   }
 
   // Step 1: Upload Documents — stores files + AI categorises (no field extraction yet)
