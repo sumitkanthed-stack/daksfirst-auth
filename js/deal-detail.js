@@ -308,6 +308,8 @@ export async function showDealDetail(dealId) {
  */
 export function renderInternalWorkflowControls(deal) {
   const currentRole = getCurrentRole();
+  const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+  const isInternal = internalRoles.includes(currentRole);
   const authToken = getAuthToken();
   const panel = document.getElementById('workflow-controls');
   if (!panel) return;

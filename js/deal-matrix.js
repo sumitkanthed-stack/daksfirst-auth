@@ -45,7 +45,11 @@ const FIELD_VALIDATORS = {
 };
 
 function renderEditableField(dbField, label, value, inputType, canEdit, options) {
-  const safeVal = sanitizeHtml(String(value || ''));
+  let safeVal = sanitizeHtml(String(value || ''));
+  // Date inputs require yyyy-MM-dd — strip ISO time portion if present
+  if (inputType === 'date' && safeVal && safeVal.includes('T')) {
+    safeVal = safeVal.split('T')[0];
+  }
   const id = `mf-${dbField}`;
   const isMoney = inputType === 'money' || inputType === 'number';
   const displayVal = isMoney ? formatWithCommas(safeVal) : safeVal;
