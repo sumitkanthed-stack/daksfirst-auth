@@ -1875,23 +1875,31 @@ export async function renderDealMatrix(deal) {
       const data = await resp.json();
 
       if (data.success) {
-        updateStatus('Claude is parsing — checking for results...');
+        updateStatus('Claude is parsing your documents — this takes 2-4 minutes...');
 
-        // Poll every 4 seconds for up to 60 seconds
+        // Poll every 5 seconds for up to 5 minutes (60 attempts)
         let attempts = 0;
-        const maxAttempts = 15;
+        const maxAttempts = 60;
         const pollInterval = setInterval(async () => {
           attempts++;
           try {
-            updateStatus(`Claude is parsing — checking for results (${attempts}/${maxAttempts})...`);
+            const mins = Math.floor((attempts * 5) / 60);
+            const secs = (attempts * 5) % 60;
+            const elapsed = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            updateStatus(`Claude is parsing — ${elapsed} elapsed...`);
             const dealResp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}`);
             const dealData = await dealResp.json();
             const deal = dealData.deal || dealData;
 
-            if (deal.properties && deal.properties.length > 0) {
+            // Check if parsing has completed — status changes to 'completed' when done
+            const hasProperties = deal.properties && deal.properties.length > 0;
+            const isComplete = deal.status === 'completed';
+
+            if (hasProperties || isComplete) {
               clearInterval(pollInterval);
+              const propCount = deal.properties ? deal.properties.length : 0;
               updateStatus('Parsing complete — refreshing...');
-              showToast(`Claude parsed ${deal.properties.length} properties successfully`, 'success');
+              showToast(`Claude extracted data successfully (${propCount} properties)`, 'success');
               setTimeout(() => window.location.reload(), 1000);
             } else if (attempts >= maxAttempts) {
               clearInterval(pollInterval);
@@ -1901,7 +1909,7 @@ export async function renderDealMatrix(deal) {
           } catch (pollErr) {
             console.error('[reparse-poll] Error:', pollErr);
           }
-        }, 4000);
+        }, 5000);
       } else {
         updateStatus('Parse failed — ' + (data.message || data.error));
         showToast(data.message || data.error || 'Parse failed', 'error');
