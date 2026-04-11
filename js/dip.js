@@ -263,6 +263,8 @@ export async function issueDip() {
   const valuationCost = document.getElementById('dip-valuation-cost')?.value || '0';
   const legalCost = document.getElementById('dip-legal-cost')?.value || '0';
   const brokerFeePct = document.getElementById('dip-broker-fee')?.value || '0';
+  const feeOnboarding = document.getElementById('dip-fee-onboarding')?.value || '0';
+  const feeCommitment = document.getElementById('dip-fee-commitment')?.value || '0';
 
   // Corporate borrower fields
   const pgUbo = document.getElementById('dip-pg-ubo')?.value || null;
@@ -308,6 +310,8 @@ export async function issueDip() {
           valuation_cost: parseFormattedNumber(valuationCost),
           legal_cost: parseFormattedNumber(legalCost),
           broker_fee_pct: parseFloat(brokerFeePct) || 0,
+          fee_onboarding: parseFormattedNumber(feeOnboarding),
+          fee_commitment: parseFormattedNumber(feeCommitment),
           // Corporate borrower / security
           pg_from_ubo: pgUbo,
           fixed_charge: fixedCharge,

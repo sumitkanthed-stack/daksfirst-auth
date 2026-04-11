@@ -81,31 +81,49 @@ function buildDipHtml(deal, dipData, options) {
   const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
   const bType = (deal.borrower_type || 'individual').toLowerCase();
   const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
-  const addresses = (deal.security_address || '').split(';').filter(a => a.trim());
-  const postcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
   const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
-  const arrFee = parseFloat(dipData.arrangement_fee || deal.arrangement_fee || 2);
-  const brkFee = parseFloat(dipData.broker_fee || deal.broker_fee || 1);
+  // Fix field name mappings: issueDip saves arrangement_fee_pct / broker_fee_pct
+  const arrFee = parseFloat(dipData.arrangement_fee_pct || dipData.arrangement_fee || deal.arrangement_fee || 2);
+  const brkFee = parseFloat(dipData.broker_fee_pct || dipData.broker_fee || 0);
   const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
 
   const issueDate = options.issuedAt
     ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // Build property rows
+  // Build property rows — prefer deal_properties table (has individual postcodes & valuations)
+  const dbProperties = dipData.properties || [];
+  const fallbackAddresses = (deal.security_address || '').split(';').filter(a => a.trim());
+  const fallbackPostcodes = (deal.security_postcode || '').split(',').filter(p => p.trim());
+
   let propRowsHtml = '';
   let totalVal = 0;
-  if (addresses.length > 0) {
-    addresses.forEach((addr, idx) => {
-      const pc = postcodes[idx] || '\u2014';
+  const propCount = dbProperties.length || fallbackAddresses.length || 1;
+
+  if (dbProperties.length > 0) {
+    // Use deal_properties table — most reliable source (has per-property postcode)
+    dbProperties.forEach((prop, idx) => {
+      const val = parseFloat(prop.market_value || 0);
+      totalVal += val;
+      propRowsHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:6px 8px;font-weight:600;">${idx + 1}</td>
+        <td style="padding:6px 8px;">${esc((prop.address || '').trim())}</td>
+        <td style="padding:6px 8px;">${esc((prop.postcode || '\u2014').trim())}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(val)}</td>
+      </tr>`;
+    });
+  } else if (fallbackAddresses.length > 0) {
+    // Fallback to semicolon-separated deal fields
+    fallbackAddresses.forEach((addr, idx) => {
+      const pc = fallbackPostcodes[idx] || '\u2014';
       let val;
       if (dipData.property_values && dipData.property_values[idx]) {
         val = parseFloat(dipData.property_values[idx]);
-      } else if (addresses.length === 1) {
+      } else if (fallbackAddresses.length === 1) {
         val = totalPropertyVal;
       } else {
-        const perProp = Math.floor(totalPropertyVal / addresses.length);
-        val = (idx === addresses.length - 1) ? totalPropertyVal - perProp * (addresses.length - 1) : perProp;
+        const perProp = Math.floor(totalPropertyVal / fallbackAddresses.length);
+        val = (idx === fallbackAddresses.length - 1) ? totalPropertyVal - perProp * (fallbackAddresses.length - 1) : perProp;
       }
       totalVal += val;
       propRowsHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
@@ -157,9 +175,10 @@ function buildDipHtml(deal, dipData, options) {
     </div>`;
   }
 
-  // Security items
-  const securityCharge = esc(humanize(dipData.security_charge || 'first_and_debenture'));
-  const personalGuarantee = isCorp ? 'Required from UBO' : 'N/A';
+  // Security items — issueDip saves fixed_charge / pg_from_ubo
+  const securityCharge = esc(humanize(dipData.fixed_charge || dipData.security_charge || 'first_and_debenture'));
+  const pgRaw = dipData.pg_from_ubo || (isCorp ? 'required' : null);
+  const personalGuarantee = pgRaw === 'required' ? 'Required from UBO' : pgRaw === 'limited' ? 'Limited Guarantee' : pgRaw === 'waived' ? 'Waived' : (isCorp ? 'Required from UBO' : 'N/A');
   const debenture = isCorp ? 'Required (corporate borrower)' : 'N/A';
 
   // Conditions precedent
@@ -478,17 +497,6 @@ function buildDipHtml(deal, dipData, options) {
   .section-bar { break-after: avoid; }
   .section-bar + .section { break-before: avoid; }
 
-  /* ── RUNNING FOOTER ON EVERY PAGE ── */
-  @page {
-    size: A4;
-    margin: 0 0 28px 0;
-    @bottom-center {
-      content: "Daksfirst Limited | 8 Hill Street, Mayfair, London W1J 5NG | FCA 937220";
-      font-size: 7px;
-      color: #6b7280;
-    }
-  }
-
   /* Ensure colour-printing on all browsers */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 </style>
@@ -581,13 +589,13 @@ function buildDipHtml(deal, dipData, options) {
         </div>
         ${isCorp ? `<div class="field-box" style="margin-top:8px;">
           <span class="field-label navy">UBO / Guarantor Name(s)</span>
-          <div class="field-value" style="font-size:13px;">${esc(clean(deal.borrower_name))}</div>
+          <div class="field-value" style="font-size:13px;">${esc(clean(dipData.ubo_guarantor_names || deal.borrower_name))}</div>
         </div>` : ''}
       </div>
     </div>
 
     <!-- ═══ SECURITY SCHEDULE ═══ -->
-    <div class="section-bar">Security Schedule &mdash; ${addresses.length || 1} ${(addresses.length || 1) === 1 ? 'Property' : 'Properties'}</div>
+    <div class="section-bar">Security Schedule &mdash; ${propCount} ${propCount === 1 ? 'Property' : 'Properties'}</div>
     <div class="section">
       <table class="dip-table">
         <thead>
@@ -621,11 +629,11 @@ function buildDipHtml(deal, dipData, options) {
         </div>
         <div class="field-box">
           <span class="field-label">Purchase Price (&pound;)</span>
-          <div class="field-value">${money(deal.purchase_price)}</div>
+          <div class="field-value">${money(dipData.purchase_price || deal.purchase_price)}</div>
         </div>
         <div class="field-box">
           <span class="field-label">Number of Properties</span>
-          <div class="field-value">${addresses.length || 1}</div>
+          <div class="field-value">${propCount}</div>
         </div>
       </div>
     </div>
@@ -664,9 +672,9 @@ function buildDipHtml(deal, dipData, options) {
         </div>
       </div>
 
-      <!-- Day Zero Calculation -->
-      <div class="section-bar amber" style="margin-top:8px;">Day Zero Calculation</div>
-      <div class="section amber" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
+      <!-- Day Zero Calculation (inline sub-section, stays inside Loan Terms) -->
+      <div style="margin-top:10px;padding:10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:5px;">
+        <h5 style="margin:0 0 8px;color:#92400e;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;">Day Zero Calculation</h5>
         <div class="grid-2">
           <div class="field-box">
             <span class="field-label amber">Retained Interest (months)</span>
@@ -756,7 +764,7 @@ function buildDipHtml(deal, dipData, options) {
         <div class="section" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
         <div class="field-box" style="margin-bottom:8px;">
           <span class="field-label">First Legal Charge</span>
-          <div style="font-size:12px;font-weight:600;">${addresses.length > 1 ? 'Over all ' + addresses.length + ' security properties' : 'Over the security property'}</div>
+          <div style="font-size:12px;font-weight:600;">${propCount > 1 ? 'Over all ' + propCount + ' security properties' : 'Over the security property'}</div>
         </div>
         <div class="field-box" style="margin-bottom:8px;">
           <span class="field-label">Debenture</span>

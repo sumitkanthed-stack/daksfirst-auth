@@ -737,9 +737,16 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     const borrowersResult = await pool.query(
       `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`, [dealId]
     );
+
+    // Get properties (individual addresses, postcodes, valuations)
+    const propertiesResult = await pool.query(
+      `SELECT address, postcode, market_value, property_type, tenure FROM deal_properties WHERE deal_id = $1 ORDER BY id`, [dealId]
+    );
+
     const dipDataWithBorrowers = {
       ...dipData,
-      borrowers: borrowersResult.rows.map(b => ({ name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified' }))
+      borrowers: borrowersResult.rows.map(b => ({ name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified' })),
+      properties: propertiesResult.rows
     };
 
     const pdfBuffer = await generateDipPdf(deal, dipDataWithBorrowers, {
