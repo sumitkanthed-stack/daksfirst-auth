@@ -509,7 +509,9 @@ async function runMigrations() {
       // Matrix data columns
       { col: 'matrix_data', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS matrix_data JSONB DEFAULT '{}'::jsonb;" },
       { col: 'borrower_financials', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS borrower_financials JSONB DEFAULT '{}'::jsonb;" },
-      { col: 'aml_data', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS aml_data JSONB DEFAULT '{}'::jsonb;" }
+      { col: 'aml_data', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS aml_data JSONB DEFAULT '{}'::jsonb;" },
+      // Live parse progress tracker
+      { col: 'parse_progress', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS parse_progress JSONB DEFAULT '{}'::jsonb;" }
     ];
 
     for (const check of columnChecks) {

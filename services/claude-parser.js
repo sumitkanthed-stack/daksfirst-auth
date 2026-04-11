@@ -366,10 +366,28 @@ function mergeAnalysis(existing, incoming) {
 async function parseDealDocuments(submissionId, dealId, dealContext, securityContext) {
   const startTime = Date.now();
 
+  // ── Progress helper — writes live status to DB so the frontend can poll it ──
+  const steps = [];
+  async function updateProgress(stage, message, detail) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const entry = { stage, message, elapsed: `${elapsed}s`, ts: new Date().toISOString() };
+    if (detail) entry.detail = detail;
+    steps.push(entry);
+    const progress = { status: 'running', current_stage: stage, message, elapsed_seconds: parseFloat(elapsed), steps };
+    try {
+      await pool.query(
+        `UPDATE deal_submissions SET parse_progress = $2::jsonb, updated_at = NOW() WHERE id = $1`,
+        [dealId, JSON.stringify(progress)]
+      );
+    } catch (e) { /* don't let progress-write failures kill the parse */ }
+    console.log(`[claude-parser] [${elapsed}s] ${message}`);
+  }
+
   try {
-    console.log(`[claude-parser] Starting parse for deal ${submissionId}`);
+    await updateProgress('starting', 'Starting document parse...');
 
     // ── 1. Fetch all documents from DB ──
+    await updateProgress('fetching', 'Fetching documents from database...');
     const docsResult = await pool.query(
       `SELECT id, filename, file_type, file_content, doc_category
        FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at ASC`,
@@ -377,6 +395,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     );
 
     // ── 2. Deduplicate and encode ──
+    await updateProgress('encoding', `Encoding ${docsResult.rows.length} documents...`);
     const seenNames = new Set();
     const allFiles = [];
     for (const doc of docsResult.rows) {
@@ -392,10 +411,10 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
       });
     }
 
-    console.log(`[claude-parser] Deal ${submissionId}: ${docsResult.rows.length} docs → ${allFiles.length} unique with content`);
+    await updateProgress('encoded', `${allFiles.length} unique documents ready`, allFiles.map(f => f.filename));
 
     if (allFiles.length === 0) {
-      console.log(`[claude-parser] No documents with content for deal ${submissionId}`);
+      await updateProgress('error', 'No documents with content found');
       return { success: false, reason: 'no_documents' };
     }
 
@@ -430,7 +449,8 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     }
     if (currentBatch.length > 0) batches.push(currentBatch);
 
-    console.log(`[claude-parser] Split into ${batches.length} batch(es): ${batches.map((b, i) => `B${i+1}(${b.length} files)`).join(', ')}`);
+    await updateProgress('batching', `Split into ${batches.length} batch(es)`,
+      batches.map((b, i) => `Batch ${i+1}: ${b.length} files (${b.map(f => f.filename).join(', ')})`));
 
     // ── 4. Process each batch through Claude ──
     let mergedAnalysis = {};
@@ -438,8 +458,8 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      const batchFiles = batch.map(f => f.filename).join(', ');
-      console.log(`[claude-parser] Processing batch ${i + 1}/${batches.length}: ${batchFiles}`);
+      const batchFiles = batch.map(f => f.filename);
+      await updateProgress(`batch_${i+1}_sending`, `Sending batch ${i + 1}/${batches.length} to Claude (${batch.length} files)`, batchFiles);
 
       try {
         const contentParts = buildContentBlocks(batch, dealContext, securityContext);
@@ -453,30 +473,35 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         }
 
         const batchProps = parsed.parsedProperties?.length || 0;
+        const batchBorrowers = parsed.borrowers?.length || 0;
         totalProperties += batchProps;
-        console.log(`[claude-parser] Batch ${i + 1} complete: ${batchProps} properties, confidence ${parsed.confidence}`);
+        await updateProgress(`batch_${i+1}_done`, `Batch ${i + 1} complete — found ${batchProps} properties, ${batchBorrowers} borrowers`, {
+          properties: batchProps, borrowers: batchBorrowers, confidence: parsed.confidence
+        });
       } catch (batchErr) {
-        console.error(`[claude-parser] Batch ${i + 1} failed:`, batchErr.message);
+        await updateProgress(`batch_${i+1}_error`, `Batch ${i + 1} failed: ${batchErr.message}`);
         // Continue with remaining batches
       }
     }
 
     // ── 5. Deduplicate across batches ──
+    await updateProgress('deduplicating', 'Deduplicating extracted data...');
     if (mergedAnalysis.parsedProperties) {
       const before = mergedAnalysis.parsedProperties.length;
       mergedAnalysis.parsedProperties = deduplicateProperties(mergedAnalysis.parsedProperties);
       const after = mergedAnalysis.parsedProperties.length;
-      if (before !== after) console.log(`[claude-parser] Deduped properties: ${before} → ${after}`);
+      if (before !== after) await updateProgress('dedup_properties', `Deduped properties: ${before} → ${after}`);
       totalProperties = after;
     }
     if (mergedAnalysis.borrowers) {
       const before = mergedAnalysis.borrowers.length;
       mergedAnalysis.borrowers = deduplicateBorrowers(mergedAnalysis.borrowers);
       const after = mergedAnalysis.borrowers.length;
-      if (before !== after) console.log(`[claude-parser] Deduped borrowers: ${before} → ${after}`);
+      if (before !== after) await updateProgress('dedup_borrowers', `Deduped borrowers: ${before} → ${after}`);
     }
 
     // ── 6. Store results ──
+    await updateProgress('storing', 'Saving extracted data to database...');
     const analysisJson = JSON.stringify(mergedAnalysis);
 
     // Store in analysis_results
@@ -501,7 +526,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         source: 'claude_parsed'
       }));
       await syncDealProperties(pool, dealId, claudeProperties, { force: true });
-      console.log(`[claude-parser] Stored ${claudeProperties.length} properties for deal ${dealId}`);
+      await updateProgress('wrote_properties', `Saved ${claudeProperties.length} properties to database`);
     }
 
     // ── 6b. Write borrowers to deal_borrowers table ──
@@ -536,7 +561,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
            primary.date_of_birth || null, primary.nationality || '']
         );
       }
-      console.log(`[claude-parser] Stored ${mergedAnalysis.borrowers.length} borrowers for deal ${dealId}`);
+      await updateProgress('wrote_borrowers', `Saved ${mergedAnalysis.borrowers.length} borrowers`, mergedAnalysis.borrowers.map(b => b.full_name));
     }
 
     // ── 6c. Write company details ──
@@ -552,7 +577,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         [dealId, mergedAnalysis.company.name || '', mergedAnalysis.company.company_number || '',
          mergedAnalysis.company.borrower_type || '']
       );
-      console.log(`[claude-parser] Updated company: ${mergedAnalysis.company.name}`);
+      await updateProgress('wrote_company', `Saved company: ${mergedAnalysis.company.name}`);
     }
 
     // ── 6d. Write loan terms ──
@@ -575,7 +600,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
          l.loan_purpose || '', l.exit_strategy || '', l.use_of_funds || '',
          l.interest_servicing || '', l.existing_charges || '', l.deposit_source || '']
       );
-      console.log(`[claude-parser] Updated loan terms for deal ${dealId}`);
+      await updateProgress('wrote_loan', `Saved loan terms: £${l.loan_amount || 0}, ${l.term_months || 0} months`);
     }
 
     // ── 6e. Write solicitor details ──
@@ -591,7 +616,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         [dealId, mergedAnalysis.solicitor.firm_name || '', mergedAnalysis.solicitor.contact_email || '',
          mergedAnalysis.solicitor.contact_name || '', mergedAnalysis.solicitor.solicitor_ref || '']
       );
-      console.log(`[claude-parser] Updated solicitor: ${mergedAnalysis.solicitor.firm_name}`);
+      await updateProgress('wrote_solicitor', `Saved solicitor: ${mergedAnalysis.solicitor.firm_name}`);
     }
 
     // ── 6f. Write refurbishment details ──
@@ -605,7 +630,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         [dealId, mergedAnalysis.refurbishment.total_refurb_cost || 0,
          mergedAnalysis.refurbishment.scope_of_works || '']
       );
-      console.log(`[claude-parser] Updated refurb: £${mergedAnalysis.refurbishment.total_refurb_cost}`);
+      await updateProgress('wrote_refurb', `Saved refurb: £${mergedAnalysis.refurbishment.total_refurb_cost}`);
     }
 
     // ── 6g. Write broker details ──
@@ -620,7 +645,7 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         [dealId, mergedAnalysis.broker.name || '', mergedAnalysis.broker.company || '',
          mergedAnalysis.broker.fca_number || '']
       );
-      console.log(`[claude-parser] Updated broker: ${mergedAnalysis.broker.name}`);
+      await updateProgress('wrote_broker', `Saved broker: ${mergedAnalysis.broker.name}`);
     }
 
     // ── 6h. Store redemption, insurance, planning in matrix_data JSONB ──
@@ -642,22 +667,52 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
          WHERE id = $1`,
         [dealId, JSON.stringify(matrixExtras)]
       );
-      console.log(`[claude-parser] Stored matrix extras: ${Object.keys(matrixExtras).join(', ')}`);
+      await updateProgress('wrote_extras', `Saved: ${Object.keys(matrixExtras).join(', ')}`);
     }
 
-    // Update deal status
+    // Build summary of what was extracted
+    const summary = [];
+    if (totalProperties > 0) summary.push(`${totalProperties} properties`);
+    if (mergedAnalysis.borrowers?.length) summary.push(`${mergedAnalysis.borrowers.length} borrowers`);
+    if (mergedAnalysis.company?.name) summary.push(`company: ${mergedAnalysis.company.name}`);
+    if (mergedAnalysis.loan?.loan_amount) summary.push(`loan: £${mergedAnalysis.loan.loan_amount.toLocaleString()}`);
+    if (mergedAnalysis.solicitor?.firm_name) summary.push(`solicitor: ${mergedAnalysis.solicitor.firm_name}`);
+    if (mergedAnalysis.broker?.name) summary.push(`broker: ${mergedAnalysis.broker.name}`);
+    if (mergedAnalysis.refurbishment?.total_refurb_cost > 0) summary.push(`refurb: £${mergedAnalysis.refurbishment.total_refurb_cost.toLocaleString()}`);
+
+    // Final progress — mark complete
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const finalProgress = {
+      status: 'complete',
+      current_stage: 'done',
+      message: `Extraction complete — ${summary.join(', ')}`,
+      elapsed_seconds: parseFloat(elapsed),
+      confidence: mergedAnalysis.confidence,
+      summary,
+      steps
+    };
     await pool.query(
-      `UPDATE deal_submissions SET status = 'completed', updated_at = NOW() WHERE id = $1`,
-      [dealId]
+      `UPDATE deal_submissions SET
+         status = 'completed',
+         parse_progress = $2::jsonb,
+         updated_at = NOW()
+       WHERE id = $1`,
+      [dealId, JSON.stringify(finalProgress)]
     );
 
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[claude-parser] ✅ Deal ${submissionId} complete in ${elapsed}s — ${totalProperties} properties, confidence ${mergedAnalysis.confidence}`);
-
+    console.log(`[claude-parser] Done in ${elapsed}s — ${summary.join(', ')}`);
     return { success: true, properties: totalProperties, confidence: mergedAnalysis.confidence, elapsed };
 
   } catch (error) {
-    console.error(`[claude-parser] ❌ Deal ${submissionId} failed:`, error);
+    console.error(`[claude-parser] Deal ${submissionId} failed:`, error);
+    // Write error to progress so frontend can show it
+    try {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      await pool.query(
+        `UPDATE deal_submissions SET parse_progress = $2::jsonb, updated_at = NOW() WHERE id = $1`,
+        [dealId, JSON.stringify({ status: 'error', message: error.message, elapsed_seconds: parseFloat(elapsed), steps })]
+      );
+    } catch (e) { /* ignore */ }
     return { success: false, error: error.message };
   }
 }

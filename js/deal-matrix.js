@@ -1849,23 +1849,79 @@ export async function renderDealMatrix(deal) {
   window.reparseProperties = async function(submissionId) {
     if (!submissionId) return;
 
-    // Replace the button with a live status indicator
+    // Replace the button with a live progress panel
     const btnEl = event && event.target;
     const containerEl = btnEl ? btnEl.closest('div') : null;
     if (containerEl) {
       containerEl.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
-          <div style="width:16px;height:16px;border:2px solid #FBBF24;border-top-color:transparent;border-radius:50%;animation:dkf-spin 0.8s linear infinite;"></div>
-          <span style="font-size:11px;color:#FBBF24;font-weight:600;" id="dkf-parse-status">Claude is analysing your documents...</span>
+        <div id="dkf-parse-panel" style="background:#1a1a2e;border:1px solid #FBBF24;border-radius:8px;padding:12px;margin:8px 0;min-width:340px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <div id="dkf-spinner" style="width:14px;height:14px;border:2px solid #FBBF24;border-top-color:transparent;border-radius:50%;animation:dkf-spin 0.8s linear infinite;flex-shrink:0;"></div>
+            <span style="font-size:12px;color:#FBBF24;font-weight:700;" id="dkf-parse-headline">Initialising...</span>
+            <span style="font-size:10px;color:#6B7280;margin-left:auto;" id="dkf-parse-elapsed"></span>
+          </div>
+          <div id="dkf-parse-feed" style="max-height:200px;overflow-y:auto;font-family:'Courier New',monospace;font-size:10px;line-height:1.6;color:#9CA3AF;"></div>
         </div>
-        <style>@keyframes dkf-spin { to { transform: rotate(360deg); } }</style>
+        <style>
+          @keyframes dkf-spin { to { transform: rotate(360deg); } }
+          #dkf-parse-feed .step-done { color: #34D399; }
+          #dkf-parse-feed .step-active { color: #FBBF24; }
+          #dkf-parse-feed .step-error { color: #F87171; }
+        </style>
       `;
     }
 
-    const updateStatus = (msg) => {
-      const statusEl = document.getElementById('dkf-parse-status');
-      if (statusEl) statusEl.textContent = msg;
-    };
+    let lastStepCount = 0;
+
+    function renderProgress(progress) {
+      const headline = document.getElementById('dkf-parse-headline');
+      const elapsed = document.getElementById('dkf-parse-elapsed');
+      const feed = document.getElementById('dkf-parse-feed');
+      const spinner = document.getElementById('dkf-spinner');
+      if (!headline || !feed) return;
+
+      // Update headline
+      headline.textContent = progress.message || 'Processing...';
+
+      // Update elapsed timer
+      if (progress.elapsed_seconds) {
+        const m = Math.floor(progress.elapsed_seconds / 60);
+        const s = Math.round(progress.elapsed_seconds % 60);
+        elapsed.textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
+      }
+
+      // Render step feed
+      if (progress.steps && progress.steps.length > lastStepCount) {
+        for (let i = lastStepCount; i < progress.steps.length; i++) {
+          const step = progress.steps[i];
+          const icon = step.stage.includes('error') ? 'x' : 'check';
+          const cls = step.stage.includes('error') ? 'step-error' : (i === progress.steps.length - 1 && progress.status === 'running') ? 'step-active' : 'step-done';
+          const prefix = step.stage.includes('error') ? '\u2717' : '\u2713';
+          const line = document.createElement('div');
+          line.className = cls;
+          line.textContent = `${prefix} [${step.elapsed}] ${step.message}`;
+          if (step.detail && Array.isArray(step.detail)) {
+            line.textContent += ` (${step.detail.slice(0, 3).join(', ')}${step.detail.length > 3 ? '...' : ''})`;
+          }
+          feed.appendChild(line);
+        }
+        lastStepCount = progress.steps.length;
+        feed.scrollTop = feed.scrollHeight;
+      }
+
+      // Handle completion
+      if (progress.status === 'complete') {
+        headline.textContent = 'Extraction complete!';
+        headline.style.color = '#34D399';
+        if (spinner) spinner.style.borderColor = '#34D399';
+        if (spinner) spinner.style.animation = 'none';
+      } else if (progress.status === 'error') {
+        headline.textContent = 'Parse failed — ' + (progress.message || 'unknown error');
+        headline.style.color = '#F87171';
+        if (spinner) spinner.style.borderColor = '#F87171';
+        if (spinner) spinner.style.animation = 'none';
+      }
+    }
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/reparse`, {
@@ -1875,48 +1931,41 @@ export async function renderDealMatrix(deal) {
       const data = await resp.json();
 
       if (data.success) {
-        updateStatus('Claude is parsing your documents — this takes 2-4 minutes...');
-
-        // Poll every 5 seconds for up to 5 minutes (60 attempts)
+        // Poll progress endpoint every 3 seconds for up to 5 minutes
         let attempts = 0;
-        const maxAttempts = 60;
+        const maxAttempts = 100;
         const pollInterval = setInterval(async () => {
           attempts++;
           try {
-            const mins = Math.floor((attempts * 5) / 60);
-            const secs = (attempts * 5) % 60;
-            const elapsed = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-            updateStatus(`Claude is parsing — ${elapsed} elapsed...`);
-            const dealResp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}`);
-            const dealData = await dealResp.json();
-            const deal = dealData.deal || dealData;
+            const progResp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/parse-progress`);
+            const progData = await progResp.json();
+            if (progData.success && progData.progress) {
+              renderProgress(progData.progress);
 
-            // Check if parsing has completed — status changes to 'completed' when done
-            const hasProperties = deal.properties && deal.properties.length > 0;
-            const isComplete = deal.status === 'completed';
-
-            if (hasProperties || isComplete) {
+              if (progData.progress.status === 'complete') {
+                clearInterval(pollInterval);
+                showToast('Claude extracted all deal data successfully!', 'success');
+                setTimeout(() => window.location.reload(), 2500);
+              } else if (progData.progress.status === 'error') {
+                clearInterval(pollInterval);
+                showToast('Parse failed: ' + (progData.progress.message || 'unknown error'), 'error');
+              }
+            }
+            if (attempts >= maxAttempts) {
               clearInterval(pollInterval);
-              const propCount = deal.properties ? deal.properties.length : 0;
-              updateStatus('Parsing complete — refreshing...');
-              showToast(`Claude extracted data successfully (${propCount} properties)`, 'success');
-              setTimeout(() => window.location.reload(), 1000);
-            } else if (attempts >= maxAttempts) {
-              clearInterval(pollInterval);
-              updateStatus('Taking longer than expected — please refresh manually.');
-              showToast('Parsing may still be in progress. Refresh the page in a moment.', 'info');
+              renderProgress({ status: 'error', message: 'Timed out — please refresh the page', steps: [] });
             }
           } catch (pollErr) {
             console.error('[reparse-poll] Error:', pollErr);
           }
-        }, 5000);
+        }, 3000);
       } else {
-        updateStatus('Parse failed — ' + (data.message || data.error));
+        renderProgress({ status: 'error', message: data.message || data.error || 'Parse failed', steps: [] });
         showToast(data.message || data.error || 'Parse failed', 'error');
       }
     } catch (err) {
       console.error('[reparse] Error:', err);
-      updateStatus('Failed — ' + err.message);
+      renderProgress({ status: 'error', message: err.message, steps: [] });
       showToast('Failed to trigger parsing: ' + err.message, 'error');
     }
   };

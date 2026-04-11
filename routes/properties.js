@@ -113,6 +113,24 @@ router.delete('/:submissionId/properties/:propertyId', authenticateToken, authen
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  PARSE PROGRESS — Lightweight endpoint polled by frontend for live status
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/parse-progress', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT parse_progress, status FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Deal not found' });
+    const { parse_progress, status } = result.rows[0];
+    return res.json({ success: true, progress: parse_progress || {}, deal_status: status });
+  } catch (err) {
+    console.error('[parse-progress] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch progress' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  REPARSE — Calls Claude directly from Render to extract deal data
 //  Fire-and-forget: responds immediately, processes in background
 // ═══════════════════════════════════════════════════════════════════════════
@@ -160,6 +178,12 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
       current_value: deal.current_value,
       tenure: deal.property_tenure
     };
+
+    // Reset progress for fresh parse
+    await pool.query(
+      `UPDATE deal_submissions SET parse_progress = $2::jsonb, status = 'processing', updated_at = NOW() WHERE id = $1`,
+      [deal.id, JSON.stringify({ status: 'starting', message: 'Parse triggered — initialising...', steps: [] })]
+    );
 
     // Start background parsing — don't await
     parseDealDocuments(req.params.submissionId, deal.id, dealContext, securityContext)
