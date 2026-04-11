@@ -865,6 +865,7 @@ export function renderInternalWorkflowControls(deal) {
             <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
             <input type="number" step="0.01" id="dip-rate" value="${dipRate}" placeholder="Min 0.85" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#92400e;">Min 0.85%</span>
+            <span style="font-size:10px;color:#6b7280;font-style:italic;display:block;margin-top:2px;">(Default rate: 3.00%/month)</span>
           </div>
         </div>
 
@@ -945,15 +946,45 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:8px;font-size:11px;color:#92400e;">From arrangement fee</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Valuation Fee</td>
+              <td style="padding:8px;font-weight:600;">Exit Fee</td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;">1.00%</span></td>
+              <td style="padding:8px;font-size:11px;color:#60A5FA;">On redemption</td>
+              <td style="padding:8px;font-size:11px;">Of gross loan amount</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Extension Fee</td>
+              <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;">1.00%</span></td>
+              <td style="padding:8px;font-size:11px;color:#60A5FA;">If term extended</td>
+              <td style="padding:8px;font-size:11px;">Per extension period agreed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ═══ ESTIMATED THIRD-PARTY COSTS (not payable to Daksfirst) ═══ -->
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #d1d5db;">
+        <h5 style="margin:0 0 4px;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Estimated Third-Party Costs</h5>
+        <p style="margin:0 0 12px;font-size:11px;color:#6b7280;font-style:italic;">These are not Daksfirst fees. They are third-party costs borne directly by the borrower and are disclosed here for budgeting purposes only.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:#f3f4f6;">
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Cost</th>
+              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #d1d5db;">Estimated (£)</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Payable To</th>
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Payment Method</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px;font-weight:600;">Valuation</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-valuation-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">Upfront</td>
+              <td style="padding:8px;font-size:11px;">Independent valuer</td>
               <td style="padding:8px;font-size:11px;">Paid directly by client to valuer</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Legal Fee</td>
+              <td style="padding:8px;font-weight:600;">Legal (Lender&rsquo;s solicitors)</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-legal-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">On completion</td>
+              <td style="padding:8px;font-size:11px;">Daksfirst&rsquo;s appointed solicitors</td>
               <td style="padding:8px;font-size:11px;">Via undertaking from client&rsquo;s solicitors</td>
             </tr>
           </tbody>
