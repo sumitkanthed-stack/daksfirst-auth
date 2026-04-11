@@ -327,6 +327,11 @@ export async function issueDip() {
       clearDipRemovedProperties();
       // Reload deal
       import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+    } else if (data.guardrail_errors) {
+      // Guardrail blocked — show specific lending criteria violations
+      const errorList = data.guardrail_errors.map(e => '• ' + e).join('\n');
+      alert('⛔ DIP Blocked — Lending Criteria Violation\n\n' + errorList + '\n\nAdjust the deal terms to comply with Daksfirst lending criteria before issuing.');
+      showToast('DIP blocked by lending criteria guardrails', true);
     } else {
       showToast(data.error || 'Failed to issue DIP', true);
     }

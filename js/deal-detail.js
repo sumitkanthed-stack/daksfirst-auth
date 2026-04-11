@@ -625,8 +625,8 @@ export function renderInternalWorkflowControls(deal) {
     }
   }
 
-  // ASSIGNED (RM or Admin) - Issue DIP
-  if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
+  // ASSIGNED or INFO_GATHERING (RM or Admin) - Issue DIP
+  if (['assigned', 'info_gathering'].includes(stage) && ['rm', 'admin'].includes(currentRole)) {
     const dipLoan = deal.loan_amount || '';
     const dipLtv = deal.ltv_requested || '';
     const dipTerm = deal.term_months || '';
@@ -1098,6 +1098,18 @@ export function renderInternalWorkflowControls(deal) {
 
         // 14. Loan purpose provided
         checks.push({ label: 'Loan purpose provided', ok: !!val('dip-purpose') });
+
+        // ── AUTOMATED GUARDRAILS (Daksfirst lending criteria) ──
+        // These mirror the backend hard blocks — RM sees violations before clicking Issue
+        const assetType = (deal.asset_type || '').toLowerCase();
+        const loanPurpose = (val('dip-purpose') || '').toLowerCase();
+        const excludedAssets = ['agricultural', 'farm', 'overseas'];
+        if (excludedAssets.some(ex => assetType.includes(ex))) {
+          checks.push({ label: 'Asset type "' + deal.asset_type + '" is outside lending criteria', ok: false });
+        }
+        if (loanPurpose.includes('development') && !loanPurpose.includes('exit')) {
+          checks.push({ label: 'Ground-up development not permitted (only dev exit)', ok: false });
+        }
 
         // Render checklist
         const checklistEl = document.getElementById('dip-checklist');

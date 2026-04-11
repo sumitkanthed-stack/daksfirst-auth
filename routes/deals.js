@@ -528,6 +528,49 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
     const dealId = deal.id;
     const userId = deal.user_id;
 
+    // ── AUTOMATED GUARDRAILS — hard blocks based on Daksfirst lending criteria ──
+    const guardrailErrors = [];
+    const dipLoan = parseFloat(dip_data?.loan_amount || deal.loan_amount || 0);
+    const dipLtv = parseFloat(dip_data?.ltv || deal.ltv_requested || 0);
+    const dipRate = parseFloat(dip_data?.rate_monthly || deal.rate_requested || 0);
+    const dipTerm = parseInt(dip_data?.term_months || deal.term_months || 0);
+    const assetType = (dip_data?.asset_type || deal.asset_type || '').toLowerCase();
+    const loanPurpose = (dip_data?.loan_purpose || deal.loan_purpose || '').toLowerCase();
+
+    // Loan size: £500k – £15m
+    if (dipLoan < 500000) guardrailErrors.push(`Loan amount £${(dipLoan).toLocaleString()} is below minimum £500,000`);
+    if (dipLoan > 15000000) guardrailErrors.push(`Loan amount £${(dipLoan).toLocaleString()} exceeds maximum £15,000,000`);
+
+    // Max LTV: 75% net day 1
+    if (dipLtv > 75) guardrailErrors.push(`LTV ${dipLtv.toFixed(1)}% exceeds maximum 75%. Reduce loan amount or increase valuation.`);
+
+    // Minimum rate: 0.85%/month
+    if (dipRate > 0 && dipRate < 0.85) guardrailErrors.push(`Rate ${dipRate.toFixed(2)}%/month is below minimum 0.85%/month`);
+
+    // Term: 3–24 months
+    if (dipTerm > 0 && dipTerm < 3) guardrailErrors.push(`Term ${dipTerm} months is below minimum 3 months`);
+    if (dipTerm > 24) guardrailErrors.push(`Term ${dipTerm} months exceeds maximum 24 months`);
+
+    // Excluded asset types
+    const excludedAssets = ['agricultural', 'farm', 'overseas'];
+    if (excludedAssets.some(ex => assetType.includes(ex))) {
+      guardrailErrors.push(`Asset type "${assetType}" is outside Daksfirst lending criteria`);
+    }
+
+    // Excluded loan purposes
+    if (loanPurpose.includes('development') && !loanPurpose.includes('exit')) {
+      guardrailErrors.push(`Ground-up development is outside Daksfirst lending criteria. Only development exit is permitted.`);
+    }
+
+    if (guardrailErrors.length > 0) {
+      console.log('[issue-dip] GUARDRAIL BLOCKED:', guardrailErrors.join('; '));
+      return res.status(400).json({
+        error: 'Deal falls outside lending criteria',
+        guardrail_errors: guardrailErrors,
+        message: guardrailErrors.join('\n')
+      });
+    }
+
     // 2. Get borrowers for this deal (for the DIP PDF)
     const borrowersResult = await pool.query(
       `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`,
@@ -607,6 +650,23 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       `UPDATE deal_submissions SET ${updateFields.join(', ')} WHERE id = $${paramIdx} RETURNING submission_id, status, dip_issued_at`,
       updateValues
     );
+
+    // 6. Store DIP PDF in deal_documents as 'issued' category (appears in doc repo)
+    try {
+      const issuerName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;
+      await pool.query(
+        `INSERT INTO deal_documents
+         (deal_id, filename, file_type, file_size, file_content, doc_category,
+          category_confirmed_by, category_confirmed_at, category_confirmed_name,
+          onedrive_download_url)
+         VALUES ($1, $2, $3, $4, $5, 'issued', $6, NOW(), $7, $8)`,
+        [dealId, pdfFilename, 'application/pdf', pdfBuffer.length, pdfBuffer,
+         req.user.userId, issuerName, dipPdfUrl]
+      );
+      console.log('[issue-dip] DIP PDF stored in deal_documents as issued');
+    } catch (docErr) {
+      console.error('[issue-dip] Could not store DIP in deal_documents:', docErr.message);
+    }
 
     await logAudit(dealId, 'dip_issued', deal.status, 'dip_issued', {
       issued_by: req.user.userId,
