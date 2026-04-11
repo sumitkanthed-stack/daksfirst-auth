@@ -699,7 +699,9 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VIEW DIP PDF — On-the-fly generation (works even if OneDrive URL is missing)
+//  VIEW DIP PDF — Serves the CANONICAL stored PDF from issue time.
+//  Document integrity: what was issued is EXACTLY what gets served.
+//  Fallback to on-the-fly generation ONLY for legacy deals with no stored PDF.
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
   try {
@@ -717,28 +719,45 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Get DIP data from the stored ai_termsheet_data (which holds dip_data at this stage)
+    // Deal ref for filename
+    const createdDate = deal.created_at ? new Date(deal.created_at) : new Date();
+    const yy = String(createdDate.getFullYear()).slice(-2);
+    const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
+    const shortId = (deal.submission_id || req.params.submissionId).substring(0, 4).toUpperCase();
+    const dealRef = `DF-${yy}${mm}-${shortId}`;
+
+    // ── 1. Try to serve the CANONICAL stored PDF (generated at issue time) ──
+    const storedDoc = await pool.query(
+      `SELECT file_content, filename FROM deal_documents
+       WHERE deal_id = $1 AND doc_category = 'issued' AND file_type = 'application/pdf'
+       ORDER BY created_at DESC LIMIT 1`,
+      [dealId]
+    );
+
+    if (storedDoc.rows.length > 0 && storedDoc.rows[0].file_content) {
+      console.log('[dip-pdf] Serving CANONICAL stored PDF for', req.params.submissionId);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="DIP-${dealRef}.pdf"`);
+      return res.send(storedDoc.rows[0].file_content);
+    }
+
+    // ── 2. Fallback: regenerate on-the-fly (legacy deals only) ──
+    console.log('[dip-pdf] No stored PDF found — regenerating for legacy deal', req.params.submissionId);
+
     const dipData = typeof deal.ai_termsheet_data === 'string'
       ? JSON.parse(deal.ai_termsheet_data) : (deal.ai_termsheet_data || {});
 
-    // Apply credit overrides (if credit has reviewed and overridden values)
-    if (dipData.credit_override_rate !== undefined) {
-      dipData.rate_monthly = dipData.credit_override_rate;
-    }
-    if (dipData.credit_override_ltv !== undefined) {
-      dipData.ltv = dipData.credit_override_ltv;
-    }
+    // Apply credit overrides
+    if (dipData.credit_override_rate !== undefined) dipData.rate_monthly = dipData.credit_override_rate;
+    if (dipData.credit_override_ltv !== undefined) dipData.ltv = dipData.credit_override_ltv;
     if (dipData.credit_override_arr_fee !== undefined) {
       dipData.arrangement_fee = dipData.credit_override_arr_fee;
       dipData.arrangement_fee_pct = dipData.credit_override_arr_fee;
     }
 
-    // Get borrowers
     const borrowersResult = await pool.query(
       `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`, [dealId]
     );
-
-    // Get properties (individual addresses, postcodes, valuations)
     const propertiesResult = await pool.query(
       `SELECT address, postcode, market_value, property_type, tenure FROM deal_properties WHERE deal_id = $1 ORDER BY id`, [dealId]
     );
@@ -755,12 +774,6 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    // Deal ref format: DF-YYMM-XXXX
-    const createdDate = deal.created_at ? new Date(deal.created_at) : new Date();
-    const yy = String(createdDate.getFullYear()).slice(-2);
-    const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
-    const shortId = (deal.submission_id || req.params.submissionId).substring(0, 4).toUpperCase();
-    const dealRef = `DF-${yy}${mm}-${shortId}`;
     res.setHeader('Content-Disposition', `inline; filename="DIP-${dealRef}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {

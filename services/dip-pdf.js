@@ -523,7 +523,7 @@ function buildDipHtml(deal, dipData, options) {
 
     <div class="dip-title">
       <h2>Decision In Principle (DIP)</h2>
-      <div class="subtitle">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG <span style="color:#C9A227;font-size:7px;">[v4.1]</span></div>
+      <div class="subtitle">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG <span style="color:#C9A227;font-size:7px;">[v4.2]</span></div>
     </div>
 
     <div class="ref-strip">
@@ -852,8 +852,23 @@ function buildDipHtml(deal, dipData, options) {
 // ═══════════════════════════════════════════════════════════════════
 
 async function generateDipPdf(deal, dipData = {}, options = {}) {
-  console.log('[dip-pdf] TEMPLATE VERSION: v4.1 — generating PDF for', deal.submission_id);
-  console.log('[dip-pdf] dipData.properties count:', (dipData.properties || []).length);
+  console.log('[dip-pdf] TEMPLATE VERSION: v4.2 — generating PDF for', deal.submission_id);
+  console.log('[dip-pdf] DATA DUMP:', JSON.stringify({
+    properties_count: (dipData.properties || []).length,
+    properties: (dipData.properties || []).map(p => ({ addr: (p.address||'').substring(0,30), pc: p.postcode, val: p.market_value })),
+    broker_fee_pct: dipData.broker_fee_pct,
+    broker_fee: dipData.broker_fee,
+    arrangement_fee_pct: dipData.arrangement_fee_pct,
+    arrangement_fee: dipData.arrangement_fee,
+    deal_arr_fee: deal.arrangement_fee,
+    security_address: (deal.security_address || '').substring(0,60),
+    security_postcode: deal.security_postcode,
+    fee_onboarding: dipData.fee_onboarding,
+    fee_commitment: dipData.fee_commitment,
+    pg_from_ubo: dipData.pg_from_ubo,
+    fixed_charge: dipData.fixed_charge,
+    security_charge: dipData.security_charge
+  }));
   const html = buildDipHtml(deal, dipData, options);
   const browser = await getBrowser();
   const page = await browser.newPage();
