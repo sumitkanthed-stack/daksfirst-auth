@@ -1099,9 +1099,26 @@ export async function renderDealMatrix(deal) {
 
     const extracted = ALL_FIELD_KEYS.filter(k => parsedData[k] != null && parsedData[k] !== '');
     const confColor = confidence >= 80 ? '#22c55e' : confidence >= 50 ? '#f59e0b' : '#dc2626';
-    const conflictKeys = Object.keys(_lastConflicts);
 
-    // Build summary header
+    // ── Detect new borrower / property entities FIRST (before conflicts banner) ──
+    const matrixBorrowerEl = document.getElementById('mf-borrower_name');
+    const matrixBorrower = matrixBorrowerEl ? matrixBorrowerEl.value.trim() : '';
+    const parsedBorrower = parsedData.borrower_name ? String(parsedData.borrower_name).trim() : '';
+    const hasNewBorrower = matrixBorrower && parsedBorrower && matrixBorrower.toLowerCase() !== parsedBorrower.toLowerCase();
+
+    const matrixPropertyEl = document.getElementById('mf-security_address');
+    const matrixProperty = matrixPropertyEl ? matrixPropertyEl.value.trim() : '';
+    const parsedPropertyAddr = parsedData.security_address ? String(parsedData.security_address).trim() : '';
+    const hasNewProperty = matrixProperty && parsedPropertyAddr && matrixProperty.toLowerCase() !== parsedPropertyAddr.toLowerCase();
+
+    // Filter conflicts — remove borrower/property fields that will be handled by entity cards
+    const entityHandledFields = [
+      ...(hasNewBorrower ? BORROWER_ENTITY_FIELDS : []),
+      ...(hasNewProperty ? PROPERTY_ENTITY_FIELDS : [])
+    ];
+    const filteredConflictKeys = Object.keys(_lastConflicts).filter(k => !entityHandledFields.includes(k));
+
+    // Build summary header — show only non-entity conflicts count
     let html = `
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
         <div>
@@ -1109,20 +1126,23 @@ export async function renderDealMatrix(deal) {
           <div style="font-size:12px;color:#64748b;margin-top:2px;">${extracted.length} fields extracted from your documents</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
-          ${conflictKeys.length > 0 ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#dc2626;">${conflictKeys.length}</div><div style="font-size:9px;color:#dc2626;font-weight:600;">CONFLICTS</div></div>` : ''}
+          ${hasNewBorrower ? `<div style="text-align:center;"><div style="font-size:16px;">&#128100;</div><div style="font-size:9px;color:#3b82f6;font-weight:600;">NEW PERSON</div></div>` : ''}
+          ${hasNewProperty ? `<div style="text-align:center;"><div style="font-size:16px;">&#127968;</div><div style="font-size:9px;color:#22c55e;font-weight:600;">NEW PROPERTY</div></div>` : ''}
+          ${filteredConflictKeys.length > 0 ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#dc2626;">${filteredConflictKeys.length}</div><div style="font-size:9px;color:#dc2626;font-weight:600;">CONFLICTS</div></div>` : ''}
           ${confidence != null ? `<div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:${confColor};">${confidence}%</div><div style="font-size:9px;color:#64748b;font-weight:600;">CONFIDENCE</div></div>` : ''}
           <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#2563eb;">${extracted.length}</div><div style="font-size:9px;color:#64748b;font-weight:600;">FIELDS</div></div>
         </div>
       </div>`;
 
-    // Show conflicts banner if any
-    if (conflictKeys.length > 0) {
+    // Show conflicts banner ONLY for non-entity fields
+    if (filteredConflictKeys.length > 0) {
       html += `
         <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
-          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px;">&#9888; ${conflictKeys.length} Conflicting Field${conflictKeys.length > 1 ? 's' : ''} Detected</div>
+          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px;">&#9888; ${filteredConflictKeys.length} Conflicting Field${filteredConflictKeys.length > 1 ? 's' : ''} Detected</div>
           <div style="font-size:11px;color:#7f1d1d;margin-bottom:10px;">Different documents contain different values for these core deal fields. Please select the correct value for each.</div>`;
 
-      for (const [field, options] of Object.entries(_lastConflicts)) {
+      for (const field of filteredConflictKeys) {
+        const options = _lastConflicts[field];
         const label = FIELD_LABELS[field] || field;
         html += `
           <div style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;margin-bottom:8px;">
@@ -1145,17 +1165,6 @@ export async function renderDealMatrix(deal) {
       }
       html += `</div>`;
     }
-
-    // ── Detect new borrower / property entities ──
-    const matrixBorrowerEl = document.getElementById('mf-borrower_name');
-    const matrixBorrower = matrixBorrowerEl ? matrixBorrowerEl.value.trim() : '';
-    const parsedBorrower = parsedData.borrower_name ? String(parsedData.borrower_name).trim() : '';
-    const hasNewBorrower = matrixBorrower && parsedBorrower && matrixBorrower.toLowerCase() !== parsedBorrower.toLowerCase();
-
-    const matrixPropertyEl = document.getElementById('mf-security_address');
-    const matrixProperty = matrixPropertyEl ? matrixPropertyEl.value.trim() : '';
-    const parsedPropertyAddr = parsedData.security_address ? String(parsedData.security_address).trim() : '';
-    const hasNewProperty = matrixProperty && parsedPropertyAddr && matrixProperty.toLowerCase() !== parsedPropertyAddr.toLowerCase();
 
     // Build grouped field table
     for (const [sectionName, fields] of Object.entries(FIELD_SECTIONS)) {
@@ -1255,16 +1264,19 @@ export async function renderDealMatrix(deal) {
           val = val + '%';
         }
 
-        // Core field badge
+        // Check if this field is handled by an entity card (borrower/property)
+        const entityHandled = (isBorrowerField && hasNewBorrower) || (isPropertyField && hasNewProperty);
+
+        // Core field badge — suppress CONFLICT badge if entity card handles it
         const coreBadge = isCore ? '<span style="padding:1px 5px;border-radius:3px;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;margin-left:6px;letter-spacing:.3px;">CORE</span>' : '';
-        const conflictBadge = hasConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
-        const rowBorder = hasConflict ? 'border:1px solid #fecaca;background:#fef2f2;' : 'border:1px solid #f1f5f9;background:#fff;';
+        const showConflict = hasConflict && !entityHandled;
+        const conflictBadge = showConflict ? '<span style="padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:700;margin-left:4px;">CONFLICT</span>' : '';
+        const rowBorder = showConflict ? 'border:1px solid #fecaca;background:#fef2f2;' : 'border:1px solid #f1f5f9;background:#fff;';
 
         // Check if Matrix already has a value for this field — suppress overwrite warning if entity card handles it
         const matrixEl = document.getElementById(`mf-${key}`);
         const matrixVal = matrixEl ? matrixEl.value.trim() : '';
         const matrixDiffers = matrixVal && matrixVal !== String(parsedData[key]) && isCore;
-        const entityHandled = (isBorrowerField && hasNewBorrower) || (isPropertyField && hasNewProperty);
         const matrixWarning = (matrixDiffers && !entityHandled) ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">&#9888; Matrix has: "${matrixVal.substring(0,40)}" — accepting will overwrite</div>` : '';
 
         // If entity card is shown, dim the individual accept/reject buttons and add a note
