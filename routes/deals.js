@@ -593,7 +593,13 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       issuedBy: req.user.userId,
       issuedAt: new Date().toISOString()
     });
-    const pdfFilename = `DIP_${req.params.submissionId}.pdf`;
+    // Deal ref format: DF-YYMM-XXXX
+    const createdDate = deal.created_at ? new Date(deal.created_at) : new Date();
+    const yy = String(createdDate.getFullYear()).slice(-2);
+    const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
+    const shortId = (deal.submission_id || req.params.submissionId).substring(0, 4).toUpperCase();
+    const dealRef = `DF-${yy}${mm}-${shortId}`;
+    const pdfFilename = `DIP-${dealRef}.pdf`;
 
     // 4. Upload DIP PDF to OneDrive
     let dipPdfUrl = null;
@@ -742,7 +748,13 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="DIP_${req.params.submissionId}.pdf"`);
+    // Deal ref format: DF-YYMM-XXXX
+    const createdDate = deal.created_at ? new Date(deal.created_at) : new Date();
+    const yy = String(createdDate.getFullYear()).slice(-2);
+    const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
+    const shortId = (deal.submission_id || req.params.submissionId).substring(0, 4).toUpperCase();
+    const dealRef = `DF-${yy}${mm}-${shortId}`;
+    res.setHeader('Content-Disposition', `inline; filename="DIP-${dealRef}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {
     console.error('[dip-pdf] Error:', error);
