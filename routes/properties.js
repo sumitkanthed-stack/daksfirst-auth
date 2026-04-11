@@ -120,7 +120,7 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(
       `SELECT id, security_address, security_postcode, current_value, asset_type, property_tenure,
-              loan_amount, borrower_name, exit_strategy, loan_term_months, loan_purpose
+              loan_amount, borrower_name, exit_strategy, term_months, loan_purpose
        FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
@@ -171,7 +171,7 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
           borrower_name: deal.borrower_name,
           loan_amount: deal.loan_amount,
           exit_strategy: deal.exit_strategy,
-          loan_term_months: deal.loan_term_months,
+          loan_term_months: deal.term_months,
           loan_purpose: deal.loan_purpose
         },
         security: {
