@@ -247,8 +247,10 @@ export async function showDashboard() {
   const fullName = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
   document.getElementById('user-name-display').textContent = fullName;
   document.getElementById('user-role-display').textContent = currentRole.toUpperCase();
-  document.getElementById('detail-user-name').textContent = fullName;
-  document.getElementById('detail-user-role').textContent = currentRole.toUpperCase();
+  const detailNameEl = document.getElementById('detail-user-name');
+  const detailRoleEl = document.getElementById('detail-user-role');
+  if (detailNameEl) detailNameEl.textContent = fullName;
+  if (detailRoleEl) detailRoleEl.textContent = currentRole.toUpperCase();
 
   // Update sidebar
   const sidebarName = document.getElementById('sidebar-user-name');

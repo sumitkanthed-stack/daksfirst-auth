@@ -477,11 +477,8 @@
       </div>
     </div>
 
-    <!-- Dashboard Screen (Post-Login) -->
-    <div id="screen-dashboard" class="screen">
-      <div class="dashboard-container" style="display:flex;min-height:100vh;">
-        <!-- ══ PERMANENT SIDEBAR ══ -->
-        <aside id="app-sidebar" class="app-sidebar" style="width:240px;background:#111827;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;">
+    <!-- ══ PERMANENT SIDEBAR (outside all screens — always available) ══ -->
+    <aside id="app-sidebar" class="app-sidebar" style="width:240px;background:#111827;border-right:1px solid rgba(255,255,255,0.06);display:none;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;">
           <!-- Sidebar Brand -->
           <div style="padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:12px;">
             <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;">
@@ -531,12 +528,13 @@
             </div>
             <button onclick="logoutUser()" style="background:none;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:6px 10px;color:#94A3B8;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;" onmouseover="this.style.background='#1e293b';this.style.color='#F1F5F9'" onmouseout="this.style.background='none';this.style.color='#94A3B8'">Sign Out</button>
           </div>
-        </aside>
+    </aside>
 
-        <!-- ══ MAIN CONTENT AREA (offset by sidebar) ══ -->
-        <div style="margin-left:240px;flex:1;min-height:100vh;">
-          <!-- Top Bar (slim, no brand — brand is in sidebar) -->
-          <div class="dashboard-header" style="height:auto;padding:0;">
+    <!-- Dashboard Screen (Post-Login) -->
+    <div id="screen-dashboard" class="screen">
+      <div class="dashboard-container" style="margin-left:240px;min-height:100vh;">
+          <!-- Top Bar (slim, hidden — user info is in sidebar) -->
+          <div class="dashboard-header" style="height:auto;padding:0;display:none;">
             <div class="dashboard-header-content" style="justify-content:flex-end;padding:12px 24px;">
               <div class="dashboard-user" style="display:none;">
                 <div class="user-badge">
@@ -749,7 +747,6 @@
             </table>
           </div>
         </div>
-        </div><!-- end margin-left wrapper -->
       </div>
     </div>
 
