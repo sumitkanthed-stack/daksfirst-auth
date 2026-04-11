@@ -633,7 +633,11 @@ export function renderInternalWorkflowControls(deal) {
     const dipLtv = deal.ltv_requested || '';
     const dipTerm = deal.term_months || '';
     const dipRate = deal.rate_requested || '0.95';
-    const dipVal = deal.current_value || '';
+    // Use sum of property valuations if available, fallback to deal-level current_value
+    const propValSum = properties.length > 0
+      ? properties.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0)
+      : null;
+    const dipVal = propValSum || deal.current_value || '';
     const dipPurchase = deal.purchase_price || '';
     const dipExit = sanitizeHtml(deal.exit_strategy || '');
     const dipPurpose = sanitizeHtml(deal.loan_purpose || '');
@@ -643,6 +647,15 @@ export function renderInternalWorkflowControls(deal) {
     const fullAddr = sanitizeHtml(deal.security_address || '');
     const propList = fullAddr.includes(';') ? fullAddr.split(';').map(a => a.trim()).filter(Boolean) : [fullAddr];
     const postcodes = (deal.security_postcode || '').split(',').map(p => p.trim()).filter(Boolean);
+
+    // Match property valuations from deal_properties table
+    const propValuations = propList.map((addr, i) => {
+      // Try to match by index first (most reliable if same order)
+      if (properties[i] && properties[i].market_value) return parseFloat(properties[i].market_value);
+      // Fallback: try address substring match
+      const match = properties.find(p => p.address && addr.toLowerCase().includes(p.address.substring(0, 20).toLowerCase()));
+      return match && match.market_value ? parseFloat(match.market_value) : 0;
+    });
 
     // Borrower type logic
     const bType = (deal.borrower_type || 'individual').toLowerCase();
@@ -793,7 +806,7 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(addr)}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(postcodes[i] || postcodes[0] || '-')}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">
-                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="0" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid #2563eb;font-size:12px;max-width:120px;color:#1a1a2e;background:#fff;">
+                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="${propValuations[i] ? formatNumber(propValuations[i]) : '0'}" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid #2563eb;font-size:12px;max-width:120px;color:#1a1a2e;background:#fff;">
               </td>
               <td id="dip-prop-status-${i}" style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;"><span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span></td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;">
@@ -820,11 +833,11 @@ export function renderInternalWorkflowControls(deal) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Total Property Value (£) <span style="font-size:9px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:3px;">Auto-summed</span></label>
-            <input type="text" id="dip-property-value" value="${dipVal}" style="width:100%;padding:8px;border-radius:4px;background:#f0fff4;border:1px solid #86efac;font-size:13px;font-weight:600;" readonly>
+            <input type="text" id="dip-property-value" value="${formatNumber(dipVal)}" style="width:100%;padding:8px;border-radius:4px;background:#f0fff4;border:1px solid #86efac;font-size:13px;font-weight:600;" readonly>
           </div>
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Purchase Price (£)</label>
-            <input type="text" id="dip-purchase-price" value="${dipPurchase}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
+            <input type="text" id="dip-purchase-price" value="${formatNumber(dipPurchase)}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
           </div>
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Number of Properties</label>
