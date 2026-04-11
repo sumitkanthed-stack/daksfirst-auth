@@ -288,36 +288,88 @@ export async function loadUserDeals() {
 
     const deals = data.deals || [];
 
-    // Update stats
+    // Update stats — broker-quality dashboard
     if (deals.length > 0) {
       document.getElementById('stats-container').style.display = 'grid';
       document.getElementById('deals-empty').style.display = 'none';
       document.getElementById('deals-table-container').style.display = 'block';
 
-      let total = deals.length;
-      let processing = deals.filter(d => d.status === 'processing').length;
-      let completed = deals.filter(d => d.status === 'completed').length;
-      let declined = deals.filter(d => d.status === 'declined').length;
+      const active = deals.filter(d => !['completed', 'declined', 'withdrawn'].includes(d.status) && !['completed', 'declined', 'withdrawn'].includes(d.deal_stage));
+      const completed = deals.filter(d => d.status === 'completed' || d.deal_stage === 'completed');
+      const declined = deals.filter(d => d.status === 'declined' || d.deal_stage === 'declined');
+      const totalPipeline = active.reduce((sum, d) => sum + (Number(d.loan_amount) || 0), 0);
+      const awaitingAction = deals.filter(d => ['received', 'info_gathering'].includes(d.deal_stage)).length;
 
-      document.getElementById('stat-total').textContent = total;
-      document.getElementById('stat-processing').textContent = processing;
-      document.getElementById('stat-completed').textContent = completed;
-      document.getElementById('stat-declined').textContent = declined;
+      // Update stat cards with richer data
+      const statsContainer = document.getElementById('stats-container');
+      statsContainer.innerHTML = `
+        <div class="stat-card" style="border-left:3px solid #D4A853;">
+          <div class="stat-label">TOTAL PIPELINE</div>
+          <div class="stat-value" style="font-family:'Playfair Display',serif;">£${totalPipeline >= 1000000 ? (totalPipeline / 1000000).toFixed(1) + 'm' : formatNumber(totalPipeline)}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:4px;">${active.length} active deal${active.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="stat-card processing" style="border-left:3px solid #34D399;">
+          <div class="stat-label">ACTIVE DEALS</div>
+          <div class="stat-value" style="font-family:'Playfair Display',serif;">${active.length}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:4px;">${awaitingAction ? awaitingAction + ' awaiting action' : 'All progressing'}</div>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #60A5FA;">
+          <div class="stat-label">COMPLETED</div>
+          <div class="stat-value" style="font-family:'Playfair Display',serif;">${completed.length}</div>
+        </div>
+        <div class="stat-card declined" style="border-left:3px solid #F87171;">
+          <div class="stat-label">DECLINED</div>
+          <div class="stat-value" style="font-family:'Playfair Display',serif;">${declined.length}</div>
+        </div>
+      `;
 
-      // Populate table
+      // Stage labels for table
+      const stageLabels = {
+        received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+        info_gathering: 'Info Gathering', ai_termsheet: 'ITS Issued',
+        fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
+        bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
+        borrower_accepted: 'Accepted', legal_instructed: 'Legal',
+        completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
+      };
+
+      // Upgrade table headers
+      const thead = document.querySelector('#deals-table-container thead tr');
+      if (thead) {
+        thead.innerHTML = `
+          <th>Reference</th>
+          <th>Borrower</th>
+          <th>Loan Amount</th>
+          <th>LTV</th>
+          <th>Stage</th>
+          <th>Updated</th>
+          <th></th>
+        `;
+      }
+
+      // Populate table with richer rows
       const tbody = document.getElementById('deals-tbody');
       tbody.innerHTML = '';
       deals.forEach(deal => {
         const row = document.createElement('tr');
         row.style.cursor = 'pointer';
         row.onclick = () => import('./deal-detail.js').then(m => m.showDealDetail(deal.submission_id));
+
+        const stage = deal.deal_stage || 'received';
+        const stageLabel = stageLabels[stage] || stage;
+        const borrower = deal.borrower_name || deal.security_address?.substring(0, 30) || '-';
+        const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
+        const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
+        const updatedStr = formatDate(deal.updated_at || deal.created_at);
+
         row.innerHTML = `
           <td><span class="deal-ref">${sanitizeHtml(deal.submission_id.substring(0, 8))}</span></td>
-          <td><span class="deal-address">${sanitizeHtml(deal.security_address || '-')}</span></td>
-          <td>£${formatNumber(deal.loan_amount || 0)}</td>
-          <td>${deal.ltv_requested ? deal.ltv_requested + '%' : '-'}</td>
-          <td><span class="status-badge status-${deal.status}">${sanitizeHtml(deal.status)}</span></td>
-          <td>${formatDate(deal.created_at)}</td>
+          <td><strong style="color:#F1F5F9;">${sanitizeHtml(borrower)}</strong></td>
+          <td style="white-space:nowrap;">${loanStr}</td>
+          <td style="text-align:center;">${ltvStr}</td>
+          <td><span class="stage-badge stage-${stage}">${sanitizeHtml(stageLabel)}</span></td>
+          <td style="font-size:0.85em;">${updatedStr}</td>
+          <td><button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();">View →</button></td>
         `;
         tbody.appendChild(row);
       });

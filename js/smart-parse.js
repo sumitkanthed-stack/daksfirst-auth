@@ -44,38 +44,182 @@ export async function handleWhatsappSubmit() {
 }
 
 /**
- * Process smart parse files
+ * Process smart parse files — show deal picker first
  */
+let _pendingFiles = null;
+
 export async function processSmartFiles(fileList) {
   const files = Array.from(fileList);
   const maxSize = 25 * 1024 * 1024; // 25MB per file
+  const validFiles = files.filter(f => f.size <= maxSize);
 
-  // Show file list
+  if (validFiles.length === 0) {
+    showToast('All files exceed the 25MB limit', true);
+    return;
+  }
+
+  // Store files and show deal picker modal
+  _pendingFiles = validFiles;
+  showDealPickerModal(validFiles);
+}
+
+/**
+ * Show modal asking: new deal or existing deal?
+ */
+async function showDealPickerModal(files) {
+  // Fetch existing deals to populate the dropdown
+  let existingDeals = [];
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals`, { method: 'GET' });
+    if (resp.ok) {
+      const data = await resp.json();
+      existingDeals = (data.deals || []).filter(d => !['completed', 'declined', 'withdrawn'].includes(d.deal_stage));
+    }
+  } catch (e) { /* proceed with empty list */ }
+
+  const fileListHtml = files.map(f => {
+    const sizeStr = (f.size / 1024 / 1024).toFixed(2);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+      <div style="width:6px;height:6px;border-radius:50%;background:#D4A853;flex-shrink:0;"></div>
+      <span style="font-size:12px;color:#F1F5F9;flex:1;">${sanitizeHtml(f.name)}</span>
+      <span style="font-size:11px;color:#64748B;">${sizeStr} MB</span>
+    </div>`;
+  }).join('');
+
+  const dealOptions = existingDeals.map(d => {
+    const borrower = d.borrower_name || 'No borrower';
+    const loan = d.loan_amount ? ' · £' + (Number(d.loan_amount) / 1000).toFixed(0) + 'k' : '';
+    const ref = d.submission_id.substring(0, 8);
+    return `<option value="${sanitizeHtml(d.submission_id)}">${sanitizeHtml(ref)} — ${sanitizeHtml(borrower)}${loan}</option>`;
+  }).join('');
+
+  let modal = document.getElementById('deal-picker-modal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'deal-picker-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+  modal.innerHTML = `
+    <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;width:500px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+      <div style="font-size:16px;font-weight:700;color:#F1F5F9;margin-bottom:4px;">${files.length} file${files.length > 1 ? 's' : ''} ready to upload</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;">Where should these documents go?</div>
+
+      <div style="background:#0f1729;border-radius:8px;padding:10px 12px;margin-bottom:16px;max-height:120px;overflow-y:auto;">
+        ${fileListHtml}
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(212,168,83,0.3);border-radius:8px;cursor:pointer;transition:all .15s;" onclick="document.getElementById('dp-new').checked=true;document.getElementById('dp-existing-select').style.display='none';">
+          <input type="radio" name="dp-mode" id="dp-new" value="new" checked style="accent-color:#D4A853;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#F1F5F9;">New Deal</div>
+            <div style="font-size:11px;color:#94A3B8;">AI will extract deal details and create a new submission</div>
+          </div>
+        </label>
+
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(255,255,255,0.06);border-radius:8px;cursor:pointer;transition:all .15s;" onclick="document.getElementById('dp-existing').checked=true;document.getElementById('dp-existing-select').style.display='block';">
+          <input type="radio" name="dp-mode" id="dp-existing" value="existing" style="accent-color:#D4A853;">
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#F1F5F9;">Existing Deal</div>
+            <div style="font-size:11px;color:#94A3B8;">Add documents to a deal already in progress</div>
+          </div>
+        </label>
+
+        <select id="dp-existing-select" style="display:none;width:100%;padding:10px 12px;background:#0f1729;color:#F1F5F9;border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:13px;outline:none;">
+          <option value="">— Select a deal —</option>
+          ${dealOptions}
+        </select>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="document.getElementById('deal-picker-modal').remove()" style="padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#94A3B8;cursor:pointer;">Cancel</button>
+        <button onclick="window.confirmDealPicker()" style="padding:8px 18px;border-radius:8px;font-size:12px;font-weight:700;border:none;background:#D4A853;color:#0B1120;cursor:pointer;">Continue</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+
+/**
+ * Handle deal picker confirmation
+ */
+window.confirmDealPicker = async function() {
+  const mode = document.querySelector('input[name="dp-mode"]:checked')?.value;
+  const existingDealId = document.getElementById('dp-existing-select')?.value;
+
+  if (mode === 'existing' && !existingDealId) {
+    showToast('Please select a deal', true);
+    return;
+  }
+
+  document.getElementById('deal-picker-modal')?.remove();
+
+  if (mode === 'existing' && existingDealId) {
+    // Upload docs to existing deal's document repository
+    await uploadDocsToExistingDeal(existingDealId, _pendingFiles);
+  } else {
+    // Original flow — show file list and parse for new deal
+    showFileListAndParse(_pendingFiles);
+  }
+  _pendingFiles = null;
+};
+
+/**
+ * Upload documents to an existing deal
+ */
+async function uploadDocsToExistingDeal(dealId, files) {
+  showToast(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} to deal...`, 'info');
+
+  for (const file of files) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', 'uncategorised');
+      formData.append('section', 'general');
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/documents`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (resp.ok) {
+        showToast(`Uploaded: ${file.name}`, 'success');
+      } else {
+        showToast(`Failed to upload: ${file.name}`, true);
+      }
+    } catch (e) {
+      showToast(`Error uploading: ${file.name}`, true);
+    }
+  }
+
+  showToast('All documents uploaded. Opening deal...', 'success');
+  // Navigate to the deal
+  setTimeout(() => {
+    import('./deal-detail.js').then(m => m.showDealDetail(dealId));
+  }, 1000);
+}
+
+/**
+ * Original flow: show file list progress and parse for new deal
+ */
+function showFileListAndParse(files) {
   const progressDiv = document.getElementById('smart-upload-progress');
   const fileListDiv = document.getElementById('smart-file-list');
-  const statusDiv = document.getElementById('smart-upload-status');
   progressDiv.style.display = 'block';
 
   fileListDiv.innerHTML = files.map(f => {
     const icon = f.type.includes('pdf') ? '📄' : f.type.includes('word') || f.name.endsWith('.docx') ? '📝' : f.type.includes('sheet') || f.name.endsWith('.xlsx') || f.name.endsWith('.csv') ? '📊' : f.type.includes('image') ? '🖼️' : '📎';
     const sizeStr = (f.size / 1024 / 1024).toFixed(2);
-    const tooLarge = f.size > maxSize;
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px rgba(255,255,255,0.06);">
       <span style="font-size:20px;">${icon}</span>
       <div style="flex:1;"><div style="font-weight:500;font-size:0.9rem;color:#F1F5F9;">${f.name}</div><div style="font-size:0.8rem;color:#64748B;">${sizeStr} MB</div></div>
-      ${tooLarge ? '<span style="color:#F87171;font-size:0.8rem;">Too large (max 25MB)</span>' : '<span style="color:#34D399;font-size:0.8rem;">Ready</span>'}
+      <span style="color:#34D399;font-size:0.8rem;">Ready</span>
     </div>`;
   }).join('');
 
-  const validFiles = files.filter(f => f.size <= maxSize);
-  if (validFiles.length === 0) {
-    statusDiv.innerHTML = '<span style="color:#F87171;">All files exceed the 25MB limit.</span>';
-    return;
-  }
-
-  // Also grab WhatsApp text if any
   const whatsappText = document.getElementById('whatsapp-text-input')?.value.trim() || null;
-  await uploadAndParse(validFiles, whatsappText);
+  uploadAndParse(files, whatsappText);
 }
 
 /**
