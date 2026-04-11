@@ -671,3 +671,104 @@ export async function updateFees() {
     showToast('Network error saving fees', true);
   }
 }
+
+
+/**
+ * Print DIP to PDF — opens browser print dialog on a clean copy of the DIP HTML.
+ * The output is pixel-identical to the portal rendering because it IS the portal HTML.
+ */
+export function printDipPdf() {
+  const dipEl = document.querySelector('.dip-light-form');
+  if (!dipEl) {
+    showToast('No DIP form found on this page', true);
+    return;
+  }
+
+  // Clone the DIP HTML
+  const clone = dipEl.cloneNode(true);
+
+  // Strip interactive elements: replace inputs/selects/textareas with static text
+  clone.querySelectorAll('input, select, textarea').forEach(el => {
+    const val = el.tagName === 'SELECT'
+      ? (el.options[el.selectedIndex]?.text || el.value)
+      : el.value;
+    const span = document.createElement('span');
+    span.textContent = val;
+    span.style.cssText = el.style.cssText;
+    span.style.border = 'none';
+    span.style.background = 'transparent';
+    span.style.padding = el.style.padding || '0';
+    span.style.fontWeight = '600';
+    el.parentNode.replaceChild(span, el);
+  });
+
+  // Strip buttons
+  clone.querySelectorAll('button').forEach(btn => btn.remove());
+
+  // Strip the pre-issue checklist and action buttons row
+  const checklist = clone.querySelector('#dip-checklist');
+  if (checklist) checklist.closest('div[style*="border"]')?.remove();
+  // Remove the Issue/Decline buttons row
+  clone.querySelectorAll('button').forEach(b => b.remove());
+
+  // Strip the live summary (it's a calculation helper, not for print)
+  const liveSummary = clone.querySelector('#dip-summary');
+  if (liveSummary) liveSummary.closest('div[style*="border"]')?.remove();
+
+  // Strip mismatch warnings
+  const mismatch = clone.querySelector('#dip-val-mismatch');
+  if (mismatch) mismatch.remove();
+
+  // Strip the legend (grey = borrower, blue border = RM)
+  clone.querySelectorAll('span[style*="background:#e5e7eb"][style*="Grey"]').forEach(el => {
+    const legendRow = el.closest('div[style*="flex-direction:column"]');
+    if (legendRow) legendRow.remove();
+  });
+
+  // Open a print window
+  const printWin = window.open('', '_blank', 'width=900,height=1200');
+  printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DIP - Daksfirst</title>
+<style>
+  @page { size: A4; margin: 12mm 10mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a2e;
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .dip-light-form { border: none !important; }
+
+  /* Footer on every printed page */
+  @media print {
+    body::after {
+      content: "Daksfirst Limited | 8 Hill Street, Mayfair, London W1J 5NG | FCA 937220 | portal@daksfirst.com";
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 8px;
+      color: #6b7280;
+      border-top: 2px solid #C9A227;
+      padding-top: 4px;
+    }
+  }
+</style>
+</head>
+<body>${clone.outerHTML}</body>
+</html>`);
+  printWin.document.close();
+
+  // Wait for images/fonts to load, then print
+  setTimeout(() => {
+    printWin.focus();
+    printWin.print();
+  }, 400);
+}
