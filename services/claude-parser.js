@@ -258,12 +258,68 @@ function parseClaudeResponse(rawText) {
 
 
 /**
+ * Deduplicate properties by postcode + normalised address.
+ * When duplicates exist, keep the one with the most populated fields.
+ */
+function deduplicateProperties(properties) {
+  if (!Array.isArray(properties) || properties.length === 0) return properties;
+
+  const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const scoreProperty = (p) => {
+    let score = 0;
+    if (p.market_value && p.market_value > 0) score += 3;
+    if (p.purchase_price && p.purchase_price > 0) score += 2;
+    if (p.tenure) score += 1;
+    if (p.property_type) score += 1;
+    if (p.title_number) score += 1;
+    if (p.occupancy_status) score += 1;
+    if (p.current_use) score += 1;
+    return score;
+  };
+
+  const seen = new Map(); // key → best property
+  for (const prop of properties) {
+    // Build a dedup key from postcode + first meaningful part of address
+    const pc = normalize(prop.postcode);
+    const addr = normalize(prop.address).substring(0, 30); // first 30 normalised chars
+    const key = `${pc}::${addr}`;
+
+    const existing = seen.get(key);
+    if (!existing || scoreProperty(prop) > scoreProperty(existing)) {
+      seen.set(key, prop);
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+
+/**
+ * Deduplicate borrowers by normalised full_name
+ */
+function deduplicateBorrowers(borrowers) {
+  if (!Array.isArray(borrowers) || borrowers.length === 0) return borrowers;
+  const seen = new Map();
+  for (const b of borrowers) {
+    const key = (b.full_name || '').toLowerCase().trim();
+    if (!key) continue;
+    const existing = seen.get(key);
+    // Keep the one with more fields populated
+    if (!existing || Object.values(b).filter(v => v !== null).length > Object.values(existing).filter(v => v !== null).length) {
+      seen.set(key, b);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+
+/**
  * Merge batch results into existing analysis
  */
 function mergeAnalysis(existing, incoming) {
   const merged = { ...existing };
 
-  // Append arrays
+  // Append arrays (deduplication happens after all batches)
   for (const arrKey of ['borrowers', 'parsedProperties']) {
     if (Array.isArray(incoming[arrKey]) && incoming[arrKey].length > 0) {
       merged[arrKey] = [...(merged[arrKey] || []), ...incoming[arrKey]];
@@ -405,7 +461,22 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
       }
     }
 
-    // ── 5. Store results ──
+    // ── 5. Deduplicate across batches ──
+    if (mergedAnalysis.parsedProperties) {
+      const before = mergedAnalysis.parsedProperties.length;
+      mergedAnalysis.parsedProperties = deduplicateProperties(mergedAnalysis.parsedProperties);
+      const after = mergedAnalysis.parsedProperties.length;
+      if (before !== after) console.log(`[claude-parser] Deduped properties: ${before} → ${after}`);
+      totalProperties = after;
+    }
+    if (mergedAnalysis.borrowers) {
+      const before = mergedAnalysis.borrowers.length;
+      mergedAnalysis.borrowers = deduplicateBorrowers(mergedAnalysis.borrowers);
+      const after = mergedAnalysis.borrowers.length;
+      if (before !== after) console.log(`[claude-parser] Deduped borrowers: ${before} → ${after}`);
+    }
+
+    // ── 6. Store results ──
     const analysisJson = JSON.stringify(mergedAnalysis);
 
     // Store in analysis_results
