@@ -825,7 +825,6 @@ export async function renderDealMatrix(deal) {
             </div>
           </div>
         </div>
-      </div>
 
       ${isDIPStage ? `
         <div style="padding:16px 50px;text-align:center">
@@ -834,6 +833,7 @@ export async function renderDealMatrix(deal) {
           <div style="font-size:9px;color:rgba(255,255,255,0.06);margin-top:1px">Will be required for Formal Offer</div>
         </div>
       ` : ''}
+      </div>
     </div>
   `;
 
