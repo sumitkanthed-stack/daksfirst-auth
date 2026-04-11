@@ -42,9 +42,11 @@ export async function showDealDetail(dealId) {
     // ── Render vertical section stack (role-gated) ──
     renderDealSections(deal, currentRole);
 
-    // Set logged-in user info in header
-    document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
-    document.getElementById('detail-user-role').textContent = currentRole.toUpperCase();
+    // Set logged-in user info in header (elements may not exist if sidebar replaces header)
+    const detNameEl = document.getElementById('detail-user-name');
+    const detRoleEl = document.getElementById('detail-user-role');
+    if (detNameEl) detNameEl.textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+    if (detRoleEl) detRoleEl.textContent = currentRole.toUpperCase();
 
     // Update breadcrumb
     document.getElementById('breadcrumb-ref').textContent = `${dealId.substring(0, 8)}`;
