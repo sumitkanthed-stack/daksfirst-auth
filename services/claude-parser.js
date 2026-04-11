@@ -693,7 +693,6 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     };
     await pool.query(
       `UPDATE deal_submissions SET
-         status = 'completed',
          parse_progress = $2::jsonb,
          updated_at = NOW()
        WHERE id = $1`,

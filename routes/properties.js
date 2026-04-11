@@ -179,15 +179,14 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
       tenure: deal.property_tenure
     };
 
-    // Reset progress for fresh parse (safe — column may not exist yet on first deploy)
+    // Reset progress for fresh parse (don't touch status — it uses deal lifecycle stages)
     try {
       await pool.query(
-        `UPDATE deal_submissions SET parse_progress = $2::jsonb, status = 'processing', updated_at = NOW() WHERE id = $1`,
+        `UPDATE deal_submissions SET parse_progress = $2::jsonb, updated_at = NOW() WHERE id = $1`,
         [deal.id, JSON.stringify({ status: 'starting', message: 'Parse triggered — initialising...', steps: [] })]
       );
     } catch (progErr) {
-      console.warn('[reparse] Could not reset parse_progress (column may not exist yet):', progErr.message);
-      await pool.query(`UPDATE deal_submissions SET status = 'processing', updated_at = NOW() WHERE id = $1`, [deal.id]);
+      console.warn('[reparse] Could not reset parse_progress:', progErr.message);
     }
 
     // Start background parsing — don't await
