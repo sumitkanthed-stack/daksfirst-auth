@@ -141,18 +141,18 @@ function renderPill(status, label = null, icon = '') {
 /**
  * Generate status summary dot for section header
  */
-function renderStatusDot(count, status) {
+function renderStatusDot(count, status, dotId) {
   const colorMap = {
-    'approved': '#dcfce7',
-    'finalized': '#166534',
-    'signed': '#166534',
+    'approved': '#dcfce7', 'complete': '#dcfce7',
+    'finalized': '#166534', 'signed': '#166534',
     'submitted': '#bfdbfe',
-    'under-review': '#fef3c7',
-    'not-started': '#f1f5f9'
+    'under-review': '#fef3c7', 'incomplete': '#fef3c7',
+    'not-started': '#f1f5f9', 'not-required': '#f8fafc'
   };
   const color = colorMap[status] || '#f1f5f9';
-  const textColor = status === 'finalized' || status === 'signed' ? '#fff' : status === 'approved' ? '#166534' : '#94a3b8';
-  return `<div style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;background:${color};color:${textColor}">${count > 0 ? count : '—'}</div>`;
+  const textColor = status === 'finalized' || status === 'signed' ? '#fff' : (status === 'approved' || status === 'complete') ? '#166534' : status === 'incomplete' || status === 'under-review' ? '#a16207' : '#94a3b8';
+  const idAttr = dotId ? ` id="${dotId}"` : '';
+  return `<div${idAttr} style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;background:${color};color:${textColor}">${count > 0 ? count : '—'}</div>`;
 }
 
 /**
@@ -174,7 +174,7 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
       </div>
       ${statuses.map((status, idx) => `
         <div style="padding:8px 5px;display:flex;align-items:center;justify-content:center;${idx === 0 ? 'background:#f8fbff' : ''}">
-          ${renderPill(status)}
+          <span id="${idx === 0 ? 'dip-fpill-' + fieldKey : ''}" data-dip-pill="${idx === 0 ? fieldKey : ''}">${renderPill(status)}</span>
         </div>
       `).join('')}
     </div>
@@ -422,7 +422,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s1', '👤', 'Borrower / KYC', 'Comprehensive identity verification', [
-        renderStatusDot(1, 'approved'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s1'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -431,7 +431,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s1" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Primary Borrower -->
         ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
-          ['approved', 'not-started', 'locked', 'locked'])}
+          ['not-started', 'not-started', 'locked', 'locked'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
@@ -480,7 +480,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s2', '💰', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
-        renderStatusDot(2, 'under-review'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s2'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -489,7 +489,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s2" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Financial Summary (editable at DIP) -->
         ${renderFieldRow('financial-summary', 'Financial Summary', 'Estimated net worth and source of wealth',
-          ['under-review', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-financial-summary">
           <div style="padding:8px 26px 14px 50px">
@@ -516,7 +516,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Assets -->
         ${renderFieldRow('assets', 'Assets', 'Real estate, investments, cash, vehicles',
-          ['under-review', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-assets">
           <div style="padding:8px 26px 14px 50px">
@@ -529,7 +529,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Liabilities -->
         ${renderFieldRow('liabilities', 'Liabilities', 'Mortgages, loans, credit commitments',
-          ['submitted', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-liabilities">
           <div style="padding:8px 26px 14px 50px">
@@ -542,7 +542,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Income -->
         ${renderFieldRow('income', 'Income', 'Employment, rental, investment income',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-income">
           <div style="padding:8px 26px 14px 50px">
@@ -555,7 +555,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Expenses -->
         ${renderFieldRow('expenses', 'Expenses', 'Housing, living costs, financial commitments',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-expenses">
           <div style="padding:8px 26px 14px 50px">
@@ -568,7 +568,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- AML & Source of Funds -->
         ${renderFieldRow('aml-source-funds', 'AML & Source of Funds', 'Source of funds, wealth, PEP screening, tax residency',
-          ['under-review', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-aml-source-funds">
           <div style="padding:8px 26px 14px 50px">
@@ -596,7 +596,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s3', '🏘️', 'Property / Security', 'Property details and valuation', [
-        renderStatusDot(1, 'approved'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s3'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -605,7 +605,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s3" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Property Details -->
         ${renderFieldRow('property-details', 'Property Details', 'Address, tenure, bedrooms, square footage',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-details">
           <div style="padding:8px 26px 14px 50px">
@@ -635,7 +635,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Valuation -->
         ${renderFieldRow('property-valuation', 'Valuation', 'Desktop valuation, survey, final valuation',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-property-valuation">
           <div style="padding:8px 26px 14px 50px">
@@ -659,7 +659,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s4', '📋', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
-        renderStatusDot(2, 'approved'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s4'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -668,7 +668,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s4" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
         ${renderFieldRow('loan-terms', 'Loan Terms', `Amount: £${fmtMoney(deal.loan_amount)}, Term: ${deal.term_months || '?'} months, Rate: ${deal.rate_requested || 'TBA'}%`,
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-loan-terms">
           <div style="padding:8px 26px 14px 50px">
@@ -695,7 +695,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Use of Funds -->
         ${renderFieldRow('use-of-funds', 'Use of Funds', 'Refinance, purchase, renovation, other',
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-use-of-funds">
           <div style="padding:8px 26px 14px 50px">
@@ -725,7 +725,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s5', '🚪', 'Exit Strategy', 'Refinance or sale plan', [
-        renderStatusDot(1, 'submitted'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s5'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -734,7 +734,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s5" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Exit Strategy -->
         ${renderFieldRow('exit-strategy', 'Exit Strategy', 'Refinance, sale, hold',
-          ['submitted', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-exit-strategy">
           <div style="padding:8px 26px 14px 50px">
@@ -826,7 +826,7 @@ export async function renderDealMatrix(deal) {
   html += `
     <div style="border-bottom:1px solid #f1f5f9">
       ${renderSectionHeader('s7', '💼', 'Commercial', 'Fees and credit approval', [
-        renderStatusDot(2, 'approved'),
+        renderStatusDot(0, 'not-started', 'dip-sec-s7'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
@@ -835,7 +835,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s7" style="max-height:8000px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
         ${renderFieldRow('fees', 'Fees', `Arrangement: ${fmtPct(deal.arrangement_fee_pct || 2)}%, Broker: ${fmtPct(deal.broker_fee_pct || 0)}%`,
-          ['approved', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafbfc" id="detail-fees">
           <div style="padding:8px 26px 14px 50px">
@@ -2359,7 +2359,82 @@ export async function renderDealMatrix(deal) {
       }
     }
 
+    // ── Update DIP pills on section headers and field rows ──
+    updateDipPills();
+
     return pct;
+  }
+
+  /**
+   * Update all DIP column pills (section headers + field rows) based on actual field values
+   */
+  function updateDipPills() {
+    // Map section IDs → the fields they contain for DIP pill calculation
+    const SEC_FIELDS = {
+      s1: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality', 'company_name', 'company_number'],
+      s2: ['estimated_net_worth', 'source_of_wealth', 'deposit_source', 'existing_charges', 'concurrent_transactions'],
+      s3: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'purchase_price', 'occupancy_status', 'current_use'],
+      s4: ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose', 'ltv_requested', 'drawdown_date', 'use_of_funds'],
+      s5: ['exit_strategy', 'additional_notes'],
+      s7: ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months']
+    };
+
+    // Map field rows → the specific fields they represent
+    const ROW_FIELDS = {
+      'primary-borrower': ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'],
+      'guarantors': [],
+      'financial-summary': ['estimated_net_worth', 'source_of_wealth'],
+      'assets': [],
+      'liabilities': [],
+      'income': [],
+      'expenses': [],
+      'aml-source-funds': ['deposit_source', 'existing_charges', 'concurrent_transactions'],
+      'property-details': ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'occupancy_status', 'current_use'],
+      'property-valuation': ['current_value', 'purchase_price'],
+      'loan-terms': ['loan_amount', 'term_months', 'interest_servicing', 'loan_purpose'],
+      'use-of-funds': ['use_of_funds', 'ltv_requested', 'drawdown_date'],
+      'exit-strategy': ['exit_strategy'],
+      'refinance-evidence': [],
+      'fees': ['arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee'],
+      'credit-approval': []
+    };
+
+    // Helper: determine pill status from a set of fields
+    function getPillStatus(fields) {
+      if (!fields || fields.length === 0) return { status: 'not-started', count: 0 };
+      const filled = fields.filter(k => fieldHasValue(k)).length;
+      if (filled === fields.length) return { status: 'complete', count: filled };
+      if (filled > 0) return { status: 'incomplete', count: filled };
+      return { status: 'not-started', count: 0 };
+    }
+
+    // Pill colours
+    const pillColors = {
+      'complete': { bg: '#dcfce7', color: '#166534' },
+      'incomplete': { bg: '#fef3c7', color: '#a16207' },
+      'not-started': { bg: '#f1f5f9', color: '#94a3b8' }
+    };
+
+    // Update section header dots
+    for (const [secId, fields] of Object.entries(SEC_FIELDS)) {
+      const el = document.getElementById('dip-sec-' + secId);
+      if (!el) continue;
+      const { status, count } = getPillStatus(fields);
+      const c = pillColors[status] || pillColors['not-started'];
+      el.style.background = c.bg;
+      el.style.color = c.color;
+      el.textContent = count > 0 ? count : '—';
+    }
+
+    // Update field row DIP pills
+    for (const [rowKey, fields] of Object.entries(ROW_FIELDS)) {
+      const el = document.getElementById('dip-fpill-' + rowKey);
+      if (!el) continue;
+      const { status } = getPillStatus(fields);
+      const pillLabel = status === 'complete' ? 'complete' : status === 'incomplete' ? 'incomplete' : 'not started';
+      const pillStatus = status === 'complete' ? 'approved' : status === 'incomplete' ? 'under-review' : 'not-started';
+      el.innerHTML = renderPill(pillStatus, pillLabel);
+    }
   }
 
   // Initial completeness calculation on load
