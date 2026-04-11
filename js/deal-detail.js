@@ -669,7 +669,7 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
 
     html += accordion('wf-dip-form', 'DIP Form', 'D', true);
-    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid var(--primary);">
+    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;color:#1a1a2e;">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">
@@ -694,7 +694,7 @@ export function renderInternalWorkflowControls(deal) {
         ${isCorporate ? `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;margin-bottom:12px;">
           <div style="padding:10px;background:#eff6ff;border-radius:6px;border:1px solid #bfdbfe;">
-            <span style="font-size:10px;color:#60A5FA;display:block;font-weight:600;">Corporate Entity</span>
+            <span style="font-size:10px;color:#1e40af;display:block;font-weight:600;">Corporate Entity</span>
             <strong style="font-size:14px;">${sanitizeHtml(deal.borrower_company || deal.company_name || 'N/A')}</strong>
             ${deal.company_number ? '<div style="font-size:11px;color:#6b7280;margin-top:2px;">Co. No: ' + sanitizeHtml(deal.company_number) + '</div>' : ''}
           </div>
@@ -793,7 +793,7 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(addr)}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(postcodes[i] || postcodes[0] || '-')}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">
-                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="0" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid var(--primary);font-size:12px;max-width:120px;">
+                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="0" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid #2563eb;font-size:12px;max-width:120px;color:#1a1a2e;background:#fff;">
               </td>
               <td id="dip-prop-status-${i}" style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;"><span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span></td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;">
