@@ -479,23 +479,77 @@
 
     <!-- Dashboard Screen (Post-Login) -->
     <div id="screen-dashboard" class="screen">
-      <div class="dashboard-container">
-        <!-- Dashboard Header -->
-        <div class="dashboard-header">
-          <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
-            <div class="dashboard-user">
-              <div class="user-badge">
-                <span id="user-name-display">User</span>
-                <span class="role-badge" id="user-role-display">broker</span>
+      <div class="dashboard-container" style="display:flex;min-height:100vh;">
+        <!-- ══ PERMANENT SIDEBAR ══ -->
+        <aside id="app-sidebar" class="app-sidebar" style="width:240px;background:#111827;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;">
+          <!-- Sidebar Brand -->
+          <div style="padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:12px;">
+            <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;">
+              <img src="/logo.PNG" alt="DF" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+              <div style="display:none;width:36px;height:36px;background:linear-gradient(135deg,#D4A853,#E8C97A);border-radius:8px;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#0B1120;font-family:'Playfair Display',serif;">DF</div>
+            </div>
+            <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:600;color:#F1F5F9;">Daks<span style="color:#D4A853;">first</span></div>
+          </div>
+
+          <!-- Sidebar Nav -->
+          <nav style="flex:1;padding:16px 12px;overflow-y:auto;">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#64748B;padding:0 12px;margin-bottom:8px;">Main</div>
+            <a onclick="window.showDashboard && window.showDashboard()" class="sidebar-nav-item active" id="nav-dashboard" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#D4A853;background:rgba(212,168,83,0.15);font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <span style="width:18px;text-align:center;font-size:14px;opacity:0.8;">&#9632;</span> Dashboard
+            </a>
+            <a onclick="window.showDashboard && window.showDashboard()" class="sidebar-nav-item" id="nav-deals" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9724;</span> My Deals
+            </a>
+            <a onclick="window.newSubmission && window.newSubmission()" class="sidebar-nav-item" id="nav-new" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">+</span> New Submission
+            </a>
+            <a class="sidebar-nav-item" id="nav-docs" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9776;</span> Documents
+            </a>
+
+            <div id="sidebar-admin-section" style="margin-top:24px;display:none;">
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#64748B;padding:0 12px;margin-bottom:8px;">Admin</div>
+              <a onclick="window.showAdmin && window.showAdmin()" class="sidebar-nav-item" id="nav-users" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+                <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9679;</span> User Management
+              </a>
+              <a class="sidebar-nav-item" id="nav-settings" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+                <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9881;</span> Settings
+              </a>
+              <a class="sidebar-nav-item" id="nav-analytics" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+                <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9650;</span> Analytics
+              </a>
+            </div>
+          </nav>
+
+          <!-- Sidebar Footer (user info) -->
+          <div style="padding:14px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+              <div id="sidebar-user-name" style="font-size:13px;font-weight:500;color:#F1F5F9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">User</div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+                <span id="sidebar-role-badge" style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:2px 6px;border-radius:3px;background:rgba(212,168,83,0.15);color:#D4A853;">broker</span>
               </div>
-              <button class="btn-logout" onclick="logoutUser()">Logout</button>
+            </div>
+            <button onclick="logoutUser()" style="background:none;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:6px 10px;color:#94A3B8;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;" onmouseover="this.style.background='#1e293b';this.style.color='#F1F5F9'" onmouseout="this.style.background='none';this.style.color='#94A3B8'">Sign Out</button>
+          </div>
+        </aside>
+
+        <!-- ══ MAIN CONTENT AREA (offset by sidebar) ══ -->
+        <div style="margin-left:240px;flex:1;min-height:100vh;">
+          <!-- Top Bar (slim, no brand — brand is in sidebar) -->
+          <div class="dashboard-header" style="height:auto;padding:0;">
+            <div class="dashboard-header-content" style="justify-content:flex-end;padding:12px 24px;">
+              <div class="dashboard-user" style="display:none;">
+                <div class="user-badge">
+                  <span id="user-name-display">User</span>
+                  <span class="role-badge" id="user-role-display">broker</span>
+                </div>
+                <button class="btn-logout" onclick="logoutUser()">Logout</button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Dashboard Content -->
-        <div class="dashboard-content">
+          <!-- Dashboard Content -->
+          <div class="dashboard-content">
           <!-- Stats Row -->
           <div id="stats-container" class="stats-row" style="display:none;">
             <div class="stat-card">
@@ -695,24 +749,13 @@
             </table>
           </div>
         </div>
+        </div><!-- end margin-left wrapper -->
       </div>
     </div>
 
     <!-- Deal Detail Screen -->
     <div id="screen-deal-detail" class="screen">
-      <div class="dashboard-container">
-        <div class="dashboard-header">
-          <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
-            <div class="dashboard-user">
-              <div class="user-badge">
-                <span id="detail-user-name">User</span>
-                <span class="role-badge" id="detail-user-role">broker</span>
-              </div>
-              <button class="btn-logout" onclick="logoutUser()">Logout</button>
-            </div>
-          </div>
-        </div>
+      <div class="dashboard-container" style="margin-left:240px;min-height:100vh;">
 
         <div class="deal-detail-layout">
          <div class="deal-detail-container">
@@ -1200,19 +1243,7 @@
 
     <!-- Admin Panel Screen -->
     <div id="screen-admin" class="screen">
-      <div class="admin-container">
-        <div class="dashboard-header">
-          <div class="dashboard-header-content">
-            <div class="dashboard-brand"><span class="brand-logo"><img src="/logo.PNG" alt="DF" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg style="display:none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 3 L93 27 L93 73 L50 97 L7 73 L7 27 Z" fill="none" stroke="#D4A853" stroke-width="3.5"/><path d="M30 35 L30 65 L42 65 Q55 65 55 50 Q55 35 42 35 Z M35 40 L41 40 Q49 40 49 50 Q49 60 41 60 L35 60 Z" fill="#D4A853"/><path d="M53 35 L53 65 L58 65 L58 52 L68 52 L68 48 L58 48 L58 40 L70 40 L70 35 Z" fill="#D4A853"/></svg></span> Daksfirst</div>
-            <div class="dashboard-user">
-              <div class="user-badge">
-                <span id="admin-user-name">Admin</span>
-                <span class="role-badge" id="admin-role-badge">ADMIN</span>
-              </div>
-              <button class="btn-logout" onclick="logoutUser()">Logout</button>
-            </div>
-          </div>
-        </div>
+      <div class="admin-container" style="margin-left:240px;min-height:100vh;">
 
         <div class="admin-nav">
           <button class="admin-nav-item active" onclick="switchAdminTab('pipeline')">Pipeline</button>

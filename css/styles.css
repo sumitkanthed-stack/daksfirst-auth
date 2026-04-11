@@ -748,6 +748,19 @@
     .onboarding-file { margin-top: 4px; }
     .form-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
 
+    /* ═══ SIDEBAR NAV ═══ */
+    .sidebar-nav-item:hover {
+      background: #1e293b !important;
+      color: #F1F5F9 !important;
+    }
+    .sidebar-nav-item.active {
+      background: rgba(212,168,83,0.15) !important;
+      color: #D4A853 !important;
+    }
+    .sidebar-nav-item.active:hover {
+      background: rgba(212,168,83,0.2) !important;
+    }
+
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 768px) {
       .dashboard-header-content { flex-direction: column; gap: 12px; }

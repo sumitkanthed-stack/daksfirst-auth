@@ -244,10 +244,19 @@ export async function showDashboard() {
   }
 
   // Update header
-  document.getElementById('user-name-display').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+  const fullName = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+  document.getElementById('user-name-display').textContent = fullName;
   document.getElementById('user-role-display').textContent = currentRole.toUpperCase();
-  document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+  document.getElementById('detail-user-name').textContent = fullName;
   document.getElementById('detail-user-role').textContent = currentRole.toUpperCase();
+
+  // Update sidebar
+  const sidebarName = document.getElementById('sidebar-user-name');
+  const sidebarRole = document.getElementById('sidebar-role-badge');
+  const sidebarAdmin = document.getElementById('sidebar-admin-section');
+  if (sidebarName) sidebarName.textContent = fullName;
+  if (sidebarRole) sidebarRole.textContent = currentRole.toUpperCase();
+  if (sidebarAdmin) sidebarAdmin.style.display = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole) ? 'block' : 'none';
 
   showScreen('screen-dashboard');
   await loadUserDeals();

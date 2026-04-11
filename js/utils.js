@@ -74,6 +74,13 @@ export function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const screen = document.getElementById(screenId);
   if (screen) screen.classList.add('active');
+
+  // Show/hide sidebar — only visible on logged-in screens
+  const sidebar = document.getElementById('app-sidebar');
+  if (sidebar) {
+    const loggedInScreens = ['screen-dashboard', 'screen-deal-detail', 'screen-admin'];
+    sidebar.style.display = loggedInScreens.includes(screenId) ? 'flex' : 'none';
+  }
 }
 
 /**
