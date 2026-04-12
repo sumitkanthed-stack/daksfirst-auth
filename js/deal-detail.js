@@ -3,9 +3,9 @@ import { showScreen, showToast, formatNumber, formatPct, formatDate, formatDateT
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setCurrentDealData, setCurrentDealId, getCurrentDealId, restoreDipFormState, hasDipFormState } from './state.js';
 import { renderDocumentsList } from './documents.js';
-import { switchDetailTab } from './onboarding.js';
-// import { renderDocPanel } from './doc-panel.js'; // Sidebar removed
-import { renderDealSections } from './deal-sections.js';
+import { populateOnboardingData, switchDetailTab, injectOnboardingSectionControls } from './onboarding.js';
+import { renderDocPanel } from './doc-panel.js';
+import { renderDocumentsIssued } from './documents-issued.js';
 
 /**
  * Show deal detail screen
@@ -39,19 +39,21 @@ export async function showDealDetail(dealId) {
     window.currentDealId = dealId;
     window.currentDealData = deal;
 
-    // ── Render vertical section stack (role-gated) ──
-    renderDealSections(deal, currentRole);
+    // Render document sidebar
+    renderDocPanel(deal);
 
-    // Set logged-in user info in header (elements may not exist if sidebar replaces header)
-    const detNameEl = document.getElementById('detail-user-name');
-    const detRoleEl = document.getElementById('detail-user-role');
-    if (detNameEl) detNameEl.textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
-    if (detRoleEl) detRoleEl.textContent = currentRole.toUpperCase();
+    // Render Documents Issued panel (above tabs, after header)
+    renderDocumentsIssued(deal);
+
+    // Set logged-in user info in header
+    document.getElementById('detail-user-name').textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+    document.getElementById('detail-user-role').textContent = currentRole.toUpperCase();
 
     // Update breadcrumb
     document.getElementById('breadcrumb-ref').textContent = `${dealId.substring(0, 8)}`;
 
-    // Header (address is set by renderDealSections with truncation for multi-property)
+    // Header
+    document.getElementById('detail-property-address').textContent = sanitizeHtml(deal.security_address || 'N/A');
     document.getElementById('detail-ref-id').textContent = dealId;
     document.getElementById('detail-date').textContent = formatDate(deal.created_at);
 
@@ -64,8 +66,8 @@ export async function showDealDetail(dealId) {
     const stage = deal.deal_stage || 'received';
     const stageEl = document.getElementById('detail-stage-badge');
     const stageLabels = {
-      received: 'Received', assigned: isInternal ? 'Assigned' : 'Received', dip_issued: 'DIP Issued',
-      info_gathering: isInternal ? 'Info Gathering' : 'DIP Requested', ai_termsheet: 'Indicative Termsheet',
+      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
@@ -77,7 +79,7 @@ export async function showDealDetail(dealId) {
     // ── Helper: make a field editable for internal users or read-only for external ──
     const canEdit = isInternal; // RM, admin, credit, compliance can edit intake fields
     const inputStyle = 'width:100%;padding:5px 8px;border-radius:4px;font-size:13px;font-family:inherit;';
-    const editableStyle = inputStyle + 'border:1px solid #c9a84c;background:#111827df5;';
+    const editableStyle = inputStyle + 'border:1px solid #c9a84c;background:#fffdf5;';
     const readonlyStyle = inputStyle + 'border:1px solid #e5e7eb;background:#f9fafb;color:#374151;';
 
     const moneyInputIds = []; // track money fields for post-render formatting
@@ -161,8 +163,8 @@ export async function showDealDetail(dealId) {
     const borrowerTab = document.getElementById('dtab-borrower');
     if (borrowerTab && isCorporateDeal) {
       const banner = document.createElement('div');
-      banner.style.cssText = 'margin:0 0 12px;padding:10px 14px;background:rgba(96,165,250,0.1);border:1px solid #3b82f6;border-radius:6px;display:flex;justify-content:space-between;align-items:center;';
-      banner.innerHTML = '<div><strong style="color:#60A5FA;font-size:14px;">CORPORATE BORROWER</strong><br><span style="font-size:13px;">' + sanitizeHtml(deal.company_name || deal.borrower_company || '') + (deal.company_number ? ' &middot; Co. ' + sanitizeHtml(deal.company_number) : '') + '</span></div><div style="text-align:right;"><span style="font-size:11px;color:#6b7280;">UBO / Director</span><br><strong>' + sanitizeHtml(deal.borrower_name || '') + '</strong></div>';
+      banner.style.cssText = 'margin:0 0 12px;padding:10px 14px;background:#dbeafe;border:1px solid #3b82f6;border-radius:6px;display:flex;justify-content:space-between;align-items:center;';
+      banner.innerHTML = '<div><strong style="color:#1e40af;font-size:14px;">CORPORATE BORROWER</strong><br><span style="font-size:13px;">' + sanitizeHtml(deal.company_name || deal.borrower_company || '') + (deal.company_number ? ' &middot; Co. ' + sanitizeHtml(deal.company_number) : '') + '</span></div><div style="text-align:right;"><span style="font-size:11px;color:#6b7280;">UBO / Director</span><br><strong>' + sanitizeHtml(deal.borrower_name || '') + '</strong></div>';
       const panel = borrowerTab.querySelector('.detail-panel');
       if (panel) panel.insertBefore(banner, panel.firstChild);
     }
@@ -235,21 +237,6 @@ export async function showDealDetail(dealId) {
     // ── TAB: Documents ──
     renderDocumentsList(deal.documents || []);
 
-    // ── TAB: Deal Matrix (lazy-loaded to avoid breaking deal-detail if file missing) ──
-    import('./deal-matrix.js').then(async (mod) => {
-      try {
-        await mod.renderDealMatrix(deal);
-      } catch (renderErr) {
-        console.error('[matrix] renderDealMatrix error:', renderErr);
-        const mc = document.getElementById('dtab-matrix-content');
-        if (mc) mc.innerHTML = '<p style="color:#dc2626;text-align:center;padding:40px;">Matrix render error: ' + renderErr.message + '</p>';
-      }
-    }).catch(err => {
-      console.error('[matrix] Could not load deal-matrix.js:', err);
-      const mc = document.getElementById('dtab-matrix-content');
-      if (mc) mc.innerHTML = '<p style="color:#dc2626;text-align:center;padding:40px;">Deal Matrix module not available: ' + err.message + '</p>';
-    });
-
     // ── TAB: Analysis ──
     if (deal.status === 'completed' && deal.analysis_results) {
       const analysisEl = document.getElementById('analysis-content');
@@ -276,18 +263,56 @@ export async function showDealDetail(dealId) {
       }
     }
 
-    // ── WORKFLOW CONTROLS — render into admin section body ──
+    // ── PHASE 2: Lock/Unlock ──
+    // Phase 2 unlocks when onboarding fee is confirmed (not stage-based)
+    const isPhase2Unlocked = !!deal.dip_fee_confirmed;
+    const phase2LockEl = document.getElementById('phase2-lock');
+    if (phase2LockEl) {
+      phase2LockEl.textContent = isPhase2Unlocked ? '\u{1F513}' : '\u{1F512}';
+    }
+
+    document.querySelectorAll('.phase2-tab').forEach(tab => {
+      if (isPhase2Unlocked) {
+        tab.classList.remove('locked');
+        tab.classList.add('unlocked');
+      } else {
+        tab.classList.add('locked');
+        tab.classList.remove('unlocked');
+      }
+    });
+
+    // Show/hide Phase 2 forms vs lock notices
+    const phase2Tabs = ['kyc', 'financials-aml', 'valuation', 'use-of-funds', 'exit', 'other-conditions'];
+    phase2Tabs.forEach(t => {
+      const lockNotice = document.getElementById(`${t}-lock-notice`);
+      const form = document.getElementById(`${t}-form`);
+      if (lockNotice) {
+        lockNotice.style.display = isPhase2Unlocked ? 'none' : 'block';
+        if (!isPhase2Unlocked) {
+          lockNotice.innerHTML = `<span class="lock-icon-large">&#128274;</span>
+            <h3>${t.charAt(0).toUpperCase() + t.slice(1)} — Locked</h3>
+            <p>This section unlocks after the onboarding fee is confirmed by the RM.</p>`;
+        }
+      }
+      if (form) form.style.display = isPhase2Unlocked ? 'block' : 'none';
+    });
+
+    // Pre-fill Phase 2 forms from onboarding_data if it exists
+    if (isPhase2Unlocked && deal.onboarding_data) {
+      populateOnboardingData(deal.onboarding_data);
+    }
+
+    // Inject RM section approval controls and doc upload summaries into each Phase 2 tab
+    if (isPhase2Unlocked) {
+      injectOnboardingSectionControls(deal);
+    }
+
+    // ── WORKFLOW CONTROLS ──
     const workflowPanel = document.getElementById('workflow-controls');
-    const adminBody = document.getElementById('admin-assignments');
     if (workflowPanel) {
       if (isInternal) {
         workflowPanel.style.display = 'block';
         renderInternalWorkflowControls(deal);
-        // Move workflow controls into admin section
-        if (adminBody) {
-          adminBody.insertAdjacentElement('afterend', workflowPanel);
-          workflowPanel.style.padding = '0 20px 20px';
-        }
       } else if (['broker', 'borrower'].includes(currentRole)) {
         workflowPanel.style.display = 'block';
         renderExternalWorkflowControls(deal);
@@ -295,6 +320,10 @@ export async function showDealDetail(dealId) {
         workflowPanel.style.display = 'none';
       }
     }
+
+    // Reset to Overview tab
+    const overviewTab = document.querySelector('.detail-tab[data-dtab="dtab-overview"]');
+    if (overviewTab) switchDetailTab(overviewTab);
 
     showScreen('screen-deal-detail');
   } catch (err) {
@@ -308,8 +337,6 @@ export async function showDealDetail(dealId) {
  */
 export function renderInternalWorkflowControls(deal) {
   const currentRole = getCurrentRole();
-  const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
-  const isInternal = internalRoles.includes(currentRole);
   const authToken = getAuthToken();
   const panel = document.getElementById('workflow-controls');
   if (!panel) return;
@@ -317,52 +344,19 @@ export function renderInternalWorkflowControls(deal) {
   const stage = deal.deal_stage || 'received';
   const stageLabels = {
     received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-    info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
+    info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
     fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
     bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
     borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
     completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
   };
 
-  // ── Accordion helper functions ──
-  const accordion = (id, title, iconInitial, defaultOpen = false) => {
-    // Map icon initials to styles
-    const iconStyles = {
-      'A': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
-      'B': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
-      'P': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' },
-      'D': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
-      'CR': { bg: 'rgba(251,146,60,0.1)', color: '#FB923C' },
-      'TS': { bg: 'rgba(168,85,247,0.1)', color: '#A855F7' },
-      '£': { bg: 'rgba(212,168,83,0.15)', color: '#D4A853' },
-      'T': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' },
-      'AT': { bg: 'rgba(148,163,184,0.1)', color: '#94A3B8' },
-      'W': { bg: 'rgba(251,146,60,0.1)', color: '#FB923C' },
-      'IG': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
-      'DS': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' }
-    };
-    const style = iconStyles[iconInitial] || { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' };
-
-    return `<div class="wf-section" style="background:#111827;border-radius:8px;margin-bottom:12px;border:1px solid #e5e7eb;overflow:hidden;">
-    <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.wf-chevron').textContent=this.nextElementSibling.style.display==='none'?'▸':'▾'"
-         style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:#1a2332;border-bottom:1px solid #e5e7eb;user-select:none;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:${style.bg};border-radius:6px;font-size:11px;font-weight:700;color:${style.color};flex-shrink:0">${iconInitial}</div>
-        <h4 style="margin:0;font-size:14px;color:#F1F5F9;">${title}</h4>
-      </div>
-      <span class="wf-chevron" style="color:#94a3b8;font-size:14px;">${defaultOpen ? '▾' : '▸'}</span>
-    </div>
-    <div id="${id}" style="display:${defaultOpen ? 'block' : 'none'};padding:16px;">`;
-  };
-  const accordionEnd = () => `</div></div>`;
-
-
   // Map each stage to who is responsible for the next action
   const stageResponsibility = {
     received: { who: 'Admin', action: 'Assign to RM' },
     assigned: { who: 'RM', action: 'Issue DIP' },
     dip_issued: { who: 'Credit → Borrower', action: 'Credit Review then Borrower Accept' },
-    info_gathering: { who: 'RM', action: 'Generate Indicative Termsheet' },
+    info_gathering: { who: 'RM', action: 'Generate AI Termsheet' },
     ai_termsheet: { who: 'RM', action: 'Request Fee' },
     fee_pending: { who: 'RM / Broker', action: 'Confirm Fee Payment' },
     fee_paid: { who: 'RM', action: 'Start Underwriting' },
@@ -377,16 +371,16 @@ export function renderInternalWorkflowControls(deal) {
   };
   const responsibility = stageResponsibility[stage] || { who: '-', action: '-' };
 
-  let html = `<h3 style="margin:0 0 4px;color:#F1F5F9;">Deal Workflow</h3>`;
+  let html = `<h3 style="margin:0 0 4px;color:var(--primary);">Deal Workflow</h3>`;
   if (!['completed', 'declined', 'withdrawn'].includes(stage)) {
     html += `<div style="margin-bottom:16px;padding:8px 14px;background:#eef2ff;border-radius:6px;border-left:4px solid var(--primary);font-size:13px;">
-      Next action: <strong>${sanitizeHtml(responsibility.action)}</strong> &mdash; Responsibility: <strong style="color:#F1F5F9;">${sanitizeHtml(responsibility.who)}</strong>
+      Next action: <strong>${sanitizeHtml(responsibility.action)}</strong> &mdash; Responsibility: <strong style="color:var(--primary);">${sanitizeHtml(responsibility.who)}</strong>
     </div>`;
   }
 
   // ── Role Guidance Banner ──
   if (currentRole === 'rm') {
-    html += `<div style="margin-bottom:12px;padding:10px 14px;background:rgba(96,165,250,0.1);border-radius:6px;border-left:4px solid #2563eb;font-size:12px;color:#60A5FA;">
+    html += `<div style="margin-bottom:12px;padding:10px 14px;background:#dbeafe;border-radius:6px;border-left:4px solid #2563eb;font-size:12px;color:#1e40af;">
       <strong>RM View</strong> — You manage borrower data, property details, fees and DIP terms. Ensure all information is accurate before issuing the DIP to credit for review.
     </div>`;
   } else if (currentRole === 'credit') {
@@ -399,40 +393,16 @@ export function renderInternalWorkflowControls(deal) {
     </div>`;
   }
 
-  // ── Stage Pipeline Visual (Grouped Phases) ──
-  const stageOrder = ['received', 'assigned', 'info_gathering', 'dip_issued', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
+  // ── Stage Pipeline Visual ──
+  const stageOrder = ['received', 'assigned', 'dip_issued', 'info_gathering', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
   const currentIdx = stageOrder.indexOf(stage);
-  // For external users, hide internal-only stages (assigned is just internal routing)
-  const phases = isInternal ? [
-    { label: 'Pre-DIP', stages: ['received', 'assigned', 'info_gathering', 'dip_issued'] },
-    { label: 'Onboarding', stages: ['ai_termsheet'] },
-    { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
-  ] : [
-    { label: 'DIP', stages: ['received', 'info_gathering', 'dip_issued'] },
-    { label: 'Onboarding', stages: ['ai_termsheet'] },
-    { label: 'Completion', stages: ['fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'] }
-  ];
-
-  // For external users, map 'assigned' stage to 'received' (same thing from broker perspective)
-  const displayStage = (!isInternal && stage === 'assigned') ? 'received' : stage;
-
-  html += `<div style="display:flex;gap:16px;margin-bottom:20px;">`;
-  phases.forEach(phase => {
-    const phaseActive = phase.stages.includes(displayStage);
-    const phaseDone = phase.stages.every((s) => stageOrder.indexOf(s) < currentIdx);
-    const phaseBg = phaseDone ? '#dcfce7' : phaseActive ? '#eff6ff' : '#f8fafc';
-    const phaseBorder = phaseDone ? '#86efac' : phaseActive ? '#93c5fd' : '#e5e7eb';
-    html += `<div style="flex:1;padding:10px;border-radius:8px;background:${phaseBg};border:1px solid ${phaseBorder};">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">${phase.label}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px;">`;
-    phase.stages.forEach((s, i) => {
-      const isActive = s === displayStage;
-      const isDone = stageOrder.indexOf(s) < currentIdx;
-      const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : 'rgba(255,255,255,0.06)';
-      const color = (isActive || isDone) ? '#fff' : '#666';
-      html += `<span style="padding:3px 8px;border-radius:10px;font-size:10px;background:${bg};color:${color};white-space:nowrap;">${stageLabels[s]}</span>`;
-    });
-    html += `</div></div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
+  stageOrder.forEach((s, i) => {
+    const isActive = s === stage;
+    const isDone = i < currentIdx;
+    const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
+    const color = (isActive || isDone) ? '#fff' : '#666';
+    html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${stageLabels[s]}</span>`;
   });
   html += `</div>`;
 
@@ -446,8 +416,9 @@ export function renderInternalWorkflowControls(deal) {
       ? `<span style="display:inline-block;padding:3px 10px;background:#dcfce7;color:#166534;border-radius:12px;font-size:12px;font-weight:600;border:1px solid #86efac;">${name}</span>`
       : `<span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#991b1b;border-radius:12px;font-size:12px;font-weight:600;border:1px solid #fca5a5;">Unassigned</span>`;
 
-    html += accordion('wf-assignments', 'Assignments', 'A', false);
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Assignments</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">Relationship Manager</label>
           <div style="display:flex;gap:8px;">
@@ -480,7 +451,6 @@ export function renderInternalWorkflowControls(deal) {
         </div>
       </div>
     </div>`;
-    html += accordionEnd();
 
     // Populate staff dropdowns
     setTimeout(async () => {
@@ -502,14 +472,68 @@ export function renderInternalWorkflowControls(deal) {
     }, 100);
   }
 
+  // ── Fee Tracker (RM / Admin — must be filled BEFORE issuing DIP) ──
+  if (['admin', 'rm'].includes(currentRole)) {
+    const dipFee = deal.dip_fee_confirmed ? 'Confirmed' : 'Not confirmed';
+    const commitFee = deal.commitment_fee_received ? 'Confirmed' : 'Not confirmed';
+
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #7c3aed;">
+      <h4 style="margin:0 0 4px;color:#7c3aed;">Fee Tracker</h4>
+      <p style="margin:0 0 12px;font-size:11px;color:#666;">Enter fee details here first. These will flow into the DIP fee schedule below.</p>
+      <div style="display:flex;gap:20px;margin-bottom:12px;">
+        <span style="font-size:13px;">DIP Fee: <strong style="color:${deal.dip_fee_confirmed ? '#48bb78' : '#e53e3e'}">${dipFee}</strong></span>
+        <span style="font-size:13px;">Commitment Fee: <strong style="color:${deal.commitment_fee_received ? '#48bb78' : '#e53e3e'}">${commitFee}</strong></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:#666;">Fee Type</label>
+          <select id="fee-type" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+            <option value="dip_fee">DIP Fee</option>
+            <option value="commitment_fee">Commitment Fee</option>
+            <option value="arrangement_fee">Arrangement Fee</option>
+            <option value="valuation_fee">Valuation Fee</option>
+            <option value="legal_fee">Legal Fee</option>
+            <option value="broker_fee">Broker Fee</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Amount (£)</label>
+          <input type="text" id="fee-amount" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Payment Date</label>
+          <input type="date" id="fee-date" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;">Reference</label>
+          <input type="text" id="fee-ref" placeholder="Payment ref" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
+        </div>
+        <button onclick="window.confirmFee && window.confirmFee()" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm</button>
+      </div>
+    </div>`;
+
+    // Show existing fees
+    if (deal.fees && deal.fees.length > 0) {
+      html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+        <h4 style="margin:0 0 12px;">Fee History</h4>
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Amount</th><th style="text-align:left;padding:6px;">Date</th><th style="text-align:left;padding:6px;">Reference</th><th style="text-align:left;padding:6px;">Confirmed By</th></tr>
+          ${deal.fees.map(f => `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:6px;">${f.fee_type.replace(/_/g, ' ')}</td><td style="padding:6px;">£${formatNumber(f.amount)}</td><td style="padding:6px;">${formatDate(f.payment_date)}</td><td style="padding:6px;">${sanitizeHtml(f.payment_ref || '-')}</td><td style="padding:6px;">${sanitizeHtml(f.first_name)} ${sanitizeHtml(f.last_name)}</td></tr>`).join('')}
+        </table>
+      </div>`;
+    }
+  }
+
   // ── Borrowers (verify before DIP) ──
   const borrowers = deal.borrowers || [];
   const canEditBorrowers = ['admin', 'rm'].includes(currentRole);
-  html += accordion('wf-borrowers', `Borrowers (${borrowers.length})`, 'B', false);
+  html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+    <h4 style="margin:0 0 12px;">Borrowers (${borrowers.length}) ${!canEditBorrowers ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages borrower data</span>' : ''}</h4>`;
 
   if (borrowers.length > 0) {
     html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
-      <tr style="border-bottom:1px solid rgba(255,255,255,0.06);"><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Role</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Email</th><th style="text-align:left;padding:6px;">KYC</th>${canEditBorrowers ? '<th style="padding:6px;"></th>' : ''}</tr>
+      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Role</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Email</th><th style="text-align:left;padding:6px;">KYC</th>${canEditBorrowers ? '<th style="padding:6px;"></th>' : ''}</tr>
       ${borrowers.map(b => `<tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:6px;">${sanitizeHtml(b.full_name)}</td>
         <td style="padding:6px;"><span style="padding:2px 8px;border-radius:10px;font-size:11px;background:${b.role === 'primary' ? '#bee3f8' : '#fefcbf'};color:${b.role === 'primary' ? '#2a4365' : '#744210'}">${b.role}</span></td>
@@ -522,7 +546,7 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   if (canEditBorrowers) {
-    html += `<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
       <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Borrower</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
         <div><label style="font-size:11px;color:#666;">Full Name *</label><input type="text" id="bw-name" placeholder="Full name" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
@@ -533,13 +557,14 @@ export function renderInternalWorkflowControls(deal) {
       </div>
     </div>`;
   }
-  html += accordionEnd();
+  html += `</div>`;
 
   // ── Properties / Portfolio (verify before DIP) ──
   const properties = deal.properties || [];
   const summary = deal.portfolio_summary || {};
   const canEditProperties = ['admin', 'rm'].includes(currentRole);
-  html += accordion('wf-properties', `Properties / Portfolio (${properties.length})`, 'P', false);
+  html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+    <h4 style="margin:0 0 12px;">Properties / Portfolio (${properties.length}) ${!canEditProperties ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages property data</span>' : ''}</h4>`;
 
   if (properties.length > 0) {
     html += `<div style="display:flex;gap:16px;margin-bottom:12px;font-size:13px;">
@@ -547,7 +572,7 @@ export function renderInternalWorkflowControls(deal) {
       <span>Total GDV: <strong>£${formatNumber(summary.total_gdv || 0)}</strong></span>
     </div>`;
     html += `<table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px;">
-      <tr style="border-bottom:1px solid rgba(255,255,255,0.06);"><th style="text-align:left;padding:6px;">Address</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Value</th><th style="text-align:left;padding:6px;">GDV</th><th style="text-align:left;padding:6px;">Day 1 LTV</th><th style="text-align:left;padding:6px;">Tenure</th>${canEditProperties ? '<th style="padding:6px;"></th>' : ''}</tr>
+      <tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;">Address</th><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">Value</th><th style="text-align:left;padding:6px;">GDV</th><th style="text-align:left;padding:6px;">Day 1 LTV</th><th style="text-align:left;padding:6px;">Tenure</th>${canEditProperties ? '<th style="padding:6px;"></th>' : ''}</tr>
       ${properties.map(p => `<tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:6px;">${sanitizeHtml(p.address)}${p.postcode ? `, ${sanitizeHtml(p.postcode)}` : ''}</td>
         <td style="padding:6px;">${sanitizeHtml(p.property_type || '-')}</td>
@@ -561,7 +586,7 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   if (canEditProperties) {
-    html += `<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+    html += `<div style="border-top:1px solid #e2e8f0;padding-top:12px;">
       <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Property</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
         <div><label style="font-size:11px;color:#666;">Address *</label><input type="text" id="pp-address" placeholder="Full address" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;"></div>
@@ -573,13 +598,13 @@ export function renderInternalWorkflowControls(deal) {
       </div>
     </div>`;
   }
-  html += accordionEnd();
+  html += `</div>`;
 
   // ── Stage-Specific Actions ──
 
   // RECEIVED (Admin only)
   if (stage === 'received' && currentRole === 'admin') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Assign to RM</h4>
       <div style="display:flex;gap:8px;">
         <select id="action-rm-select" style="flex:1;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
@@ -610,10 +635,10 @@ export function renderInternalWorkflowControls(deal) {
     if (tsData.credit_query && !tsData.credit_query.resolved) {
       html += `<div style="background:#fef3c7;padding:20px;border-radius:8px;margin-bottom:16px;border:2px solid #f59e0b;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(251,191,36,0.2);border-radius:6px;font-size:16px;font-weight:700;color:#f59e0b;flex-shrink:0">!</div>
+          <span style="font-size:24px;">⚠️</span>
           <h4 style="margin:0;color:#92400e;font-size:16px;">Credit Team Query — Action Required</h4>
         </div>
-        <div style="background:#111827;padding:14px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:14px;">
+        <div style="background:#fff;padding:14px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:14px;">
           <p style="margin:0 0 6px;font-size:14px;font-weight:600;color:#78350f;">"${sanitizeHtml(tsData.credit_query.question)}"</p>
           <p style="margin:0;font-size:11px;color:#92400e;">— Credit Team, ${tsData.credit_query.asked_at ? new Date(tsData.credit_query.asked_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
         </div>
@@ -622,54 +647,39 @@ export function renderInternalWorkflowControls(deal) {
         <div style="display:flex;gap:10px;margin-top:12px;">
           <button onclick="window.respondToCreditQuery && window.respondToCreditQuery()" style="padding:10px 20px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Submit Response & Continue to DIP</button>
         </div>
-        ${tsData.credit_query_history && tsData.credit_query_history.length > 0 ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #fcd34d;"><h5 style="margin:0 0 8px;font-size:11px;color:#92400e;text-transform:uppercase;">Previous Queries</h5>' + tsData.credit_query_history.map(q => '<div style="background:#111827;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:12px;"><strong style="color:#92400e;">Q:</strong> ' + sanitizeHtml(q.question) + '<br><strong style="color:#15803d;">A:</strong> ' + sanitizeHtml(q.response || 'No response') + '<br><span style="font-size:10px;color:#999;">' + (q.asked_at ? new Date(q.asked_at).toLocaleDateString('en-GB') : '') + '</span></div>').join('') + '</div>' : ''}
+        ${tsData.credit_query_history && tsData.credit_query_history.length > 0 ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #fcd34d;"><h5 style="margin:0 0 8px;font-size:11px;color:#92400e;text-transform:uppercase;">Previous Queries</h5>' + tsData.credit_query_history.map(q => '<div style="background:#fff;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:12px;"><strong style="color:#92400e;">Q:</strong> ' + sanitizeHtml(q.question) + '<br><strong style="color:#15803d;">A:</strong> ' + sanitizeHtml(q.response || 'No response') + '<br><span style="font-size:10px;color:#999;">' + (q.asked_at ? new Date(q.asked_at).toLocaleDateString('en-GB') : '') + '</span></div>').join('') + '</div>' : ''}
       </div>`;
     }
   }
 
-  // ASSIGNED, INFO_GATHERING, or DIP_ISSUED (RM or Admin) - DIP Form
-  // At dip_issued: form renders collapsed & read-only for printing/viewing
-  const dipFormStages = ['assigned', 'info_gathering', 'dip_issued'];
-  if (dipFormStages.includes(stage) && ['rm', 'admin'].includes(currentRole)) {
+  // ASSIGNED (RM or Admin) - Issue DIP
+  if (stage === 'assigned' && ['rm', 'admin'].includes(currentRole)) {
     const dipLoan = deal.loan_amount || '';
     const dipLtv = deal.ltv_requested || '';
     const dipTerm = deal.term_months || '';
     const dipRate = deal.rate_requested || '0.95';
-    // Use sum of property valuations if available, fallback to deal-level current_value
-    const propValSum = properties.length > 0
-      ? properties.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0)
-      : null;
-    const dipVal = propValSum || deal.current_value || '';
+    const dipVal = deal.current_value || '';
     const dipPurchase = deal.purchase_price || '';
     const dipExit = sanitizeHtml(deal.exit_strategy || '');
     const dipPurpose = sanitizeHtml(deal.loan_purpose || '');
     const dipInterest = deal.interest_servicing || 'retained';
 
-    // ── Property data: deal_properties table is the single source of truth (Claude-parsed) ──
-    let propList, postcodes, propValuations;
-    if (properties.length > 0) {
-      // Claude has parsed — use deal_properties directly
-      propList = properties.map(p => sanitizeHtml(p.address || '-'));
-      postcodes = properties.map(p => p.postcode || '-');
-      propValuations = properties.map(p => p.market_value ? parseFloat(p.market_value) : 0);
-    } else {
-      // Not yet parsed — show raw data as single entry (no regex, no guessing)
-      propList = [sanitizeHtml(deal.security_address || 'Awaiting AI property parsing')];
-      postcodes = [deal.security_postcode || '-'];
-      propValuations = [0];
-    }
+    // Parse multiple properties from address
+    const fullAddr = sanitizeHtml(deal.security_address || '');
+    const propList = fullAddr.includes(';') ? fullAddr.split(';').map(a => a.trim()).filter(Boolean) : [fullAddr];
+    const postcodes = (deal.security_postcode || '').split(',').map(p => p.trim()).filter(Boolean);
 
     // Borrower type logic
     const bType = (deal.borrower_type || 'individual').toLowerCase();
     const isCorporate = bType === 'corporate' || bType === 'spv' || bType === 'ltd' || bType === 'llp';
     const borrowerTypeLabel = isCorporate ? 'Corporate Borrower' : 'Individual Borrower';
     const borrowerTypeBadge = isCorporate
-      ? '<span style="padding:2px 8px;background:rgba(96,165,250,0.1);color:#60A5FA;border-radius:10px;font-size:11px;font-weight:600;">CORPORATE</span>'
+      ? '<span style="padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:10px;font-size:11px;font-weight:600;">CORPORATE</span>'
       : '<span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:11px;font-weight:600;">INDIVIDUAL</span>';
 
     // CSS helper classes
     const brokerField = 'background:#f9fafb;border:1px solid #e5e7eb;color:#374151;cursor:not-allowed;';
-    const rmField = 'background:#fff;border:2px solid #2563eb;color:#1e3a5f;';
+    const rmField = 'background:#fff;border:2px solid var(--primary);';
     const rmLabel = '<span style="font-size:9px;background:#1e3a5f;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;">RM TO CONFIRM</span>';
 
     // DF logo — use the actual logo image with SVG fallback
@@ -683,23 +693,21 @@ export function renderInternalWorkflowControls(deal) {
       </svg>
     </div>`;
 
-    const dipFormOpen = stage !== 'dip_issued'; // collapsed after issuance
-    html += accordion('wf-dip-form', 'DIP Form', 'D', dipFormOpen);
-    html += `<div class="dip-light-form" style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;">
+    html += `<div style="background:#f0f5ff;padding:20px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">
         ${dfLogoHtml}
         <div style="flex:1;">
-          <h4 style="margin:0;color:#1e3a5f;font-size:18px;">Decision In Principle (DIP)</h4>
-          <div style="font-size:11px;color:#4b5563;margin-top:2px;">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG</div>
+          <h4 style="margin:0;color:var(--primary);font-size:18px;">Decision In Principle (DIP)</h4>
+          <div style="font-size:11px;color:#666;margin-top:2px;">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;font-size:11px;text-align:right;">
           <span style="background:#e5e7eb;color:#6b7280;padding:3px 8px;border-radius:4px;">Grey = Borrower input</span>
           <span style="background:#1e3a5f;color:#fff;padding:3px 8px;border-radius:4px;">Blue border = RM to confirm</span>
         </div>
       </div>
-      <p style="margin:0 0 16px;font-size:12px;color:#4b5563;">Review the borrower-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
+      <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the borrower-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
 
       <!-- ═══ BORROWER DETAILS ═══ -->
       <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
@@ -753,10 +761,10 @@ export function renderInternalWorkflowControls(deal) {
 
         <!-- Security & Guarantee Structure -->
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-          <h5 style="margin:0 0 8px;color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
+          <h5 style="margin:0 0 8px;color:#1e40af;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <div>
-              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
               <select id="dip-fixed-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
                 <option value="first_and_debenture" selected>First Charge + Debenture</option>
                 <option value="first_charge">First Legal Charge only</option>
@@ -765,7 +773,7 @@ export function renderInternalWorkflowControls(deal) {
               </select>
             </div>
             <div>
-              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee</label>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Personal Guarantee</label>
               <select id="dip-pg-ubo" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
                 <option value="required" selected>PG from UBO — Required</option>
                 <option value="limited">Limited Guarantee</option>
@@ -773,13 +781,13 @@ export function renderInternalWorkflowControls(deal) {
               </select>
             </div>
             <div>
-              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Additional Security</label>
+              <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Additional Security</label>
               <input type="text" id="dip-additional-security" placeholder="e.g. Second charge on another asset" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <span style="font-size:10px;color:#6b7280;">RM to add if applicable</span>
             </div>
           </div>
           <div style="margin-top:8px;">
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
             <input type="text" id="dip-ubo-names" placeholder="Full legal name(s) of UBO / guarantor(s)" value="${sanitizeHtml(deal.borrower_name || '')}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#6b7280;">Must match title holder(s) on the property</span>
           </div>
@@ -787,7 +795,7 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- ═══ PROPERTY SCHEDULE (RM approves each property) ═══ -->
-      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <h5 id="dip-schedule-header" style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Security Schedule &mdash; ${propList.length} ${propList.length === 1 ? 'Property' : 'Properties'}</h5>
           ${propList.length > 1 ? `<button onclick="window.approveAllDipProperties && window.approveAllDipProperties()" style="padding:5px 14px;background:#15803d;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Approve All</button>` : ''}
@@ -809,7 +817,7 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(addr)}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${sanitizeHtml(postcodes[i] || postcodes[0] || '-')}</td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">
-                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="${propValuations[i] ? formatNumber(propValuations[i]) : '0'}" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid #2563eb;font-size:12px;max-width:120px;color:#1a1a2e;background:#fff;">
+                <input type="text" id="dip-prop-val-${i}" class="dip-prop-valuation" value="0" placeholder="0" style="width:100%;padding:6px;border-radius:4px;border:2px solid var(--primary);font-size:12px;max-width:120px;">
               </td>
               <td id="dip-prop-status-${i}" style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;"><span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:10px;">Pending</span></td>
               <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;">
@@ -821,7 +829,7 @@ export function renderInternalWorkflowControls(deal) {
           <tfoot>
             <tr style="background:#f0f5ff;font-weight:600;">
               <td colspan="3" style="padding:8px;text-align:right;font-size:12px;">Total Valuation:</td>
-              <td style="padding:8px;font-size:13px;color:#1e3a5f;font-weight:700;" id="dip-prop-val-total">£0</td>
+              <td style="padding:8px;font-size:13px;color:var(--primary);" id="dip-prop-val-total">£0</td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -836,11 +844,11 @@ export function renderInternalWorkflowControls(deal) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Total Property Value (£) <span style="font-size:9px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:3px;">Auto-summed</span></label>
-            <input type="text" id="dip-property-value" value="${formatNumber(dipVal)}" style="width:100%;padding:8px;border-radius:4px;background:#f0fff4;border:1px solid #86efac;font-size:13px;font-weight:600;" readonly>
+            <input type="text" id="dip-property-value" value="${dipVal}" style="width:100%;padding:8px;border-radius:4px;background:#f0fff4;border:1px solid #86efac;font-size:13px;font-weight:600;" readonly>
           </div>
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Purchase Price (£)</label>
-            <input type="text" id="dip-purchase-price" value="${formatNumber(dipPurchase)}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
+            <input type="text" id="dip-purchase-price" value="${dipPurchase}" style="width:100%;padding:8px;border-radius:4px;${brokerField};font-size:13px;" readonly>
           </div>
           <div>
             <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:4px;">Number of Properties</label>
@@ -848,33 +856,31 @@ export function renderInternalWorkflowControls(deal) {
           </div>
         </div>
         <p style="margin:8px 0 0;font-size:10px;color:#6b7280;">Total property value is auto-calculated from individual property valuations entered above. Enter each property's valuation in the Security Schedule.</p>
-        <div id="dip-val-mismatch" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
       </div>
 
       <!-- ═══ LOAN TERMS (RM CONFIRMS) ═══ -->
-      <div style="background:#f0f5ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid var(--primary);">
-        <h5 style="margin:0 0 10px;color:#1e3a5f;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Loan Terms ${rmLabel}</h5>
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid var(--primary);">
+        <h5 style="margin:0 0 10px;color:var(--primary);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Loan Terms ${rmLabel}</h5>
 
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Loan Amount (£) *</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Loan Amount (£) *</label>
             <input type="text" id="dip-loan-amount" value="${dipLoan}" placeholder="Confirm loan amount" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Term (months) *</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Term (months) *</label>
             <input type="number" id="dip-term" value="${dipTerm}" placeholder="e.g. 12" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Rate (%/month) *</label>
             <input type="number" step="0.01" id="dip-rate" value="${dipRate}" placeholder="Min 0.85" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
             <span style="font-size:10px;color:#92400e;">Min 0.85%</span>
-            <span style="font-size:10px;color:#6b7280;font-style:italic;display:block;margin-top:2px;">(Default rate: 3.00%/month)</span>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Interest Servicing *</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Interest Servicing *</label>
             <select id="dip-interest" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <option value="retained" ${dipInterest === 'retained' ? 'selected' : ''}>Retained</option>
               <option value="serviced" ${dipInterest === 'serviced' ? 'selected' : ''}>Serviced</option>
@@ -882,7 +888,7 @@ export function renderInternalWorkflowControls(deal) {
             </select>
           </div>
           <div>
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
+            <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
             <input type="number" step="0.01" id="dip-arrangement-fee" value="2.00" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
@@ -893,7 +899,7 @@ export function renderInternalWorkflowControls(deal) {
         </div>
 
         <!-- ═══ RETAINED INTEREST & CLIENT COSTS ═══ -->
-        <div style="background:#fffbeb;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #f59e0b;">
+        <div style="background:#fff8f0;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #f59e0b;">
           <h5 style="margin:0 0 10px;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Day Zero Calculation ${rmLabel}</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
@@ -911,9 +917,9 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- ═══ FEE SCHEDULE (RM sets all fees — disclosed to borrower in DIP) ═══ -->
-      <div style="background:#faf5ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7c3aed;">
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7c3aed;">
         <h5 style="margin:0 0 4px;color:#7c3aed;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Fee Schedule ${rmLabel}</h5>
-        <p style="margin:0 0 12px;font-size:11px;color:#4b5563;">All fees disclosed to borrower. No fee required before DIP issuance. Amounts set by RM.</p>
+        <p style="margin:0 0 12px;font-size:11px;color:#666;">All fees disclosed to borrower. No fee required before DIP issuance. Amounts set by RM.</p>
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:#f5f3ff;">
@@ -927,19 +933,19 @@ export function renderInternalWorkflowControls(deal) {
             <tr style="border-bottom:1px solid #f3f4f6;">
               <td style="padding:8px;font-weight:600;">Onboarding / DIP Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-fee-onboarding" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">After DIP acceptance</td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">After DIP acceptance</td>
               <td style="padding:8px;font-size:11px;">Before Credit Review</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
               <td style="padding:8px;font-weight:600;">Commitment Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-fee-commitment" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">After Termsheet acceptance</td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">After Termsheet acceptance</td>
               <td style="padding:8px;font-size:11px;">Before Underwriting</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
               <td style="padding:8px;font-weight:600;">Arrangement Fee<br><span style="font-size:10px;color:#6b7280;font-weight:400;">(includes broker fee below)</span></td>
               <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;" id="dip-fee-arr-display">£0</span><br><span style="font-size:10px;color:#6b7280;">Auto from % above</span></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">On completion</td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">On completion</td>
               <td style="padding:8px;font-size:11px;">Deducted from advance</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;background:#fefce8;">
@@ -949,46 +955,16 @@ export function renderInternalWorkflowControls(deal) {
               <td style="padding:8px;font-size:11px;color:#92400e;">From arrangement fee</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Exit Fee</td>
-              <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;">1.00%</span></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">On redemption</td>
-              <td style="padding:8px;font-size:11px;">Of gross loan amount</td>
-            </tr>
-            <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Extension Fee</td>
-              <td style="padding:8px;text-align:right;"><span style="font-size:12px;font-weight:600;">1.00%</span></td>
-              <td style="padding:8px;font-size:11px;color:#60A5FA;">If term extended</td>
-              <td style="padding:8px;font-size:11px;">Per extension period agreed</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- ═══ ESTIMATED THIRD-PARTY COSTS (not payable to Daksfirst) ═══ -->
-      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #d1d5db;">
-        <h5 style="margin:0 0 4px;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Estimated Third-Party Costs</h5>
-        <p style="margin:0 0 12px;font-size:11px;color:#6b7280;font-style:italic;">These are not Daksfirst fees. They are third-party costs borne directly by the borrower and are disclosed here for budgeting purposes only.</p>
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
-          <thead>
-            <tr style="background:#f3f4f6;">
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Cost</th>
-              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #d1d5db;">Estimated (£)</th>
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Payable To</th>
-              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #d1d5db;">Payment Method</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Valuation</td>
+              <td style="padding:8px;font-weight:600;">Valuation Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-valuation-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;">Independent valuer</td>
-              <td style="padding:8px;font-size:11px;">Paid directly by client to valuer</td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">Upfront</td>
+              <td style="padding:8px;font-size:11px;">Direct payment by client</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6;">
-              <td style="padding:8px;font-weight:600;">Legal (Lender&rsquo;s solicitors)</td>
+              <td style="padding:8px;font-weight:600;">Legal Fee</td>
               <td style="padding:8px;text-align:right;"><input type="text" id="dip-legal-cost" value="0" style="width:90px;padding:4px 6px;border-radius:4px;${rmField};font-size:12px;text-align:right;"></td>
-              <td style="padding:8px;font-size:11px;">Daksfirst&rsquo;s appointed solicitors</td>
-              <td style="padding:8px;font-size:11px;">Via undertaking from client&rsquo;s solicitors</td>
+              <td style="padding:8px;font-size:11px;color:#1e40af;">On completion</td>
+              <td style="padding:8px;font-size:11px;">Deducted from advance</td>
             </tr>
           </tbody>
         </table>
@@ -1008,28 +984,27 @@ export function renderInternalWorkflowControls(deal) {
 
       <!-- ═══ RM CONDITIONS ═══ -->
       <div style="margin-bottom:16px;">
-        <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
+        <label style="font-size:11px;color:#1e3a5f;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
         <textarea id="dip-notes" placeholder="Special conditions, valuation requirements, additional info needed..." style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;min-height:80px;"></textarea>
       </div>
 
       <!-- ═══ LIVE SUMMARY ═══ -->
-      <div style="background:#fffbeb;padding:14px;border-radius:6px;border:1px solid #fbbf24;margin-bottom:16px;">
+      <div style="background:#fffdf5;padding:14px;border-radius:6px;border:1px solid #fbbf24;margin-bottom:16px;">
         <strong style="font-size:12px;color:#92400e;">DIP Financial Summary (live):</strong>
-        <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#374151;"></div>
+        <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#333;"></div>
       </div>
 
-      <!-- ═══ PRE-ISSUE CHECKLIST (hidden after issuance) ═══ -->
-      ${stage !== 'dip_issued' ? `<div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
-        <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
-        <p style="margin:0 0 10px;font-size:11px;color:#4b5563;">All items must be satisfied before the DIP can be issued.</p>
+      <!-- ═══ PRE-ISSUE CHECKLIST ═══ -->
+      <div style="background:#fff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #1e3a5f;">
+        <h5 style="margin:0 0 10px;color:#1e3a5f;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
+        <p style="margin:0 0 10px;font-size:11px;color:#666;">All items must be satisfied before the DIP can be issued.</p>
         <div id="dip-checklist" style="font-size:12px;line-height:2;"></div>
-      </div>` : ''}
+      </div>
 
       <div style="display:flex;gap:12px;align-items:center;">
-        ${stage !== 'dip_issued' ? `<button id="btn-issue-dip" onclick="window.issueDip && window.issueDip()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>` : ''}
-        ${stage === 'dip_issued' ? `<button onclick="window.downloadDipPdf && window.downloadDipPdf('${deal.submission_id}')" style="padding:10px 24px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Download PDF</button>` : ''}
-        ${stage !== 'dip_issued' ? `<button onclick="window.declineDeal && window.declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
-        <span id="dip-checklist-count" style="font-size:11px;color:#9ca3af;margin-left:8px;"></span>` : ''}
+        <button id="btn-issue-dip" onclick="window.issueDip && window.issueDip()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>
+        <button onclick="window.declineDeal && window.declineDeal()" style="padding:10px 24px;background:#e53e3e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Decline Deal</button>
+        <span id="dip-checklist-count" style="font-size:11px;color:#9ca3af;margin-left:8px;"></span>
       </div>
 
       <!-- ═══ DISCLAIMER ═══ -->
@@ -1039,7 +1014,6 @@ export function renderInternalWorkflowControls(deal) {
         </p>
       </div>
     </div>`;
-    html += accordionEnd();
 
     // Auto-calculate DIP summary after render + attach money formatting
     setTimeout(() => {
@@ -1066,41 +1040,12 @@ export function renderInternalWorkflowControls(deal) {
         }
         // Trigger LTV recalculation
         if (window.calcDipLtv) window.calcDipLtv();
-
-        // ── Valuation mismatch warning ──
-        const brokerVal = parseFloat(deal.current_value) || 0;
-        const mismatchEl = document.getElementById('dip-val-mismatch');
-        if (mismatchEl && brokerVal > 0 && total > 0) {
-          const diff = total - brokerVal;
-          const pctDiff = Math.abs(diff / brokerVal) * 100;
-          // Count removed properties
-          const totalProps = propValInputs.length;
-          const removedCount = Array.from(propValInputs).filter(inp => inp.disabled).length;
-          const activeCount = totalProps - removedCount;
-          if (pctDiff > 10) {
-            const direction = diff > 0 ? 'higher' : 'lower';
-            const colour = diff > 0 ? '#dcfce7;border:1px solid #86efac;color:#166534' : '#fef2f2;border:1px solid #fca5a5;color:#991b1b';
-            const removedNote = removedCount > 0 ? ' (' + removedCount + ' of ' + totalProps + ' properties removed by RM — ' + activeCount + ' active)' : '';
-            const advice = diff < 0
-              ? (removedCount > 0 ? 'Reduced security pool — ensure LTV still within criteria.' : 'This reduces LTV headroom — verify valuation basis.')
-              : 'Confirm valuation basis before proceeding.';
-            mismatchEl.style.display = 'block';
-            mismatchEl.setAttribute('style', 'display:block;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.5;background:' + colour);
-            mismatchEl.innerHTML = '<strong>\u26A0 Valuation Mismatch</strong> — RM total (<strong>\u00A3' + formatNumber(total) + '</strong>) is <strong>' + pctDiff.toFixed(1) + '% ' + direction + '</strong> than broker-submitted value (\u00A3' + formatNumber(brokerVal) + ').' + removedNote + ' ' + advice;
-          } else {
-            mismatchEl.style.display = 'none';
-          }
-        } else if (mismatchEl) {
-          mismatchEl.style.display = 'none';
-        }
       };
       propValInputs.forEach(inp => {
         attachMoneyFormat(inp.id);
         inp.addEventListener('input', updatePropValTotal);
         inp.addEventListener('change', updatePropValTotal);
       });
-      // Run once on load to show mismatch if pre-populated values differ
-      updatePropValTotal();
 
       // ── DIP Pre-Issue Checklist Validator ──
       const validateDipChecklist = () => {
@@ -1179,18 +1124,6 @@ export function renderInternalWorkflowControls(deal) {
         // 14. Loan purpose provided
         checks.push({ label: 'Loan purpose provided', ok: !!val('dip-purpose') });
 
-        // ── AUTOMATED GUARDRAILS (Daksfirst lending criteria) ──
-        // These mirror the backend hard blocks — RM sees violations before clicking Issue
-        const assetType = (deal.asset_type || '').toLowerCase();
-        const loanPurpose = (val('dip-purpose') || '').toLowerCase();
-        const excludedAssets = ['agricultural', 'farm', 'overseas'];
-        if (excludedAssets.some(ex => assetType.includes(ex))) {
-          checks.push({ label: 'Asset type "' + deal.asset_type + '" is outside lending criteria', ok: false });
-        }
-        if (loanPurpose.includes('development') && !loanPurpose.includes('exit')) {
-          checks.push({ label: 'Ground-up development not permitted (only dev exit)', ok: false });
-        }
-
         // Render checklist
         const checklistEl = document.getElementById('dip-checklist');
         const allPassed = checks.every(c => c.ok);
@@ -1216,8 +1149,7 @@ export function renderInternalWorkflowControls(deal) {
         if (btn) {
           if (allPassed) {
             btn.disabled = false;
-            btn.style.background = '#16a34a';
-            btn.style.color = '#ffffff';
+            btn.style.background = 'var(--primary)';
             btn.style.cursor = 'pointer';
           } else {
             btn.disabled = true;
@@ -1266,6 +1198,7 @@ export function renderInternalWorkflowControls(deal) {
   }
 
   // DIP_ISSUED — Acceptance status banner for all internal users
+  const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(currentRole);
   if (stage === 'dip_issued' && isInternal) {
     const dipAccepted = deal.dip_signed;
     const creditApproved = deal.credit_recommendation === 'approve';
@@ -1283,7 +1216,6 @@ export function renderInternalWorkflowControls(deal) {
       (deal.dip_signed_at ? '<span style="font-size:10px;color:#999;margin-left:10px;">Accepted: ' + new Date(deal.dip_signed_at).toLocaleDateString('en-GB') + '</span>' : '') +
       '</div><div style="display:flex;gap:8px;">' +
       '<button onclick="viewDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#1a365d;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">View DIP</button>' +
-      '<button onclick="window.downloadDipPdf && window.downloadDipPdf(\'' + sanitizeHtml(deal.submission_id) + '\')" style="padding:4px 12px;background:#C9A227;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Download PDF</button>' +
       '</div></div>';
   }
 
@@ -1292,8 +1224,7 @@ export function renderInternalWorkflowControls(deal) {
   const creditAlreadyDecided = ['approve', 'decline'].includes(deal.credit_recommendation);
   if (stage === 'dip_issued' && ['credit', 'admin'].includes(currentRole) && !creditAlreadyDecided) {
     const dipData = deal.ai_termsheet_data || {};
-    html += accordion('wf-credit-review', 'Credit Review', 'CR', true);
-    html += `<div style="background:#111827;padding:16px;border-radius:8px;border:2px solid #7c3aed;">
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <h4 style="margin:0 0 4px;color:#7c3aed;">Credit Review — In-Principle Decision</h4>
       <p style="margin:0 0 16px;font-size:12px;color:#666;">Review the DIP terms submitted by the RM and provide your in-principle decision.</p>
 
@@ -1313,7 +1244,7 @@ export function renderInternalWorkflowControls(deal) {
       </div>
 
       <!-- Credit Overrides — rate, fees, LTV, retained interest -->
-      <div style="background:#1118278f0;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #f59e0b;">
+      <div style="background:#fff8f0;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #f59e0b;">
         <h5 style="margin:0 0 10px;color:#92400e;font-size:11px;text-transform:uppercase;">Credit Overrides — Adjust Terms If Required</h5>
         <p style="margin:0 0 12px;font-size:11px;color:#92400e;">Only change values if you disagree with the RM's proposed terms. Leave unchanged to accept as-is.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
@@ -1354,7 +1285,7 @@ export function renderInternalWorkflowControls(deal) {
 
       <!-- ═══ MORE INFO MODAL ═══ -->
       <div id="moreinfo-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
-        <div style="background:#111827;border-radius:12px;padding:28px;max-width:560px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="background:#fff;border-radius:12px;padding:28px;max-width:560px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="margin:0;color:#92400e;font-size:18px;">Request More Information</h3>
             <button onclick="document.getElementById('moreinfo-modal').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button>
@@ -1368,7 +1299,6 @@ export function renderInternalWorkflowControls(deal) {
         </div>
       </div>
     </div>`;
-    html += accordionEnd();
   }
 
   // DIP_ISSUED — Credit has already decided: show read-only summary
@@ -1377,8 +1307,7 @@ export function renderInternalWorkflowControls(deal) {
     const cd = dipData.credit_decision || {};
     const decColor = deal.credit_recommendation === 'approve' ? '#15803d' : '#e53e3e';
     const decLabel = deal.credit_recommendation === 'approve' ? 'APPROVED' : 'DECLINED';
-    html += accordion('wf-credit-decision', 'Credit Decision (read-only)', 'D', false);
-    html += `<div style="background:#111827;padding:16px;border-radius:8px;border:2px solid ${decColor};">
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${decColor};">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h4 style="margin:0;color:${decColor};">Credit Decision: ${decLabel}</h4>
         <span style="font-size:11px;color:#6b7280;">${cd.decided_at ? new Date(cd.decided_at).toLocaleDateString('en-GB') + ' ' + new Date(cd.decided_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'}) : ''}</span>
@@ -1393,7 +1322,6 @@ export function renderInternalWorkflowControls(deal) {
       </div>
       <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;">Awaiting borrower acceptance. Credit decision is final — no further action required.</p>
     </div>`;
-    html += accordionEnd();
   }
 
   // INFO_GATHERING — Onboarding Fee Gate + Section Approval Summary + AI Termsheet generation
@@ -1408,10 +1336,8 @@ export function renderInternalWorkflowControls(deal) {
     const aiData = deal.ai_termsheet_data || {};
     const creditSignoffDecision = aiData.credit_signoff ? aiData.credit_signoff.decision : null;
 
-    html += accordion('wf-info-gathering', 'Info Gathering Steps', 'IG', true);
-
     // Step 1: Onboarding Fee
-    html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${dipFeeConfirmed ? '#22c55e' : '#f59e0b'};">
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${dipFeeConfirmed ? '#22c55e' : '#f59e0b'};">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
           <h4 style="margin:0;color:${dipFeeConfirmed ? '#15803d' : '#92400e'};">Step 1: Onboarding Fee</h4>
@@ -1427,7 +1353,7 @@ export function renderInternalWorkflowControls(deal) {
     // Step 2: Onboarding Section Approval Summary
     if (dipFeeConfirmed) {
       const sectionLabels = { kyc: 'KYC', financials_aml: 'Financials / AML', valuation: 'Valuation', use_of_funds: 'Use of Funds', exit_evidence: 'Exit Evidence', other_conditions: 'Other Conditions' };
-      html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${allApproved ? '#22c55e' : '#3b82f6'};">
+      html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid ${allApproved ? '#22c55e' : '#3b82f6'};">
         <h4 style="margin:0 0 12px;color:${allApproved ? '#15803d' : '#1e40af'};">Step 2: Onboarding Sections (${approvedCount}/${allSections.length} approved)</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;">`;
       allSections.forEach(s => {
@@ -1437,31 +1363,31 @@ export function renderInternalWorkflowControls(deal) {
           ${isOK ? '&#10003;' : '&#9711;'} ${sectionLabels[s] || s}</div>`;
       });
       html += `</div>
-        <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">Review and approve each section in the Full Onboarding tabs above. All 6 must be approved before analysis can proceed.</p>
+        <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">Review and approve each section in the Full Onboarding tabs above. All 7 must be approved before AI analysis.</p>
       </div>`;
 
       // Step 3: Generate AI Termsheet (only when all sections approved)
       if (allApproved && !deal.ai_termsheet_generated_at) {
-        html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
-          <h4 style="margin:0 0 8px;color:#F1F5F9;">Step 3: Generate Indicative Termsheet</h4>
-          <p style="margin:0 0 12px;font-size:12px;color:#666;">All onboarding sections are approved. Submit the deal for analysis. All uploaded documents and data will be reviewed to generate a draft termsheet with proposed terms.</p>
-          <textarea id="ai-termsheet-data" placeholder="Additional notes for analysis (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
-          <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Generate Indicative Termsheet</button>
+        html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+          <h4 style="margin:0 0 8px;color:var(--primary);">Step 3: Generate AI Termsheet</h4>
+          <p style="margin:0 0 12px;font-size:12px;color:#666;">All onboarding sections are approved. Submit the deal to the AI engine for analysis. It will review all uploaded documents and data to generate a draft termsheet with proposed terms.</p>
+          <textarea id="ai-termsheet-data" placeholder="Additional notes for AI analysis (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
+          <button onclick="window.generateAiTermsheet && window.generateAiTermsheet()" style="padding:10px 20px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Generate AI Termsheet</button>
         </div>`;
       }
 
       // Step 4: RM Sign-off on AI Termsheet (only if all sections approved AND AI generated)
       if (allApproved && deal.ai_termsheet_generated_at && !rmSignedOff) {
         if (['rm', 'admin'].includes(currentRole)) {
-          html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #3b82f6;">
-            <h4 style="margin:0 0 8px;color:#60A5FA;">Step 4: RM Sign-off</h4>
-            <p style="margin:0 0 12px;font-size:12px;color:#666;">Analysis complete. Review the proposed terms and sign off to send to Credit for final approval.</p>
+          html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #3b82f6;">
+            <h4 style="margin:0 0 8px;color:#1e40af;">Step 4: RM Sign-off</h4>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">AI analysis complete. Review the proposed terms and sign off to send to Credit for final approval.</p>
             <textarea id="rm-signoff-notes" placeholder="RM comments / adjustments (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
             <button onclick="window.rmSignoff()" style="padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">RM Sign-off — Send to Credit</button>
           </div>`;
         } else {
           html += `<div style="background:#fef3c7;padding:12px 16px;border-radius:8px;margin-bottom:16px;border-left:4px solid #f59e0b;">
-            <strong>Awaiting RM Sign-off</strong> — The RM needs to review and sign off on the indicative termsheet before Credit can review.
+            <strong>Awaiting RM Sign-off</strong> — The RM needs to review and sign off on the AI termsheet before Credit can review.
           </div>`;
         }
       }
@@ -1478,9 +1404,9 @@ export function renderInternalWorkflowControls(deal) {
       // Step 5: Credit Sign-off (only if all prior steps complete)
       if (allApproved && deal.ai_termsheet_generated_at && rmSignedOff && !creditSignedOff) {
         if (['credit', 'admin'].includes(currentRole)) {
-          html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+          html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
             <h4 style="margin:0 0 8px;color:#7c3aed;">Step 5: Credit Sign-off</h4>
-            <p style="margin:0 0 12px;font-size:12px;color:#666;">RM has signed off. Review the indicative termsheet and the full onboarding pack. Approve, decline, or request more info.</p>
+            <p style="margin:0 0 12px;font-size:12px;color:#666;">RM has signed off. Review the AI termsheet and the full onboarding pack. Approve, decline, or request more info.</p>
             <textarea id="credit-signoff-notes" placeholder="Credit comments / conditions (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
             <div style="display:flex;gap:8px;">
               <button onclick="window.creditSignoff('approve')" style="padding:8px 16px;background:#22c55e;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Approve</button>
@@ -1506,23 +1432,21 @@ export function renderInternalWorkflowControls(deal) {
         </div>`;
       }
     }
-    html += accordionEnd();
   }
 
   // AI_TERMSHEET — Show AI analysis summary
   if (stage === 'ai_termsheet' && ['rm', 'credit', 'admin'].includes(currentRole)) {
     const aiGenAt = deal.ai_termsheet_generated_at;
     const aiData = deal.ai_termsheet_data || {};
-    html += accordion('wf-ai-termsheet', 'Indicative Termsheet', 'TS', true);
     html += `<div style="background:#f0fdf4;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #22c55e;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <span style="font-size:22px;">🤖</span>
         <div>
-          <h4 style="margin:0;color:#15803d;">Indicative Termsheet Generated</h4>
+          <h4 style="margin:0;color:#15803d;">AI Termsheet Generated</h4>
           ${aiGenAt ? `<div style="font-size:12px;color:#666;">Generated on ${new Date(aiGenAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>` : ''}
         </div>
       </div>
-      <p style="margin:0 0 8px;font-size:13px;color:#555;">All onboarding documents have been analysed and a draft termsheet has been generated. The RM and Credit team signed off on the analysis. Next step: issue the formal termsheet document.</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#555;">The AI engine has analysed all onboarding documents and generated a draft termsheet. The RM and Credit team signed off on the analysis. Next step: issue the formal termsheet document.</p>
       ${deal.rm_signoff_at ? `<div style="font-size:12px;color:#15803d;margin-bottom:4px;">✓ RM signed off ${new Date(deal.rm_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</div>` : ''}
       ${deal.credit_signoff_at ? `<div style="font-size:12px;color:#15803d;">✓ Credit signed off ${new Date(deal.credit_signoff_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</div>` : ''}
     </div>`;
@@ -1532,8 +1456,8 @@ export function renderInternalWorkflowControls(deal) {
   if (stage === 'ai_termsheet' && ['rm', 'credit', 'admin'].includes(currentRole)) {
     const tsIssuedAt = deal.ts_issued_at;
     const tsDocUrl = deal.ts_pdf_url;
-    html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
-      <h4 style="margin:0 0 12px;color:#F1F5F9;">Termsheet Document</h4>`;
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--primary);">
+      <h4 style="margin:0 0 12px;color:var(--primary);">Termsheet Document</h4>`;
 
     if (tsIssuedAt) {
       // Already issued — show download link
@@ -1558,7 +1482,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // AI_TERMSHEET (RM or Admin) - Request Fee
   if (stage === 'ai_termsheet' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Request Fee</h4>
       <div style="display:flex;gap:8px;align-items:end;">
         <div style="flex:1;">
@@ -1568,12 +1492,11 @@ export function renderInternalWorkflowControls(deal) {
         <button onclick="window.requestFee && window.requestFee()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Request Fee</button>
       </div>
     </div>`;
-    html += accordionEnd();
   }
 
   // FEE_PENDING (RM or Admin) - Confirm Fee
   if (stage === 'fee_pending' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Confirm Fee Payment</h4>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;">
         <div>
@@ -1602,7 +1525,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // FEE_PAID (RM or Admin) - Start Underwriting
   if (stage === 'fee_paid' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Next Stage</h4>
       <button onclick="window.advanceStageSimple && window.advanceStageSimple('underwriting')" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Start Underwriting</button>
     </div>`;
@@ -1610,7 +1533,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // UNDERWRITING (RM or Admin) - Submit to Bank
   if (stage === 'underwriting' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Submit to GB Bank</h4>
       <div style="display:flex;gap:8px;">
         <input type="text" id="bank-ref" placeholder="Bank reference" style="flex:1;padding:6px;border-radius:4px;border:1px solid #ddd;font-size:13px;">
@@ -1621,7 +1544,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // BANK_SUBMITTED (Admin) - Record Bank Approval
   if (stage === 'bank_submitted' && currentRole === 'admin') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Bank Decision</h4>
       <textarea id="bank-approval-notes" placeholder="Bank approval notes (optional)" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ddd;font-size:13px;min-height:60px;margin-bottom:8px;"></textarea>
       <div style="display:flex;gap:8px;">
@@ -1633,7 +1556,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // BANK_APPROVED (RM or Admin) - Record Borrower Acceptance
   if (stage === 'bank_approved' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Awaiting Borrower Acceptance</h4>
       <p style="font-size:13px;color:#666;margin-bottom:12px;">Awaiting borrower to accept terms or record acceptance if received offline.</p>
       <button onclick="window.recordBorrowerAcceptance && window.recordBorrowerAcceptance()" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Record Borrower Acceptance</button>
@@ -1642,7 +1565,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // BORROWER_ACCEPTED (RM or Admin) - Instruct Legal
   if (stage === 'borrower_accepted' && ['rm', 'admin'].includes(currentRole)) {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Instruct Legal</h4>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;">
         <div>
@@ -1659,8 +1582,8 @@ export function renderInternalWorkflowControls(deal) {
         </div>
         <button onclick="window.instructLegal && window.instructLegal()" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Instruct</button>
       </div>
-      <p style="font-size:11px;color:#999;margin-top:8px;">Optionally: <a href="#" onclick="window.loadLawFirms && window.loadLawFirms(); return false;" style="color:#F1F5F9;">Select from onboarded firms</a></p>
-      <div id="law-firms-dropdown" style="display:none;margin-top:8px;padding:8px;background:#111827;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;">
+      <p style="font-size:11px;color:#999;margin-top:8px;">Optionally: <a href="#" onclick="window.loadLawFirms && window.loadLawFirms(); return false;" style="color:var(--primary);">Select from onboarded firms</a></p>
+      <div id="law-firms-dropdown" style="display:none;margin-top:8px;padding:8px;background:white;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;">
         <!-- Populated by loadLawFirms() -->
       </div>
     </div>`;
@@ -1668,7 +1591,7 @@ export function renderInternalWorkflowControls(deal) {
 
   // LEGAL_INSTRUCTED (Admin) - Complete Deal
   if (stage === 'legal_instructed' && currentRole === 'admin') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Complete Deal</h4>
       <button onclick="window.completeDeal && window.completeDeal()" style="padding:8px 16px;background:#48bb78;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Mark as Completed</button>
     </div>`;
@@ -1678,15 +1601,16 @@ export function renderInternalWorkflowControls(deal) {
   // Credit team uses Decline, not Withdraw. Final stages excluded.
   if (!['completed', 'declined', 'withdrawn'].includes(stage) && ['admin', 'rm', 'broker', 'borrower'].includes(currentRole)) {
     const withdrawLabel = ['broker', 'borrower'].includes(currentRole) ? 'Withdraw Application' : 'Withdraw Deal';
-    html += accordion('wf-withdraw', withdrawLabel, 'W', false);
-    html += `<div style="display:flex;gap:8px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">Deal Status</h4>
+      <div style="display:flex;gap:8px;">
         <button onclick="window.withdrawDeal && window.withdrawDeal()" style="padding:8px 16px;background:#f59e0b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;">${withdrawLabel}</button>
-      </div>`;
-    html += accordionEnd();
+      </div>
+    </div>`;
   }
 
   // ── Fee Tracker (visible to internal users at all stages from dip_issued onwards) ──
-  const feeStages = ['info_gathering','dip_issued','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
+  const feeStages = ['dip_issued','info_gathering','ai_termsheet','fee_pending','fee_paid','underwriting','bank_submitted','bank_approved','borrower_accepted','legal_instructed','completed'];
   const canEditFees = ['admin', 'rm'].includes(currentRole);
   if (isInternal && feeStages.includes(stage)) {
     const fd = deal.ai_termsheet_data || {};
@@ -1703,8 +1627,7 @@ export function renderInternalWorkflowControls(deal) {
       : 'width:90px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;font-size:12px;text-align:right;background:#f9fafb;color:#374151;cursor:not-allowed;';
     const feeReadonly = feesEditable ? '' : 'readonly';
 
-    html += accordion('wf-fee-tracker', 'Fee Tracker', '£', true);
-    html += `<div style="background:#111827;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
+    html += `<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:16px;border:2px solid #7c3aed;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h4 style="margin:0;color:#7c3aed;font-size:14px;">Fee Tracker ${dipFeesLocked ? '<span style="font-size:10px;color:#f59e0b;font-weight:400;margin-left:8px;">Locked — DIP issued to borrower with these terms</span>' : !canEditFees ? '<span style="font-size:10px;color:#6b7280;font-weight:400;margin-left:8px;">Read-only — RM manages fees</span>' : ''}</h4>
         ${feesEditable ? '<button onclick="window.updateFees && window.updateFees()" style="padding:6px 14px;background:#7c3aed;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Save Fee Changes</button>' : ''}
@@ -1758,17 +1681,6 @@ export function renderInternalWorkflowControls(deal) {
         </tbody>
       </table>
     </div>`;
-    html += accordionEnd();
-  }
-
-  // ── Terms Comparison Tracker ──
-  // Shows side-by-side DIP → Indicative Termsheet → Final terms
-  if (['admin', 'rm', 'credit', 'compliance'].includes(currentRole)) {
-    html += accordion('wf-terms-tracker', 'Terms Tracker', 'T', false);
-    html += `<div id="terms-tracker-content" style="background:#111827;padding:16px;border-radius:8px;margin-bottom:8px;border:1px solid #e5e7eb;">
-      <div style="text-align:center;padding:20px;color:#94a3b8;font-size:13px;">Loading terms tracker...</div>
-    </div>`;
-    html += accordionEnd();
   }
 
   // ── Recommendation Status & Actions ──
@@ -1780,8 +1692,7 @@ export function renderInternalWorkflowControls(deal) {
 
   if (['credit', 'compliance', 'admin'].includes(currentRole)) {
     // Always show the status summary
-    html += accordion('wf-decision-status', 'Decision Status', 'DS', true);
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;margin-bottom:16px;">
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">Decision Status</h4>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px;">
         <span style="font-size:13px;">RM: <strong style="color:${rmStatus === 'DIP Issued' ? '#2563eb' : '#666'}">${sanitizeHtml(rmStatus)}</strong></span>
@@ -1804,34 +1715,22 @@ export function renderInternalWorkflowControls(deal) {
     } else {
       html += `<p style="margin:0;font-size:11px;color:#9ca3af;">No further action required at this stage.</p>`;
     }
-    html += accordionEnd();
+    html += `</div>`;
   }
 
   // ── Audit Trail (enriched with stage transitions, elapsed time) ──
   if (deal.audit && deal.audit.length > 0) {
     const auditStageLabels = {
       received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
-      info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
+      info_gathering: 'Info Gathering', ai_termsheet: 'AI Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
       borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
       completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
     };
 
-    // Group consecutive identical actions
-    const groupedAudit = [];
-    deal.audit.forEach((a, idx) => {
-      const prev = groupedAudit[groupedAudit.length - 1];
-      if (prev && prev.action === a.action && prev.to_value === a.to_value && prev.first_name === a.first_name) {
-        prev.count = (prev.count || 1) + 1;
-        prev.last_at = a.created_at;
-      } else {
-        groupedAudit.push({ ...a, count: 1, last_at: a.created_at });
-      }
-    });
-
     let auditHtml = '';
-    groupedAudit.forEach((a, idx) => {
+    deal.audit.forEach((a, idx) => {
       let details = {};
       try { details = a.details ? (typeof a.details === 'string' ? JSON.parse(a.details) : a.details) : {}; } catch(e) { details = {}; }
       const isStageChange = a.action === 'stage_change' || (a.from_value && a.to_value && auditStageLabels[a.to_value]);
@@ -1865,7 +1764,7 @@ export function renderInternalWorkflowControls(deal) {
       }
 
       const connectorLine = idx < deal.audit.length - 1 ? '<div style="width:1px;flex:1;background:#e5e7eb;min-height:20px;"></div>' : '';
-      const stageBadge = isStageChange ? '<span style="display:inline-block;padding:2px 8px;background:#eff6ff;color:#60A5FA;border-radius:4px;font-size:11px;font-weight:600;margin-bottom:4px;">STAGE CHANGE</span> ' : '';
+      const stageBadge = isStageChange ? '<span style="display:inline-block;padding:2px 8px;background:#eff6ff;color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-bottom:4px;">STAGE CHANGE</span> ' : '';
       const elapsedBadge = elapsedStr ? '<span style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:2px 6px;border-radius:3px;white-space:nowrap;">' + elapsedStr + '</span>' : '';
       const commentHtml = details.comments ? '<div style="color:#666;margin-top:4px;padding:6px 8px;background:#f9fafb;border-radius:4px;border-left:3px solid #e5e7eb;font-size:12px;">' + sanitizeHtml(details.comments) + '</div>' : '';
 
@@ -1876,7 +1775,7 @@ export function renderInternalWorkflowControls(deal) {
         + '</div>'
         + '<div style="flex:1;">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-        + '<div>' + stageBadge + '<strong>' + sanitizeHtml(a.action.replace(/_/g, ' ')) + '</strong>' + (a.count > 1 ? ' <span style="display:inline-block;padding:1px 6px;background:#f3f4f6;border-radius:3px;font-size:11px;color:#666;margin-left:4px;">×' + a.count + '</span>' : '') + ' ' + transitionHtml + '</div>'
+        + '<div>' + stageBadge + '<strong>' + sanitizeHtml(a.action.replace(/_/g, ' ')) + '</strong> ' + transitionHtml + '</div>'
         + elapsedBadge
         + '</div>'
         + commentHtml
@@ -1887,162 +1786,12 @@ export function renderInternalWorkflowControls(deal) {
         + '</div></div></div>';
     });
 
-    html += accordion('wf-audit-trail', 'Audit Trail', 'AT', false);
-    html += '<div style="max-height:400px;overflow-y:auto;">' + auditHtml + '</div>';
-    html += accordionEnd();
+    html += '<div style="background:#f7fafc;padding:16px;border-radius:8px;margin-bottom:16px;">'
+      + '<h4 style="margin:0 0 12px;">Audit Trail</h4>'
+      + '<div style="max-height:400px;overflow-y:auto;">' + auditHtml + '</div></div>';
   }
 
   panel.innerHTML = html;
-
-  // ── Load Terms Tracker data (async) ──
-  if (['admin', 'rm', 'credit', 'compliance'].includes(currentRole)) {
-    loadTermsTracker(deal.submission_id);
-  }
-
-  // ── Load field locks for inline edit indicators ──
-  loadFieldLocks(deal.submission_id);
-}
-
-/**
- * Fetch and render the Terms Comparison Tracker
- */
-async function loadTermsTracker(submissionId) {
-  const container = document.getElementById('terms-tracker-content');
-  if (!container) return;
-
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/terms-tracker`);
-    if (!resp.ok) {
-      container.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">Terms tracker not available yet.</div>';
-      return;
-    }
-    const data = await resp.json();
-    const { stages, rows, variances, locks } = data;
-
-    // Determine which columns to show
-    const hasDip = stages.dip?.exists;
-    const hasTs = stages.termsheet?.exists;
-    const hasFinal = stages.final?.exists;
-
-    if (!hasDip && !hasTs && !hasFinal) {
-      container.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:13px;">No snapshots captured yet. Terms tracking begins when the DIP is signed.</div>';
-      return;
-    }
-
-    const fmtVal = (val, format) => {
-      if (val === null || val === undefined || val === '') return '<span style="color:#cbd5e1;">—</span>';
-      if (format === 'currency') return '£' + Number(val).toLocaleString('en-GB', { minimumFractionDigits: 0 });
-      if (format === 'pct') return Number(val).toFixed(2) + '%';
-      if (format === 'months') return val + ' mo';
-      return sanitizeHtml(String(val));
-    };
-
-    let colCount = 2; // field + current
-    if (hasDip) colCount++;
-    if (hasTs) colCount++;
-    if (hasFinal) colCount++;
-
-    let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead>
-        <tr style="background:#f1f5f9;border-bottom:2px solid rgba(255,255,255,0.06);">
-          <th style="padding:8px 10px;text-align:left;font-weight:600;color:#475569;">Field</th>
-          ${hasDip ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#2563eb;">DIP</th>' : ''}
-          ${hasTs ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#7c3aed;">Indicative TS</th>' : ''}
-          ${hasFinal ? '<th style="padding:8px 10px;text-align:right;font-weight:600;color:#15803d;">Bank Submit</th>' : ''}
-          <th style="padding:8px 10px;text-align:right;font-weight:600;color:#64748b;">Current</th>
-        </tr>
-      </thead>
-      <tbody>`;
-
-    for (const row of rows) {
-      const changed = row.changed;
-      const rowBg = changed ? 'background:#fef3c7;' : '';
-      const changeIcon = changed ? ' <span title="Value changed between stages" style="color:#f59e0b;cursor:help;">⚠</span>' : '';
-
-      tableHtml += `<tr style="border-bottom:1px solid #f1f5f9;${rowBg}">
-        <td style="padding:6px 10px;font-weight:500;color:#F1F5F9;">${sanitizeHtml(row.field)}${changeIcon}</td>
-        ${hasDip ? `<td style="padding:6px 10px;text-align:right;color:#2563eb;">${fmtVal(row.dip, row.format)}</td>` : ''}
-        ${hasTs ? `<td style="padding:6px 10px;text-align:right;color:#7c3aed;">${fmtVal(row.termsheet, row.format)}</td>` : ''}
-        ${hasFinal ? `<td style="padding:6px 10px;text-align:right;color:#15803d;">${fmtVal(row.final, row.format)}</td>` : ''}
-        <td style="padding:6px 10px;text-align:right;color:#64748b;">${fmtVal(row.current, row.format)}</td>
-      </tr>`;
-    }
-
-    tableHtml += '</tbody></table>';
-
-    // Variance summary
-    let varianceHtml = '';
-    if (variances.dip_to_termsheet?.length > 0) {
-      varianceHtml += `<div style="margin-top:12px;padding:10px;background:#111827beb;border:1px solid #fbbf24;border-radius:6px;">
-        <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:4px;">DIP → Termsheet Variances (${variances.dip_to_termsheet.length})</div>
-        ${variances.dip_to_termsheet.map(v => `<div style="font-size:11px;color:#78350f;">${sanitizeHtml(v.field)}: ${v.DIP ?? '—'} → ${v.Termsheet ?? '—'}</div>`).join('')}
-      </div>`;
-    }
-    if (variances.termsheet_to_final?.length > 0) {
-      varianceHtml += `<div style="margin-top:8px;padding:10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;">
-        <div style="font-size:12px;font-weight:600;color:#991b1b;margin-bottom:4px;">Termsheet → Final Variances (${variances.termsheet_to_final.length})</div>
-        ${variances.termsheet_to_final.map(v => `<div style="font-size:11px;color:#7f1d1d;">${sanitizeHtml(v.field)}: ${v.Termsheet ?? '—'} → ${v.Final ?? '—'}</div>`).join('')}
-      </div>`;
-    }
-
-    // Lock status
-    let lockHtml = '';
-    if (locks && locks.locked.length > 0) {
-      const tier1Locked = locks.locked.filter(f => ['borrower_name','borrower_company','security_address','asset_type'].includes(f));
-      const tier2Locked = locks.locked.filter(f => ['loan_amount','ltv_requested','current_value','rate_requested','term_months'].includes(f));
-      lockHtml = `<div style="margin-top:12px;padding:10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#166534;">
-        🔒 <strong>${locks.locked.length} field(s) locked</strong>
-        ${tier1Locked.length > 0 ? ' — Identity fields locked (DIP signed)' : ''}
-        ${tier2Locked.length > 0 ? ' — Commercial fields locked (Indicative TS issued)' : ''}
-      </div>`;
-    }
-
-    // Stage timestamps
-    let stageTimeline = '<div style="display:flex;gap:16px;margin-bottom:12px;">';
-    if (hasDip) stageTimeline += `<div style="font-size:11px;color:#2563eb;">DIP: ${new Date(stages.dip.captured_at).toLocaleDateString('en-GB')}</div>`;
-    if (hasTs) stageTimeline += `<div style="font-size:11px;color:#7c3aed;">Termsheet: ${new Date(stages.termsheet.captured_at).toLocaleDateString('en-GB')}</div>`;
-    if (hasFinal) stageTimeline += `<div style="font-size:11px;color:#15803d;">Bank Submit: ${new Date(stages.final.captured_at).toLocaleDateString('en-GB')}</div>`;
-    stageTimeline += '</div>';
-
-    container.innerHTML = stageTimeline + tableHtml + varianceHtml + lockHtml;
-
-  } catch (err) {
-    console.error('[terms-tracker] Load error:', err);
-    container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px;">Failed to load terms tracker.</div>';
-  }
-}
-
-/**
- * Fetch field locks and apply visual indicators to inline edit fields
- */
-async function loadFieldLocks(submissionId) {
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/field-locks`);
-    if (!resp.ok) return;
-    const { locked, reasons } = await resp.json();
-    if (!locked || locked.length === 0) return;
-
-    // Find all inline-edit inputs and disable locked ones
-    for (const field of locked) {
-      const input = document.querySelector(`[data-field="${field}"]`);
-      if (input) {
-        input.disabled = true;
-        input.style.background = '#f1f5f9';
-        input.style.cursor = 'not-allowed';
-        input.title = reasons[field] || 'Field locked';
-        // Add lock icon
-        const lockIcon = document.createElement('span');
-        lockIcon.innerHTML = '🔒';
-        lockIcon.style.cssText = 'font-size:10px;margin-left:4px;cursor:help;';
-        lockIcon.title = reasons[field] || 'Field locked';
-        if (input.nextElementSibling?.innerHTML !== '🔒') {
-          input.parentNode.insertBefore(lockIcon, input.nextSibling);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[field-locks] Load error:', err);
-  }
 }
 
 /**
@@ -2069,9 +1818,8 @@ export function renderExternalWorkflowControls(deal) {
   // Map internal stages → simplified borrower stage
   const stageMap = {
     received: 'submitted', assigned: 'submitted',
-    info_gathering: 'submitted',
     dip_issued: 'dip_issued',
-    ai_termsheet: 'dip_issued',
+    info_gathering: 'dip_issued', ai_termsheet: 'dip_issued',
     fee_pending: 'fee_required', fee_paid: 'processing',
     underwriting: 'processing', bank_submitted: 'processing',
     bank_approved: 'approved', borrower_accepted: 'approved',
@@ -2081,14 +1829,14 @@ export function renderExternalWorkflowControls(deal) {
   const extStage = stageMap[stage] || 'submitted';
   const currentIdx = extStageOrder.indexOf(extStage);
 
-  let html = `<h3 style="margin:0 0 16px;color:#F1F5F9;">Deal Progress</h3>`;
+  let html = `<h3 style="margin:0 0 16px;color:var(--primary);">Deal Progress</h3>`;
 
   // Stage pipeline (read-only, simplified)
   html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px;">`;
   extStageOrder.forEach((s, i) => {
     const isActive = s === extStage;
     const isDone = i < currentIdx;
-    const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : 'rgba(255,255,255,0.06)';
+    const bg = isActive ? '#c9a84c' : isDone ? '#48bb78' : '#e2e8f0';
     const color = (isActive || isDone) ? '#fff' : '#666';
     html += `<span style="padding:4px 10px;border-radius:12px;font-size:11px;background:${bg};color:${color};">${extStageLabels[s]}</span>`;
   });
@@ -2096,7 +1844,7 @@ export function renderExternalWorkflowControls(deal) {
 
   // Stage-specific messages and actions for broker/borrower
   if (stage === 'received' || stage === 'assigned') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="color:#666;font-size:14px;">Your deal is being reviewed by our team. We'll update you once a DIP is issued.</p></div>`;
   } else if (stage === 'dip_issued') {
     const dipAccepted = deal.dip_signed;
     const creditApproved = deal.credit_recommendation === 'approve';
@@ -2111,40 +1859,76 @@ export function renderExternalWorkflowControls(deal) {
         '</div>';
     } else if (!creditApproved) {
       // Credit hasn't approved yet — borrower must wait
-      html += '<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
+      html += '<div style="background:#fffbeb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
         '<p style="font-size:14px;margin-bottom:4px;"><strong>DIP Under Review</strong></p>' +
-        '<p style="font-size:13px;color:#94A3B8;">Your deal is currently being reviewed by our credit team. You will be notified once a decision has been made and your DIP is ready for acceptance.</p>' +
-        '</div>';
-    } else if (!deal.dip_issued_at) {
-      // Credit approved but DIP document not yet generated
-      html += '<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;">' +
-        '<p style="font-size:14px;margin-bottom:4px;"><strong>DIP Approved — Document Being Prepared</strong></p>' +
-        '<p style="font-size:13px;color:#94A3B8;">Great news — your deal has been approved in principle. Our team is now preparing your DIP document. You will be able to review and accept it once it is ready.</p>' +
+        '<p style="font-size:13px;color:#555;">Your deal is currently being reviewed by our credit team. You will be notified once a decision has been made and your DIP is ready for acceptance.</p>' +
         '</div>';
     } else {
-      // Credit approved AND DIP document issued — show PDF and Accept button
+      // Credit approved — show DIP PDF and Accept button
       html += '<div style="background:#eff6ff;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;">' +
         '<p style="font-size:14px;margin-bottom:8px;"><strong>DIP Approved — Please Review & Accept</strong></p>' +
         '<p style="font-size:13px;color:#555;margin-bottom:12px;">Your Decision in Principle has been approved by our credit team. Please review the DIP document below and click Accept to proceed with your application.</p>' +
         viewDipBtn +
         '<button onclick="acceptDip(\'' + sanitizeHtml(deal.submission_id) + '\')" style="display:inline-block;padding:8px 18px;background:#047857;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Accept DIP</button>' +
-        '<div style="margin-top:12px;padding:10px;background:#1a2332;border-radius:6px;font-size:12px;color:#4a5568;">By clicking Accept, you confirm your intention to proceed on the terms outlined in the DIP. This is valid for 14 days from the date of issue.</div>' +
+        '<div style="margin-top:12px;padding:10px;background:#f7fafc;border-radius:6px;font-size:12px;color:#4a5568;">By clicking Accept, you confirm your intention to proceed on the terms outlined in the DIP. This is valid for 14 days from the date of issue.</div>' +
         '</div>';
     }
   } else if (stage === 'info_gathering') {
-    // Info gathering = RM reviewing deal internally. Broker just waits.
-    html += `<div style="background:rgba(245,158,11,0.08);padding:16px;border-radius:8px;border-left:4px solid #f59e0b;margin-bottom:16px;">
-      <p style="font-size:14px;margin-bottom:4px;"><strong>Under Review</strong></p>
-      <p style="font-size:13px;color:#94A3B8;">Your deal is being reviewed by our team. We will be in touch if anything further is needed.</p>
+    const dipData = deal.ai_termsheet_data || {};
+    const extLoan = dipData.loan_amount || deal.loan_amount || 0;
+    const extRate = dipData.rate_monthly || deal.rate_requested || 0;
+    const extTerm = dipData.term_months || deal.term_months || 0;
+    const extArrFee = dipData.arrangement_fee_pct || 2;
+    const extRetainedMo = dipData.retained_months || 6;
+    const extRetainedInt = extLoan * (extRate / 100) * extRetainedMo;
+    const extArrFeeAmt = extLoan * (extArrFee / 100);
+    const extValCost = dipData.valuation_cost || 0;
+    const extLegalCost = dipData.legal_cost || 0;
+    const extBrokerFeePct = dipData.broker_fee_pct || 0;
+    const extBrokerFee = extLoan * (extBrokerFeePct / 100);
+    const extClientDayZero = extLoan - extRetainedInt - extArrFeeAmt - extValCost - extLegalCost;
+
+    html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;margin-bottom:16px;">
+      <p style="font-size:14px;margin-bottom:12px;"><strong>DIP Approved!</strong> — We have approved a Decision in Principle for your deal.</p>
+
+      <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #d1fae5;">
+        <h5 style="margin:0 0 8px;font-size:12px;color:#047857;text-transform:uppercase;font-weight:600;">Approved Terms</h5>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;">
+          <div>Gross Loan: <strong>£${formatNumber(extLoan)}</strong></div>
+          <div>LTV: <strong>${formatPct(dipData.ltv || deal.ltv_requested || 0)}%</strong></div>
+          <div>Term: <strong>${extTerm} months</strong></div>
+          <div>Rate: <strong>${formatPct(extRate)}%/m</strong></div>
+          <div>Interest: <strong>${sanitizeHtml(dipData.interest_servicing || deal.interest_servicing || 'Retained')}</strong></div>
+          <div>Arr. Fee: <strong>${formatPct(extArrFee)}%</strong></div>
+        </div>
+
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #d1fae5;">
+          <h5 style="margin:0 0 8px;font-size:12px;color:#047857;text-transform:uppercase;font-weight:600;">Day Zero Breakdown</h5>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;">
+            <div>Retained Interest (${extRetainedMo}m): <strong>£${formatNumber(extRetainedInt)}</strong></div>
+            <div>Arrangement Fee: <strong>£${formatNumber(extArrFeeAmt)}</strong></div>
+            ${extValCost > 0 ? `<div>Valuation Cost: <strong>£${formatNumber(extValCost)}</strong></div>` : ''}
+            ${extLegalCost > 0 ? `<div>Legal Cost: <strong>£${formatNumber(extLegalCost)}</strong></div>` : ''}
+          </div>
+          ${extBrokerFeePct > 0 ? `<div style="margin-top:6px;font-size:13px;padding:6px 8px;background:#fffbeb;border-radius:4px;">Broker Fee (${formatPct(extBrokerFeePct)}%): <strong>£${formatNumber(extBrokerFee)}</strong></div>` : ''}
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #d1fae5;font-size:14px;">
+            Net Day Zero to Client: <strong style="color:#047857;font-size:16px;">£${formatNumber(extClientDayZero)}</strong>
+          </div>
+        </div>
+
+        ${dipData.credit_decision && dipData.credit_decision.conditions ? '<div style="margin-top:8px;font-size:12px;"><strong>Conditions:</strong> ' + sanitizeHtml(dipData.credit_decision.conditions) + '</div>' : ''}
+      </div>
+
+      <button onclick="window.acceptDipExternal && window.acceptDipExternal()" style="padding:10px 24px;background:#48bb78;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Accept DIP & Continue</button>
     </div>`;
   } else if (stage === 'ai_termsheet') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;"><p style="font-size:14px;"><strong>Termsheet Generated</strong> — An initial termsheet has been prepared. A fee will be requested shortly to proceed with formal underwriting.</p></div>`;
   } else if (stage === 'fee_pending') {
-    html += `<div style="background:#111827beb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;"><p style="font-size:14px;"><strong>Fee Payment Required</strong> — Please arrange payment of the requested fee to proceed. Amount: <strong>£${formatNumber(deal.fee_requested_amount || 0)}</strong></p></div>`;
+    html += `<div style="background:#fffbeb;padding:16px;border-radius:8px;border-left:4px solid #f59e0b;"><p style="font-size:14px;"><strong>Fee Payment Required</strong> — Please arrange payment of the requested fee to proceed. Amount: <strong>£${formatNumber(deal.fee_requested_amount || 0)}</strong></p></div>`;
   } else if (stage === 'fee_paid' || stage === 'underwriting') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Underwriting in Progress</strong> — Our team is conducting formal underwriting. We may contact you for additional information.</p></div>`;
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Underwriting in Progress</strong> — Our team is conducting formal underwriting. We may contact you for additional information.</p></div>`;
   } else if (stage === 'bank_submitted') {
-    html += `<div style="background:#1a2332;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Submitted to Bank</strong> — Your deal has been submitted to our funding partner for approval. We'll notify you of the outcome.</p></div>`;
+    html += `<div style="background:#f7fafc;padding:16px;border-radius:8px;"><p style="font-size:14px;"><strong>Submitted to Bank</strong> — Your deal has been submitted to our funding partner for approval. We'll notify you of the outcome.</p></div>`;
   } else if (stage === 'bank_approved') {
     html += `<div style="background:#f0fff4;padding:16px;border-radius:8px;border-left:4px solid #48bb78;">
       <p style="font-size:14px;margin-bottom:12px;"><strong>Bank Approved!</strong> — Your deal has been approved. Please confirm your acceptance below to proceed to legal.</p>
