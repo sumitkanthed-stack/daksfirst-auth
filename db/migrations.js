@@ -134,6 +134,14 @@ async function runMigrations() {
       console.log('[migrate] Note on doc_category:', err.message.substring(0, 60));
     }
 
+    // Widen file_type columns — Office MIME types (e.g. .pptx, .docx) exceed 50 chars
+    try {
+      await pool.query(`ALTER TABLE deal_documents ALTER COLUMN file_type TYPE VARCHAR(255);`);
+      await pool.query(`ALTER TABLE deal_document_repo ALTER COLUMN file_type TYPE VARCHAR(255);`);
+    } catch (err) {
+      console.log('[migrate] Note on file_type widen:', err.message.substring(0, 60));
+    }
+
     // Analysis results table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS analysis_results (

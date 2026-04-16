@@ -61,6 +61,9 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       // Continue without OneDrive - we'll send file buffers directly to n8n
     }
 
+    // Truncate MIME types that exceed DB column width (Office formats can be 73+ chars)
+    const safeMime = (mime) => (mime || 'application/octet-stream').substring(0, 255);
+
     const fileMetadata = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -122,7 +125,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
               existingDeal ? existingDeal.id : null,
               parseSessionId,
               file.originalname,
-              file.mimetype,
+              safeMime(file.mimetype),
               file.size,
               file.buffer, // Stored as BYTEA
               suggestedCategory,
@@ -143,7 +146,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
                 existingDeal ? existingDeal.id : null,
                 parseSessionId,
                 file.originalname,
-                file.mimetype,
+                safeMime(file.mimetype),
                 file.size,
                 matchingUpload ? matchingUpload.onedrive_item_id : null,
                 matchingUpload ? matchingUpload.onedrive_path : null,
@@ -152,11 +155,12 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
             );
             savedDocs.push({ ...docResult.rows[0], doc_category: suggestedCategory });
           } else {
-            throw err;
+            console.error(`[smart-parse] DB insert failed for "${file.originalname}":`, err.message);
+            // Continue with remaining files — don't kill the whole upload
           }
         }
       }
-      console.log(`[smart-parse] Saved ${req.files.length} file records with AI categories (parse_session_id: ${parseSessionId})`);
+      console.log(`[smart-parse] Saved ${savedDocs.length}/${req.files.length} file records with AI categories (parse_session_id: ${parseSessionId})`);
     }
 
     // Send to n8n parse webhook for AI extraction
