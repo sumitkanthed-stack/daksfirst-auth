@@ -211,56 +211,11 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
         console.error('[smart-parse] n8n webhook failed:', err.message);
       }
     } else {
-      console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — will try direct Claude extraction');
+      console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — broker will confirm categories first, then parse');
     }
 
-    // ── Fallback: Direct Claude API extraction if n8n didn't return data ──
-    if (!parsedData && savedDocs.length > 0) {
-      try {
-        console.log(`[smart-parse] Using direct Claude API extraction for ${savedDocs.length} docs...`);
-        // Fetch saved docs with file_content from DB
-        const docIds = savedDocs.map(d => d.id);
-        const docsResult = await pool.query(
-          `SELECT id, filename, file_type, file_size, file_content, doc_category
-           FROM deal_documents WHERE id = ANY($1) ORDER BY id`,
-          [docIds]
-        );
-        const docs = docsResult.rows.filter(d => d.file_content && d.file_content.length > 0);
-        console.log(`[smart-parse] ${docs.length}/${savedDocs.length} docs have file_content for extraction`);
-
-        if (docs.length > 0) {
-          const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docs);
-          parsedData = merged;
-
-          // Store per-document parsed data
-          for (const [docId, docParsed] of perDoc) {
-            try {
-              const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
-              const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
-              await pool.query(
-                `UPDATE deal_documents
-                 SET parsed_data = $1, parsed_at = NOW(),
-                     doc_issue_date = COALESCE($2::DATE, doc_issue_date),
-                     doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
-                 WHERE id = $4`,
-                [JSON.stringify(docParsed), issueDate, expiryDate, docId]
-              );
-            } catch (pdErr) {
-              console.warn(`[smart-parse] Could not store parsed_data for doc ${docId}:`, pdErr.message);
-            }
-          }
-
-          if (parsedData) {
-            const fieldCount = Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length;
-            console.log(`[smart-parse] Claude extracted ${fieldCount} merged fields from ${docs.length} docs`);
-          }
-        }
-      } catch (extractErr) {
-        console.error('[smart-parse] Direct Claude extraction failed:', extractErr.message);
-      }
-    }
-
-    // Return the result — includes AI categories for each file + parsed data if available
+    // Return the result — includes AI categories for each file
+    // Parsing happens AFTER broker confirms categories (via /parse-confirmed endpoint)
     res.json({
       success: true,
       parse_session_id: parseSessionId,
@@ -277,6 +232,114 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
   } catch (error) {
     console.error('[smart-parse] Error:', error);
     res.status(500).json({ error: 'Failed to process uploaded files' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARSE SESSION — Run AI extraction on uploaded files BEFORE deal exists
+//  Called after broker confirms document categories
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/parse-session', authenticateToken, async (req, res) => {
+  try {
+    const { parse_session_id } = req.body;
+    if (!parse_session_id) return res.status(400).json({ error: 'parse_session_id is required' });
+
+    // Fetch all documents for this parse session
+    const docsResult = await pool.query(
+      `SELECT id, filename, file_type, file_size, file_content, doc_category
+       FROM deal_documents WHERE parse_session_id = $1 ORDER BY id`,
+      [parse_session_id]
+    );
+
+    const docs = docsResult.rows;
+    if (docs.length === 0) return res.status(404).json({ error: 'No documents found for this session' });
+
+    const docsWithContent = docs.filter(d => d.file_content && d.file_content.length > 0);
+    console.log(`[parse-session] Session ${parse_session_id}: ${docsWithContent.length}/${docs.length} docs have content`);
+
+    let parsedData = null;
+
+    // Try direct Claude API extraction
+    if (docsWithContent.length > 0) {
+      try {
+        const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docsWithContent);
+        parsedData = merged;
+
+        // Store per-document parsed data
+        for (const [docId, docParsed] of perDoc) {
+          try {
+            const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
+            const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
+            await pool.query(
+              `UPDATE deal_documents
+               SET parsed_data = $1, parsed_at = NOW(),
+                   doc_issue_date = COALESCE($2::DATE, doc_issue_date),
+                   doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
+               WHERE id = $4`,
+              [JSON.stringify(docParsed), issueDate, expiryDate, docId]
+            );
+          } catch (pdErr) {
+            console.warn(`[parse-session] Could not store parsed_data for doc ${docId}:`, pdErr.message);
+          }
+        }
+
+        if (parsedData) {
+          const fieldCount = Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length;
+          console.log(`[parse-session] Claude extracted ${fieldCount} merged fields from ${docsWithContent.length} docs`);
+        }
+      } catch (extractErr) {
+        console.error('[parse-session] Direct Claude extraction failed:', extractErr.message);
+      }
+    }
+
+    // Mark all documents as parsed
+    try {
+      await pool.query(
+        `UPDATE deal_documents SET parsed_at = COALESCE(parsed_at, NOW()) WHERE parse_session_id = $1`,
+        [parse_session_id]
+      );
+    } catch (markErr) {
+      console.warn('[parse-session] Could not mark parsed_at:', markErr.message);
+    }
+
+    res.json({
+      success: true,
+      total_documents: docs.length,
+      parsed_data: parsedData || null,
+      message: parsedData
+        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted. Review below.`
+        : `Could not extract data from documents (may be images/scans needing OCR).`
+    });
+  } catch (error) {
+    console.error('[parse-session] Error:', error);
+    res.status(500).json({ error: 'Failed to parse session documents' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UPDATE DOCUMENT CATEGORY — Broker confirms/changes a document's category
+// ═══════════════════════════════════════════════════════════════════════════
+router.put('/document/:docId/category', authenticateToken, async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const { doc_category } = req.body;
+    if (!doc_category) return res.status(400).json({ error: 'doc_category is required' });
+
+    const result = await pool.query(
+      `UPDATE deal_documents
+       SET doc_category = $1, category_confirmed_at = NOW()
+       WHERE id = $2
+       RETURNING id, filename, doc_category, category_confirmed_at`,
+      [doc_category, docId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+
+    console.log(`[smart-parse] Doc ${docId} category confirmed: ${doc_category}`);
+    res.json({ success: true, document: result.rows[0] });
+  } catch (error) {
+    console.error('[smart-parse] Category update error:', error);
+    res.status(500).json({ error: 'Failed to update category' });
   }
 });
 

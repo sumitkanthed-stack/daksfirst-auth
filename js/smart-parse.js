@@ -230,7 +230,7 @@ export async function uploadAndParse(files, whatsappText) {
   const statusDiv = document.getElementById('smart-upload-status');
   progressDiv.style.display = 'block';
 
-  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:20px;height:20px;"></span> Uploading & parsing with AI... This may take up to 2 minutes.</div>';
+  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:20px;height:20px;"></span> Uploading & categorising files...</div>';
 
   try {
     const formData = new FormData();
@@ -257,29 +257,165 @@ export async function uploadAndParse(files, whatsappText) {
 
     setSmartParseSessionId(data.parse_session_id);
 
-    if (data.parsed_data) {
-      // AI returned parsed data — show review form
-      setSmartParsedData(data.parsed_data);
-      populateSmartParseForm(data.parsed_data);
-      statusDiv.innerHTML = '<span style="color:#34D399;font-weight:600;">AI parsing complete! Review the extracted data below.</span>';
-    } else {
-      // No AI parsing configured — show empty review form for manual entry
-      setSmartParsedData({});
-      statusDiv.innerHTML = '<span style="color:#D4A853;">Files uploaded. AI parsing not configured — please fill in details manually.</span>';
-    }
-
-    // Show the review form
-    document.getElementById('smart-parse-review').style.display = 'block';
-
-    // Populate existing deals dropdown
-    populateExistingDealsDropdown();
-
-    // Scroll to review
-    document.getElementById('smart-parse-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Show category review screen — broker confirms file types before parsing
+    showCategoryReview(data.documents, data.parse_session_id);
+    statusDiv.innerHTML = '<span style="color:#34D399;font-weight:600;">Files uploaded & categorised by AI. Please review the categories below, then click Parse.</span>';
 
   } catch (err) {
     console.error('Smart parse error:', err);
     statusDiv.innerHTML = '<span style="color:#F87171;">Network error. Please try again.</span>';
+  }
+}
+
+/**
+ * Category options for document classification
+ */
+const CATEGORY_OPTIONS = [
+  { value: 'kyc', label: 'KYC / ID' },
+  { value: 'financial', label: 'Financial / AML' },
+  { value: 'property', label: 'Property / Valuation' },
+  { value: 'legal', label: 'Legal / Title' },
+  { value: 'other', label: 'Other' }
+];
+
+/**
+ * Show category review screen — broker confirms AI-suggested categories before parsing
+ */
+function showCategoryReview(documents, parseSessionId) {
+  // Remove existing category review if present
+  let existing = document.getElementById('category-review-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'category-review-panel';
+  panel.style.cssText = 'background:#1a2332;border:1px solid #D4A853;border-radius:12px;padding:24px;margin:20px 0;';
+
+  const docRows = (documents || []).map(doc => {
+    const currentCat = doc.doc_category || 'other';
+    const options = CATEGORY_OPTIONS.map(opt =>
+      `<option value="${opt.value}" ${opt.value === currentCat ? 'selected' : ''}>${opt.label}</option>`
+    ).join('');
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px;" data-doc-id="${doc.id}">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;color:#F1F5F9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sanitizeHtml(doc.filename)}</div>
+        </div>
+        <select class="doc-category-select" data-doc-id="${doc.id}" style="background:#0f172a;color:#F1F5F9;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;min-width:160px;">
+          ${options}
+        </select>
+        <span class="cat-status" data-doc-id="${doc.id}" style="font-size:11px;color:#64748B;min-width:60px;text-align:center;">AI suggested</span>
+      </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div>
+        <h3 style="color:#D4A853;margin:0;font-size:16px;">Review Document Categories</h3>
+        <p style="color:#94A3B8;margin:4px 0 0;font-size:12px;">Our AI has suggested a category for each file. Confirm or change them, then click Parse to extract deal data.</p>
+      </div>
+    </div>
+    <div id="category-doc-list" style="margin-bottom:16px;">
+      ${docRows}
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <button id="parse-after-categories-btn" style="background:#D4A853;color:#0f172a;border:none;padding:10px 24px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;">
+        Confirm Categories & Parse
+      </button>
+    </div>
+    <div id="parse-session-status" style="margin-top:12px;text-align:center;display:none;"></div>
+  `;
+
+  // Insert after the file list
+  const progressDiv = document.getElementById('smart-upload-progress');
+  progressDiv.parentNode.insertBefore(panel, progressDiv.nextSibling);
+
+  // Wire up category change handlers
+  panel.querySelectorAll('.doc-category-select').forEach(select => {
+    select.addEventListener('change', async (e) => {
+      const docId = e.target.dataset.docId;
+      const newCat = e.target.value;
+      const statusSpan = panel.querySelector(`.cat-status[data-doc-id="${docId}"]`);
+      try {
+        const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/document/${docId}/category`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doc_category: newCat })
+        });
+        if (resp.ok) {
+          statusSpan.textContent = 'Confirmed';
+          statusSpan.style.color = '#34D399';
+        }
+      } catch (err) {
+        statusSpan.textContent = 'Error';
+        statusSpan.style.color = '#F87171';
+      }
+    });
+  });
+
+  // Wire up parse button
+  document.getElementById('parse-after-categories-btn').addEventListener('click', () => {
+    parseAfterCategoryConfirm(parseSessionId);
+  });
+
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Parse documents after broker confirms categories
+ */
+async function parseAfterCategoryConfirm(parseSessionId) {
+  const btn = document.getElementById('parse-after-categories-btn');
+  const statusDiv = document.getElementById('parse-session-status');
+  statusDiv.style.display = 'block';
+  btn.disabled = true;
+  btn.textContent = 'Parsing...';
+  statusDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:20px;height:20px;"></span> Claude is reading your documents... This may take 1-2 minutes.</div>';
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parse_session_id: parseSessionId })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      statusDiv.innerHTML = `<span style="color:#F87171;">${data.error || 'Parsing failed'}</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Retry Parse';
+      return;
+    }
+
+    if (data.parsed_data) {
+      setSmartParsedData(data.parsed_data);
+      populateSmartParseForm(data.parsed_data);
+      statusDiv.innerHTML = '<span style="color:#34D399;font-weight:600;">AI parsing complete! Review the extracted data below.</span>';
+
+      // Hide category panel, show deal form
+      const catPanel = document.getElementById('category-review-panel');
+      if (catPanel) catPanel.style.display = 'none';
+
+      document.getElementById('smart-parse-review').style.display = 'block';
+      populateExistingDealsDropdown();
+      document.getElementById('smart-parse-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      // No data extracted — still show form for manual entry
+      setSmartParsedData({});
+      statusDiv.innerHTML = '<span style="color:#D4A853;">Could not extract data from documents. You can fill in details manually.</span>';
+
+      const catPanel = document.getElementById('category-review-panel');
+      if (catPanel) catPanel.style.display = 'none';
+
+      document.getElementById('smart-parse-review').style.display = 'block';
+      populateExistingDealsDropdown();
+      document.getElementById('smart-parse-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  } catch (err) {
+    console.error('Parse session error:', err);
+    statusDiv.innerHTML = '<span style="color:#F87171;">Network error. Please try again.</span>';
+    btn.disabled = false;
+    btn.textContent = 'Retry Parse';
   }
 }
 
