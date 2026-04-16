@@ -329,11 +329,17 @@ function deduplicateProperties(properties) {
     }
 
     if (matchKey) {
-      // Duplicate found — keep the one with more data
+      // Duplicate found — keep first seen, but merge in any missing fields from later versions
       const existing = seen.get(matchKey);
-      if (scoreProperty(prop) > scoreProperty(existing.prop)) {
-        seen.set(matchKey, { prop, primaryKey, unitKey });
-      }
+      const ep = existing.prop;
+      // Fill nulls/zeros from the new property into the existing one
+      if (!ep.market_value && prop.market_value) ep.market_value = prop.market_value;
+      if (!ep.purchase_price && prop.purchase_price) ep.purchase_price = prop.purchase_price;
+      if (!ep.tenure && prop.tenure) ep.tenure = prop.tenure;
+      if (!ep.property_type && prop.property_type) ep.property_type = prop.property_type;
+      if (!ep.title_number && prop.title_number) ep.title_number = prop.title_number;
+      if (!ep.occupancy_status && prop.occupancy_status) ep.occupancy_status = prop.occupancy_status;
+      if (!ep.current_use && prop.current_use) ep.current_use = prop.current_use;
     } else {
       // New property — store under both keys pointing to same entry
       const entry = { prop, primaryKey, unitKey };
@@ -781,4 +787,3 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
 }
 
 module.exports = { parseDealDocuments, deduplicateProperties };
-// dedup-v2
