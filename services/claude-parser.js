@@ -157,11 +157,18 @@ PROPERTY RULES (CRITICAL — follow exactly):
 function buildContentBlocks(files, dealContext, securityContext) {
   const contentParts = [];
 
-  // Add deal context as text
-  contentParts.push({
-    type: 'text',
-    text: `=== DEAL CONTEXT ===\nBorrower: ${dealContext.borrower_name || 'Unknown'}\nLoan: £${dealContext.loan_amount || 0}\nSecurity: ${securityContext.address || 'Unknown'}\nPostcode: ${securityContext.postcode || ''}\nExit: ${dealContext.exit_strategy || 'Unknown'}\nTerm: ${dealContext.loan_term_months || 0} months\nPurpose: ${dealContext.loan_purpose || 'Unknown'}\n`
-  });
+  // Add deal context as text (if available — may be null for new-deal parsing)
+  if (dealContext) {
+    contentParts.push({
+      type: 'text',
+      text: `=== DEAL CONTEXT ===\nBorrower: ${dealContext.borrower_name || 'Unknown'}\nLoan: £${dealContext.loan_amount || 0}\nSecurity: ${(securityContext && securityContext.address) || 'Unknown'}\nPostcode: ${(securityContext && securityContext.postcode) || ''}\nExit: ${dealContext.exit_strategy || 'Unknown'}\nTerm: ${dealContext.loan_term_months || 0} months\nPurpose: ${dealContext.loan_purpose || 'Unknown'}\n`
+    });
+  } else {
+    contentParts.push({
+      type: 'text',
+      text: 'Extract all deal information from the attached documents. No existing deal context is available — extract everything you can find.'
+    });
+  }
 
   let fileDescriptions = '';
 
@@ -788,4 +795,159 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
   }
 }
 
-module.exports = { parseDealDocuments, deduplicateProperties };
+/**
+ * parseDocumentsOnly — standalone parsing using Path A (Claude vision API)
+ * Same quality as in-deal parsing, but returns structured data without needing a deal.
+ * Used by broker new-deal upload flow.
+ *
+ * @param {Array} docs - Array of { filename, file_type, file_content, doc_category } from deal_documents table
+ * @returns {Object} - { success, analysis (full parsed JSON), flatFields (mapped to deal form fields) }
+ */
+async function parseDocumentsOnly(docs) {
+  if (!docs || docs.length === 0) return { success: false, reason: 'no_documents' };
+
+  console.log(`[claude-parser] parseDocumentsOnly: ${docs.length} documents`);
+
+  // Encode documents (same as parseDealDocuments step 2)
+  const seenNames = new Set();
+  const allFiles = [];
+  for (const doc of docs) {
+    if (seenNames.has(doc.filename)) continue;
+    seenNames.add(doc.filename);
+    if (!doc.file_content) continue;
+    allFiles.push({
+      filename: doc.filename,
+      file_type: doc.file_type || 'application/octet-stream',
+      doc_category: doc.doc_category || null,
+      content_base64: Buffer.from(doc.file_content).toString('base64')
+    });
+  }
+
+  if (allFiles.length === 0) return { success: false, reason: 'no_content' };
+  console.log(`[claude-parser] parseDocumentsOnly: ${allFiles.length} unique documents encoded`);
+
+  // Batch (same as parseDealDocuments step 3)
+  const MAX_BATCH_B64 = 5 * 1024 * 1024;
+  const batches = [];
+  let currentBatch = [];
+  let currentSize = 0;
+  for (const file of allFiles) {
+    const fileSize = file.content_base64.length;
+    if (fileSize > MAX_BATCH_B64) {
+      if (currentBatch.length > 0) { batches.push(currentBatch); currentBatch = []; currentSize = 0; }
+      batches.push([file]);
+      continue;
+    }
+    if (currentSize + fileSize > MAX_BATCH_B64) { batches.push(currentBatch); currentBatch = []; currentSize = 0; }
+    currentBatch.push(file);
+    currentSize += fileSize;
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+  console.log(`[claude-parser] parseDocumentsOnly: ${batches.length} batch(es)`);
+
+  // Process batches through Claude (same as step 4)
+  let mergedAnalysis = {};
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      const contentParts = buildContentBlocks(batches[i], null, null);
+      const rawResponse = await callClaude(contentParts);
+      const parsed = parseClaudeResponse(rawResponse);
+      mergedAnalysis = i === 0 ? parsed : mergeAnalysis(mergedAnalysis, parsed);
+      console.log(`[claude-parser] parseDocumentsOnly: batch ${i+1} done — ${parsed.parsedProperties?.length || 0} properties, ${parsed.borrowers?.length || 0} borrowers`);
+    } catch (err) {
+      console.error(`[claude-parser] parseDocumentsOnly: batch ${i+1} failed:`, err.message);
+    }
+  }
+
+  // Dedup (same as step 5)
+  if (mergedAnalysis.parsedProperties) {
+    mergedAnalysis.parsedProperties = deduplicateProperties(mergedAnalysis.parsedProperties);
+  }
+  if (mergedAnalysis.borrowers) {
+    mergedAnalysis.borrowers = deduplicateBorrowers(mergedAnalysis.borrowers);
+  }
+
+  // Map the rich analysis to flat deal form fields
+  const flatFields = mapAnalysisToFormFields(mergedAnalysis);
+
+  console.log(`[claude-parser] parseDocumentsOnly: extracted ${Object.keys(flatFields).filter(k => flatFields[k] != null && flatFields[k] !== '').length} form fields`);
+  return { success: true, analysis: mergedAnalysis, flatFields };
+}
+
+/**
+ * Map the rich analysis JSON from Path A to flat deal form field names
+ */
+function mapAnalysisToFormFields(analysis) {
+  const fields = {};
+
+  // Borrower — from first primary borrower
+  const primary = (analysis.borrowers || []).find(b => b.role === 'primary') || (analysis.borrowers || [])[0];
+  if (primary) {
+    fields.borrower_name = primary.full_name || null;
+    fields.borrower_email = primary.email || null;
+    fields.borrower_phone = primary.phone || null;
+    fields.borrower_dob = primary.date_of_birth || null;
+    fields.borrower_nationality = primary.nationality || null;
+  }
+
+  // Company
+  if (analysis.company) {
+    fields.borrower_type = analysis.company.borrower_type || null;
+    fields.company_name = analysis.company.name || null;
+    fields.company_number = analysis.company.company_number || null;
+    fields.borrower_company = analysis.company.name || null;
+  }
+
+  // Property — from first security property
+  const prop = (analysis.parsedProperties || [])[0];
+  if (prop) {
+    fields.security_address = prop.address || null;
+    fields.security_postcode = prop.postcode || null;
+    fields.asset_type = prop.property_type || null;
+    fields.property_tenure = prop.tenure || null;
+    fields.occupancy_status = prop.occupancy_status || null;
+    fields.current_use = prop.current_use || null;
+    fields.current_value = prop.market_value || null;
+    fields.purchase_price = prop.purchase_price || null;
+  }
+
+  // Loan details
+  if (analysis.loan) {
+    fields.loan_amount = analysis.loan.amount_requested || null;
+    fields.ltv_requested = analysis.loan.ltv_requested || null;
+    fields.term_months = analysis.loan.term_months || null;
+    fields.loan_purpose = analysis.loan.purpose || null;
+    fields.rate_requested = analysis.loan.rate_requested || null;
+    fields.interest_servicing = analysis.loan.interest_servicing || null;
+    fields.existing_charges = analysis.loan.existing_charges || null;
+  }
+
+  // Exit strategy
+  if (analysis.exit) {
+    const parts = [];
+    if (analysis.exit.primary_strategy) parts.push(analysis.exit.primary_strategy);
+    if (analysis.exit.narrative) parts.push(analysis.exit.narrative);
+    fields.exit_strategy = parts.join(' — ') || null;
+  }
+
+  // Refurbishment
+  if (analysis.refurbishment) {
+    fields.refurb_scope = analysis.refurbishment.scope || null;
+    fields.refurb_cost = analysis.refurbishment.total_cost || null;
+    fields.use_of_funds = analysis.refurbishment.schedule_of_works || null;
+  }
+
+  // Broker
+  if (analysis.broker) {
+    fields.broker_name = analysis.broker.name || null;
+    fields.broker_company = analysis.broker.company || null;
+    fields.broker_fca = analysis.broker.fca_number || null;
+  }
+
+  // Confidence
+  fields.confidence = analysis.confidence || null;
+
+  return fields;
+}
+
+module.exports = { parseDealDocuments, deduplicateProperties, parseDocumentsOnly };
