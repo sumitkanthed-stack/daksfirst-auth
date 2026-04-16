@@ -134,8 +134,15 @@ Rules:
 - LTV should be a percentage number (e.g. 65 not 0.65)
 - Rate should be monthly percentage (e.g. 0.95 for 0.95%/month)
 - If a field cannot be determined from the documents, set it to null or 0
-- For multiple properties, create a separate entry in parsedProperties for each
+
+PROPERTY RULES (CRITICAL — follow exactly):
+- parsedProperties must ONLY contain properties pledged as SECURITY/COLLATERAL for this loan
+- Do NOT include: comparable properties from valuations, registered company addresses, correspondence addresses, or any property merely referenced in passing
+- If the same security property appears across multiple documents with different address formats (e.g. "Apartment No.82, 2 Bedroom River Front Apartment, London" vs "Apartment No.82 King Henrys Reach, Manbre Road, London"), these are the SAME property — include it ONCE using the most complete address
+- Match properties by unit/flat/apartment number + postcode — same unit number at the same postcode = same property
+- Each unique security property should appear exactly ONCE in parsedProperties
 - Each property must have its own correctly matched UK postcode
+
 - Track source_document so the broker can verify which document each data point came from
 - Cross-reference data across documents: if the valuation report and broker pack both mention a property, reconcile the values
 - Set confidence between 0 and 1 based on how much data you could reliably extract
@@ -266,16 +273,28 @@ function deduplicateProperties(properties) {
 
   const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-  // Extract just the street-level identifier: number + street name (e.g. "129 Rannoch Road" or "Apartment No.82")
-  // Strips descriptions like "4 Bedroom Terraced House" that cause false non-matches
+  // Extract unit/flat/apartment identifier from an address
+  // "Apartment No.82, 2 Bedroom..." → "apartmentno82"
+  // "Flat 1 King Henrys Reach..." → "flat1"
+  // "129 Rannoch Road, 4 Bedroom..." → "129"
+  const extractUnitKey = (addr) => {
+    if (!addr) return '';
+    const clean = addr.toLowerCase().trim();
+    // Match: apartment/flat/unit + number patterns
+    const unitMatch = clean.match(/(?:apartment|apt|flat|unit|suite|room)\s*(?:no\.?\s*)?(\d+\w?)/i);
+    if (unitMatch) return normalize(unitMatch[0]);
+    // Match: leading number (house number) e.g. "129 Rannoch Road"
+    const houseMatch = clean.match(/^(\d+\w?)\s/);
+    if (houseMatch) return houseMatch[1];
+    return '';
+  };
+
+  // Extract street-level key: text before first comma, normalised + capped
   const extractStreetKey = (addr) => {
     if (!addr) return '';
     const clean = addr.toLowerCase().trim();
-    // Try to match: number/unit + street name (first 2-3 meaningful words)
-    // "129 Rannoch Road, 4 Bedroom Terraced House, London" → "129 rannoch road"
-    // "Apartment No.82, 2 Bedroom River Front Apartment, King Henrys Reach" → "apartment no82"
-    const parts = clean.split(/[,;]/)[0].trim(); // take everything before first comma
-    return normalize(parts).substring(0, 25);     // normalise + cap at 25 chars
+    const parts = clean.split(/[,;]/)[0].trim();
+    return normalize(parts).substring(0, 25);
   };
 
   const scoreProperty = (p) => {
@@ -292,18 +311,47 @@ function deduplicateProperties(properties) {
 
   const seen = new Map(); // key → best property
   for (const prop of properties) {
-    // Build dedup key: postcode + street-level address (before first comma)
     const pc = normalize(prop.postcode);
     const street = extractStreetKey(prop.address);
-    const key = `${pc}::${street}`;
+    const unit = extractUnitKey(prop.address);
 
-    const existing = seen.get(key);
-    if (!existing || scoreProperty(prop) > scoreProperty(existing)) {
-      seen.set(key, prop);
+    // Primary key: postcode + street (handles exact address matches and minor variations)
+    const primaryKey = `${pc}::${street}`;
+    // Secondary key: postcode + unit number (catches same flat described with different address text)
+    const unitKey = unit ? `${pc}::unit::${unit}` : null;
+
+    // Check if either key already exists
+    let matchKey = null;
+    if (seen.has(primaryKey)) {
+      matchKey = primaryKey;
+    } else if (unitKey && seen.has(unitKey)) {
+      matchKey = unitKey;
+    }
+
+    if (matchKey) {
+      // Duplicate found — keep the one with more data
+      const existing = seen.get(matchKey);
+      if (scoreProperty(prop) > scoreProperty(existing.prop)) {
+        seen.set(matchKey, { prop, primaryKey, unitKey });
+      }
+    } else {
+      // New property — store under both keys pointing to same entry
+      const entry = { prop, primaryKey, unitKey };
+      seen.set(primaryKey, entry);
+      if (unitKey) seen.set(unitKey, entry);
     }
   }
 
-  return Array.from(seen.values());
+  // Collect unique properties (entries may be stored under 2 keys, deduplicate by reference)
+  const unique = new Set();
+  const result = [];
+  for (const entry of seen.values()) {
+    if (!unique.has(entry)) {
+      unique.add(entry);
+      result.push(entry.prop);
+    }
+  }
+  return result;
 }
 
 
