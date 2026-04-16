@@ -211,7 +211,53 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
         console.error('[smart-parse] n8n webhook failed:', err.message);
       }
     } else {
-      console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — returning files without AI parsing');
+      console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — will try direct Claude extraction');
+    }
+
+    // ── Fallback: Direct Claude API extraction if n8n didn't return data ──
+    if (!parsedData && savedDocs.length > 0) {
+      try {
+        console.log(`[smart-parse] Using direct Claude API extraction for ${savedDocs.length} docs...`);
+        // Fetch saved docs with file_content from DB
+        const docIds = savedDocs.map(d => d.id);
+        const docsResult = await pool.query(
+          `SELECT id, filename, file_type, file_size, file_content, doc_category
+           FROM deal_documents WHERE id = ANY($1) ORDER BY id`,
+          [docIds]
+        );
+        const docs = docsResult.rows.filter(d => d.file_content && d.file_content.length > 0);
+        console.log(`[smart-parse] ${docs.length}/${savedDocs.length} docs have file_content for extraction`);
+
+        if (docs.length > 0) {
+          const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docs);
+          parsedData = merged;
+
+          // Store per-document parsed data
+          for (const [docId, docParsed] of perDoc) {
+            try {
+              const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
+              const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
+              await pool.query(
+                `UPDATE deal_documents
+                 SET parsed_data = $1, parsed_at = NOW(),
+                     doc_issue_date = COALESCE($2::DATE, doc_issue_date),
+                     doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
+                 WHERE id = $4`,
+                [JSON.stringify(docParsed), issueDate, expiryDate, docId]
+              );
+            } catch (pdErr) {
+              console.warn(`[smart-parse] Could not store parsed_data for doc ${docId}:`, pdErr.message);
+            }
+          }
+
+          if (parsedData) {
+            const fieldCount = Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length;
+            console.log(`[smart-parse] Claude extracted ${fieldCount} merged fields from ${docs.length} docs`);
+          }
+        }
+      } catch (extractErr) {
+        console.error('[smart-parse] Direct Claude extraction failed:', extractErr.message);
+      }
     }
 
     // Return the result — includes AI categories for each file + parsed data if available
