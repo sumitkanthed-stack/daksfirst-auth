@@ -732,4 +732,4 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
   }
 }
 
-module.exports = { parseDealDocuments };
+module.exports = { parseDealDocuments, deduplicateProperties };

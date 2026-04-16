@@ -4,6 +4,7 @@ const router = express.Router();
 const pool = require('../db/pool');
 const config = require('../config');
 const { syncDealProperties } = require('../services/property-parser');
+const { deduplicateProperties } = require('../services/claude-parser');
 
 const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
 
@@ -227,9 +228,12 @@ router.post('/analysis-complete', async (req, res) => {
           tenure: p.tenure || null,
           source: 'claude_parsed'
         }));
+        // Deduplicate before writing (same logic as claude-parser.js pipeline)
+        const dedupedProperties = deduplicateProperties(claudeProperties);
+        console.log(`[webhook-analysis] Dedup: ${claudeProperties.length} → ${dedupedProperties.length} properties`);
         // First batch: force overwrite. Subsequent batches: append only
-        await syncDealProperties(pool, dealId, claudeProperties, { force: isFirstBatch });
-        console.log(`[webhook-analysis] Claude parsed ${claudeProperties.length} properties for deal ${dealId}${batchLabel}`);
+        await syncDealProperties(pool, dealId, dedupedProperties, { force: isFirstBatch });
+        console.log(`[webhook-analysis] Stored ${dedupedProperties.length} properties for deal ${dealId}${batchLabel}`);
       }
     } catch (parseErr) {
       console.error('[webhook-analysis] Property parsing from Claude failed (non-blocking):', parseErr.message);
