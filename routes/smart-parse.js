@@ -26,10 +26,10 @@ const N8N_PARSE_WEBHOOK_URL = config.N8N_PARSE_WEBHOOK_URL || '';
 router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
   try {
     console.log('[smart-parse] Upload from user:', req.user.userId, 'files:', req.files?.length || 0);
-    const { deal_id } = req.body; // deal_id = existing deal's submission_id (optional)
+    const { deal_id, whatsapp_text, notes } = req.body;
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files provided' });
+    if ((!req.files || req.files.length === 0) && !whatsapp_text) {
+      return res.status(400).json({ error: 'No files or text provided' });
     }
 
     // Truncate MIME types that exceed DB column width (Office formats can be 73+ chars)
@@ -81,6 +81,34 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       }
     }
 
+    // ── Save WhatsApp text and notes to the deal ───────────────────────
+    const updateParts = [];
+    const updateVals = [];
+    let pIdx = 1;
+    if (whatsapp_text) {
+      updateParts.push(`additional_notes = COALESCE(additional_notes, '') || $${pIdx}`);
+      updateVals.push((whatsapp_text || '').substring(0, 10000));
+      pIdx++;
+    }
+    if (notes) {
+      // Append notes after any existing text, separated by newline
+      updateParts.push(`additional_notes = COALESCE(additional_notes, '') || $${pIdx}`);
+      updateVals.push('\n--- Broker note ---\n' + (notes || '').substring(0, 5000));
+      pIdx++;
+    }
+    if (updateParts.length > 0) {
+      updateVals.push(dealIntId);
+      try {
+        await pool.query(
+          `UPDATE deal_submissions SET ${updateParts.join(', ')}, updated_at = NOW() WHERE id = $${pIdx}`,
+          updateVals
+        );
+        console.log(`[smart-parse] Saved text/notes to deal ${submissionId}`);
+      } catch (txtErr) {
+        console.warn('[smart-parse] Could not save text/notes:', txtErr.message);
+      }
+    }
+
     // ── Upload to OneDrive (best-effort) ──────────────────────────────
     let token;
     const uploadedFiles = [];
@@ -90,7 +118,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       console.error('[smart-parse] OneDrive token failed:', err.message);
     }
 
-    if (token) {
+    if (token && req.files && req.files.length > 0) {
       for (const file of req.files) {
         try {
           const dealRef = submissionId.substring(0, 8);
@@ -104,7 +132,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
 
     // ── Save files to deal_documents ──────────────────────────────────
     let savedCount = 0;
-    for (const file of req.files) {
+    for (const file of (req.files || [])) {
       const odFile = uploadedFiles.find(u => u.filename === file.originalname);
       try {
         await pool.query(
@@ -146,10 +174,11 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       }
     }
 
-    console.log(`[smart-parse] Saved ${savedCount}/${req.files.length} files to deal ${submissionId}`);
+    const totalFiles = (req.files || []).length;
+    console.log(`[smart-parse] Saved ${savedCount}/${totalFiles} files to deal ${submissionId}`);
 
     await logAudit(dealIntId, deal_id ? 'docs_added_to_deal' : 'deal_created_with_docs', null, 'upload',
-      { files_saved: savedCount, files_received: req.files.length, source: 'smart_parse' }, req.user.userId);
+      { files_saved: savedCount, files_received: totalFiles, source: 'smart_parse', has_text: !!whatsapp_text, has_notes: !!notes }, req.user.userId);
 
     // ── Return submission_id so frontend can redirect into the deal ───
     res.json({
@@ -157,7 +186,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       submission_id: submissionId,
       is_new_deal: !deal_id,
       files_saved: savedCount,
-      files_received: req.files.length,
+      files_received: totalFiles,
       message: deal_id
         ? `${savedCount} file${savedCount !== 1 ? 's' : ''} added to deal. Opening deal...`
         : `New deal created with ${savedCount} file${savedCount !== 1 ? 's' : ''}. Opening deal...`

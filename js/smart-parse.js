@@ -3,11 +3,17 @@ import { showToast, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  SMART PARSE — Filing Cabinet
-//  Broker drops files → picks New Deal or Existing Deal → files are saved →
-//  broker is redirected into the deal. No AI calls here.
-//  Categorisation & parsing happen inside the deal via the document repo flow.
+//  SMART PARSE — Filing Cabinet with Staging Area
+//  Broker drops files → picks New Deal or Existing Deal → files stage on page
+//  → broker can add more files, paste text, add notes → Submit when ready
+//  → deal created/updated, broker redirected into the deal
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────────────────────────────
+let _stagedFiles = [];          // Array of File objects waiting to be uploaded
+let _dealMode = null;           // 'new' or 'existing'
+let _existingDealId = null;     // submission_id if existing deal
+let _stagingActive = false;     // Whether the staging area is visible
 
 /**
  * Handle smart parse file drop
@@ -38,7 +44,7 @@ export function toggleWhatsappPaste() {
 }
 
 /**
- * Handle WhatsApp text submission (not used in new flow but kept for compatibility)
+ * Handle WhatsApp text submission — just show it in staging, don't upload yet
  */
 export async function handleWhatsappSubmit() {
   const text = document.getElementById('whatsapp-text-input')?.value.trim();
@@ -46,34 +52,46 @@ export async function handleWhatsappSubmit() {
     showToast('Please paste some text first', true);
     return;
   }
-  showToast('WhatsApp text noted. Please also upload deal documents.', 'info');
+  if (!_stagingActive) {
+    // Need to pick deal mode first
+    showDealPickerModal([], text);
+    return;
+  }
+  // Already staging — just refresh the staging area to show the text
+  renderStagingArea();
+  showToast('Text added to your submission');
 }
 
 /**
- * Process smart parse files — show deal picker first
+ * Process smart parse files
  */
-let _pendingFiles = null;
-
 export async function processSmartFiles(fileList) {
   const files = Array.from(fileList);
-  const maxSize = 25 * 1024 * 1024; // 25MB per file
+  const maxSize = 25 * 1024 * 1024;
   const validFiles = files.filter(f => f.size <= maxSize);
+  const oversized = files.filter(f => f.size > maxSize);
 
-  if (validFiles.length === 0) {
-    showToast('All files exceed the 25MB limit', true);
-    return;
+  if (oversized.length > 0) {
+    showToast(`${oversized.length} file${oversized.length > 1 ? 's' : ''} exceeded 25MB limit and were skipped`, true);
   }
+  if (validFiles.length === 0) return;
 
-  // Store files and show deal picker modal
-  _pendingFiles = validFiles;
-  showDealPickerModal(validFiles);
+  if (!_stagingActive) {
+    // First drop — show deal picker, then stage
+    showDealPickerModal(validFiles);
+  } else {
+    // Already staging — add files directly
+    _stagedFiles.push(...validFiles);
+    renderStagingArea();
+    showToast(`${validFiles.length} file${validFiles.length > 1 ? 's' : ''} added`);
+  }
 }
 
 /**
  * Show modal asking: new deal or existing deal?
  */
-async function showDealPickerModal(files) {
-  // Fetch existing deals to populate the dropdown
+async function showDealPickerModal(files, pastedText) {
+  // Fetch existing deals
   let existingDeals = [];
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/deals`, { method: 'GET' });
@@ -83,14 +101,14 @@ async function showDealPickerModal(files) {
     }
   } catch (e) { /* proceed with empty list */ }
 
-  const fileListHtml = files.map(f => {
+  const fileListHtml = files.length > 0 ? files.map(f => {
     const sizeStr = (f.size / 1024 / 1024).toFixed(2);
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
       <div style="width:6px;height:6px;border-radius:50%;background:#D4A853;flex-shrink:0;"></div>
       <span style="font-size:12px;color:#F1F5F9;flex:1;">${sanitizeHtml(f.name)}</span>
       <span style="font-size:11px;color:#64748B;">${sizeStr} MB</span>
     </div>`;
-  }).join('');
+  }).join('') : '<div style="padding:8px 0;font-size:12px;color:#94A3B8;">Text content ready to submit</div>';
 
   const dealOptions = existingDeals.map(d => {
     const borrower = d.borrower_name || 'No borrower';
@@ -107,15 +125,15 @@ async function showDealPickerModal(files) {
   modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
   modal.innerHTML = `
     <div style="background:#1a2332;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;width:500px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-      <div style="font-size:16px;font-weight:700;color:#F1F5F9;margin-bottom:4px;">${files.length} file${files.length > 1 ? 's' : ''} ready to upload</div>
-      <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;">Where should these documents go?</div>
+      <div style="font-size:16px;font-weight:700;color:#F1F5F9;margin-bottom:4px;">${files.length > 0 ? files.length + ' file' + (files.length > 1 ? 's' : '') + ' ready' : 'Text ready'}</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;">Where should this go?</div>
 
       <div style="background:#0f1729;border-radius:8px;padding:10px 12px;margin-bottom:16px;max-height:120px;overflow-y:auto;">
         ${fileListHtml}
       </div>
 
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
-        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(212,168,83,0.3);border-radius:8px;cursor:pointer;transition:all .15s;" onclick="document.getElementById('dp-new').checked=true;document.getElementById('dp-existing-select').style.display='none';">
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(212,168,83,0.3);border-radius:8px;cursor:pointer;" onclick="document.getElementById('dp-new').checked=true;document.getElementById('dp-existing-select').style.display='none';">
           <input type="radio" name="dp-mode" id="dp-new" value="new" checked style="accent-color:#D4A853;">
           <div>
             <div style="font-size:13px;font-weight:700;color:#F1F5F9;">New Deal</div>
@@ -123,7 +141,7 @@ async function showDealPickerModal(files) {
           </div>
         </label>
 
-        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(255,255,255,0.06);border-radius:8px;cursor:pointer;transition:all .15s;" onclick="document.getElementById('dp-existing').checked=true;document.getElementById('dp-existing-select').style.display='block';">
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:2px solid rgba(255,255,255,0.06);border-radius:8px;cursor:pointer;" onclick="document.getElementById('dp-existing').checked=true;document.getElementById('dp-existing-select').style.display='block';">
           <input type="radio" name="dp-mode" id="dp-existing" value="existing" style="accent-color:#D4A853;">
           <div style="flex:1;">
             <div style="font-size:13px;font-weight:700;color:#F1F5F9;">Existing Deal</div>
@@ -145,12 +163,16 @@ async function showDealPickerModal(files) {
   `;
   document.body.appendChild(modal);
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  // Store files and text for after modal confirms
+  window._dpPendingFiles = files;
+  window._dpPendingText = pastedText || null;
 }
 
 /**
- * Handle deal picker confirmation — upload files and redirect
+ * Handle deal picker confirmation — activate staging area
  */
-window.confirmDealPicker = async function() {
+window.confirmDealPicker = function() {
   const mode = document.querySelector('input[name="dp-mode"]:checked')?.value;
   const existingDealId = document.getElementById('dp-existing-select')?.value;
 
@@ -159,25 +181,161 @@ window.confirmDealPicker = async function() {
     return;
   }
 
-  if (!_pendingFiles || _pendingFiles.length === 0) {
-    showToast('No files to upload', true);
+  // Set state
+  _dealMode = mode;
+  _existingDealId = (mode === 'existing') ? existingDealId : null;
+  _stagingActive = true;
+
+  // Add pending files to staging
+  if (window._dpPendingFiles && window._dpPendingFiles.length > 0) {
+    _stagedFiles.push(...window._dpPendingFiles);
+  }
+
+  // If there was pending pasted text, put it in the textarea
+  if (window._dpPendingText) {
+    const textarea = document.getElementById('whatsapp-text-input');
+    if (textarea) {
+      textarea.value = window._dpPendingText;
+      document.getElementById('whatsapp-paste-area').style.display = 'block';
+    }
+  }
+
+  window._dpPendingFiles = null;
+  window._dpPendingText = null;
+
+  // Close modal
+  document.getElementById('deal-picker-modal')?.remove();
+
+  // Show staging area
+  renderStagingArea();
+};
+
+/**
+ * Render the staging area — shows staged files, text, notes, and submit button
+ */
+function renderStagingArea() {
+  const container = document.getElementById('smart-upload-progress');
+  container.style.display = 'block';
+
+  const whatsappText = document.getElementById('whatsapp-text-input')?.value.trim() || '';
+  const modeLabel = _dealMode === 'existing'
+    ? `Adding to existing deal (${_existingDealId?.substring(0, 8)})`
+    : 'Creating a new deal';
+
+  const fileRows = _stagedFiles.map((f, i) => {
+    const icon = f.type.includes('pdf') ? '\ud83d\udcc4' : f.type.includes('word') || f.name.endsWith('.docx') ? '\ud83d\udcdd' : f.type.includes('sheet') || f.name.endsWith('.xlsx') || f.name.endsWith('.csv') ? '\ud83d\udcca' : f.type.includes('image') ? '\ud83d\uddbc\ufe0f' : '\ud83d\udcce';
+    const sizeStr = (f.size / 1024 / 1024).toFixed(2);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:18px;">${icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:500;font-size:13px;color:#F1F5F9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sanitizeHtml(f.name)}</div>
+        <div style="font-size:11px;color:#64748B;">${sizeStr} MB</div>
+      </div>
+      <button onclick="window.removeStagedFile(${i})" style="background:none;border:none;color:#F87171;cursor:pointer;font-size:16px;padding:4px 8px;" title="Remove">\u2715</button>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="background:#1a2332;border:1px solid rgba(212,168,83,0.3);border-radius:12px;overflow:hidden;margin-top:12px;">
+      <!-- Header -->
+      <div style="padding:14px 16px;background:rgba(212,168,83,0.08);border-bottom:1px solid rgba(212,168,83,0.2);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#D4A853;">${_stagedFiles.length} file${_stagedFiles.length !== 1 ? 's' : ''} staged</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${modeLabel}</div>
+        </div>
+        <button onclick="window.cancelStaging()" style="background:none;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#94A3B8;padding:4px 12px;font-size:11px;cursor:pointer;">Cancel</button>
+      </div>
+
+      <!-- File list -->
+      <div style="max-height:240px;overflow-y:auto;">
+        ${fileRows || '<div style="padding:16px;text-align:center;color:#64748B;font-size:13px;">No files yet \u2014 drop files above to add them</div>'}
+      </div>
+
+      <!-- Add more prompt -->
+      <div style="padding:10px 16px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
+        <span style="font-size:12px;color:#64748B;">Drop more files above or </span>
+        <a href="#" onclick="document.getElementById('smart-file-input').click(); return false;" style="font-size:12px;color:#D4A853;text-decoration:none;">browse to add more</a>
+      </div>
+
+      ${whatsappText ? `
+      <!-- Pasted text preview -->
+      <div style="padding:10px 16px;border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;">Pasted text included:</div>
+        <div style="font-size:12px;color:#CBD5E1;background:#0f1729;padding:8px 10px;border-radius:6px;max-height:60px;overflow:hidden;text-overflow:ellipsis;">${sanitizeHtml(whatsappText.substring(0, 200))}${whatsappText.length > 200 ? '...' : ''}</div>
+      </div>` : ''}
+
+      <!-- Notes -->
+      <div style="padding:10px 16px;border-top:1px solid rgba(255,255,255,0.06);">
+        <textarea id="staging-notes" placeholder="Add any notes for the deal team (optional)..." style="width:100%;min-height:60px;padding:10px;background:#0f1729;color:#F1F5F9;border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
+      </div>
+
+      <!-- Submit -->
+      <div style="padding:14px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;justify-content:flex-end;">
+        <button id="staging-submit-btn" onclick="window.submitStagedDeal()" style="padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;border:none;background:#D4A853;color:#0B1120;cursor:pointer;" ${_stagedFiles.length === 0 ? 'disabled style="opacity:0.5;"' : ''}>
+          ${_dealMode === 'existing' ? 'Add to Deal' : 'Submit Deal'}
+        </button>
+      </div>
+    </div>
+  `;
+
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
+ * Remove a staged file
+ */
+window.removeStagedFile = function(index) {
+  _stagedFiles.splice(index, 1);
+  renderStagingArea();
+};
+
+/**
+ * Cancel staging — clear everything
+ */
+window.cancelStaging = function() {
+  _stagedFiles = [];
+  _dealMode = null;
+  _existingDealId = null;
+  _stagingActive = false;
+  const container = document.getElementById('smart-upload-progress');
+  if (container) { container.style.display = 'none'; container.innerHTML = ''; }
+  const textarea = document.getElementById('whatsapp-text-input');
+  if (textarea) textarea.value = '';
+  document.getElementById('whatsapp-paste-area').style.display = 'none';
+};
+
+/**
+ * Submit staged files + text + notes — upload to backend, redirect to deal
+ */
+window.submitStagedDeal = async function() {
+  if (_stagedFiles.length === 0) {
+    showToast('Please add at least one file', true);
     return;
   }
 
-  // Disable button and show uploading state
-  const btn = document.getElementById('dp-continue-btn');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Uploading...';
-  }
+  const btn = document.getElementById('staging-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
 
   try {
     const formData = new FormData();
-    for (const file of _pendingFiles) {
+    for (const file of _stagedFiles) {
       formData.append('files', file);
     }
-    if (mode === 'existing' && existingDealId) {
-      formData.append('deal_id', existingDealId);
+    if (_dealMode === 'existing' && _existingDealId) {
+      formData.append('deal_id', _existingDealId);
+    }
+
+    // Include WhatsApp/pasted text
+    const whatsappText = document.getElementById('whatsapp-text-input')?.value.trim();
+    if (whatsappText) {
+      formData.append('whatsapp_text', whatsappText);
+    }
+
+    // Include notes
+    const notes = document.getElementById('staging-notes')?.value.trim();
+    if (notes) {
+      formData.append('notes', notes);
     }
 
     const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/upload`, {
@@ -189,20 +347,16 @@ window.confirmDealPicker = async function() {
 
     if (!resp.ok) {
       showToast(data.error || 'Upload failed', true);
-      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      btn.disabled = false;
+      btn.textContent = _dealMode === 'existing' ? 'Add to Deal' : 'Submit Deal';
       return;
     }
 
-    // Close modal
-    document.getElementById('deal-picker-modal')?.remove();
-    _pendingFiles = null;
+    // Success — clear staging and redirect
+    showToast(data.message || 'Deal submitted successfully!');
+    window.cancelStaging();
 
-    // Show success
-    showToast(data.message || 'Files uploaded successfully!');
-
-    // Redirect into the deal
     if (data.submission_id) {
-      // Small delay so the toast is visible
       setTimeout(() => {
         import('./deal-detail.js').then(m => m.showDealDetail(data.submission_id));
       }, 600);
@@ -210,21 +364,18 @@ window.confirmDealPicker = async function() {
   } catch (err) {
     console.error('Upload error:', err);
     showToast('Network error. Please try again.', true);
-    if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+    btn.disabled = false;
+    btn.textContent = _dealMode === 'existing' ? 'Add to Deal' : 'Submit Deal';
   }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Legacy exports — kept so other modules that import these don't break.
-//  These are no-ops or minimal stubs.
+//  Legacy exports — kept so other modules that import these don't break
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** @deprecated — no longer used, kept for import compatibility */
+/** @deprecated — no longer used */
 export async function uploadAndParse(files, whatsappText) {
-  // Redirect to the new flow
-  if (files && files.length > 0) {
-    processSmartFiles(files);
-  }
+  if (files && files.length > 0) processSmartFiles(files);
 }
 
 /** @deprecated */
@@ -238,11 +389,7 @@ export function toggleExistingDealSelect() { /* no-op */ }
 
 /** @deprecated */
 export function cancelSmartParse() {
-  // Hide any leftover UI from old flow
-  const reviewEl = document.getElementById('smart-parse-review');
-  if (reviewEl) reviewEl.style.display = 'none';
-  const progressEl = document.getElementById('smart-upload-progress');
-  if (progressEl) progressEl.style.display = 'none';
+  window.cancelStaging();
 }
 
 /** @deprecated */
