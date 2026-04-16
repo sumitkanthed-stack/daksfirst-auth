@@ -8,8 +8,8 @@ const { authenticateToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
-const { categoriseWithAI } = require('../services/ai-categorise');
 const { extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs } = require('../services/ai-extract');
+const { parseDocumentsOnly } = require('../services/claude-parser');
 const config = require('../config');
 
 const upload = multer({
@@ -21,213 +21,147 @@ const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 const N8N_PARSE_WEBHOOK_URL = config.N8N_PARSE_WEBHOOK_URL || '';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  UPLOAD FILES FOR AI PARSING (new deal or existing deal)
+//  UPLOAD FILES — Filing cabinet. Save files, create/attach deal, redirect.
+//  No AI calls here. Parsing happens inside the deal via doc-panel flow.
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
   try {
     console.log('[smart-parse] Upload from user:', req.user.userId, 'files:', req.files?.length || 0);
-    const { deal_id, whatsapp_text } = req.body; // deal_id is optional (if updating existing deal)
+    const { deal_id } = req.body; // deal_id = existing deal's submission_id (optional)
 
-    if ((!req.files || req.files.length === 0) && !whatsapp_text) {
-      return res.status(400).json({ error: 'No files or text provided' });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
     }
 
-    // If deal_id provided, verify access
-    let existingDeal = null;
+    // Truncate MIME types that exceed DB column width (Office formats can be 73+ chars)
+    const safeMime = (mime) => (mime || 'application/octet-stream').substring(0, 255);
+
+    // ── Resolve or create the deal ────────────────────────────────────
+    let dealIntId = null;    // integer PK (deal_submissions.id)
+    let submissionId = null; // UUID (deal_submissions.submission_id) — used for frontend routing
+
     if (deal_id) {
+      // EXISTING DEAL — verify access
       const dealCheck = await pool.query(
         `SELECT id, submission_id, user_id, borrower_user_id FROM deal_submissions WHERE submission_id = $1`,
         [deal_id]
       );
       if (dealCheck.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
       const d = dealCheck.rows[0];
-      // Check access: owner, borrower, or internal staff
       const isOwner = d.user_id === req.user.userId || d.borrower_user_id === req.user.userId;
       const isInternal = INTERNAL_ROLES.includes(req.user.role);
       if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
-      existingDeal = d;
+      dealIntId = d.id;
+      submissionId = d.submission_id;
+      console.log(`[smart-parse] Attaching ${req.files.length} files to existing deal ${submissionId}`);
+    } else {
+      // NEW DEAL — create a blank deal_submissions record
+      const newDeal = await pool.query(
+        `INSERT INTO deal_submissions (user_id, source, internal_status)
+         VALUES ($1, 'smart_parse', 'new')
+         RETURNING id, submission_id`,
+        [req.user.userId]
+      );
+      dealIntId = newDeal.rows[0].id;
+      submissionId = newDeal.rows[0].submission_id;
+      console.log(`[smart-parse] Created new blank deal ${submissionId} for ${req.files.length} files`);
+
+      // Auto-assign RM from broker's default_rm if applicable
+      if (req.user.role === 'broker') {
+        try {
+          const brokerOnb = await pool.query('SELECT default_rm FROM broker_onboarding WHERE user_id = $1', [req.user.userId]);
+          if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
+            await pool.query(
+              `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = 'assigned' WHERE id = $2`,
+              [brokerOnb.rows[0].default_rm, dealIntId]
+            );
+          }
+        } catch (rmErr) {
+          console.warn('[smart-parse] RM auto-assign failed:', rmErr.message);
+        }
+      }
     }
 
-    // Create a parse session to track the request
-    const parseSessionId = crypto.randomUUID();
-
-    // Upload files to OneDrive under a /Parsing/ folder
+    // ── Upload to OneDrive (best-effort) ──────────────────────────────
     let token;
     const uploadedFiles = [];
     try {
       token = await getGraphToken();
     } catch (err) {
       console.error('[smart-parse] OneDrive token failed:', err.message);
-      // Continue without OneDrive - we'll send file buffers directly to n8n
     }
 
-    // Truncate MIME types that exceed DB column width (Office formats can be 73+ chars)
-    const safeMime = (mime) => (mime || 'application/octet-stream').substring(0, 255);
-
-    const fileMetadata = [];
-    if (req.files && req.files.length > 0) {
+    if (token) {
       for (const file of req.files) {
-        const fileMeta = {
-          filename: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-          // Base64 encode file content for n8n webhook
-          content_base64: file.buffer.toString('base64')
-        };
-        fileMetadata.push(fileMeta);
-
-        // Also upload to OneDrive if token available
-        if (token) {
-          try {
-            const dealRef = existingDeal ? existingDeal.submission_id.substring(0, 8) : parseSessionId.substring(0, 8);
-            const info = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
-            uploadedFiles.push({
-              filename: file.originalname,
-              file_type: file.mimetype,
-              file_size: file.size,
-              onedrive_item_id: info.itemId,
-              onedrive_path: info.path,
-              onedrive_download_url: info.downloadUrl
-            });
-          } catch (err) {
-            console.error('[smart-parse] OneDrive upload failed for:', file.originalname);
-          }
+        try {
+          const dealRef = submissionId.substring(0, 8);
+          const info = await uploadFileToOneDrive(token, dealRef, file.originalname, file.buffer);
+          uploadedFiles.push({ filename: file.originalname, ...info });
+        } catch (err) {
+          console.error('[smart-parse] OneDrive upload failed for:', file.originalname);
         }
       }
     }
 
-    // Save file records to deal_documents with AI-suggested categories
-    const savedDocs = [];
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const matchingUpload = uploadedFiles.find(u => u.filename === file.originalname);
-
-        // AI-categorise the document (fast Haiku call)
-        let suggestedCategory = null;
+    // ── Save files to deal_documents ──────────────────────────────────
+    let savedCount = 0;
+    for (const file of req.files) {
+      const odFile = uploadedFiles.find(u => u.filename === file.originalname);
+      try {
+        await pool.query(
+          `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, onedrive_item_id, onedrive_path, onedrive_download_url)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            dealIntId,
+            file.originalname,
+            safeMime(file.mimetype),
+            file.size,
+            file.buffer,
+            'uncategorised',
+            odFile ? odFile.itemId : null,
+            odFile ? odFile.path : null,
+            odFile ? odFile.downloadUrl : null
+          ]
+        );
+        savedCount++;
+      } catch (err) {
+        // Fallback: try without file_content column (in case of older schema)
         try {
-          suggestedCategory = await categoriseWithAI(file);
-          // Map ai-categorise keys to our simpler category set
-          const categoryMap = { kyc: 'kyc', financials_aml: 'financial', valuation: 'property', use_of_funds: 'financial', exit_evidence: 'legal', other_conditions: 'other', general: 'other' };
-          suggestedCategory = categoryMap[suggestedCategory] || suggestedCategory || 'other';
-          console.log(`[smart-parse] AI categorised "${file.originalname}" → ${suggestedCategory}`);
-        } catch (catErr) {
-          console.warn(`[smart-parse] AI categorisation failed for ${file.originalname}:`, catErr.message);
-          suggestedCategory = 'other';
-        }
-
-        // Save file with suggested category
-        try {
-          const docResult = await pool.query(
-            `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, file_content, doc_category, onedrive_item_id, onedrive_path, onedrive_download_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             RETURNING id, filename, doc_category`,
+          await pool.query(
+            `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
-              existingDeal ? existingDeal.id : null,
-              parseSessionId,
+              dealIntId,
               file.originalname,
               safeMime(file.mimetype),
               file.size,
-              file.buffer, // Stored as BYTEA
-              suggestedCategory,
-              matchingUpload ? matchingUpload.onedrive_item_id : null,
-              matchingUpload ? matchingUpload.onedrive_path : null,
-              matchingUpload ? matchingUpload.onedrive_download_url : null
+              odFile ? odFile.itemId : null,
+              odFile ? odFile.path : null,
+              odFile ? odFile.downloadUrl : null
             ]
           );
-          savedDocs.push(docResult.rows[0]);
-        } catch (err) {
-          if (err.message.includes('file_content') || err.message.includes('doc_category')) {
-            // Columns may not exist yet, try minimal insert
-            const docResult = await pool.query(
-              `INSERT INTO deal_documents (deal_id, parse_session_id, filename, file_type, file_size, onedrive_item_id, onedrive_path, onedrive_download_url)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-               RETURNING id, filename`,
-              [
-                existingDeal ? existingDeal.id : null,
-                parseSessionId,
-                file.originalname,
-                safeMime(file.mimetype),
-                file.size,
-                matchingUpload ? matchingUpload.onedrive_item_id : null,
-                matchingUpload ? matchingUpload.onedrive_path : null,
-                matchingUpload ? matchingUpload.onedrive_download_url : null
-              ]
-            );
-            savedDocs.push({ ...docResult.rows[0], doc_category: suggestedCategory });
-          } else {
-            console.error(`[smart-parse] DB insert failed for "${file.originalname}":`, err.message);
-            // Continue with remaining files — don't kill the whole upload
-          }
+          savedCount++;
+        } catch (err2) {
+          console.error(`[smart-parse] DB insert failed for "${file.originalname}":`, err2.message);
         }
       }
-      console.log(`[smart-parse] Saved ${savedDocs.length}/${req.files.length} file records with AI categories (parse_session_id: ${parseSessionId})`);
     }
 
-    // Send to n8n parse webhook for AI extraction
-    let parsedData = null;
-    if (N8N_PARSE_WEBHOOK_URL) {
-      try {
-        console.log('[smart-parse] Sending to n8n for AI parsing...');
-        const payload = {
-          parse_session_id: parseSessionId,
-          user_id: req.user.userId,
-          user_email: req.user.email,
-          user_role: req.user.role,
-          deal_id: existingDeal ? existingDeal.submission_id : null,
-          whatsapp_text: whatsapp_text || null,
-          files: fileMetadata.map(f => ({
-            filename: f.filename,
-            mimetype: f.mimetype,
-            size: f.size,
-            content_base64: f.content_base64
-          })),
-          timestamp: new Date().toISOString()
-        };
+    console.log(`[smart-parse] Saved ${savedCount}/${req.files.length} files to deal ${submissionId}`);
 
-        const parseResp = await fetch(N8N_PARSE_WEBHOOK_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
-          },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(120000) // 2 min timeout for AI parsing
-        });
+    await logAudit(dealIntId, deal_id ? 'docs_added_to_deal' : 'deal_created_with_docs', null, 'upload',
+      { files_saved: savedCount, files_received: req.files.length, source: 'smart_parse' }, req.user.userId);
 
-        if (parseResp.ok) {
-          const n8nResult = await parseResp.json();
-          console.log('[smart-parse] AI parsing returned:', JSON.stringify(n8nResult).substring(0, 500));
-          // n8n returns { parse_session_id, parsed_data, error, file_count, file_names }
-          // We need just the parsed_data object
-          parsedData = n8nResult.parsed_data || n8nResult || null;
-          if (n8nResult.error) {
-            console.error('[smart-parse] AI extraction error:', n8nResult.error);
-          }
-        } else {
-          const errText = await parseResp.text();
-          console.error('[smart-parse] n8n returned error:', parseResp.status, errText.substring(0, 200));
-        }
-      } catch (err) {
-        console.error('[smart-parse] n8n webhook failed:', err.message);
-      }
-    } else {
-      console.log('[smart-parse] N8N_PARSE_WEBHOOK_URL not configured — broker will confirm categories first, then parse');
-    }
-
-    // Return the result — includes AI categories for each file
-    // Parsing happens AFTER broker confirms categories (via /parse-confirmed endpoint)
+    // ── Return submission_id so frontend can redirect into the deal ───
     res.json({
       success: true,
-      parse_session_id: parseSessionId,
-      files_uploaded: uploadedFiles.length,
-      files_received: (req.files || []).length,
-      has_whatsapp_text: !!whatsapp_text,
-      existing_deal: existingDeal ? existingDeal.submission_id : null,
-      documents: savedDocs, // [{id, filename, doc_category}] — AI-suggested categories
-      parsed_data: parsedData || null, // The AI-extracted structured data (if n8n responded)
-      message: savedDocs.length > 0
-        ? 'Files uploaded and categorised. Please confirm document categories, then parse to extract deal data.'
-        : (parsedData ? 'Text parsed successfully.' : 'Upload complete.')
+      submission_id: submissionId,
+      is_new_deal: !deal_id,
+      files_saved: savedCount,
+      files_received: req.files.length,
+      message: deal_id
+        ? `${savedCount} file${savedCount !== 1 ? 's' : ''} added to deal. Opening deal...`
+        : `New deal created with ${savedCount} file${savedCount !== 1 ? 's' : ''}. Opening deal...`
     });
   } catch (error) {
     console.error('[smart-parse] Error:', error);
@@ -254,43 +188,11 @@ router.post('/parse-session', authenticateToken, async (req, res) => {
     const docs = docsResult.rows;
     if (docs.length === 0) return res.status(404).json({ error: 'No documents found for this session' });
 
-    const docsWithContent = docs.filter(d => d.file_content && d.file_content.length > 0);
-    console.log(`[parse-session] Session ${parse_session_id}: ${docsWithContent.length}/${docs.length} docs have content`);
+    console.log(`[parse-session] Session ${parse_session_id}: ${docs.length} docs — using Path A (claude-parser)`);
 
-    let parsedData = null;
-
-    // Try direct Claude API extraction
-    if (docsWithContent.length > 0) {
-      try {
-        const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docsWithContent);
-        parsedData = merged;
-
-        // Store per-document parsed data
-        for (const [docId, docParsed] of perDoc) {
-          try {
-            const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
-            const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
-            await pool.query(
-              `UPDATE deal_documents
-               SET parsed_data = $1, parsed_at = NOW(),
-                   doc_issue_date = COALESCE($2::DATE, doc_issue_date),
-                   doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
-               WHERE id = $4`,
-              [JSON.stringify(docParsed), issueDate, expiryDate, docId]
-            );
-          } catch (pdErr) {
-            console.warn(`[parse-session] Could not store parsed_data for doc ${docId}:`, pdErr.message);
-          }
-        }
-
-        if (parsedData) {
-          const fieldCount = Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length;
-          console.log(`[parse-session] Claude extracted ${fieldCount} merged fields from ${docsWithContent.length} docs`);
-        }
-      } catch (extractErr) {
-        console.error('[parse-session] Direct Claude extraction failed:', extractErr.message);
-      }
-    }
+    // Use Path A (claude-parser.js) — same quality as in-deal parsing
+    // Sends actual PDFs to Claude vision API, batches, deduplicates
+    const result = await parseDocumentsOnly(docs);
 
     // Mark all documents as parsed
     try {
@@ -302,14 +204,23 @@ router.post('/parse-session', authenticateToken, async (req, res) => {
       console.warn('[parse-session] Could not mark parsed_at:', markErr.message);
     }
 
-    res.json({
-      success: true,
-      total_documents: docs.length,
-      parsed_data: parsedData || null,
-      message: parsedData
-        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted. Review below.`
-        : `Could not extract data from documents (may be images/scans needing OCR).`
-    });
+    if (result.success && result.flatFields) {
+      const fieldCount = Object.keys(result.flatFields).filter(k => result.flatFields[k] != null && result.flatFields[k] !== '' && k !== 'confidence').length;
+      res.json({
+        success: true,
+        total_documents: docs.length,
+        parsed_data: result.flatFields,
+        full_analysis: result.analysis, // Rich data for later use when deal is created
+        message: `Parsed ${docs.length} documents using Claude. ${fieldCount} fields extracted. Review below.`
+      });
+    } else {
+      res.json({
+        success: true,
+        total_documents: docs.length,
+        parsed_data: null,
+        message: `Could not extract data from documents (${result.reason || 'unknown error'}).`
+      });
+    }
   } catch (error) {
     console.error('[parse-session] Error:', error);
     res.status(500).json({ error: 'Failed to parse session documents' });
