@@ -20,8 +20,9 @@ const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 const N8N_PARSE_WEBHOOK_URL = config.N8N_PARSE_WEBHOOK_URL || '';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  UPLOAD FILES — Filing cabinet. Save files, create/attach deal, redirect.
-//  No AI calls here. Parsing happens inside the deal via doc-panel flow.
+//  UPLOAD FILES — Filing cabinet with staging. Save files, text, notes.
+//  Create/attach deal, redirect. No AI calls here.
+//  Parsing happens inside the deal via doc-panel flow (Path A).
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
   try {
