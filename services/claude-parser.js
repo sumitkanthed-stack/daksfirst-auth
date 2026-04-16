@@ -137,14 +137,16 @@ Rules:
 
 PROPERTY RULES (CRITICAL — follow exactly):
 - parsedProperties must ONLY contain properties pledged as SECURITY/COLLATERAL for this loan
-- Do NOT include: comparable properties from valuations, registered company addresses, correspondence addresses, or any property merely referenced in passing
+- Do NOT include: comparable properties, market evidence properties, registered company addresses, correspondence addresses, or any property merely referenced or used for valuation comparison
+- If a valuation report lists "comparable evidence" or "market comparables", those are NOT security properties — ignore them entirely
 - If the same security property appears across multiple documents with different address formats (e.g. "Apartment No.82, 2 Bedroom River Front Apartment, London" vs "Apartment No.82 King Henrys Reach, Manbre Road, London"), these are the SAME property — include it ONCE using the most complete address
 - Match properties by unit/flat/apartment number + postcode — same unit number at the same postcode = same property
 - Each unique security property should appear exactly ONCE in parsedProperties
 - Each property must have its own correctly matched UK postcode
+- For market_value: use the CURRENT MARKET VALUE or OPEN MARKET VALUE from the valuation, NOT the GDV, NOT the purchase price, NOT a comparable sale price. If multiple values exist for the same property, use the professional valuation figure
 
 - Track source_document so the broker can verify which document each data point came from
-- Cross-reference data across documents: if the valuation report and broker pack both mention a property, reconcile the values
+- Cross-reference data across documents: if the valuation report and broker pack both mention a property, use the valuation report figure for market_value
 - Set confidence between 0 and 1 based on how much data you could reliably extract
 - Include anything important in notes that does not fit other fields`;
 
