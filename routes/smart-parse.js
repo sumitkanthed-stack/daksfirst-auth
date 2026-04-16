@@ -8,7 +8,6 @@ const { authenticateToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
-const { extractDealFieldsFromDocument, extractDealFieldsFromMultipleDocs } = require('../services/ai-extract');
 const { parseDocumentsOnly } = require('../services/claude-parser');
 const config = require('../config');
 
@@ -342,44 +341,36 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
       }
     }
 
-    // ── Strategy 2: Direct Claude API extraction (fallback) ──
+    // ── Strategy 2: Path A — Claude vision API (parseDocumentsOnly) ──
+    // This is the strong parser that sends actual PDF/image bytes to Claude,
+    // batches, deduplicates, and returns rich structured data.
     let extractionConflicts = {};
     if (!parsedData) {
-      console.log(`[parse-confirmed] Using direct Claude API extraction as fallback for ${docs.length} docs...`);
-      console.log(`[parse-confirmed] Docs with file_content: ${docs.filter(d => d.file_content && d.file_content.length > 0).length}/${docs.length}`);
+      const docsWithContent = docs.filter(d => d.file_content && d.file_content.length > 0);
+      console.log(`[parse-confirmed] Using Path A (claude-parser) for ${docsWithContent.length}/${docs.length} docs with content...`);
       try {
-        const { merged, perDoc, conflicts } = await extractDealFieldsFromMultipleDocs(docs);
-        console.log(`[parse-confirmed] Extraction result: merged=${merged ? Object.keys(merged).length + ' fields' : 'null'}, perDoc=${perDoc.size} docs with data, conflicts=${Object.keys(conflicts || {}).length}`);
-        parsedData = merged;
-        extractionConflicts = conflicts || {};
+        const result = await parseDocumentsOnly(docsWithContent);
+        if (result.success && result.flatFields) {
+          parsedData = result.flatFields;
+          const fieldCount = Object.keys(result.flatFields).filter(k => result.flatFields[k] != null && result.flatFields[k] !== '' && k !== 'confidence').length;
+          console.log(`[parse-confirmed] Path A extracted ${fieldCount} fields`);
 
-        // Store per-document parsed data in DB (including extracted dates)
-        for (const [docId, docParsed] of perDoc) {
-          try {
-            // Extract document dates from parsed data (check both deal-level and section-level field names)
-            const issueDate = docParsed['doc_issue_date'] || docParsed['doc-issue-date'] || null;
-            const expiryDate = docParsed['doc_expiry_date'] || docParsed['doc-expiry-date'] || null;
-            await pool.query(
-              `UPDATE deal_documents
-               SET parsed_data = $1, parsed_at = NOW(),
-                   doc_issue_date = COALESCE($2::DATE, doc_issue_date),
-                   doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
-               WHERE id = $4`,
-              [JSON.stringify(docParsed), issueDate, expiryDate, docId]
-            );
-            if (issueDate || expiryDate) {
-              console.log(`[parse-confirmed] Doc ${docId}: issue=${issueDate || 'N/A'}, expiry=${expiryDate || 'N/A'}`);
+          // Store full analysis JSON per document (for later use)
+          if (result.analysis) {
+            try {
+              await pool.query(
+                `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE deal_id = $2 AND file_content IS NOT NULL`,
+                [JSON.stringify(result.analysis), deal.id]
+              );
+            } catch (storeErr) {
+              console.warn('[parse-confirmed] Could not store analysis:', storeErr.message);
             }
-          } catch (pdErr) {
-            console.warn(`[parse-confirmed] Could not store parsed_data for doc ${docId}:`, pdErr.message);
           }
-        }
-
-        if (parsedData) {
-          console.log(`[parse-confirmed] Claude extracted ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} merged fields`);
+        } else {
+          console.warn(`[parse-confirmed] Path A returned no data: ${result.reason || 'unknown'}`);
         }
       } catch (extractErr) {
-        console.error('[parse-confirmed] Direct extraction failed:', extractErr.message);
+        console.error('[parse-confirmed] Path A extraction failed:', extractErr.message);
       }
     }
 
@@ -396,9 +387,11 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
 
     await logAudit(deal.id, 'parse_confirmed_triggered', null, 'parse_with_categories',
       { total_docs: docs.length, confirmed_docs: confirmed.length, unconfirmed_docs: unconfirmed.length,
-        extraction_method: N8N_PARSE_WEBHOOK_URL ? 'n8n' : 'claude_direct' }, req.user.userId);
+        extraction_method: N8N_PARSE_WEBHOOK_URL ? 'n8n' : 'path_a_claude_vision' }, req.user.userId);
 
-    const conflictCount = Object.keys(extractionConflicts || {}).length;
+    const fieldCount = parsedData
+      ? Object.keys(parsedData).filter(k => parsedData[k] != null && parsedData[k] !== '' && k !== 'confidence').length
+      : 0;
     res.json({
       success: true,
       total_documents: docs.length,
@@ -406,10 +399,9 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
       unconfirmed_documents: unconfirmed.length,
       parsed_data: parsedData || null,
       conflicts: extractionConflicts || {},
-      core_fields: require('../services/ai-extract').CORE_STRUCTURE_FIELDS,
       message: parsedData
-        ? `Parsed ${docs.length} documents. ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields extracted.${conflictCount > 0 ? ` ⚠ ${conflictCount} conflicting fields need your review.` : ' Review below.'}`
-        : `Documents marked as parsed but no text could be extracted (images/scans may need OCR).`
+        ? `Parsed ${docs.length} documents using Claude vision. ${fieldCount} fields extracted. Review below.`
+        : `Documents marked as parsed but Claude could not extract structured data.`
     });
   } catch (error) {
     console.error('[parse-confirmed] Error:', error);
@@ -455,37 +447,31 @@ router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
       });
     }
 
-    // Extract using direct Claude API
+    // Extract using Path A (Claude vision API) — same engine as bulk parse
     if (!doc.file_content) {
       return res.status(400).json({ error: 'Document content not available for parsing' });
     }
 
-    console.log(`[parse-document] Extracting fields from "${doc.filename}" (${doc.file_type})...`);
-    const parsedData = await extractDealFieldsFromDocument(
-      doc.file_content, doc.file_type, doc.filename, doc.doc_category
-    );
+    console.log(`[parse-document] Path A extraction for "${doc.filename}" (${doc.file_type})...`);
+    const result = await parseDocumentsOnly([doc]); // Pass single doc as array
 
-    // Store result, mark as parsed, and persist extracted dates
+    const parsedData = (result.success && result.flatFields) ? result.flatFields : null;
+    const fieldCount = parsedData
+      ? Object.keys(parsedData).filter(k => parsedData[k] != null && parsedData[k] !== '' && k !== 'confidence').length
+      : 0;
+
+    // Store result and mark as parsed
     try {
-      const issueDate = parsedData ? (parsedData['doc_issue_date'] || parsedData['doc-issue-date'] || null) : null;
-      const expiryDate = parsedData ? (parsedData['doc_expiry_date'] || parsedData['doc-expiry-date'] || null) : null;
       await pool.query(
-        `UPDATE deal_documents
-         SET parsed_data = $1, parsed_at = NOW(),
-             doc_issue_date = COALESCE($2::DATE, doc_issue_date),
-             doc_expiry_date = COALESCE($3::DATE, doc_expiry_date)
-         WHERE id = $4`,
-        [parsedData ? JSON.stringify(parsedData) : null, issueDate, expiryDate, docId]
+        `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
+        [result.analysis ? JSON.stringify(result.analysis) : null, docId]
       );
-      if (issueDate || expiryDate) {
-        console.log(`[parse-document] Doc ${docId}: issue=${issueDate || 'N/A'}, expiry=${expiryDate || 'N/A'}`);
-      }
     } catch (storeErr) {
       console.warn(`[parse-document] Could not store parsed_data:`, storeErr.message);
     }
 
     await logAudit(doc.deal_id, 'document_parsed', null, doc.filename,
-      { doc_id: docId, fields_extracted: parsedData ? Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length : 0 },
+      { doc_id: docId, fields_extracted: fieldCount, method: 'path_a_claude_vision' },
       req.user.userId);
 
     res.json({
@@ -495,8 +481,8 @@ router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
       parsed_data: parsedData || {},
       cached: false,
       message: parsedData
-        ? `Extracted ${Object.keys(parsedData).filter(k => parsedData[k] != null && k !== 'confidence').length} fields from "${doc.filename}".`
-        : `Could not extract text from "${doc.filename}" (may be an image/scan needing OCR).`
+        ? `Extracted ${fieldCount} fields from "${doc.filename}" using Claude vision.`
+        : `Could not extract data from "${doc.filename}".`
     });
   } catch (error) {
     console.error('[parse-document] Error:', error);
