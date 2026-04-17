@@ -369,6 +369,18 @@ export async function renderDealMatrix(deal) {
   const fmtPct = (v) => num(v) ? num(v).toFixed(1) : '0.0';
   const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
 
+  // Section visibility gating — brokers only see sections relevant to their deal stage
+  // DIP stage: S1 (Borrower), S3 (Property), S4 (Loan), S5 (Exit) — the basics to price a deal
+  // Post-termsheet: additionally S2 (Financials/AML), S6 (Legal/Insurance)
+  // Internal team: always sees everything
+  const dipStages = ['draft', 'received', 'assigned', 'info_gathering', 'dip_issued'];
+  const isDIPStage = dipStages.includes(currentStage);
+  const postTermsheet = !isDIPStage; // ai_termsheet, fee_pending, fee_paid, underwriting, etc.
+  const showFinancialsAML = isInternalUser || postTermsheet;    // S2
+  const showLegalInsurance = isInternalUser || postTermsheet;    // S6
+  const showCommercial = isInternalUser;                         // S7 — fees are RM/admin only
+  const showDocsIssued = isInternalUser || postTermsheet;        // S8
+
   // Stage mapping — deal_stage values from DB to matrix column index
   // info_gathering is still DIP phase (RM gathering data before DIP complete)
   const stageIndex = {
@@ -619,6 +631,7 @@ export async function renderDealMatrix(deal) {
   // SECTION 2: BORROWER FINANCIALS & AML
   // ═══════════════════════════════════════════════════════════════════
 
+  if (showFinancialsAML) {
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s2', 'F', 'Borrower Financials & AML', 'Income, assets, liabilities, and compliance', [
@@ -754,6 +767,7 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
   `;
+  } // end showFinancialsAML
 
   // ═══════════════════════════════════════════════════════════════════
   // SECTION 3: PROPERTY / SECURITY
@@ -993,7 +1007,7 @@ export async function renderDealMatrix(deal) {
   // SECTION 6: LEGAL & INSURANCE
   // ═══════════════════════════════════════════════════════════════════
 
-  const isDIPStage = currentStageIdx === 0;
+  if (showLegalInsurance) {
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06);${isDIPStage ? 'opacity:.45' : ''}">
       ${renderSectionHeader('s6', 'LG', 'Legal & Insurance', 'Security and insurance requirements', [
@@ -1040,11 +1054,13 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
   `;
+  } // end showLegalInsurance
 
   // ═══════════════════════════════════════════════════════════════════
   // SECTION 7: COMMERCIAL
   // ═══════════════════════════════════════════════════════════════════
 
+  if (showCommercial) {
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s7', 'C', 'Commercial', 'Fees and credit approval', [
@@ -1091,11 +1107,13 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
   `;
+  } // end showCommercial
 
   // ═══════════════════════════════════════════════════════════════════
   // SECTION 8: DOCUMENTS ISSUED
   // ═══════════════════════════════════════════════════════════════════
 
+  if (showDocsIssued) {
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s8', 'D', 'Documents Issued', 'Deal documentation status', [
@@ -1160,6 +1178,7 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
   `;
+  } // end showDocsIssued
   // ═══════════════════════════════════════════════════════════════════
   // DOCUMENT REPOSITORY (within Matrix — categorised view of uploaded docs)
   // ═══════════════════════════════════════════════════════════════════
