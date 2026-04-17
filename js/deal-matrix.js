@@ -466,9 +466,61 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Primary Borrower</div>
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Borrower Structure</div>
                 ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
+
+              ${(deal.borrowers && deal.borrowers.length > 0) ? `
+              <!-- ── Borrower Portfolio Table (from deal_borrowers — source of truth) ── -->
+              <div style="margin-bottom:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Borrower Schedule — ${deal.borrowers.length} ${deal.borrowers.length === 1 ? 'Party' : 'Parties'}</span>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower / Guarantor</button>` : ''}
+                  </div>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                  <thead>
+                    <tr style="background:rgba(255,255,255,0.04);">
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Company</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Email</th>
+                      <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
+                      ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${deal.borrowers.map(b => {
+                      const roleColor = b.role === 'primary' ? '#34D399' : b.role === 'guarantor' ? '#FBBF24' : b.role === 'director' ? '#818CF8' : '#94A3B8';
+                      const roleBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : b.role === 'guarantor' ? 'rgba(251,191,36,0.1)' : b.role === 'director' ? 'rgba(129,140,248,0.1)' : 'rgba(255,255,255,0.04)';
+                      const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="borrower-row-${b.id}">
+                      <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name || '-')}</td>
+                      <td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${roleBg};color:${roleColor};text-transform:capitalize;">${b.role || 'primary'}</span></td>
+                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">${sanitizeHtml(b.borrower_type || 'individual')}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;font-size:11px;">${b.company_name ? sanitizeHtml(b.company_name) + (b.company_number ? ` <span style="color:#94A3B8">(${sanitizeHtml(b.company_number)})</span>` : '') : '—'}</td>
+                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(b.email || '-')}</td>
+                      <td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:${kycColor};text-transform:capitalize;">${b.kyc_status || 'pending'}</span></td>
+                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
+                        <button onclick="window.editBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
+                        <button onclick="window.deleteBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
+                      </td>` : ''}
+                    </tr>`}).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:4px;">
+                <span style="font-size:10px;color:#6B7280;">Primary borrower flat fields (kept in sync with deal record):</span>
+              </div>
+              ` : `
+              <!-- ── No borrowers in deal_borrowers yet — show flat fields + add button ── -->
+              <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:11px;color:#94A3B8;">No borrowers added yet.</span>
+                ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
+              </div>
+              `}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
                 ${renderEditableField('borrower_name', 'Full Name', deal.borrower_name, 'text', canEdit)}
@@ -483,15 +535,21 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
-        <!-- Guarantor(s) -->
-        ${renderFieldRow('guarantors', 'Guarantor(s)', 'Co-signatory, personal guarantees',
+        <!-- Guarantor(s) — now part of borrower table above, keeping row for backward compat -->
+        ${renderFieldRow('guarantors', 'Guarantor(s) / UBOs', 'Directors, personal guarantors, joint & several',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-guarantors">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Guarantor Details</div>
-              <p style="font-size:13px;color:#94A3B8;margin:0;">Guarantor information will be captured here. Upload guarantor ID and proof of address via the Document Repository.</p>
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Guarantor & UBO Details</div>
+              ${(deal.borrowers && deal.borrowers.filter(b => b.role !== 'primary').length > 0) ? `
+              <p style="font-size:12px;color:#34D399;margin:0 0 8px;">&#10003; ${deal.borrowers.filter(b => b.role !== 'primary').length} non-primary party(ies) registered above.</p>
+              <p style="font-size:11px;color:#94A3B8;margin:0;">To add more guarantors, directors, or UBOs use the "+ Add Borrower / Guarantor" button in the Borrower Structure section above.</p>
+              ` : `
+              <p style="font-size:12px;color:#FBBF24;margin:0 0 8px;">No guarantors or UBOs added yet.</p>
+              <p style="font-size:11px;color:#94A3B8;margin:0;">Use the "+ Add Borrower / Guarantor" button in the Borrower Structure section above to add directors, personal guarantors, or UBOs who need to sign joint and several.</p>
+              `}
             </div>
           </div>
         </div>
@@ -646,7 +704,10 @@ export async function renderDealMatrix(deal) {
               <div style="margin-bottom:12px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                   <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Security Schedule — ${deal.properties.length} ${deal.properties.length === 1 ? 'Property' : 'Properties'}</span>
-                  <span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.1);padding:2px 8px;border-radius:4px;font-weight:600;">AUTO-PARSED</span>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    ${canEdit ? `<button onclick="window.addPropertyRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Property</button>` : ''}
+                    <span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.1);padding:2px 8px;border-radius:4px;font-weight:600;">AUTO-PARSED</span>
+                  </div>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
                   <thead>
@@ -657,16 +718,21 @@ export async function renderDealMatrix(deal) {
                       <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Value (£)</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Tenure</th>
+                      ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
                     </tr>
                   </thead>
                   <tbody>
-                    ${deal.properties.map((p, i) => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                    ${deal.properties.map((p, i) => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="prop-row-${p.id}">
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
                       <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.market_value ? '£' + Number(p.market_value).toLocaleString() : '—'}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
+                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
+                        <button onclick="window.editPropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
+                        <button onclick="window.deletePropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
+                      </td>` : ''}
                     </tr>`).join('')}
                   </tbody>
                 </table>
@@ -1971,6 +2037,387 @@ export async function renderDealMatrix(deal) {
   };
 
   // ═══════════════════════════════════════════════════════════════════
+  // PROPERTY CRUD — Add / Edit / Delete rows in deal_properties
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Show a modal form pre-populated with property data (null for new)
+   */
+  function _showPropertyModal(submissionId, existing) {
+    const isEdit = !!existing;
+    const title = isEdit ? 'Edit Property' : 'Add New Property';
+    const v = existing || {};
+
+    // Remove any existing modal
+    const old = document.getElementById('dkf-property-modal');
+    if (old) old.remove();
+
+    const modalHtml = `
+      <div id="dkf-property-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#1E293B;border:1px solid rgba(212,168,83,0.3);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:85vh;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <span style="font-size:16px;font-weight:700;color:#F1F5F9;">${title}</span>
+            <button onclick="document.getElementById('dkf-property-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Address *</label>
+              <input id="pm-address" value="${_escAttr(v.address || '')}" placeholder="Full property address" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Postcode</label>
+              <input id="pm-postcode" value="${_escAttr(v.postcode || '')}" placeholder="e.g. SW1A 1AA" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Market Value (£)</label>
+              <input id="pm-market_value" type="number" value="${v.market_value || ''}" placeholder="e.g. 500000" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Purchase Price (£)</label>
+              <input id="pm-purchase_price" type="number" value="${v.purchase_price || ''}" placeholder="e.g. 450000" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Property Type</label>
+              <select id="pm-property_type" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                <option value="">— Select —</option>
+                <option value="residential" ${v.property_type === 'residential' ? 'selected' : ''}>Residential</option>
+                <option value="commercial" ${v.property_type === 'commercial' ? 'selected' : ''}>Commercial</option>
+                <option value="mixed_use" ${v.property_type === 'mixed_use' ? 'selected' : ''}>Mixed Use</option>
+                <option value="land" ${v.property_type === 'land' ? 'selected' : ''}>Land</option>
+                <option value="hmo" ${v.property_type === 'hmo' ? 'selected' : ''}>HMO</option>
+                <option value="semi_commercial" ${v.property_type === 'semi_commercial' ? 'selected' : ''}>Semi-Commercial</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Tenure</label>
+              <select id="pm-tenure" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                <option value="">— Select —</option>
+                <option value="freehold" ${v.tenure === 'freehold' ? 'selected' : ''}>Freehold</option>
+                <option value="leasehold" ${v.tenure === 'leasehold' ? 'selected' : ''}>Leasehold</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Occupancy</label>
+              <select id="pm-occupancy" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                <option value="">— Select —</option>
+                <option value="vacant" ${v.occupancy === 'vacant' ? 'selected' : ''}>Vacant</option>
+                <option value="owner_occupied" ${v.occupancy === 'owner_occupied' ? 'selected' : ''}>Owner Occupied</option>
+                <option value="tenanted" ${v.occupancy === 'tenanted' ? 'selected' : ''}>Tenanted</option>
+                <option value="part_tenanted" ${v.occupancy === 'part_tenanted' ? 'selected' : ''}>Part Tenanted</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Current Use</label>
+              <input id="pm-current_use" value="${_escAttr(v.current_use || '')}" placeholder="e.g. BTL, office" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Title Number</label>
+              <input id="pm-title_number" value="${_escAttr(v.title_number || '')}" placeholder="e.g. NGL123456" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Notes</label>
+              <textarea id="pm-notes" rows="2" placeholder="Any notes about this property..." style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;resize:vertical;box-sizing:border-box;">${_escAttr(v.notes || '')}</textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+            <button onclick="document.getElementById('dkf-property-modal').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#94A3B8;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="pm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : 'Add Property'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Wire up save button
+    document.getElementById('pm-save-btn').addEventListener('click', async () => {
+      const payload = {
+        address: document.getElementById('pm-address').value.trim(),
+        postcode: document.getElementById('pm-postcode').value.trim() || null,
+        market_value: parseFloat(document.getElementById('pm-market_value').value) || null,
+        purchase_price: parseFloat(document.getElementById('pm-purchase_price').value) || null,
+        property_type: document.getElementById('pm-property_type').value || null,
+        tenure: document.getElementById('pm-tenure').value || null,
+        occupancy: document.getElementById('pm-occupancy').value || null,
+        current_use: document.getElementById('pm-current_use').value.trim() || null,
+        title_number: document.getElementById('pm-title_number').value.trim() || null,
+        notes: document.getElementById('pm-notes').value.trim() || null
+      };
+
+      if (!payload.address) {
+        showToast('Property address is required', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('pm-save-btn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const url = isEdit
+          ? `${API_BASE}/api/deals/${submissionId}/properties/${existing.id}`
+          : `${API_BASE}/api/deals/${submissionId}/properties`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const resp = await fetchWithAuth(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (data.success) {
+          document.getElementById('dkf-property-modal').remove();
+          showToast(isEdit ? 'Property updated' : 'Property added', 'success');
+          setTimeout(() => window.location.reload(), 800);
+        } else {
+          showToast(data.error || 'Failed to save property', 'error');
+          btn.disabled = false;
+          btn.textContent = isEdit ? 'Save Changes' : 'Add Property';
+        }
+      } catch (err) {
+        console.error('[property-save]', err);
+        showToast('Failed to save: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = isEdit ? 'Save Changes' : 'Add Property';
+      }
+    });
+  }
+
+  /** Escape HTML attribute values */
+  function _escAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
+  }
+
+  /** Add a new property to this deal */
+  window.addPropertyRow = function(submissionId) {
+    _showPropertyModal(submissionId, null);
+  };
+
+  /** Edit an existing property — fetch current data then show modal */
+  window.editPropertyRow = function(propertyId, submissionId) {
+    // Find the property in deal.properties array
+    const prop = deal.properties ? deal.properties.find(p => p.id === propertyId) : null;
+    if (prop) {
+      _showPropertyModal(submissionId, prop);
+    } else {
+      // Fallback: fetch from API
+      fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties`)
+        .then(r => r.json())
+        .then(data => {
+          const found = data.properties ? data.properties.find(p => p.id === propertyId) : null;
+          if (found) {
+            _showPropertyModal(submissionId, found);
+          } else {
+            showToast('Property not found', 'error');
+          }
+        })
+        .catch(err => showToast('Failed to load property: ' + err.message, 'error'));
+    }
+  };
+
+  /** Delete a property after confirmation */
+  window.deletePropertyRow = function(propertyId, submissionId) {
+    const prop = deal.properties ? deal.properties.find(p => p.id === propertyId) : null;
+    const label = prop ? (prop.address || `Property #${propertyId}`) : `Property #${propertyId}`;
+
+    if (!confirm(`Delete "${label}"?\n\nThis cannot be undone.`)) return;
+
+    fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showToast('Property deleted', 'success');
+          // Remove the row from DOM immediately for instant feedback
+          const row = document.getElementById(`prop-row-${propertyId}`);
+          if (row) row.remove();
+          // Reload after short delay to refresh totals and completeness
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showToast(data.error || 'Failed to delete property', 'error');
+        }
+      })
+      .catch(err => showToast('Failed to delete: ' + err.message, 'error'));
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // BORROWER CRUD — Add / Edit / Delete in deal_borrowers
+  // ═══════════════════════════════════════════════════════════════════
+
+  function _showBorrowerModal(submissionId, existing) {
+    const isEdit = !!existing;
+    const title = isEdit ? 'Edit Borrower / Guarantor' : 'Add Borrower / Guarantor';
+    const v = existing || {};
+
+    const old = document.getElementById('dkf-borrower-modal');
+    if (old) old.remove();
+
+    const roleOpts = ['primary', 'joint', 'guarantor', 'director'].map(r =>
+      `<option value="${r}" ${v.role === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+    ).join('');
+
+    const typeOpts = ['individual', 'corporate', 'spv', 'llp', 'trust', 'partnership'].map(t =>
+      `<option value="${t}" ${v.borrower_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+    ).join('');
+
+    const modalHtml = `
+      <div id="dkf-borrower-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#1E293B;border:1px solid rgba(212,168,83,0.3);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:85vh;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <span style="font-size:16px;font-weight:700;color:#F1F5F9;">${title}</span>
+            <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Role *</label>
+              <select id="bm-role" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                ${roleOpts}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Type *</label>
+              <select id="bm-borrower_type" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                ${typeOpts}
+              </select>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Full Name *</label>
+              <input id="bm-full_name" value="${_escAttr(v.full_name || '')}" placeholder="Full legal name" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Email</label>
+              <input id="bm-email" type="email" value="${_escAttr(v.email || '')}" placeholder="email@example.com" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Phone</label>
+              <input id="bm-phone" type="tel" value="${_escAttr(v.phone || '')}" placeholder="+44..." style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Date of Birth</label>
+              <input id="bm-dob" type="date" value="${v.date_of_birth ? String(v.date_of_birth).substring(0,10) : ''}" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Nationality</label>
+              <input id="bm-nationality" value="${_escAttr(v.nationality || '')}" placeholder="e.g. British" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Name</label>
+              <input id="bm-company_name" value="${_escAttr(v.company_name || '')}" placeholder="If corporate borrower" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Number</label>
+              <input id="bm-company_number" value="${_escAttr(v.company_number || '')}" placeholder="e.g. 12345678" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Address</label>
+              <input id="bm-address" value="${_escAttr(v.address || '')}" placeholder="Full residential or registered address" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+            <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#94A3B8;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="bm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : 'Add Borrower'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    document.getElementById('bm-save-btn').addEventListener('click', async () => {
+      const payload = {
+        role: document.getElementById('bm-role').value,
+        borrower_type: document.getElementById('bm-borrower_type').value,
+        full_name: document.getElementById('bm-full_name').value.trim(),
+        email: document.getElementById('bm-email').value.trim() || null,
+        phone: document.getElementById('bm-phone').value.trim() || null,
+        date_of_birth: document.getElementById('bm-dob').value || null,
+        nationality: document.getElementById('bm-nationality').value.trim() || null,
+        company_name: document.getElementById('bm-company_name').value.trim() || null,
+        company_number: document.getElementById('bm-company_number').value.trim() || null,
+        address: document.getElementById('bm-address').value.trim() || null
+      };
+
+      if (!payload.full_name) {
+        showToast('Full name is required', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('bm-save-btn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const url = isEdit
+          ? `${API_BASE}/api/deals/${submissionId}/borrowers/${existing.id}`
+          : `${API_BASE}/api/deals/${submissionId}/borrowers`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const resp = await fetchWithAuth(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (data.success) {
+          document.getElementById('dkf-borrower-modal').remove();
+          showToast(isEdit ? 'Borrower updated' : 'Borrower added', 'success');
+          setTimeout(() => window.location.reload(), 800);
+        } else {
+          showToast(data.error || 'Failed to save borrower', 'error');
+          btn.disabled = false;
+          btn.textContent = isEdit ? 'Save Changes' : 'Add Borrower';
+        }
+      } catch (err) {
+        console.error('[borrower-save]', err);
+        showToast('Failed to save: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = isEdit ? 'Save Changes' : 'Add Borrower';
+      }
+    });
+  }
+
+  window.addBorrowerRow = function(submissionId) {
+    _showBorrowerModal(submissionId, null);
+  };
+
+  window.editBorrowerRow = function(borrowerId, submissionId) {
+    const bor = deal.borrowers ? deal.borrowers.find(b => b.id === borrowerId) : null;
+    if (bor) {
+      _showBorrowerModal(submissionId, bor);
+    } else {
+      fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers`)
+        .then(r => r.json())
+        .then(data => {
+          const found = data.borrowers ? data.borrowers.find(b => b.id === borrowerId) : null;
+          if (found) {
+            _showBorrowerModal(submissionId, found);
+          } else {
+            showToast('Borrower not found', 'error');
+          }
+        })
+        .catch(err => showToast('Failed to load borrower: ' + err.message, 'error'));
+    }
+  };
+
+  window.deleteBorrowerRow = function(borrowerId, submissionId) {
+    const bor = deal.borrowers ? deal.borrowers.find(b => b.id === borrowerId) : null;
+    const label = bor ? (bor.full_name || `Borrower #${borrowerId}`) : `Borrower #${borrowerId}`;
+
+    if (!confirm(`Remove "${label}" from this deal?\n\nThis cannot be undone.`)) return;
+
+    fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showToast('Borrower removed', 'success');
+          const row = document.getElementById(`borrower-row-${borrowerId}`);
+          if (row) row.remove();
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showToast(data.error || 'Failed to remove borrower', 'error');
+        }
+      })
+      .catch(err => showToast('Failed to remove: ' + err.message, 'error'));
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
   // ACCEPT PARSED FIELD(S) → push to Matrix inputs + save to DB
   // ═══════════════════════════════════════════════════════════════════
   function pushFieldToMatrix(key, val) {
@@ -2655,8 +3102,55 @@ export async function renderDealMatrix(deal) {
    * Check if a Matrix field has a value
    */
   function fieldHasValue(key) {
+    // First check the HTML input element
     const el = document.getElementById(`mf-${key}`);
-    return el && el.value && el.value.trim() !== '' && el.value.trim() !== '— Select —';
+    if (el && el.value && el.value.trim() !== '' && el.value.trim() !== '— Select —') return true;
+
+    // If deal has portfolio properties, map deal_properties columns → STAGE_VALIDATION field keys
+    // (these fields live in deal_properties table, not flat deal_submissions inputs)
+    if (deal.properties && deal.properties.length > 0) {
+      const propFieldMap = {
+        'security_address': p => p.address,
+        'security_postcode': p => p.postcode,
+        'current_value': p => p.market_value,
+        'purchase_price': p => p.purchase_price,
+        'asset_type': p => p.property_type,
+        'property_tenure': p => p.tenure,
+        'occupancy_status': p => p.occupancy,
+        'current_use': p => p.current_use
+      };
+      if (propFieldMap[key]) {
+        // Check first property (for single security) or any property (for portfolio)
+        const anyHasValue = deal.properties.some(p => {
+          const val = propFieldMap[key](p);
+          return val !== null && val !== undefined && String(val).trim() !== '';
+        });
+        if (anyHasValue) return true;
+      }
+    }
+
+    // If deal has borrowers in deal_borrowers, map to flat borrower field keys
+    if (deal.borrowers && deal.borrowers.length > 0) {
+      const primary = deal.borrowers.find(b => b.role === 'primary') || deal.borrowers[0];
+      const borrowerFieldMap = {
+        'borrower_name': primary.full_name,
+        'borrower_type': primary.borrower_type,
+        'borrower_email': primary.email,
+        'borrower_phone': primary.phone,
+        'borrower_dob': primary.date_of_birth,
+        'borrower_nationality': primary.nationality,
+        'company_name': primary.company_name,
+        'company_number': primary.company_number
+      };
+      if (borrowerFieldMap[key] !== undefined && borrowerFieldMap[key] !== null && String(borrowerFieldMap[key]).trim() !== '') {
+        return true;
+      }
+    }
+
+    // Also check the raw deal object for fields that may not have an input element
+    if (deal[key] !== null && deal[key] !== undefined && String(deal[key]).trim() !== '') return true;
+
+    return false;
   }
 
   /**
@@ -2722,13 +3216,9 @@ export async function renderDealMatrix(deal) {
       result.sections[name] = section;
     }
 
-    // Overall completeness (includes nice-to-have fields)
-    let allFilled = 0;
-    for (const key of KEY_FIELDS) {
-      if (fieldHasValue(key)) allFilled++;
-    }
-    result.pct = Math.round((allFilled / KEY_FIELDS.length) * 100);
-    result.requiredPct = result.totalRequired > 0 ? Math.round((result.totalFilled / result.totalRequired) * 100) : 0;
+    // Overall completeness — based on current tier's required fields only (smart, not inflated)
+    result.pct = result.totalRequired > 0 ? Math.round((result.totalFilled / result.totalRequired) * 100) : 0;
+    result.requiredPct = result.pct; // Same thing now — both based on required fields for current tier
 
     return result;
   }

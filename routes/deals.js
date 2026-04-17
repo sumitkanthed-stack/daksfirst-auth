@@ -201,6 +201,15 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     );
     deal.properties = propsResult.rows;
 
+    // Include borrowers from deal_borrowers table
+    const borrowersResult = await pool.query(
+      `SELECT id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
+              borrower_type, company_name, company_number, kyc_status
+       FROM deal_borrowers WHERE deal_id = $1 ORDER BY role = 'primary' DESC, id`,
+      [deal.id]
+    );
+    deal.borrowers = borrowersResult.rows;
+
     // Include portfolio summary
     if (propsResult.rows.length > 0) {
       const totalValue = propsResult.rows.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0);

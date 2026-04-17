@@ -3,8 +3,20 @@ const router = express.Router();
 
 const pool = require('../db/pool');
 const { authenticateToken, authenticateInternal } = require('../middleware/auth');
+const config = require('../config');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
+
+// Helper: check if user owns the deal or is internal staff
+async function canEditDeal(req, submissionId) {
+  const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
+  if (isInternal) return true;
+  const result = await pool.query(
+    `SELECT 1 FROM deal_submissions WHERE submission_id = $1 AND user_id = $2 LIMIT 1`,
+    [submissionId, req.user.userId]
+  );
+  return result.rows.length > 0;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE BORROWER
@@ -56,8 +68,12 @@ router.get('/:submissionId/borrowers', authenticateToken, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 //  UPDATE BORROWER
 // ═══════════════════════════════════════════════════════════════════════════
-router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, authenticateInternal, async (req, res) => {
+router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req, res) => {
   try {
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to edit this borrower' });
+    }
+
     const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data } = req.body;
 
     const result = await pool.query(
@@ -85,8 +101,12 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, authentica
 // ═══════════════════════════════════════════════════════════════════════════
 //  DELETE BORROWER
 // ═══════════════════════════════════════════════════════════════════════════
-router.delete('/:submissionId/borrowers/:borrowerId', authenticateToken, authenticateInternal, async (req, res) => {
+router.delete('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req, res) => {
   try {
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to remove this borrower' });
+    }
+
     const result = await pool.query(`DELETE FROM deal_borrowers WHERE id = $1 RETURNING full_name`, [req.params.borrowerId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Borrower not found' });
     res.json({ success: true, message: `Borrower ${result.rows[0].full_name} removed` });

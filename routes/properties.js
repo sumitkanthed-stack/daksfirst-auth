@@ -3,8 +3,21 @@ const router = express.Router();
 
 const pool = require('../db/pool');
 const { authenticateToken, authenticateInternal } = require('../middleware/auth');
+const config = require('../config');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
+
+// Helper: check if user owns the deal or is internal staff
+async function canEditDeal(req, submissionId) {
+  const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
+  if (isInternal) return true;
+  // Broker: check they own this deal
+  const result = await pool.query(
+    `SELECT 1 FROM deal_submissions WHERE submission_id = $1 AND user_id = $2 LIMIT 1`,
+    [submissionId, req.user.userId]
+  );
+  return result.rows.length > 0;
+}
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE PROPERTY (with day1_ltv calculation)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -71,8 +84,13 @@ router.get('/:submissionId/properties', authenticateToken, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 //  UPDATE PROPERTY
 // ═══════════════════════════════════════════════════════════════════════════
-router.put('/:submissionId/properties/:propertyId', authenticateToken, authenticateInternal, async (req, res) => {
+router.put('/:submissionId/properties/:propertyId', authenticateToken, async (req, res) => {
   try {
+    // Allow internal staff OR deal owner
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to edit this property' });
+    }
+
     const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
             gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes } = req.body;
 
@@ -102,8 +120,13 @@ router.put('/:submissionId/properties/:propertyId', authenticateToken, authentic
 // ═══════════════════════════════════════════════════════════════════════════
 //  DELETE PROPERTY
 // ═══════════════════════════════════════════════════════════════════════════
-router.delete('/:submissionId/properties/:propertyId', authenticateToken, authenticateInternal, async (req, res) => {
+router.delete('/:submissionId/properties/:propertyId', authenticateToken, async (req, res) => {
   try {
+    // Allow internal staff OR deal owner
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to delete this property' });
+    }
+
     const result = await pool.query(`DELETE FROM deal_properties WHERE id = $1 RETURNING address`, [req.params.propertyId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
     res.json({ success: true, message: `Property removed` });
