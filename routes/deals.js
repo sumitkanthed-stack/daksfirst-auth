@@ -1676,7 +1676,72 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
     await logAudit(updatedDealId, 'matrix_fields_updated', null, null,
       { fields_updated: Object.keys(updates).filter(k => allowedFields.includes(k)), updated_by: userId, role }, userId);
 
-    // Properties are parsed by Claude via n8n — no regex re-sync here
+    // ── Sync borrower fields to deal_borrowers table ──
+    // The matrix saves to flat deal_submissions fields, but the Borrower Structure
+    // section reads from deal_borrowers. Keep them in sync.
+    const borrowerFieldMap = {
+      borrower_name: 'full_name', borrower_type: 'borrower_type',
+      borrower_email: 'email', borrower_phone: 'phone',
+      borrower_dob: 'date_of_birth', borrower_nationality: 'nationality',
+      borrower_jurisdiction: 'jurisdiction',
+      company_name: 'company_name', company_number: 'company_number'
+    };
+    const borrowerUpdates = Object.keys(updates).filter(k => borrowerFieldMap[k] && allowedFields.includes(k));
+
+    if (borrowerUpdates.length > 0) {
+      try {
+        // Check if a primary borrower record exists
+        const existingBorrower = await pool.query(
+          `SELECT id FROM deal_borrowers WHERE deal_id = $1 AND role = 'primary' LIMIT 1`,
+          [updatedDealId]
+        );
+
+        if (existingBorrower.rows.length > 0) {
+          // Update existing primary borrower
+          const bSetClauses = [];
+          const bValues = [];
+          let bIdx = 1;
+          for (const flatKey of borrowerUpdates) {
+            const dbCol = borrowerFieldMap[flatKey];
+            bSetClauses.push(`${dbCol} = $${bIdx}`);
+            bValues.push(updates[flatKey] === '' ? null : updates[flatKey]);
+            bIdx++;
+          }
+          bValues.push(existingBorrower.rows[0].id);
+          await pool.query(
+            `UPDATE deal_borrowers SET ${bSetClauses.join(', ')}, updated_at = NOW() WHERE id = $${bIdx}`,
+            bValues
+          );
+        } else {
+          // Create a new primary borrower from the flat fields
+          // Fetch all current borrower fields from the deal to populate fully
+          const dealFull = await pool.query(
+            `SELECT borrower_name, borrower_type, borrower_email, borrower_phone,
+                    borrower_dob, borrower_nationality, borrower_jurisdiction,
+                    company_name, company_number
+             FROM deal_submissions WHERE id = $1`, [updatedDealId]
+          );
+          if (dealFull.rows.length > 0) {
+            const d = dealFull.rows[0];
+            // Only create if there's at least a name
+            if (d.borrower_name) {
+              await pool.query(
+                `INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, email, phone, date_of_birth, nationality, jurisdiction, company_name, company_number)
+                 VALUES ($1, 'primary', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [updatedDealId, d.borrower_name, d.borrower_type || null,
+                 d.borrower_email || null, d.borrower_phone || null,
+                 d.borrower_dob || null, d.borrower_nationality || null,
+                 d.borrower_jurisdiction || null, d.company_name || null, d.company_number || null]
+              );
+              console.log('[matrix-fields] Created primary borrower record from flat fields');
+            }
+          }
+        }
+      } catch (borrowerSyncErr) {
+        console.warn('[matrix-fields] Borrower sync note:', borrowerSyncErr.message.substring(0, 80));
+      }
+    }
+
     console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', setClauses.length - 1, 'fields');
     res.json({ success: true, fields_updated: setClauses.length - 1 });
   } catch (error) {
