@@ -925,6 +925,36 @@ export async function renderDealMatrix(deal) {
                 ])}
                 ${renderEditableField('drawdown_date', 'Target Drawdown', deal.drawdown_date, 'date', canEdit)}
               </div>
+              ${(() => {
+                // Max loan = lower of 75% valuation or 90% purchase price
+                const valuation = num(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value);
+                const purchasePrice = num(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price);
+                const loanAmt = num(deal.loan_amount);
+                const maxOnVal = valuation ? Math.floor(valuation * 0.75) : 0;
+                const maxOnPP = purchasePrice ? Math.floor(purchasePrice * 0.90) : 0;
+                const limits = [maxOnVal, maxOnPP].filter(v => v > 0);
+                const maxLoan = limits.length > 0 ? Math.min(...limits) : 0;
+                const binding = maxLoan === maxOnVal ? '75% of valuation' : '90% of purchase price';
+                const overLimit = loanAmt > 0 && maxLoan > 0 && loanAmt > maxLoan;
+                const actualLtv = valuation > 0 && loanAmt > 0 ? ((loanAmt / valuation) * 100).toFixed(1) : null;
+
+                if (!maxLoan) return '<div style="font-size:10px;color:#64748B;margin-top:4px;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">Max loan will calculate once valuation and/or purchase price are entered.</div>';
+
+                return '<div id="loan-limit-indicator" style="margin-top:6px;padding:8px 12px;border-radius:8px;font-size:11px;'
+                  + (overLimit ? 'background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);' : 'background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);')
+                  + '">'
+                  + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                  + '<span style="color:#94A3B8;">Max Allowable Loan:</span>'
+                  + '<span style="font-weight:700;color:' + (overLimit ? '#F87171' : '#34D399') + ';">£' + maxLoan.toLocaleString() + '</span>'
+                  + '</div>'
+                  + '<div style="font-size:9px;color:#64748B;margin-top:3px;">Based on ' + binding
+                  + (maxOnVal ? ' · Val: £' + valuation.toLocaleString() + ' × 75% = £' + maxOnVal.toLocaleString() : '')
+                  + (maxOnPP ? ' · PP: £' + purchasePrice.toLocaleString() + ' × 90% = £' + maxOnPP.toLocaleString() : '')
+                  + '</div>'
+                  + (actualLtv ? '<div style="font-size:9px;color:#64748B;margin-top:2px;">Actual Day-1 LTV: ' + actualLtv + '%</div>' : '')
+                  + (overLimit ? '<div style="font-size:10px;font-weight:600;color:#F87171;margin-top:4px;">⚠ Requested loan exceeds maximum by £' + (loanAmt - maxLoan).toLocaleString() + '</div>' : '')
+                  + '</div>';
+              })()}
             </div>
           </div>
         </div>
