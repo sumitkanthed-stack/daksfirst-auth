@@ -1353,6 +1353,7 @@ export async function renderDealMatrix(deal) {
     // Open incomplete sections and scroll to first one
     let firstIncomplete = null;
     const opened = new Set();
+    const allMissing = [];
     for (const [name, sec] of Object.entries(readiness.sections)) {
       if (sec.status !== 'ready') {
         const sId = sectionMap[name];
@@ -1361,6 +1362,7 @@ export async function renderDealMatrix(deal) {
           window.matrixToggleSection(sId);
           if (!firstIncomplete) firstIncomplete = sId;
         }
+        if (sec.missing) allMissing.push(...sec.missing);
       }
     }
     // Scroll to first incomplete section
@@ -1368,10 +1370,33 @@ export async function renderDealMatrix(deal) {
       const header = document.querySelector(`[data-section-header="${firstIncomplete}"]`);
       if (header) header.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+    // Highlight all missing fields with red border
+    if (allMissing.length > 0) {
+      setTimeout(() => {
+        document.querySelectorAll('.matrix-field-highlight').forEach(el => {
+          el.classList.remove('matrix-field-highlight');
+          el.style.removeProperty('border-color');
+          el.style.removeProperty('box-shadow');
+        });
+        allMissing.forEach(fieldName => {
+          const input = document.querySelector(`[data-field="${fieldName}"]`);
+          if (input) {
+            input.classList.add('matrix-field-highlight');
+            input.style.borderColor = '#F87171';
+            input.style.boxShadow = '0 0 0 2px rgba(248,113,113,0.35)';
+            setTimeout(() => {
+              input.classList.remove('matrix-field-highlight');
+              input.style.removeProperty('border-color');
+              input.style.removeProperty('box-shadow');
+            }, 4000);
+          }
+        });
+      }, 350);
+    }
   };
 
   // ── Scroll to a DIP section from the readiness checklist ──
-  window.matrixScrollToSection = function(sectionId) {
+  window.matrixScrollToSection = function(sectionId, missingFields) {
     const header = document.querySelector(`[data-section-header="${sectionId}"]`);
     const content = document.getElementById(`content-${sectionId}`);
     if (header) {
@@ -1381,9 +1406,46 @@ export async function renderDealMatrix(deal) {
       }
       // Smooth scroll to section header
       header.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      // Brief highlight flash
+      // Brief highlight flash on header
       header.style.background = 'rgba(212,168,83,0.15)';
       setTimeout(() => { header.style.background = ''; }, 1500);
+
+      // Highlight missing fields with red border pulse
+      if (missingFields && missingFields.length > 0) {
+        // Small delay so section has time to expand
+        setTimeout(() => {
+          // Clear any previous highlights
+          document.querySelectorAll('.matrix-field-highlight').forEach(el => {
+            el.classList.remove('matrix-field-highlight');
+            el.style.removeProperty('border-color');
+            el.style.removeProperty('box-shadow');
+          });
+
+          let firstField = null;
+          missingFields.forEach(fieldName => {
+            const input = document.querySelector(`[data-field="${fieldName}"]`);
+            if (input) {
+              if (!firstField) firstField = input;
+              input.classList.add('matrix-field-highlight');
+              input.style.borderColor = '#F87171';
+              input.style.boxShadow = '0 0 0 2px rgba(248,113,113,0.35)';
+              // Auto-clear after 4 seconds
+              setTimeout(() => {
+                input.classList.remove('matrix-field-highlight');
+                input.style.removeProperty('border-color');
+                input.style.removeProperty('box-shadow');
+              }, 4000);
+            }
+          });
+          // Scroll to first missing field for precision
+          if (firstField) {
+            setTimeout(() => {
+              firstField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              firstField.focus();
+            }, 200);
+          }
+        }, 350);
+      }
     }
   };
 
@@ -3595,7 +3657,10 @@ export async function renderDealMatrix(deal) {
         const scrollTarget = SECTION_SCROLL_MAP[name] || '';
         const clickable = sec.status !== 'ready' && scrollTarget;
         const cursorStyle = clickable ? 'cursor:pointer;' : '';
-        const clickHandler = clickable ? `onclick="window.matrixScrollToSection('${scrollTarget}')"` : '';
+        const missingFieldsJson = clickable && sec.missing.length > 0
+          ? JSON.stringify(sec.missing).replace(/"/g, '&quot;')
+          : '[]';
+        const clickHandler = clickable ? `onclick="window.matrixScrollToSection('${scrollTarget}', ${sec.missing.length > 0 ? 'JSON.parse(this.getAttribute(&quot;data-missing&quot;))' : 'null'})" data-missing="${missingFieldsJson}"` : '';
         const hoverTitle = clickable ? `title="Click to go to ${name} section"` : '';
         checkHtml += `
           <div ${clickHandler} ${hoverTitle} style="display:flex;align-items:flex-start;gap:8px;padding:5px 10px;border-radius:6px;background:${bg};margin-bottom:3px;${cursorStyle}transition:opacity .15s;" ${clickable ? 'onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1"' : ''}>
