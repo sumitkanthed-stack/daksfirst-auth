@@ -64,7 +64,7 @@ export async function showDealDetail(dealId) {
     const stage = deal.deal_stage || 'received';
     const stageEl = document.getElementById('detail-stage-badge');
     const stageLabels = {
-      received: 'Received', assigned: isInternal ? 'Assigned' : 'Received', dip_issued: 'DIP Issued',
+      draft: 'Draft', received: 'Received', assigned: isInternal ? 'Assigned' : 'Received', dip_issued: 'DIP Issued',
       info_gathering: isInternal ? 'Info Gathering' : 'DIP Requested', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
@@ -73,6 +73,54 @@ export async function showDealDetail(dealId) {
     };
     stageEl.textContent = stageLabels[stage] || sanitizeHtml(stage);
     stageEl.className = `stage-badge stage-${stage}`;
+
+    // Show draft action bar for draft deals (broker can submit or delete)
+    const isDraft = stage === 'draft';
+    const draftBar = document.getElementById('draft-action-bar');
+    if (draftBar) draftBar.remove(); // clean up previous
+    if (isDraft && !isInternal) {
+      const bar = document.createElement('div');
+      bar.id = 'draft-action-bar';
+      bar.style.cssText = 'background:rgba(251,191,36,0.08);border:1px dashed rgba(251,191,36,0.4);border-radius:10px;padding:14px 20px;margin:0 0 16px;display:flex;align-items:center;justify-content:space-between;';
+      bar.innerHTML = `
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#FBB724;">This deal is a draft</div>
+          <div style="font-size:12px;color:#94A3B8;margin-top:2px;">Add your documents and data, then submit when ready.</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="draft-delete-btn" style="padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid rgba(248,113,113,0.4);background:rgba(248,113,113,0.1);color:#F87171;cursor:pointer;">Delete Draft</button>
+          <button id="draft-submit-btn" style="padding:8px 20px;border-radius:8px;font-size:13px;font-weight:700;border:none;background:#D4A853;color:#0B1120;cursor:pointer;">Submit Deal →</button>
+        </div>
+      `;
+      // Insert at top of detail content
+      // Insert after the snapshot header, before the deal sections
+      const matrixSection = document.getElementById('section-matrix');
+      if (matrixSection) {
+        matrixSection.parentNode.insertBefore(bar, matrixSection);
+      }
+
+      bar.querySelector('#draft-submit-btn').onclick = () => window._submitDraftDeal(deal.submission_id, bar.querySelector('#draft-submit-btn'));
+      bar.querySelector('#draft-delete-btn').onclick = async () => {
+        if (!confirm('Delete this draft deal permanently? This cannot be undone.')) return;
+        const btn = bar.querySelector('#draft-delete-btn');
+        btn.disabled = true; btn.textContent = 'Deleting...';
+        try {
+          const resp = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}`, { method: 'DELETE' });
+          const data = await resp.json();
+          if (resp.ok) {
+            showToast('Draft deal deleted');
+            const { showDashboard } = await import('./deals.js');
+            showDashboard();
+          } else {
+            showToast(data.error || 'Failed to delete', true);
+            btn.disabled = false; btn.textContent = 'Delete Draft';
+          }
+        } catch (err) {
+          console.error('[draft-delete]', err);
+          btn.disabled = false; btn.textContent = 'Delete Draft';
+        }
+      };
+    }
 
     // ── Helper: make a field editable for internal users or read-only for external ──
     const canEdit = isInternal; // RM, admin, credit, compliance can edit intake fields
@@ -316,7 +364,7 @@ export function renderInternalWorkflowControls(deal) {
 
   const stage = deal.deal_stage || 'received';
   const stageLabels = {
-    received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+    draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
     info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
     fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
     bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
@@ -1810,7 +1858,7 @@ export function renderInternalWorkflowControls(deal) {
   // ── Audit Trail (enriched with stage transitions, elapsed time) ──
   if (deal.audit && deal.audit.length > 0) {
     const auditStageLabels = {
-      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+      draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
       info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',

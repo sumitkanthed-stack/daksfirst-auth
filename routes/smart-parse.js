@@ -89,10 +89,10 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       submissionId = d.submission_id;
       console.log(`[smart-parse] Attaching ${req.files.length} files to existing deal ${submissionId}`);
     } else {
-      // NEW DEAL — create a blank deal_submissions record
+      // NEW DEAL — create a blank deal in DRAFT stage (broker can edit before submitting)
       const newDeal = await pool.query(
-        `INSERT INTO deal_submissions (user_id, source, internal_status)
-         VALUES ($1, 'smart_parse', 'new')
+        `INSERT INTO deal_submissions (user_id, source, internal_status, deal_stage)
+         VALUES ($1, 'smart_parse', 'new', 'draft')
          RETURNING id, submission_id`,
         [req.user.userId]
       );
@@ -100,20 +100,8 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       submissionId = newDeal.rows[0].submission_id;
       console.log(`[smart-parse] Created new blank deal ${submissionId} for ${req.files.length} files`);
 
-      // Auto-assign RM from broker's default_rm if applicable
-      if (req.user.role === 'broker') {
-        try {
-          const brokerOnb = await pool.query('SELECT default_rm FROM broker_onboarding WHERE user_id = $1', [req.user.userId]);
-          if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
-            await pool.query(
-              `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = 'assigned' WHERE id = $2`,
-              [brokerOnb.rows[0].default_rm, dealIntId]
-            );
-          }
-        } catch (rmErr) {
-          console.warn('[smart-parse] RM auto-assign failed:', rmErr.message);
-        }
-      }
+      // Note: RM auto-assignment happens when broker submits the draft (moves to 'received'),
+      // not at filing cabinet stage. Deal stays in 'draft' until broker explicitly submits.
     }
 
     // ── Save WhatsApp text and notes to the deal ───────────────────────
@@ -777,7 +765,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
 
       res.json({ success: true, message: 'Deal updated with parsed data', submission_id: deal_id });
     } else {
-      // CREATE new deal from parsed data
+      // CREATE new deal from parsed data — starts as DRAFT
       const result = await pool.query(`
         INSERT INTO deal_submissions (
           user_id, borrower_name, borrower_company, borrower_email, borrower_phone,
@@ -788,8 +776,8 @@ router.post('/confirm', authenticateToken, async (req, res) => {
           borrower_nationality, borrower_type, company_name, company_number,
           interest_servicing, existing_charges, property_tenure, occupancy_status,
           current_use, purchase_price, use_of_funds, refurb_scope, refurb_cost,
-          deposit_source
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+          deposit_source, deal_stage
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,'draft')
         RETURNING id, submission_id, status, created_at
       `, [
         req.user.userId,
@@ -806,15 +794,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
 
       const newDeal = result.rows[0];
 
-      // Auto-assign RM from broker's default_rm if applicable
-      if (req.user.role === 'broker') {
-        const brokerOnb = await pool.query('SELECT default_rm FROM broker_onboarding WHERE user_id = $1', [req.user.userId]);
-        if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
-          await pool.query('UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1, deal_stage = \'assigned\' WHERE id = $2',
-            [brokerOnb.rows[0].default_rm, newDeal.id]);
-        }
-      }
-
+      // Note: RM auto-assignment happens when broker submits the draft, not at creation
       // Link any documents from the parse session to the new deal
       if (parse_session_id) {
         const linked = await pool.query(
@@ -824,7 +804,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
         console.log(`[smart-parse-confirm] Linked ${linked.rowCount} documents to new deal ${newDeal.submission_id}`);
       }
 
-      await logAudit(newDeal.id, 'deal_submitted_smart_parse', null, 'received',
+      await logAudit(newDeal.id, 'deal_created_draft', null, 'draft',
         { parse_session_id, source: 'smart_parse' }, req.user.userId);
 
       res.status(201).json({

@@ -2716,4 +2716,119 @@ router.put('/:submissionId/submit-for-review', authenticateToken, async (req, re
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  SUBMIT DRAFT — Move deal from 'draft' to 'received', assign RM
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/submit-draft', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+
+    const dealResult = await pool.query(
+      `SELECT id, submission_id, user_id, borrower_user_id, deal_stage
+       FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Only owner can submit their draft
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    if (!isOwner) return res.status(403).json({ error: 'Access denied' });
+
+    // Only draft deals can be submitted
+    if (deal.deal_stage !== 'draft') {
+      return res.status(400).json({ error: 'Only draft deals can be submitted. This deal is already ' + deal.deal_stage });
+    }
+
+    // Auto-assign RM from broker's default_rm if applicable
+    let assignedRm = null;
+    if (req.user.role === 'broker') {
+      try {
+        const brokerOnb = await pool.query('SELECT default_rm FROM broker_onboarding WHERE user_id = $1', [req.user.userId]);
+        if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
+          assignedRm = brokerOnb.rows[0].default_rm;
+        }
+      } catch (rmErr) {
+        console.warn('[submit-draft] RM auto-assign lookup failed:', rmErr.message);
+      }
+    }
+
+    // Move to 'received' (or 'assigned' if RM found)
+    const newStage = assignedRm ? 'assigned' : 'received';
+    const updateFields = assignedRm
+      ? `deal_stage = '${newStage}', assigned_rm = ${assignedRm}, assigned_to = ${assignedRm}, updated_at = NOW()`
+      : `deal_stage = '${newStage}', updated_at = NOW()`;
+
+    await pool.query(`UPDATE deal_submissions SET ${updateFields} WHERE id = $1`, [deal.id]);
+
+    // Audit
+    await logAudit(deal.id, 'deal_submitted', 'draft', newStage, {
+      submitted_by: req.user.userId,
+      assigned_rm: assignedRm
+    }, req.user.userId);
+
+    console.log(`[submit-draft] Deal ${submissionId} moved from draft to ${newStage}`);
+    res.json({ success: true, message: 'Deal submitted successfully', deal_stage: newStage });
+  } catch (error) {
+    console.error('[submit-draft] Error:', error);
+    res.status(500).json({ error: 'Failed to submit deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DELETE DRAFT — Hard delete a deal that is still in 'draft' stage
+//  Cascades: deal_documents, deal_properties, deal_borrowers, audit_log
+// ═══════════════════════════════════════════════════════════════════════════
+router.delete('/:submissionId', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+
+    const dealResult = await pool.query(
+      `SELECT id, submission_id, user_id, borrower_user_id, deal_stage
+       FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Only owner can delete their deal
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    if (!isOwner) return res.status(403).json({ error: 'Access denied — only the deal creator can delete it' });
+
+    // CRITICAL: Only draft deals can be deleted
+    if (deal.deal_stage !== 'draft') {
+      return res.status(400).json({
+        error: 'Only draft deals can be deleted. This deal has been submitted and is now in stage: ' + deal.deal_stage
+      });
+    }
+
+    console.log(`[delete-deal] Deleting draft deal ${submissionId} (internal id: ${deal.id})`);
+
+    // Delete all related records in dependency order (most will be empty for drafts)
+    const relatedTables = [
+      'deal_documents', 'deal_properties', 'deal_borrowers',
+      'deal_field_status', 'deal_info_requests', 'deal_documents_issued',
+      'deal_document_repo', 'deal_fee_payments', 'deal_approvals',
+      'analysis_results', 'client_notes', 'deal_audit_log'
+    ];
+    for (const table of relatedTables) {
+      try {
+        await pool.query(`DELETE FROM ${table} WHERE deal_id = $1`, [deal.id]);
+      } catch (tableErr) {
+        // Table might not exist yet — that's fine
+        console.log(`[delete-deal] Note cleaning ${table}:`, tableErr.message.substring(0, 40));
+      }
+    }
+
+    // Delete the deal itself
+    await pool.query('DELETE FROM deal_submissions WHERE id = $1', [deal.id]);
+
+    console.log(`[delete-deal] Draft deal ${submissionId} permanently deleted`);
+    res.json({ success: true, message: 'Draft deal deleted' });
+  } catch (error) {
+    console.error('[delete-deal] Error:', error);
+    res.status(500).json({ error: 'Failed to delete deal' });
+  }
+});
+
 module.exports = router;

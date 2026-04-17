@@ -294,7 +294,8 @@ export async function loadUserDeals() {
       document.getElementById('deals-empty').style.display = 'none';
       document.getElementById('deals-table-container').style.display = 'block';
 
-      const active = deals.filter(d => !['completed', 'declined', 'withdrawn'].includes(d.status) && !['completed', 'declined', 'withdrawn'].includes(d.deal_stage));
+      const drafts = deals.filter(d => d.deal_stage === 'draft');
+      const active = deals.filter(d => !['completed', 'declined', 'withdrawn', 'draft'].includes(d.status) && !['completed', 'declined', 'withdrawn', 'draft'].includes(d.deal_stage));
       const completed = deals.filter(d => d.status === 'completed' || d.deal_stage === 'completed');
       const declined = deals.filter(d => d.status === 'declined' || d.deal_stage === 'declined');
       const totalPipeline = active.reduce((sum, d) => sum + (Number(d.loan_amount) || 0), 0);
@@ -311,7 +312,7 @@ export async function loadUserDeals() {
         <div class="stat-card processing" style="border-left:3px solid #34D399;">
           <div class="stat-label">ACTIVE DEALS</div>
           <div class="stat-value" style="font-family:'Playfair Display',serif;">${active.length}</div>
-          <div style="font-size:11px;color:#94A3B8;margin-top:4px;">${awaitingAction ? awaitingAction + ' awaiting action' : 'All progressing'}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:4px;">${drafts.length ? drafts.length + ' draft' + (drafts.length > 1 ? 's' : '') + (awaitingAction ? ' · ' + awaitingAction + ' awaiting action' : '') : awaitingAction ? awaitingAction + ' awaiting action' : 'All progressing'}</div>
         </div>
         <div class="stat-card" style="border-left:3px solid #60A5FA;">
           <div class="stat-label">COMPLETED</div>
@@ -325,7 +326,7 @@ export async function loadUserDeals() {
 
       // Stage labels for table
       const stageLabels = {
-        received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+        draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
         info_gathering: 'Info Gathering', ai_termsheet: 'ITS Issued',
         fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
         bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
@@ -361,6 +362,18 @@ export async function loadUserDeals() {
         const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
         const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
         const updatedStr = formatDate(deal.updated_at || deal.created_at);
+        const isDraft = stage === 'draft';
+
+        // Action buttons — draft gets Submit + Delete, others get View
+        let actionBtns = '';
+        if (isDraft) {
+          actionBtns = `
+            <button class="btn btn-small" style="padding:4px 10px;font-size:11px;font-weight:700;background:#D4A853;color:#0B1120;border:none;border-radius:6px;cursor:pointer;margin-right:4px;" onclick="event.stopPropagation(); window._submitDraftDeal('${deal.submission_id}', this);" title="Submit this deal">Submit</button>
+            <button class="btn btn-small" style="padding:4px 8px;font-size:11px;font-weight:600;background:rgba(248,113,113,0.15);color:#F87171;border:1px solid rgba(248,113,113,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation(); window._deleteDraftDeal('${deal.submission_id}', this);" title="Delete draft">✕</button>
+          `;
+        } else {
+          actionBtns = `<button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();">View →</button>`;
+        }
 
         row.innerHTML = `
           <td><span class="deal-ref">${sanitizeHtml(deal.submission_id.substring(0, 8))}</span></td>
@@ -369,7 +382,7 @@ export async function loadUserDeals() {
           <td style="text-align:center;">${ltvStr}</td>
           <td><span class="stage-badge stage-${stage}">${sanitizeHtml(stageLabel)}</span></td>
           <td style="font-size:0.85em;">${updatedStr}</td>
-          <td><button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();">View →</button></td>
+          <td style="white-space:nowrap;">${actionBtns}</td>
         `;
         tbody.appendChild(row);
       });
@@ -382,6 +395,81 @@ export async function loadUserDeals() {
     console.error('Error loading deals:', err);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DRAFT DEAL ACTIONS — Delete and Submit from deals list
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Delete a draft deal (hard delete — permanently removes from DB)
+ */
+window._deleteDraftDeal = async function(submissionId, btn) {
+  if (!confirm('Delete this draft deal permanently? This cannot be undone.')) return;
+
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}`, {
+      method: 'DELETE'
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showToast(data.error || 'Failed to delete deal', true);
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
+    showToast('Draft deal deleted');
+    // Remove the row from the table
+    const row = btn.closest('tr');
+    if (row) row.remove();
+
+    // Refresh dashboard stats
+    await loadUserDeals();
+  } catch (err) {
+    console.error('[delete-draft] Error:', err);
+    showToast('Network error. Please try again.', true);
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+};
+
+/**
+ * Submit a draft deal (moves from draft → received/assigned)
+ */
+window._submitDraftDeal = async function(submissionId, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/submit-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showToast(data.error || 'Failed to submit deal', true);
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
+    showToast('Deal submitted successfully!');
+    // Refresh the deals list to show updated stage
+    await loadUserDeals();
+  } catch (err) {
+    console.error('[submit-draft] Error:', err);
+    showToast('Network error. Please try again.', true);
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+};
 
 /**
  * Export to handle module chaining for window.selectLawFirm

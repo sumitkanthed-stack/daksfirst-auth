@@ -317,7 +317,7 @@ export async function renderDealMatrix(deal) {
   // Stage mapping — deal_stage values from DB to matrix column index
   // info_gathering is still DIP phase (RM gathering data before DIP complete)
   const stageIndex = {
-    'received': 0, 'assigned': 0, 'dip_issued': 0, 'info_gathering': 0,
+    'draft': 0, 'received': 0, 'assigned': 0, 'dip_issued': 0, 'info_gathering': 0,
     'ai_termsheet': 1,
     'fee_pending': 2, 'fee_paid': 2, 'underwriting': 2,
     'bank_submitted': 2, 'bank_approved': 2,

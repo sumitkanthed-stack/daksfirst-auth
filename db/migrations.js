@@ -560,6 +560,15 @@ async function runMigrations() {
       console.log('[migrate] Note on deal status constraint:', err.message.substring(0, 80));
     }
 
+    // Support 'draft' stage for deals created via filing cabinet
+    try {
+      // Ensure deal_stage column accepts 'draft' — no constraint exists so just ensure NULL/received default is fine
+      // New deals from smart-parse will explicitly set deal_stage = 'draft'
+      console.log('[migrate] Draft stage support ready (no constraint to alter — deal_stage is unconstrained VARCHAR)');
+    } catch (err) {
+      console.log('[migrate] Note on draft stage:', err.message.substring(0, 60));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
