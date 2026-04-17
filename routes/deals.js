@@ -2638,8 +2638,24 @@ router.put('/:submissionId/submit-for-review', authenticateToken, async (req, re
     const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
     if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
 
-    // Update deal stage to info_gathering (RM needs to review)
+    // If deal was in draft and has no RM assigned, auto-assign from broker's default_rm
     const prevStage = deal.deal_stage;
+    if ((prevStage === 'draft' || !deal.assigned_rm) && req.user.role === 'broker') {
+      try {
+        const brokerOnb = await pool.query('SELECT default_rm FROM broker_onboarding WHERE user_id = $1', [req.user.userId]);
+        if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm && !deal.assigned_rm) {
+          await pool.query(
+            `UPDATE deal_submissions SET assigned_rm = $1, assigned_to = $1 WHERE id = $2`,
+            [brokerOnb.rows[0].default_rm, deal.id]
+          );
+          deal.assigned_rm = brokerOnb.rows[0].default_rm;
+        }
+      } catch (rmErr) {
+        console.warn('[submit-review] RM auto-assign failed:', rmErr.message);
+      }
+    }
+
+    // Update deal stage to info_gathering (RM needs to review)
     await pool.query(
       `UPDATE deal_submissions SET deal_stage = 'info_gathering', updated_at = NOW() WHERE id = $1`,
       [deal.id]

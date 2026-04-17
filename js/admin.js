@@ -73,7 +73,7 @@ export async function loadAdminDeals() {
     if (!tbody) return;
 
     const stageLabels = {
-      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+      draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
       info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
@@ -112,7 +112,7 @@ export async function loadStaffDeals() {
     if (!tbody) return;
 
     const stageLabels = {
-      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+      draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
       info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
@@ -248,7 +248,7 @@ export function updateAdminDealsFilter() {
   const tbody = document.getElementById('admin-deals-tbody');
   if (tbody) {
     const stageLabels = {
-      received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
+      draft: 'Draft', received: 'Received', assigned: 'Assigned', dip_issued: 'DIP Issued',
       info_gathering: 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
       fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
       bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',

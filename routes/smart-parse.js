@@ -90,15 +90,23 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
       console.log(`[smart-parse] Attaching ${req.files.length} files to existing deal ${submissionId}`);
     } else {
       // NEW DEAL — create a blank deal in DRAFT stage (broker can edit before submitting)
+      // If broker is creating: auto-set broker details from their profile (not from parsed docs)
+      let brokerName = null, brokerCompany = null, brokerFca = null;
+      if (req.user.role === 'broker') {
+        brokerName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || null;
+        brokerCompany = req.user.company || null;
+        brokerFca = req.user.fca_number || null;
+      }
+
       const newDeal = await pool.query(
-        `INSERT INTO deal_submissions (user_id, source, internal_status, deal_stage)
-         VALUES ($1, 'smart_parse', 'new', 'draft')
+        `INSERT INTO deal_submissions (user_id, source, internal_status, deal_stage, broker_name, broker_company, broker_fca)
+         VALUES ($1, 'smart_parse', 'new', 'draft', $2, $3, $4)
          RETURNING id, submission_id`,
-        [req.user.userId]
+        [req.user.userId, brokerName, brokerCompany, brokerFca]
       );
       dealIntId = newDeal.rows[0].id;
       submissionId = newDeal.rows[0].submission_id;
-      console.log(`[smart-parse] Created new blank deal ${submissionId} for ${req.files.length} files`);
+      console.log(`[smart-parse] Created new blank deal ${submissionId} for ${req.files.length} files (broker: ${brokerName || 'internal'})`);
 
       // Note: RM auto-assignment happens when broker submits the draft (moves to 'received'),
       // not at filing cabinet stage. Deal stays in 'draft' until broker explicitly submits.
@@ -724,10 +732,14 @@ router.post('/confirm', authenticateToken, async (req, res) => {
       const values = [];
       let paramIdx = 1;
 
+      // If the deal creator is a broker, don't let parsed docs overwrite broker fields
+      // (the broker IS the logged-in user, not someone mentioned in the docs)
+      const dealCreatorIsBroker = req.user.role === 'broker' || (!INTERNAL_ROLES.includes(req.user.role));
+
       const fieldMap = {
         borrower_name: pd.borrower_name, borrower_company: pd.borrower_company,
         borrower_email: pd.borrower_email, borrower_phone: pd.borrower_phone,
-        broker_name: pd.broker_name, broker_company: pd.broker_company, broker_fca: pd.broker_fca,
+        ...(dealCreatorIsBroker ? {} : { broker_name: pd.broker_name, broker_company: pd.broker_company, broker_fca: pd.broker_fca }),
         security_address: pd.security_address, security_postcode: pd.security_postcode,
         asset_type: pd.asset_type, current_value: pd.current_value,
         loan_amount: pd.loan_amount, ltv_requested: pd.ltv_requested,
@@ -766,6 +778,12 @@ router.post('/confirm', authenticateToken, async (req, res) => {
       res.json({ success: true, message: 'Deal updated with parsed data', submission_id: deal_id });
     } else {
       // CREATE new deal from parsed data — starts as DRAFT
+      // If broker: use their profile for broker fields, not whatever was parsed from docs
+      const isBrokerCreator = req.user.role === 'broker';
+      const brokerN = isBrokerCreator ? ([req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || null) : (pd.broker_name || null);
+      const brokerC = isBrokerCreator ? (req.user.company || null) : (pd.broker_company || null);
+      const brokerF = isBrokerCreator ? (req.user.fca_number || null) : (pd.broker_fca || null);
+
       const result = await pool.query(`
         INSERT INTO deal_submissions (
           user_id, borrower_name, borrower_company, borrower_email, borrower_phone,
@@ -782,7 +800,7 @@ router.post('/confirm', authenticateToken, async (req, res) => {
       `, [
         req.user.userId,
         pd.borrower_name || null, pd.borrower_company || null, pd.borrower_email || null, pd.borrower_phone || null,
-        pd.broker_name || null, pd.broker_company || null, pd.broker_fca || null,
+        brokerN, brokerC, brokerF,
         pd.security_address || null, pd.security_postcode || null, pd.asset_type || null, pd.current_value || null,
         pd.loan_amount || null, pd.ltv_requested || null, pd.loan_purpose || null, pd.exit_strategy || null,
         pd.term_months || null, pd.rate_requested || null, pd.additional_notes || null, 'smart_parse', 'new',

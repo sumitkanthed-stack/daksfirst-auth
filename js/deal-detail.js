@@ -85,21 +85,18 @@ export async function showDealDetail(dealId) {
       bar.innerHTML = `
         <div>
           <div style="font-size:14px;font-weight:700;color:#FBB724;">This deal is a draft</div>
-          <div style="font-size:12px;color:#94A3B8;margin-top:2px;">Add your documents and data, then submit when ready.</div>
+          <div style="font-size:12px;color:#94A3B8;margin-top:2px;">Add your documents and data. Use "Submit for Review" when ready for DIP consideration.</div>
         </div>
         <div style="display:flex;gap:8px;">
           <button id="draft-delete-btn" style="padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid rgba(248,113,113,0.4);background:rgba(248,113,113,0.1);color:#F87171;cursor:pointer;">Delete Draft</button>
-          <button id="draft-submit-btn" style="padding:8px 20px;border-radius:8px;font-size:13px;font-weight:700;border:none;background:#D4A853;color:#0B1120;cursor:pointer;">Submit Deal →</button>
         </div>
       `;
-      // Insert at top of detail content
       // Insert after the snapshot header, before the deal sections
       const matrixSection = document.getElementById('section-matrix');
       if (matrixSection) {
         matrixSection.parentNode.insertBefore(bar, matrixSection);
       }
 
-      bar.querySelector('#draft-submit-btn').onclick = () => window._submitDraftDeal(deal.submission_id, bar.querySelector('#draft-submit-btn'));
       bar.querySelector('#draft-delete-btn').onclick = async () => {
         if (!confirm('Delete this draft deal permanently? This cannot be undone.')) return;
         const btn = bar.querySelector('#draft-delete-btn');

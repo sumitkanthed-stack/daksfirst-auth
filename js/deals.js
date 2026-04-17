@@ -368,7 +368,7 @@ export async function loadUserDeals() {
         let actionBtns = '';
         if (isDraft) {
           actionBtns = `
-            <button class="btn btn-small" style="padding:4px 10px;font-size:11px;font-weight:700;background:#D4A853;color:#0B1120;border:none;border-radius:6px;cursor:pointer;margin-right:4px;" onclick="event.stopPropagation(); window._submitDraftDeal('${deal.submission_id}', this);" title="Submit this deal">Submit</button>
+            <button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;margin-right:4px;" onclick="event.stopPropagation();">View →</button>
             <button class="btn btn-small" style="padding:4px 8px;font-size:11px;font-weight:600;background:rgba(248,113,113,0.15);color:#F87171;border:1px solid rgba(248,113,113,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation(); window._deleteDraftDeal('${deal.submission_id}', this);" title="Delete draft">✕</button>
           `;
         } else {
