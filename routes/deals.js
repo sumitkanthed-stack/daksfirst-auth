@@ -210,6 +210,25 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     );
     deal.borrowers = borrowersResult.rows;
 
+    // Auto-backfill: if deal_borrowers is empty but flat borrower_name exists, create the primary record
+    if (borrowersResult.rows.length === 0 && deal.borrower_name) {
+      try {
+        const backfill = await pool.query(
+          `INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, email, phone, date_of_birth, nationality, jurisdiction, company_name, company_number)
+           VALUES ($1, 'primary', $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, borrower_type, company_name, company_number, kyc_status`,
+          [deal.id, deal.borrower_name, deal.borrower_type || null,
+           deal.borrower_email || null, deal.borrower_phone || null,
+           deal.borrower_dob || null, deal.borrower_nationality || null,
+           deal.borrower_jurisdiction || null, deal.company_name || null, deal.company_number || null]
+        );
+        deal.borrowers = backfill.rows;
+        console.log(`[deal-detail] Auto-backfilled primary borrower for deal ${deal.submission_id}: ${deal.borrower_name}`);
+      } catch (backfillErr) {
+        console.warn('[deal-detail] Borrower backfill note:', backfillErr.message.substring(0, 80));
+      }
+    }
+
     // Include portfolio summary
     if (propsResult.rows.length > 0) {
       const totalValue = propsResult.rows.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0);

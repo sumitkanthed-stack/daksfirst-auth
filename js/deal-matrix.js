@@ -301,9 +301,9 @@ export async function renderDealMatrix(deal) {
   const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
   const currentStage = deal.deal_stage || 'received';
 
-  // Brokers can only edit during 'received' stage (before submission to RM)
+  // Brokers can edit during draft and received stages (before submission to RM)
   // After submission (info_gathering+), broker Matrix is read-only — RM/admin can still edit
-  const brokerEditableStages = ['received'];
+  const brokerEditableStages = ['draft', 'received'];
   const canEdit = isInternalUser
     ? EDITABLE_ROLES.includes(role)
     : (EDITABLE_ROLES.includes(role) && brokerEditableStages.includes(currentStage));
