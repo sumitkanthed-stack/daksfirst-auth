@@ -19,6 +19,48 @@ const upload = multer({
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 const N8N_PARSE_WEBHOOK_URL = config.N8N_PARSE_WEBHOOK_URL || '';
 
+// ── Extract doc_expiry_date and doc_issue_date from parsed analysis ──
+// Path A analysis has nested objects (borrowers[].passport_expiry, insurance.expiry_date, etc.)
+// Path B flatFields have doc_expiry_date and doc_issue_date directly
+function extractDocDates(analysis, flatFields, docCategory) {
+  let expiryDate = null;
+  let issueDate = null;
+
+  // 1. Try flatFields first (Path B puts them there directly)
+  if (flatFields) {
+    if (flatFields.doc_expiry_date) expiryDate = flatFields.doc_expiry_date;
+    if (flatFields.doc_issue_date) issueDate = flatFields.doc_issue_date;
+    if (flatFields['doc-expiry-date']) expiryDate = flatFields['doc-expiry-date'];
+    if (flatFields['doc-issue-date']) issueDate = flatFields['doc-issue-date'];
+  }
+
+  // 2. Try analysis object (Path A nested structure)
+  if (analysis && !expiryDate) {
+    const cat = (docCategory || '').toLowerCase();
+    // KYC documents — passport expiry
+    if (cat === 'kyc' || cat === 'id') {
+      const borrower = (analysis.borrowers || [])[0];
+      if (borrower && borrower.passport_expiry) expiryDate = borrower.passport_expiry;
+    }
+    // Insurance — policy expiry
+    if (cat === 'legal' || cat === 'insurance') {
+      if (analysis.insurance && analysis.insurance.expiry_date) expiryDate = analysis.insurance.expiry_date;
+    }
+    // Property/valuation — valuation date as issue date
+    if (cat === 'property' || cat === 'valuation') {
+      const prop = (analysis.parsedProperties || [])[0];
+      if (prop && prop.valuation_date) issueDate = prop.valuation_date;
+    }
+  }
+
+  // Validate date format (must be YYYY-MM-DD)
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (expiryDate && !dateRe.test(expiryDate)) expiryDate = null;
+  if (issueDate && !dateRe.test(issueDate)) issueDate = null;
+
+  return { expiryDate, issueDate };
+}
+
 // ── Lightweight filename-based document categoriser (no AI call) ──
 function categoriseByFilename(filename) {
   const f = (filename || '').toLowerCase();
@@ -501,13 +543,25 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
           const fieldCount = Object.keys(result.flatFields).filter(k => result.flatFields[k] != null && result.flatFields[k] !== '' && k !== 'confidence').length;
           console.log(`[parse-confirmed] Path A extracted ${fieldCount} fields`);
 
-          // Store full analysis JSON per document (for later use)
+          // Store full analysis JSON per document and extract validity dates per doc category
           if (result.analysis) {
             try {
               await pool.query(
                 `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE deal_id = $2 AND file_content IS NOT NULL`,
                 [JSON.stringify(result.analysis), deal.id]
               );
+              // Write per-document validity dates based on each doc's category
+              for (const d of docsWithContent) {
+                const { expiryDate, issueDate } = extractDocDates(result.analysis, result.flatFields, d.doc_category);
+                if (expiryDate || issueDate) {
+                  try {
+                    await pool.query(
+                      `UPDATE deal_documents SET doc_expiry_date = COALESCE($1, doc_expiry_date), doc_issue_date = COALESCE($2, doc_issue_date) WHERE id = $3`,
+                      [expiryDate, issueDate, d.id]
+                    );
+                  } catch (dateErr) { /* ignore per-doc date write errors */ }
+                }
+              }
             } catch (storeErr) {
               console.warn('[parse-confirmed] Could not store analysis:', storeErr.message);
             }
@@ -606,12 +660,17 @@ router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
       ? Object.keys(parsedData).filter(k => parsedData[k] != null && parsedData[k] !== '' && k !== 'confidence').length
       : 0;
 
-    // Store result and mark as parsed
+    // Store result and mark as parsed — also write doc_expiry_date / doc_issue_date
     try {
+      const { expiryDate, issueDate } = extractDocDates(result.analysis, parsedData, doc.doc_category);
       await pool.query(
-        `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW() WHERE id = $2`,
-        [result.analysis ? JSON.stringify(result.analysis) : null, docId]
+        `UPDATE deal_documents SET parsed_data = $1, parsed_at = NOW(),
+         doc_expiry_date = COALESCE($3, doc_expiry_date),
+         doc_issue_date = COALESCE($4, doc_issue_date)
+         WHERE id = $2`,
+        [result.analysis ? JSON.stringify(result.analysis) : null, docId, expiryDate, issueDate]
       );
+      if (expiryDate || issueDate) console.log(`[parse-document] Validity dates: expiry=${expiryDate}, issue=${issueDate}`);
     } catch (storeErr) {
       console.warn(`[parse-document] Could not store parsed_data:`, storeErr.message);
     }
