@@ -8,6 +8,7 @@ import { API_BASE } from './config.js';
 import { fetchWithAuth } from './auth.js';
 import { showToast, sanitizeHtml } from './utils.js';
 import { getCurrentRole } from './state.js';
+import { floatingProgress } from './floating-progress.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // EDITABLE FIELD HELPER — renders input for editable roles, static text for read-only
@@ -1400,20 +1401,14 @@ export async function renderDealMatrix(deal) {
   // ═══════════════════════════════════════════════════════════════════
 
   function showParseProgress(message) {
-    const progress = document.getElementById('matrix-parse-progress');
-    const status = document.getElementById('matrix-parse-status');
-    const bar = document.getElementById('matrix-parse-bar');
-    if (progress) progress.style.display = 'block';
-    if (status) status.textContent = message || 'Parsing documents...';
-    if (bar) { bar.style.width = '0%'; bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = 'matrixParseBar 90s linear forwards'; }
+    floatingProgress.show({ label: 'Parsing Documents', message: message || 'AI is reading your documents...' });
     // Hide paste modal
     const modal = document.getElementById('matrix-paste-modal');
     if (modal) modal.style.display = 'none';
   }
 
   function hideParseProgress() {
-    const progress = document.getElementById('matrix-parse-progress');
-    if (progress) progress.style.display = 'none';
+    // Don't dismiss here — let the caller show complete/error instead
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1915,6 +1910,14 @@ export async function renderDealMatrix(deal) {
   window.reparseProperties = async function(submissionId) {
     if (!submissionId) return;
 
+    // Show floating progress bar
+    floatingProgress.show({
+      label: 'AI Property Extraction',
+      message: 'AI is reading documents and extracting property data...',
+      steps: ['Triggering parse...', 'Reading documents...', 'Extracting properties...']
+    });
+    floatingProgress.updateStep(0, 'active');
+
     // Replace the button with a live progress panel
     const btnEl = event && event.target;
     const containerEl = btnEl ? btnEl.closest('div') : null;
@@ -1997,6 +2000,9 @@ export async function renderDealMatrix(deal) {
       const data = await resp.json();
 
       if (data.success) {
+        floatingProgress.updateStep(0, 'done');
+        floatingProgress.updateStep(1, 'active');
+        floatingProgress.updateBar(30);
         // Poll progress endpoint every 3 seconds for up to 5 minutes
         let attempts = 0;
         const maxAttempts = 100;
@@ -2010,11 +2016,13 @@ export async function renderDealMatrix(deal) {
 
               if (progData.progress.status === 'complete') {
                 clearInterval(pollInterval);
-                showToast('Claude extracted all deal data successfully!', 'success');
+                floatingProgress.updateStep(1, 'done');
+                floatingProgress.updateStep(2, 'done');
+                floatingProgress.complete({ label: 'Extraction Complete', message: 'AI extracted all deal data. Reloading...' });
                 setTimeout(() => window.location.reload(), 2500);
               } else if (progData.progress.status === 'error') {
                 clearInterval(pollInterval);
-                showToast('Parse failed: ' + (progData.progress.message || 'unknown error'), 'error');
+                floatingProgress.error({ label: 'Parse Failed', message: progData.progress.message || 'Unknown error' });
               }
             }
             if (attempts >= maxAttempts) {
@@ -2027,12 +2035,12 @@ export async function renderDealMatrix(deal) {
         }, 3000);
       } else {
         renderProgress({ status: 'error', message: data.message || data.error || 'Parse failed', steps: [] });
-        showToast(data.message || data.error || 'Parse failed', 'error');
+        floatingProgress.error({ label: 'Parse Failed', message: data.message || data.error || 'Parse failed' });
       }
     } catch (err) {
       console.error('[reparse] Error:', err);
       renderProgress({ status: 'error', message: err.message, steps: [] });
-      showToast('Failed to trigger parsing: ' + err.message, 'error');
+      floatingProgress.error({ label: 'Connection Error', message: 'Failed to trigger parsing: ' + err.message });
     }
   };
 
@@ -2592,7 +2600,13 @@ export async function renderDealMatrix(deal) {
 
   // Step 3: Parse Confirmed — sends confirmed-category docs to n8n for field extraction
   window.matrixParseConfirmed = async function() {
-    showParseProgress('Parsing confirmed documents — extracting deal data...');
+    floatingProgress.show({
+      label: 'Parsing Documents',
+      message: 'AI is reading your confirmed documents and extracting deal data...',
+      steps: ['Sending documents to AI...', 'Extracting deal fields...', 'Populating matrix...']
+    });
+    floatingProgress.updateStep(0, 'active');
+    floatingProgress.updateBar(10);
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-confirmed`, {
@@ -2601,24 +2615,35 @@ export async function renderDealMatrix(deal) {
         body: JSON.stringify({ deal_id: deal.submission_id })
       });
 
-      hideParseProgress();
+      floatingProgress.updateStep(0, 'done');
+      floatingProgress.updateStep(1, 'active');
+      floatingProgress.updateBar(60);
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        showToast(err.error || 'Parse failed', 'error');
+        floatingProgress.error({ label: 'Parse Failed', message: err.error || 'Could not parse documents.' });
         return;
       }
 
       const data = await resp.json();
+      floatingProgress.updateStep(1, 'done');
+      floatingProgress.updateStep(2, 'active');
+      floatingProgress.updateBar(90);
+
       if (data.parsed_data) {
         autoPopulateMatrix(data.parsed_data, data.conflicts, data.core_fields);
         const conflictCount = Object.keys(data.conflicts || {}).length;
         const msg = conflictCount > 0
-          ? `Parsed ${data.total_documents} documents. ${conflictCount} conflicting fields need your review.`
-          : `Parsed ${data.total_documents} documents (${data.confirmed_documents} confirmed). Review extracted fields.`;
-        showToast(msg, conflictCount > 0 ? 'warning' : 'success');
+          ? `${data.total_documents} docs parsed. ${conflictCount} conflicting fields need review.`
+          : `${data.total_documents} docs parsed (${data.confirmed_documents} confirmed). Fields extracted.`;
+
+        floatingProgress.updateStep(2, 'done');
+        floatingProgress.complete({ label: 'Parsing Complete', message: msg });
       } else {
-        showToast(data.message || `${data.total_documents} documents processed. ${data.unconfirmed_documents > 0 ? data.unconfirmed_documents + ' still unconfirmed.' : ''}`, 'info');
+        floatingProgress.complete({
+          label: 'Processing Done',
+          message: data.message || `${data.total_documents} documents processed.`
+        });
       }
 
       // Refresh Doc Repo to update Parsed status column
@@ -2629,9 +2654,8 @@ export async function renderDealMatrix(deal) {
       // Recalculate completeness
       calculateCompleteness();
     } catch (e) {
-      hideParseProgress();
       console.error('[matrix-parse-confirmed] Error:', e);
-      showToast('Connection error during parsing', 'error');
+      floatingProgress.error({ label: 'Connection Error', message: 'Could not reach server. Please try again.' });
     }
   };
 

@@ -6,6 +6,7 @@ import { API_BASE } from './config.js';
 import { fetchWithAuth } from './auth.js';
 import { getCurrentRole, getCurrentUser } from './state.js';
 import { showToast, sanitizeHtml, formatNumber, formatPct, formatDate } from './utils.js';
+import { floatingProgress } from './floating-progress.js';
 
 // ═══════════════════════════════════════════════════════════════
 // ROLE GATING — show/hide sections based on current user role
@@ -232,7 +233,7 @@ export async function renderDocRepo(submissionId, role, filterCategory) {
       btns += `<button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All (${unconfirmedCount})</button>`;
     }
     if (unparsedConfirmed > 0) {
-      btns += `<button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse Confirmed (${unparsedConfirmed})</button>`;
+      btns += `<button id="parse-confirmed-btn" onclick="window._startDocRepoParse && window._startDocRepoParse(this)" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128269; Parse Confirmed (${unparsedConfirmed})</button>`;
     }
     actionBtns.innerHTML = btns;
   }
@@ -405,6 +406,28 @@ export async function renderDocRepo(submissionId, role, filterCategory) {
 }
 
 // ── Global handlers for Doc Repo (defined ONCE, outside renderDocRepo) ──
+
+// Parse Confirmed — delegates to matrixParseConfirmed which now uses floating progress
+window._startDocRepoParse = function(btn) {
+  if (!btn) return;
+
+  // Disable button to prevent double-click
+  btn.disabled = true;
+  btn.innerHTML = '&#9203; Parsing...';
+  btn.style.opacity = '0.5';
+
+  // The floating progress bar is shown by matrixParseConfirmed
+  if (window.matrixParseConfirmed) {
+    window.matrixParseConfirmed().then(() => {
+      btn.innerHTML = '&#10003; Done';
+      btn.style.background = '#34D399';
+    }).catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '&#128269; Parse Confirmed';
+      btn.style.opacity = '1';
+    });
+  }
+};
 
 // Confirm category
 window.confirmDocCategory = async function(docId) {
@@ -614,13 +637,13 @@ window.parseDocById = async function(docId) {
   const origText = btn ? btn.innerHTML : '';
   if (btn) { btn.innerHTML = '&#9203; Parsing...'; btn.disabled = true; btn.style.opacity = '0.6'; }
 
-  // Show a visible status in the Parser section so user knows something is happening
-  const parserFields = document.getElementById('parser-fields');
-  if (parserFields) {
-    parserFields.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:24px;height:24px;border-width:3px;border-style:solid;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;"></span><span style="color:#D4A853;font-size:14px;font-weight:600;">Claude is reading your document... This may take 30-90 seconds.</span></div>';
-    const parserContent = document.getElementById('parser-content');
-    if (parserContent) parserContent.style.display = 'block';
-  }
+  // Show floating progress bar
+  const docName = btn ? btn.closest('tr')?.querySelector('td')?.textContent?.trim() : 'document';
+  floatingProgress.show({
+    label: 'Parsing Document',
+    message: `AI is reading ${docName || 'your document'}... This may take 30-90 seconds.`
+  });
+  floatingProgress.updateBar(15);
 
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-document/${docId}`, {
@@ -628,28 +651,31 @@ window.parseDocById = async function(docId) {
       headers: { 'Content-Type': 'application/json' }
     });
 
+    floatingProgress.updateBar(70);
+
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      showToast(err.error || 'Parse failed', 'error');
+      floatingProgress.error({ label: 'Parse Failed', message: err.error || 'Could not parse document.' });
       if (btn) { btn.innerHTML = origText; btn.disabled = false; btn.style.opacity = '1'; }
       return;
     }
 
     const data = await resp.json();
+    floatingProgress.updateBar(95);
 
     if (data.parsed_data && Object.keys(data.parsed_data).length > 0) {
-      // Dispatch event so deal-matrix.js can pick it up and show in Parser section
       window.dispatchEvent(new CustomEvent('docParsed', { detail: { docId, filename: data.filename, parsedData: data.parsed_data } }));
-      showToast(data.message || 'Document parsed', 'success');
+      const fieldCount = Object.keys(data.parsed_data).length;
+      floatingProgress.complete({ label: 'Document Parsed', message: `${fieldCount} fields extracted from ${data.filename || 'document'}.` });
     } else {
-      showToast(`No data could be extracted from this document (may be an image/scan).`, 'info');
+      floatingProgress.complete({ label: 'No Data Found', message: 'No structured data could be extracted (may be a scanned image).' });
     }
 
     // Refresh doc repo to show updated parsed status
     await renderDocRepo(subId, role);
   } catch (err) {
     console.error('[doc-repo] Parse error:', err);
-    showToast('Parse error', 'error');
+    floatingProgress.error({ label: 'Connection Error', message: 'Could not reach server. Please try again.' });
     if (btn) { btn.innerHTML = origText; btn.disabled = false; btn.style.opacity = '1'; }
   }
 };

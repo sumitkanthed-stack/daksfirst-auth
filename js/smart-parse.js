@@ -1,6 +1,7 @@
 import { API_BASE } from './config.js';
 import { showToast, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
+import { floatingProgress } from './floating-progress.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SMART PARSE — Filing Cabinet with Staging Area
@@ -317,6 +318,15 @@ window.submitStagedDeal = async function() {
   btn.disabled = true;
   btn.textContent = 'Uploading...';
 
+  // Show floating progress bar
+  floatingProgress.show({
+    label: 'Submitting Deal',
+    message: `Uploading ${_stagedFiles.length} file${_stagedFiles.length !== 1 ? 's' : ''}...`,
+    steps: ['Upload documents', 'AI sorting documents', 'Opening deal']
+  });
+  floatingProgress.updateStep(0, 'active');
+  floatingProgress.updateBar(10);
+
   try {
     const formData = new FormData();
     for (const file of _stagedFiles) {
@@ -346,17 +356,23 @@ window.submitStagedDeal = async function() {
     const data = await resp.json();
 
     if (!resp.ok) {
+      floatingProgress.error({ label: 'Upload Failed', message: data.error || 'Please try again.' });
       showToast(data.error || 'Upload failed', true);
       btn.disabled = false;
       btn.textContent = _dealMode === 'existing' ? 'Add to Deal' : 'Submit Deal';
       return;
     }
 
-    // Success — trigger AI categorisation, then redirect to doc repo
-    const submissionId = data.submission_id;
-    btn.textContent = 'Claude is sorting your documents...';
+    // Step 1 done — upload complete
+    floatingProgress.updateStep(0, 'done');
+    floatingProgress.updateBar(40);
 
-    // Fire off AI categorisation (fire-and-forget — processes in background)
+    // Step 2 — AI categorisation
+    const submissionId = data.submission_id;
+    floatingProgress.updateStep(1, 'active');
+    floatingProgress.updateMessage('AI is sorting your documents into categories...');
+    btn.textContent = 'AI is sorting your documents...';
+
     if (submissionId) {
       try {
         await fetchWithAuth(`${API_BASE}/api/smart-parse/categorise-docs/${submissionId}`, {
@@ -367,24 +383,35 @@ window.submitStagedDeal = async function() {
       }
     }
 
-    showToast(data.message || 'Deal submitted! Claude is sorting your documents...');
+    floatingProgress.updateStep(1, 'done');
+    floatingProgress.updateBar(70);
+
+    // Step 3 — redirect to deal
+    floatingProgress.updateStep(2, 'active');
+    floatingProgress.updateMessage('Opening your deal...');
+
+    showToast(data.message || 'Deal submitted! AI is sorting your documents...');
     window.cancelStaging();
 
     if (submissionId) {
-      // Small delay to let categorisation start, then redirect to deal with doc repo tab active
       setTimeout(() => {
         import('./deal-detail.js').then(m => {
           m.showDealDetail(submissionId);
-          // After deal loads, auto-click the documents/doc-repo tab
           setTimeout(() => {
             const docTab = document.querySelector('[data-tab="dtab-docs"]') || document.querySelector('[onclick*="dtab-docs"]');
             if (docTab) docTab.click();
+            floatingProgress.updateStep(2, 'done');
+            floatingProgress.complete({ label: 'Deal Ready', message: 'Documents uploaded and sorted.' });
           }, 1500);
         });
       }, 800);
+    } else {
+      floatingProgress.updateStep(2, 'done');
+      floatingProgress.complete({ label: 'Done', message: 'Documents uploaded successfully.' });
     }
   } catch (err) {
     console.error('Upload error:', err);
+    floatingProgress.error({ label: 'Upload Error', message: 'Network error. Please try again.' });
     showToast('Network error. Please try again.', true);
     btn.disabled = false;
     btn.textContent = _dealMode === 'existing' ? 'Add to Deal' : 'Submit Deal';
