@@ -9,6 +9,7 @@ const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { parseDocumentsOnly } = require('../services/claude-parser');
+const { syncDealProperties } = require('../services/property-parser');
 const config = require('../config');
 
 const upload = multer({
@@ -564,6 +565,47 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
               }
             } catch (storeErr) {
               console.warn('[parse-confirmed] Could not store analysis:', storeErr.message);
+            }
+          }
+          // ── Sync ALL properties to deal_properties (not just the first one) ──
+          if (result.analysis && result.analysis.parsedProperties && result.analysis.parsedProperties.length > 0) {
+            try {
+              const claudeProperties = result.analysis.parsedProperties.map(p => ({
+                address: p.address || '',
+                postcode: p.postcode || null,
+                market_value: p.market_value ? parseFloat(p.market_value) : null,
+                purchase_price: p.purchase_price ? parseFloat(p.purchase_price) : null,
+                property_type: p.property_type || null,
+                tenure: p.tenure || null,
+                source: 'claude_parsed'
+              }));
+              await syncDealProperties(pool, deal.id, claudeProperties, { force: true });
+              console.log(`[parse-confirmed] Synced ${claudeProperties.length} properties to deal_properties`);
+            } catch (propErr) {
+              console.warn('[parse-confirmed] Property sync error:', propErr.message);
+            }
+          }
+
+          // ── Sync ALL borrowers to deal_borrowers ──
+          if (result.analysis && result.analysis.borrowers && result.analysis.borrowers.length > 0) {
+            try {
+              // Clear old claude-parsed borrowers, then insert fresh
+              await pool.query(`DELETE FROM deal_borrowers WHERE deal_id = $1 AND kyc_status = 'pending'`, [deal.id]);
+              for (const b of result.analysis.borrowers) {
+                if (!b.full_name) continue;
+                await pool.query(
+                  `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, kyc_status)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+                   ON CONFLICT DO NOTHING`,
+                  [deal.id, b.full_name, b.date_of_birth || null, b.nationality || null,
+                   b.email || null, b.phone || null, b.role || 'primary',
+                   result.analysis.company?.borrower_type || 'individual',
+                   result.analysis.company?.name || null, result.analysis.company?.company_number || null]
+                );
+              }
+              console.log(`[parse-confirmed] Synced ${result.analysis.borrowers.length} borrowers to deal_borrowers`);
+            } catch (borrErr) {
+              console.warn('[parse-confirmed] Borrower sync error:', borrErr.message);
             }
           }
         } else {
