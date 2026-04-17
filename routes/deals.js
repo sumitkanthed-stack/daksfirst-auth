@@ -246,6 +246,16 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     );
     deal.financials = financialsResult.rows;
 
+    // Document summary — lets the matrix show sync status
+    const docSummary = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(parsed_at)::int AS parsed,
+              COUNT(*) FILTER (WHERE parsed_at IS NULL)::int AS unparsed
+       FROM deal_documents WHERE deal_id = $1`,
+      [deal.id]
+    );
+    deal.doc_summary = docSummary.rows[0] || { total: 0, parsed: 0, unparsed: 0 };
+
     res.json({ deal });
   } catch (err) {
     console.error('[deals] Get single deal error:', err);

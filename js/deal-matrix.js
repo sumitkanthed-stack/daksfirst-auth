@@ -532,7 +532,7 @@ export async function renderDealMatrix(deal) {
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                   <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Borrower Schedule — ${deal.borrowers.length} ${deal.borrowers.length === 1 ? 'Party' : 'Parties'}</span>
                   <div style="display:flex;gap:6px;align-items:center;">
-                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower / Guarantor</button>` : ''}
+                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
                   </div>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -573,7 +573,7 @@ export async function renderDealMatrix(deal) {
               ` : `
               <!-- ── No borrowers in deal_borrowers yet — show flat fields + add button ── -->
               <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:11px;color:#94A3B8;">No borrowers added yet.</span>
+                <span style="font-size:11px;color:#94A3B8;">${(deal.doc_summary && deal.doc_summary.unparsed > 0) ? 'Borrower details syncing — documents still being parsed.' : (deal.borrower_name ? 'Showing flat borrower fields. Re-parse to populate borrower schedule.' : 'No borrowers added yet.')}</span>
                 ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
               </div>
               `}
@@ -597,14 +597,16 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-guarantors">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Guarantor & UBO Details</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Guarantor & UBO Details</div>
+                ${canEdit ? `<button onclick="window.addGuarantorRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Guarantor / UBO</button>` : ''}
+              </div>
               ${(deal.borrowers && deal.borrowers.filter(b => b.role !== 'primary').length > 0) ? `
-              <p style="font-size:12px;color:#34D399;margin:0 0 8px;">&#10003; ${deal.borrowers.filter(b => b.role !== 'primary').length} non-primary party(ies) registered above.</p>
-              <p style="font-size:11px;color:#94A3B8;margin:0;">To add more guarantors, directors, or UBOs use the "+ Add Borrower / Guarantor" button in the Borrower Structure section above.</p>
+              <p style="font-size:12px;color:#34D399;margin:0 0 8px;">&#10003; ${deal.borrowers.filter(b => b.role !== 'primary').length} non-primary party(ies) registered in Borrower Structure above.</p>
               ` : `
               <p style="font-size:12px;color:#FBBF24;margin:0 0 8px;">No guarantors or UBOs added yet.</p>
-              <p style="font-size:11px;color:#94A3B8;margin:0;">Use the "+ Add Borrower / Guarantor" button in the Borrower Structure section above to add directors, personal guarantors, or UBOs who need to sign joint and several.</p>
+              <p style="font-size:11px;color:#94A3B8;margin:0;">Add directors, personal guarantors, or UBOs who need to sign joint and several.</p>
               `}
             </div>
           </div>
@@ -822,9 +824,14 @@ export async function renderDealMatrix(deal) {
               </div>
               ` : `
               <!-- ── Raw address fields (no deal_properties rows yet) ── -->
-              <div style="margin-bottom:8px;padding:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:6px;">
-                <span style="font-size:10px;color:#FBBF24;font-weight:600;">⚠ Awaiting AI property parsing — showing raw data</span>
-                <button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="margin-left:8px;padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Ask Claude to Parse</button>
+              <div style="margin-bottom:8px;padding:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                <div>
+                  <span style="font-size:10px;color:#FBBF24;font-weight:600;">⚠ Property details not yet synced</span>
+                  ${(deal.doc_summary && deal.doc_summary.total > 0) ? `
+                  <span style="font-size:10px;color:#94A3B8;margin-left:6px;">(${deal.doc_summary.parsed} of ${deal.doc_summary.total} docs parsed${deal.doc_summary.unparsed > 0 ? ` — ${deal.doc_summary.unparsed} pending` : ''})</span>
+                  ` : '<span style="font-size:10px;color:#94A3B8;margin-left:6px;">(no documents uploaded yet)</span>'}
+                </div>
+                <button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">Re-Parse Properties</button>
               </div>
               `}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
@@ -1049,7 +1056,7 @@ export async function renderDealMatrix(deal) {
 
       <div id="content-s7" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Fees -->
-        ${renderFieldRow('fees', 'Fees', `Arrangement: ${fmtPct(deal.arrangement_fee_pct || 2)}%, Broker: ${fmtPct(deal.broker_fee_pct || 0)}%`,
+        ${renderFieldRow('fees', 'Fees', `Arrangement: ${deal.arrangement_fee_pct ? fmtPct(deal.arrangement_fee_pct) + '%' : 'TBA'}, Broker: ${deal.broker_fee_pct ? fmtPct(deal.broker_fee_pct) + '%' : 'TBA'}`,
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-fees">
@@ -1060,10 +1067,10 @@ export async function renderDealMatrix(deal) {
                 ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct || '2.0', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct || '0', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee || '5000', 'money', ['rm','admin'].includes(role))}
-                ${renderEditableField('retained_interest_months', 'Retained Interest (months)', deal.retained_interest_months || '6', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee, 'money', ['rm','admin'].includes(role))}
+                ${renderEditableField('retained_interest_months', 'Retained Interest (months)', deal.retained_interest_months, 'text', ['rm','admin'].includes(role))}
               </div>
             </div>
           </div>
@@ -2329,10 +2336,12 @@ export async function renderDealMatrix(deal) {
   // BORROWER CRUD — Add / Edit / Delete in deal_borrowers
   // ═══════════════════════════════════════════════════════════════════
 
-  function _showBorrowerModal(submissionId, existing) {
-    const isEdit = !!existing;
-    const title = isEdit ? 'Edit Borrower / Guarantor' : 'Add Borrower / Guarantor';
-    const v = existing || {};
+  function _showBorrowerModal(submissionId, existing, defaults) {
+    const isEdit = !!(existing && existing.id);
+    const v = existing || defaults || {};
+    const defaultRole = v.role || 'primary';
+    const roleLabel = defaultRole === 'guarantor' ? 'Guarantor / UBO' : defaultRole === 'director' ? 'Director' : 'Borrower';
+    const title = isEdit ? `Edit ${roleLabel}` : `Add ${roleLabel}`;
 
     const old = document.getElementById('dkf-borrower-modal');
     if (old) old.remove();
@@ -2400,7 +2409,7 @@ export async function renderDealMatrix(deal) {
           </div>
           <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
             <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#94A3B8;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
-            <button id="bm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : 'Add Borrower'}</button>
+            <button id="bm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : `Add ${roleLabel}`}</button>
           </div>
         </div>
       </div>`;
@@ -2447,21 +2456,25 @@ export async function renderDealMatrix(deal) {
           showToast(isEdit ? 'Borrower updated' : 'Borrower added', 'success');
           setTimeout(() => window.location.reload(), 800);
         } else {
-          showToast(data.error || 'Failed to save borrower', 'error');
+          showToast(data.error || 'Failed to save', 'error');
           btn.disabled = false;
-          btn.textContent = isEdit ? 'Save Changes' : 'Add Borrower';
+          btn.textContent = isEdit ? 'Save Changes' : `Add ${roleLabel}`;
         }
       } catch (err) {
         console.error('[borrower-save]', err);
         showToast('Failed to save: ' + err.message, 'error');
         btn.disabled = false;
-        btn.textContent = isEdit ? 'Save Changes' : 'Add Borrower';
+        btn.textContent = isEdit ? 'Save Changes' : `Add ${roleLabel}`;
       }
     });
   }
 
   window.addBorrowerRow = function(submissionId) {
     _showBorrowerModal(submissionId, null);
+  };
+
+  window.addGuarantorRow = function(submissionId) {
+    _showBorrowerModal(submissionId, null, { role: 'guarantor' });
   };
 
   window.editBorrowerRow = function(borrowerId, submissionId) {
