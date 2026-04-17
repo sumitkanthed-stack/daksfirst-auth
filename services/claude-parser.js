@@ -27,7 +27,7 @@ JSON schema to populate:
 {
   "borrowers": [
     {
-      "full_name": "string or null",
+      "full_name": "FULL LEGAL NAME — use the complete name from passport/ID/KYC, not abbreviated forms like 'Mrs A Smith' from letters or valuation reports",
       "date_of_birth": "YYYY-MM-DD or null",
       "nationality": "string or null",
       "email": "string or null",
@@ -156,7 +156,13 @@ PROPERTY RULES (CRITICAL — follow exactly):
 - Track source_document so the broker can verify which document each data point came from
 - Cross-reference data across documents: if the valuation report and broker pack both mention a property, use the valuation report figure for market_value
 - Set confidence between 0 and 1 based on how much data you could reliably extract
-- Include anything important in notes that does not fit other fields`;
+- Include anything important in notes that does not fit other fields
+
+BORROWER NAME RULES (CRITICAL):
+- Always use the FULL LEGAL NAME as it appears on passport, driving licence, or other ID document
+- Do NOT use abbreviated forms from valuation reports, letters, or correspondence (e.g. "Mrs A Cenci", "Mr J Smith")
+- If the full name appears in one document (e.g. passport: "Alessandra Cenci") and an abbreviated form in another (e.g. valuation: "Mrs A Cenci"), ALWAYS use the full legal name
+- The valuation report addressee or "client" field is often abbreviated — never prefer this over KYC/ID documents`;
 
 
 /**
