@@ -232,9 +232,9 @@ Extract every deal-relevant field you can find and return ONLY a JSON object wit
   "deposit_source": "source of the deposit or equity",
   "existing_charges": "details of any existing charges on the property",
   "additional_notes": "any other relevant information",
-  "broker_name": "broker name",
-  "broker_company": "broker company name",
-  "broker_fca": "broker FCA number",
+  "broker_name": "FINANCE BROKER / MORTGAGE INTERMEDIARY name only — NOT estate agents, NOT valuers, NOT solicitors. null if no finance broker found",
+  "broker_company": "finance brokerage firm name only — NOT estate agency, NOT surveyor firm. null if no finance broker found",
+  "broker_fca": "FCA number of the finance broker. null if not found",
   "doc_issue_date": "issue date or effective date of this document in YYYY-MM-DD format (e.g. passport issue date, valuation date, statement date, policy start date)",
   "doc_expiry_date": "expiry date of this document in YYYY-MM-DD format (e.g. passport expiry, valuation validity, insurance renewal date). Use null if no expiry applies.",
   "confidence": 0.85
@@ -245,7 +245,8 @@ RULES:
 - For currency values (current_value, purchase_price, loan_amount, refurb_cost), return the NUMBER only — strip £ signs and commas
 - For percentage values (ltv_requested, rate_requested), return the NUMBER only
 - Set "confidence" to a decimal between 0.0 and 1.0 reflecting how confident you are in the overall extraction
-- Be thorough — extract every field possible from the available text`;
+- Be thorough — extract every field possible from the available text
+- BROKER: Only populate broker_name/broker_company/broker_fca if someone is explicitly a FINANCE BROKER or MORTGAGE INTERMEDIARY. Estate agents (Foxtons, Savills, Fletchers, Knight Frank etc), valuers/surveyors, and solicitors are NOT brokers — leave broker fields null if no finance broker is mentioned`;
 
 /**
  * Extract deal fields from a single document's text content

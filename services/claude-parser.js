@@ -118,9 +118,9 @@ JSON schema to populate:
     "source_document": "filename or null"
   },
   "broker": {
-    "name": "string or null",
-    "company": "string or null",
-    "fca_number": "string or null",
+    "name": "string or null — the FINANCE BROKER / MORTGAGE INTERMEDIARY who introduced this deal to Daksfirst. NOT an estate agent, NOT a valuation surveyor, NOT a solicitor",
+    "company": "string or null — the finance brokerage firm",
+    "fca_number": "string or null — FCA registration number of the broker",
     "email": "string or null",
     "phone": "string or null"
   },
@@ -134,6 +134,14 @@ Rules:
 - LTV should be a percentage number (e.g. 65 not 0.65)
 - Rate should be monthly percentage (e.g. 0.95 for 0.95%/month)
 - If a field cannot be determined from the documents, set it to null or 0
+
+BROKER RULES (CRITICAL):
+- The "broker" is the FINANCE BROKER / MORTGAGE INTERMEDIARY who introduced this loan deal. They have an FCA number.
+- Estate agents (e.g. Foxtons, Savills, Fletchers, Knight Frank, Harrods Estates) are NOT brokers — they sell/let properties
+- Valuation surveyors / RICS surveyors are NOT brokers — they value properties
+- Solicitors / conveyancers are NOT brokers — they handle legal work
+- If no clear finance broker is identified in the documents, set all broker fields to null
+- Do NOT guess — only populate broker if someone is explicitly described as a broker, intermediary, or introducer for the loan
 
 PROPERTY RULES (CRITICAL — follow exactly):
 - parsedProperties must ONLY contain properties pledged as SECURITY/COLLATERAL for this loan
@@ -713,18 +721,30 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
     }
 
     // ── 6g. Write broker details ──
+    // Only overwrite broker fields if the deal creator is NOT a broker
+    // (brokers are the logged-in user — whatever's in the docs is likely the borrower's agent)
     if (mergedAnalysis.broker && mergedAnalysis.broker.name) {
-      await pool.query(
-        `UPDATE deal_submissions SET
-           broker_name = COALESCE(NULLIF($2, ''), broker_name),
-           broker_company = COALESCE(NULLIF($3, ''), broker_company),
-           broker_fca = COALESCE(NULLIF($4, ''), broker_fca),
-           updated_at = NOW()
-         WHERE id = $1`,
-        [dealId, mergedAnalysis.broker.name || '', mergedAnalysis.broker.company || '',
-         mergedAnalysis.broker.fca_number || '']
+      const dealOwner = await pool.query(
+        `SELECT u.role FROM deal_submissions d JOIN users u ON d.user_id = u.id WHERE d.id = $1`,
+        [dealId]
       );
-      await updateProgress('wrote_broker', `Saved broker: ${mergedAnalysis.broker.name}`);
+      const ownerIsBroker = dealOwner.rows.length > 0 && dealOwner.rows[0].role === 'broker';
+
+      if (!ownerIsBroker) {
+        await pool.query(
+          `UPDATE deal_submissions SET
+             broker_name = COALESCE(NULLIF($2, ''), broker_name),
+             broker_company = COALESCE(NULLIF($3, ''), broker_company),
+             broker_fca = COALESCE(NULLIF($4, ''), broker_fca),
+             updated_at = NOW()
+           WHERE id = $1`,
+          [dealId, mergedAnalysis.broker.name || '', mergedAnalysis.broker.company || '',
+           mergedAnalysis.broker.fca_number || '']
+        );
+        await updateProgress('wrote_broker', `Saved broker: ${mergedAnalysis.broker.name}`);
+      } else {
+        await updateProgress('wrote_broker', `Skipped — broker is logged-in user`);
+      }
     }
 
     // ── 6h. Store redemption, insurance, planning in matrix_data JSONB ──
