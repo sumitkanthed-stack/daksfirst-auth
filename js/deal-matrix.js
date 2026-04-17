@@ -3355,17 +3355,13 @@ export async function renderDealMatrix(deal) {
         ],
         nice: ['borrower_dob', 'borrower_nationality']
       },
-      'Borrower Financials': {
-        required: ['estimated_net_worth'],
-        nice: ['source_of_wealth']
-      },
       'Property / Security': {
         required: ['security_address', 'security_postcode', 'asset_type', 'property_tenure', 'current_value', 'occupancy_status', 'current_use'],
         nice: []
       },
       'Loan Terms': {
-        required: ['loan_amount', 'ltv_requested', 'term_months', 'interest_servicing', 'loan_purpose', 'use_of_funds', 'drawdown_date'],
-        nice: []
+        required: ['loan_amount', 'ltv_requested', 'term_months', 'interest_servicing', 'drawdown_date'],
+        nice: ['loan_purpose', 'use_of_funds']
       },
       'Exit Strategy': {
         required: ['exit_strategy'],
@@ -3540,7 +3536,8 @@ export async function renderDealMatrix(deal) {
             if (anyFilled) {
               section.filled++;
             } else {
-              section.missing.push(cond.atLeastOne.join(' or '));
+              // Push each field individually so highlighting can find them by data-field
+              cond.atLeastOne.forEach(k => section.missing.push(k));
             }
           } else if (cond.fields) {
             for (const key of cond.fields) {
