@@ -352,14 +352,36 @@ window.submitStagedDeal = async function() {
       return;
     }
 
-    // Success — clear staging and redirect
-    showToast(data.message || 'Deal submitted successfully!');
+    // Success — trigger AI categorisation, then redirect to doc repo
+    const submissionId = data.submission_id;
+    btn.textContent = 'Claude is sorting your documents...';
+
+    // Fire off AI categorisation (fire-and-forget — processes in background)
+    if (submissionId) {
+      try {
+        await fetchWithAuth(`${API_BASE}/api/smart-parse/categorise-docs/${submissionId}`, {
+          method: 'POST'
+        });
+      } catch (catErr) {
+        console.warn('[staging] AI categorisation request failed:', catErr.message);
+      }
+    }
+
+    showToast(data.message || 'Deal submitted! Claude is sorting your documents...');
     window.cancelStaging();
 
-    if (data.submission_id) {
+    if (submissionId) {
+      // Small delay to let categorisation start, then redirect to deal with doc repo tab active
       setTimeout(() => {
-        import('./deal-detail.js').then(m => m.showDealDetail(data.submission_id));
-      }, 600);
+        import('./deal-detail.js').then(m => {
+          m.showDealDetail(submissionId);
+          // After deal loads, auto-click the documents/doc-repo tab
+          setTimeout(() => {
+            const docTab = document.querySelector('[data-tab="dtab-docs"]') || document.querySelector('[onclick*="dtab-docs"]');
+            if (docTab) docTab.click();
+          }, 1500);
+        });
+      }, 800);
     }
   } catch (err) {
     console.error('Upload error:', err);

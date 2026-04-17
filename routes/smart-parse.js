@@ -19,6 +19,40 @@ const upload = multer({
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 const N8N_PARSE_WEBHOOK_URL = config.N8N_PARSE_WEBHOOK_URL || '';
 
+// ── Lightweight filename-based document categoriser (no AI call) ──
+function categoriseByFilename(filename) {
+  const f = (filename || '').toLowerCase();
+
+  // KYC / Identity
+  if (/passport|driving.?licen[cs]e|photo.?id|national.?id|visa|biometric|right.?to.?remain|brp/i.test(f)) return 'kyc';
+  if (/kyc|know.?your.?customer|id.?check|identity|aml.?check/i.test(f)) return 'kyc';
+
+  // Financial
+  if (/bank.?statement|account.?statement/i.test(f)) return 'financial';
+  if (/tax.?return|sa302|sa100|ct600|p60|p45|payslip|wage.?slip|income/i.test(f)) return 'financial';
+  if (/assets?.?liabilit|net.?worth|financial.?statement|balance.?sheet|pnl|profit.?(?:and|&).?loss/i.test(f)) return 'financial';
+  if (/statement.*gbp|statement.*eur|statement.*usd/i.test(f)) return 'financial';
+
+  // Property
+  if (/title.?register|title.?deed|land.?registry|hmlr|official.?copy/i.test(f)) return 'property';
+  if (/valuation|survey|rics|red.?book|avm|property.?report|epc|floor.?plan/i.test(f)) return 'property';
+  if (/portfolio|schedule.?of.?propert|rent.?roll|tenancy|lease.?agreement|asr/i.test(f)) return 'property';
+  if (/planning.?permission|building.?reg|completion.?cert/i.test(f)) return 'property';
+
+  // Legal
+  if (/solicitor|legal|facility.?agreement|loan.?agreement|charge|debenture|guarantee/i.test(f)) return 'legal';
+  if (/certificate.?of.?incorporat|company.?search|memorandum|articles/i.test(f)) return 'legal';
+  if (/insurance|indemnity|warranty/i.test(f)) return 'legal';
+
+  // Proof of address (subset of KYC but useful to separate)
+  if (/council.?tax|utility.?bill|water.?bill|electric|gas.?bill|phone.?bill|proof.?of.?address/i.test(f)) return 'kyc';
+
+  // Company filings
+  if (/csl2|companies.?house|annual.?return|confirmation.?statement|filing/i.test(f)) return 'legal';
+
+  return 'uncategorised';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  UPLOAD FILES — Filing cabinet with staging. Save files, text, notes.
 //  Create/attach deal, redirect. No AI calls here.
@@ -135,6 +169,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
     let savedCount = 0;
     for (const file of (req.files || [])) {
       const odFile = uploadedFiles.find(u => u.filename === file.originalname);
+      const suggestedCategory = categoriseByFilename(file.originalname);
       try {
         await pool.query(
           `INSERT INTO deal_documents (deal_id, filename, file_type, file_size, file_content, doc_category, onedrive_item_id, onedrive_path, onedrive_download_url)
@@ -145,7 +180,7 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
             safeMime(file.mimetype),
             file.size,
             file.buffer,
-            'uncategorised',
+            suggestedCategory,
             odFile ? odFile.itemId : null,
             odFile ? odFile.path : null,
             odFile ? odFile.downloadUrl : null
@@ -195,6 +230,91 @@ router.post('/upload', authenticateToken, upload.any(), async (req, res) => {
   } catch (error) {
     console.error('[smart-parse] Error:', error);
     res.status(500).json({ error: 'Failed to process uploaded files' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CATEGORISE DOCS — Claude Haiku classifies documents by content
+//  Called after broker submits from staging area (fire-and-forget friendly)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/categorise-docs/:submissionId', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+
+    // Get deal_id from submission_id
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealIntId = dealResult.rows[0].id;
+
+    // Fetch all docs that need categorisation (uncategorised or recently uploaded)
+    const docsResult = await pool.query(
+      `SELECT id, filename, file_type, file_content FROM deal_documents
+       WHERE deal_id = $1 AND (doc_category = 'uncategorised' OR doc_category IS NULL)
+       ORDER BY id`,
+      [dealIntId]
+    );
+
+    if (docsResult.rows.length === 0) {
+      return res.json({ success: true, categorised: 0, message: 'No uncategorised documents found' });
+    }
+
+    // Respond immediately — categorise in background
+    res.json({
+      success: true,
+      queued: docsResult.rows.length,
+      message: `Categorising ${docsResult.rows.length} document${docsResult.rows.length !== 1 ? 's' : ''} with Claude...`
+    });
+
+    // ── Background categorisation ──
+    const { categoriseWithAI } = require('../services/ai-categorise');
+
+    // Map AI categories → frontend categories
+    const CATEGORY_MAP = {
+      'kyc': 'kyc',
+      'financials_aml': 'financial',
+      'valuation': 'property',
+      'use_of_funds': 'financial',
+      'exit_evidence': 'financial',
+      'other_conditions': 'legal',
+      'general': 'other'
+    };
+
+    let categorised = 0;
+    for (const doc of docsResult.rows) {
+      try {
+        // Build a file-like object for categoriseWithAI
+        const fileObj = {
+          buffer: doc.file_content,
+          mimetype: doc.file_type || 'application/pdf',
+          originalname: doc.filename
+        };
+
+        const aiCategory = await categoriseWithAI(fileObj);
+        const mappedCategory = aiCategory ? (CATEGORY_MAP[aiCategory] || 'other') : categoriseByFilename(doc.filename);
+
+        await pool.query(
+          `UPDATE deal_documents SET doc_category = $1, updated_at = NOW() WHERE id = $2`,
+          [mappedCategory, doc.id]
+        );
+        categorised++;
+        console.log(`[categorise] ${doc.filename} → ${aiCategory} → ${mappedCategory}`);
+      } catch (docErr) {
+        console.error(`[categorise] Failed for ${doc.filename}:`, docErr.message);
+        // Fallback to filename-based
+        const fallback = categoriseByFilename(doc.filename);
+        await pool.query(
+          `UPDATE deal_documents SET doc_category = $1, updated_at = NOW() WHERE id = $2`,
+          [fallback, doc.id]
+        ).catch(() => {});
+      }
+    }
+
+    console.log(`[categorise] Done: ${categorised}/${docsResult.rows.length} docs for deal ${submissionId}`);
+  } catch (error) {
+    console.error('[categorise-docs] Error:', error);
+    // Already responded — just log
   }
 });
 

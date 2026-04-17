@@ -245,9 +245,9 @@ export async function renderDocRepo(submissionId, role, filterCategory) {
       const c = (d.doc_category || d.category || 'other').toLowerCase();
       catCounts[c] = (catCounts[c] || 0) + 1;
     });
-    const catLabels = { all: 'All', kyc: 'KYC/ID', financial: 'Financial', property: 'Property', legal: 'Legal', issued: 'Issued', email: 'Email', other: 'Other' };
+    const catLabels = { all: 'All', kyc: 'KYC/ID', financial: 'Financial', property: 'Property', legal: 'Legal', issued: 'Issued', email: 'Email', other: 'Other', uncategorised: 'Uncategorised' };
     const activeCat = filterCategory || 'all';
-    const tabOrder = ['all', 'kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
+    const tabOrder = ['all', 'kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other', 'uncategorised'];
     filterTabs.innerHTML = tabOrder.filter(c => c === 'all' || catCounts[c]).map(c => {
       const isActive = c === activeCat;
       const bg = isActive ? '#D4A853' : 'rgba(255,255,255,0.04)';
@@ -273,7 +273,7 @@ export async function renderDocRepo(submissionId, role, filterCategory) {
     issued: 'background:rgba(129,140,248,0.1);color:#818CF8;', email: 'background:rgba(244,114,182,0.1);color:#F472B6;',
     other: 'background:rgba(148,163,184,0.1);color:#94A3B8;'
   };
-  const CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other'];
+  const CATEGORIES = ['kyc', 'financial', 'property', 'legal', 'issued', 'email', 'other', 'uncategorised'];
 
   // Sort documents by category
   const catOrder = { kyc: 0, financial: 1, property: 2, legal: 3, issued: 4, email: 5, other: 6 };
@@ -609,10 +609,18 @@ window.parseDocById = async function(docId) {
   const role = _docRepoRole;
   if (!subId || !docId) return;
 
-  // Show loading state on the button
-  const btn = event && event.target ? event.target : null;
+  // Show loading state on the button (safely — event may not exist in all contexts)
+  const btn = (typeof event !== 'undefined' && event && event.target) ? event.target : document.querySelector(`button[onclick*="parseDocById(${docId})"]`);
   const origText = btn ? btn.innerHTML : '';
   if (btn) { btn.innerHTML = '&#9203; Parsing...'; btn.disabled = true; btn.style.opacity = '0.6'; }
+
+  // Show a visible status in the Parser section so user knows something is happening
+  const parserFields = document.getElementById('parser-fields');
+  if (parserFields) {
+    parserFields.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;"><span class="spinner" style="border-color:rgba(212,168,83,0.2);border-top-color:#D4A853;width:24px;height:24px;border-width:3px;border-style:solid;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;"></span><span style="color:#D4A853;font-size:14px;font-weight:600;">Claude is reading your document... This may take 30-90 seconds.</span></div>';
+    const parserContent = document.getElementById('parser-content');
+    if (parserContent) parserContent.style.display = 'block';
+  }
 
   try {
     const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/parse-document/${docId}`, {
