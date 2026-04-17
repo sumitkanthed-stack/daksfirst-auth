@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
@@ -28,6 +29,15 @@ app.set('trust proxy', 1);
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false,       // CSP handled by Vercel frontend; backend is API-only
+  crossOriginEmbedderPolicy: false,   // Allow cross-origin API calls from frontend
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow Vercel to fetch from Render
+  hsts: { maxAge: 31536000, includeSubDomains: true },   // Force HTTPS for 1 year
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+}));
 
 // CORS configuration
 app.use(cors({
