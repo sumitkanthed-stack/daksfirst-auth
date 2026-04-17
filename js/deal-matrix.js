@@ -268,6 +268,61 @@ function renderDocumentDetailPanel(docId, docData, documentTrail = []) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// FINANCIAL SCHEDULE TABLE RENDERER
+// ═══════════════════════════════════════════════════════════════════
+
+const FREQ_LABELS = { one_off: 'One-off', monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual' };
+const CAT_LABELS = { asset: 'Asset', liability: 'Liability', income: 'Income', expense: 'Expense' };
+const CAT_EXAMPLES = {
+  asset: 'e.g. Buy-to-let portfolio, ISA, pension fund, vehicle',
+  liability: 'e.g. Mortgage on 123 High St, credit card balance, director\'s loan',
+  income: 'e.g. Salary from XYZ Ltd, rental income, dividends',
+  expense: 'e.g. Mortgage payment, council tax, school fees'
+};
+
+function _renderFinancialTable(deal, category, canEdit) {
+  const items = (deal.financials || []).filter(f => f.category === category);
+  if (items.length === 0) {
+    return `<p style="font-size:12px;color:#6B7280;margin:0;">No ${CAT_LABELS[category]?.toLowerCase() || category}s added yet. ${canEdit ? `Use the "+ Add ${CAT_LABELS[category]}" button above.` : ''}</p>`;
+  }
+
+  const totalAmt = items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+
+  return `
+    <div style="margin-bottom:8px;">
+      <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">${CAT_LABELS[category]} Schedule — ${items.length} ${items.length === 1 ? 'Item' : 'Items'} — Total: £${totalAmt.toLocaleString()}</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:rgba(255,255,255,0.04);">
+          <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Description</th>
+          <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Amount (£)</th>
+          <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Frequency</th>
+          <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Holder / Lender</th>
+          <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Source</th>
+          ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(f => {
+          const srcColor = f.source === 'parsed' ? '#818CF8' : '#94A3B8';
+          const srcBg = f.source === 'parsed' ? 'rgba(129,140,248,0.1)' : 'rgba(255,255,255,0.04)';
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="fin-row-${f.id}">
+            <td style="padding:6px 8px;color:#F1F5F9;font-weight:500;">${sanitizeHtml(f.description || '-')}</td>
+            <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-variant-numeric:tabular-nums;">${f.amount ? parseFloat(f.amount).toLocaleString() : '—'}</td>
+            <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${FREQ_LABELS[f.frequency] || f.frequency || '—'}</td>
+            <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(f.holder || '—')}</td>
+            <td style="padding:6px 8px;"><span style="padding:2px 6px;border-radius:10px;font-size:9px;font-weight:600;background:${srcBg};color:${srcColor};text-transform:capitalize;">${f.source || 'manual'}</span></td>
+            ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
+              <button onclick="window.editFinancialRow(${f.id}, '${deal.submission_id}', '${category}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
+              <button onclick="window.deleteFinancialRow(${f.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
+            </td>` : ''}
+          </tr>`}).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN RENDER FUNCTION
 // ═══════════════════════════════════════════════════════════════════
 
@@ -605,9 +660,15 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-assets">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Assets Schedule</div>
-              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload asset statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Assets Schedule</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${canEdit ? `<button onclick="window.addFinancialRow('${deal.submission_id}','asset')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Asset</button>` : ''}
+                  ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                </div>
+              </div>
+              ${_renderFinancialTable(deal, 'asset', canEdit)}
             </div>
           </div>
         </div>
@@ -618,9 +679,15 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-liabilities">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Liabilities Schedule</div>
-              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload mortgage statements and credit reports via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Liabilities Schedule</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${canEdit ? `<button onclick="window.addFinancialRow('${deal.submission_id}','liability')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Liability</button>` : ''}
+                  ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                </div>
+              </div>
+              ${_renderFinancialTable(deal, 'liability', canEdit)}
             </div>
           </div>
         </div>
@@ -631,9 +698,15 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-income">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Income Schedule</div>
-              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload payslips, tax returns, or rental statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Income Schedule</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${canEdit ? `<button onclick="window.addFinancialRow('${deal.submission_id}','income')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Income</button>` : ''}
+                  ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                </div>
+              </div>
+              ${_renderFinancialTable(deal, 'income', canEdit)}
             </div>
           </div>
         </div>
@@ -644,9 +717,15 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-expenses">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Expenses Schedule</div>
-              <p style="font-size:13px;color:#94A3B8;margin:0;">Upload bank statements via Document Repository. Parsed data will auto-populate here.</p>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Expenses Schedule</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${canEdit ? `<button onclick="window.addFinancialRow('${deal.submission_id}','expense')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Expense</button>` : ''}
+                  ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+                </div>
+              </div>
+              ${_renderFinancialTable(deal, 'expense', canEdit)}
             </div>
           </div>
         </div>
@@ -2420,6 +2499,163 @@ export async function renderDealMatrix(deal) {
           setTimeout(() => window.location.reload(), 1200);
         } else {
           showToast(data.error || 'Failed to remove borrower', 'error');
+        }
+      })
+      .catch(err => showToast('Failed to remove: ' + err.message, 'error'));
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FINANCIAL SCHEDULE CRUD — Add / Edit / Delete in deal_financials
+  // ═══════════════════════════════════════════════════════════════════
+
+  function _showFinancialModal(submissionId, category, existing) {
+    const isEdit = !!existing;
+    const catLabel = CAT_LABELS[category] || category;
+    const title = isEdit ? `Edit ${catLabel}` : `Add ${catLabel}`;
+    const v = existing || {};
+
+    const old = document.getElementById('dkf-financial-modal');
+    if (old) old.remove();
+
+    const freqOpts = ['one_off', 'monthly', 'quarterly', 'annual'].map(f =>
+      `<option value="${f}" ${(v.frequency || 'one_off') === f ? 'selected' : ''}>${FREQ_LABELS[f]}</option>`
+    ).join('');
+
+    const modalHtml = `
+      <div id="dkf-financial-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#1E293B;border:1px solid rgba(212,168,83,0.3);border-radius:12px;padding:24px;width:90%;max-width:480px;max-height:85vh;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <span style="font-size:16px;font-weight:700;color:#F1F5F9;">${title}</span>
+            <button onclick="document.getElementById('dkf-financial-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
+          </div>
+          <p style="font-size:11px;color:#6B7280;margin:0 0 12px;">${CAT_EXAMPLES[category] || ''}</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Description *</label>
+              <input id="fm-desc" value="${_escAttr(v.description || '')}" placeholder="${CAT_EXAMPLES[category] || 'Description'}" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Amount (£)</label>
+              <input id="fm-amount" type="text" value="${v.amount ? parseFloat(v.amount).toLocaleString() : ''}" placeholder="e.g. 250,000" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Frequency</label>
+              <select id="fm-freq" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                ${freqOpts}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Holder / Lender</label>
+              <input id="fm-holder" value="${_escAttr(v.holder || '')}" placeholder="e.g. Barclays, HMRC" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Reference</label>
+              <input id="fm-ref" value="${_escAttr(v.reference || '')}" placeholder="Account / ref number" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Notes</label>
+              <textarea id="fm-notes" rows="2" placeholder="Additional detail" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;resize:vertical;">${sanitizeHtml(v.notes || '')}</textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+            <button onclick="document.getElementById('dkf-financial-modal').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#94A3B8;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="fm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : `Add ${catLabel}`}</button>
+          </div>
+        </div>
+      </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    document.getElementById('fm-save-btn').addEventListener('click', async () => {
+      const rawAmt = document.getElementById('fm-amount').value.replace(/,/g, '').trim();
+      const payload = {
+        category,
+        description: document.getElementById('fm-desc').value.trim(),
+        amount: rawAmt ? parseFloat(rawAmt) : null,
+        frequency: document.getElementById('fm-freq').value,
+        holder: document.getElementById('fm-holder').value.trim() || null,
+        reference: document.getElementById('fm-ref').value.trim() || null,
+        notes: document.getElementById('fm-notes').value.trim() || null
+      };
+
+      if (!payload.description) {
+        showToast('Description is required', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('fm-save-btn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const url = isEdit
+          ? `${API_BASE}/api/deals/${submissionId}/financials/${existing.id}`
+          : `${API_BASE}/api/deals/${submissionId}/financials`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const resp = await fetchWithAuth(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (data.success) {
+          document.getElementById('dkf-financial-modal').remove();
+          showToast(isEdit ? `${catLabel} updated` : `${catLabel} added`, 'success');
+          setTimeout(() => window.location.reload(), 800);
+        } else {
+          showToast(data.error || `Failed to save ${catLabel.toLowerCase()}`, 'error');
+          btn.disabled = false;
+          btn.textContent = isEdit ? 'Save Changes' : `Add ${catLabel}`;
+        }
+      } catch (err) {
+        console.error('[financial-save]', err);
+        showToast('Failed to save: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = isEdit ? 'Save Changes' : `Add ${catLabel}`;
+      }
+    });
+  }
+
+  window.addFinancialRow = function(submissionId, category) {
+    _showFinancialModal(submissionId, category, null);
+  };
+
+  window.editFinancialRow = function(financialId, submissionId, category) {
+    const fin = (deal.financials || []).find(f => f.id === financialId);
+    if (fin) {
+      _showFinancialModal(submissionId, category, fin);
+    } else {
+      fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/financials?category=${category}`)
+        .then(r => r.json())
+        .then(data => {
+          const found = (data.financials || []).find(f => f.id === financialId);
+          if (found) {
+            _showFinancialModal(submissionId, category, found);
+          } else {
+            showToast('Financial record not found', 'error');
+          }
+        })
+        .catch(err => showToast('Failed to load record: ' + err.message, 'error'));
+    }
+  };
+
+  window.deleteFinancialRow = function(financialId, submissionId) {
+    const fin = (deal.financials || []).find(f => f.id === financialId);
+    const label = fin ? (fin.description || `Record #${financialId}`) : `Record #${financialId}`;
+
+    if (!confirm(`Remove "${label}" from this deal?\n\nThis cannot be undone.`)) return;
+
+    fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/financials/${financialId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showToast('Record removed', 'success');
+          const row = document.getElementById(`fin-row-${financialId}`);
+          if (row) row.remove();
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showToast(data.error || 'Failed to remove record', 'error');
         }
       })
       .catch(err => showToast('Failed to remove: ' + err.message, 'error'));

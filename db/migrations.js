@@ -569,6 +569,28 @@ async function runMigrations() {
       console.log('[migrate] Note on draft stage:', err.message.substring(0, 60));
     }
 
+    // Financial schedules table — assets, liabilities, income, expenses line items
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_financials (
+        id              SERIAL PRIMARY KEY,
+        deal_id         INT           REFERENCES deal_submissions(id) ON DELETE CASCADE,
+        category        VARCHAR(20)   NOT NULL CHECK (category IN ('asset','liability','income','expense')),
+        description     VARCHAR(500)  NOT NULL,
+        amount          NUMERIC(15,2),
+        frequency       VARCHAR(20)   DEFAULT 'one_off' CHECK (frequency IN ('one_off','monthly','quarterly','annual')),
+        holder          VARCHAR(200),
+        reference       VARCHAR(200),
+        notes           TEXT,
+        supporting_doc_id INT,
+        source          VARCHAR(30)   DEFAULT 'manual' CHECK (source IN ('manual','parsed')),
+        created_by      INT           REFERENCES users(id),
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_deal ON deal_financials(deal_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_cat ON deal_financials(category);`);
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

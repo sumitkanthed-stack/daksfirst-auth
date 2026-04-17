@@ -239,6 +239,13 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
       };
     }
 
+    // Include financial schedules (assets, liabilities, income, expenses)
+    const financialsResult = await pool.query(
+      `SELECT * FROM deal_financials WHERE deal_id = $1 ORDER BY category, created_at`,
+      [deal.id]
+    );
+    deal.financials = financialsResult.rows;
+
     res.json({ deal });
   } catch (err) {
     console.error('[deals] Get single deal error:', err);

@@ -20,6 +20,7 @@ const webhookRoutes = require('./routes/webhooks');
 const smartParseRoutes = require('./routes/smart-parse');
 const docusignWebhookRoutes = require('./routes/docusign-webhook');
 const matrixRoutes = require('./routes/matrix');
+const financialsRoutes = require('./routes/financials');
 
 // Initialize Express app
 const app = express();
@@ -83,6 +84,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/smart-parse', smartParseRoutes);
 app.use('/api/docusign', docusignWebhookRoutes);
 app.use('/api/matrix', matrixRoutes);
+app.use('/api/deals', financialsRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
