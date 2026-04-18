@@ -3282,8 +3282,29 @@ export async function renderDealMatrix(deal) {
     // Whether to hide the Role selector entirely (only for top-level guarantor add)
     const hideRoleUI = isGuarantorAdd;
 
-    const typeOpts = ['individual', 'corporate', 'spv', 'llp', 'trust', 'partnership'].map(t =>
-      `<option value="${t}" ${v.borrower_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+    // Type dropdown — filter based on context:
+    //   - Edit mode: all types
+    //   - Children (parent_borrower_id set): only Individual (directors/PSCs/UBOs are always people)
+    //   - Guarantor add with borrower_type === 'individual': only Individual
+    //   - Guarantor add with borrower_type === 'corporate': only corporate-family variants (no Individual)
+    //   - Generic add (no defaults): all types
+    const allCorpTypes = ['corporate','spv','llp','trust','partnership'];
+    let allowedTypes;
+    if (isEdit) {
+      allowedTypes = ['individual', ...allCorpTypes];
+    } else if (isChildAdd) {
+      allowedTypes = ['individual'];
+    } else if (isGuarantorAdd && v.borrower_type === 'individual') {
+      allowedTypes = ['individual'];
+    } else if (isGuarantorAdd && allCorpTypes.includes(v.borrower_type)) {
+      allowedTypes = allCorpTypes;
+    } else {
+      allowedTypes = ['individual', ...allCorpTypes];
+    }
+    // If a specific type is preset and it's not in allowedTypes, fall back to first allowed
+    const selectedType = allowedTypes.includes(v.borrower_type) ? v.borrower_type : allowedTypes[0];
+    const typeOpts = allowedTypes.map(t =>
+      `<option value="${t}" ${selectedType === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
     ).join('');
 
     // Nationality list — common UK/EU/global nationalities (source: ISO 3166 country name adjective forms)
