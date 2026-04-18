@@ -2181,9 +2181,21 @@ export async function renderDealMatrix(deal) {
   // ── Party Relationships analysis (auto-compute after DOM mounts) ──
   // Fires in the background — does not block matrix render. Populates the placeholder div
   // at the top of the Borrower/KYC section when 2+ corporate parties are present on the deal.
-  if (typeof window._loadAndRenderPartyRelationships === 'function') {
-    setTimeout(() => window._loadAndRenderPartyRelationships(deal), 80);
-  }
+  // NOTE: we DON'T gate this on `typeof window._loadAndRenderPartyRelationships === 'function'`
+  // because the function assignment happens later in this same synchronous renderDealMatrix pass
+  // (window handlers are assigned after container.innerHTML). The setTimeout runs after this
+  // whole pass completes, so the function will be available by the time the timer fires.
+  setTimeout(() => {
+    try {
+      if (typeof window._loadAndRenderPartyRelationships === 'function') {
+        window._loadAndRenderPartyRelationships(deal);
+      } else {
+        console.warn('[party-relationships] orchestrator not yet defined when timer fired');
+      }
+    } catch (err) {
+      console.warn('[party-relationships] auto-trigger failed:', err);
+    }
+  }, 120);
 
   // ── Persist sensible defaults if not already set ──
   // Term defaults to 12 months, interest servicing defaults to retained
