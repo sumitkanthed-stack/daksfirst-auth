@@ -610,6 +610,15 @@ async function runMigrations() {
       console.log('[migrate] Note on borrower unique constraint:', err.message.substring(0, 80));
     }
 
+    // ── Expand borrower role options: add ubo, psc, shareholder ──
+    try {
+      await pool.query(`ALTER TABLE deal_borrowers DROP CONSTRAINT IF EXISTS deal_borrowers_role_check`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD CONSTRAINT deal_borrowers_role_check CHECK (role IN ('primary','joint','guarantor','director','ubo','psc','shareholder'))`);
+      console.log('[migrate] ✓ deal_borrowers role constraint updated');
+    } catch (err) {
+      console.log('[migrate] Note on borrower role constraint:', err.message.substring(0, 80));
+    }
+
     // ── Company Verifications (Companies House API audit trail) ──
     await pool.query(`
       CREATE TABLE IF NOT EXISTS company_verifications (

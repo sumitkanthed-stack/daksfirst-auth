@@ -576,8 +576,10 @@ export async function renderDealMatrix(deal) {
                   </thead>
                   <tbody>
                     ${deal.borrowers.map(b => {
-                      const roleColor = b.role === 'primary' ? '#34D399' : b.role === 'guarantor' ? '#FBBF24' : b.role === 'director' ? '#818CF8' : '#94A3B8';
-                      const roleBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : b.role === 'guarantor' ? 'rgba(251,191,36,0.1)' : b.role === 'director' ? 'rgba(129,140,248,0.1)' : 'rgba(255,255,255,0.04)';
+                      const roleColors = { primary:'#34D399', joint:'#34D399', guarantor:'#FBBF24', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
+                      const roleBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', guarantor:'rgba(251,191,36,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
+                      const roleColor = roleColors[b.role] || '#94A3B8';
+                      const roleBg = roleBgs[b.role] || 'rgba(255,255,255,0.04)';
                       const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
                       return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-${b.id}" onclick="window._toggleBorrowerDetail(${b.id})">
                       <td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">${sanitizeHtml(b.full_name || '-')} <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>
@@ -636,23 +638,68 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
-        <!-- Guarantor(s) — now part of borrower table above, keeping row for backward compat -->
-        ${renderFieldRow('guarantors', 'Guarantor(s) / UBOs', 'Directors, personal guarantors, joint & several',
+        <!-- UBOs / Corporate Ownership — directors, PSCs, shareholders of the borrowing entity -->
+        ${renderFieldRow('ubos', 'UBOs / Corporate Ownership', 'Directors, PSCs, and beneficial owners of the corporate borrower',
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-ubos">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">UBOs / Corporate Ownership</div>
+              </div>
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 8px;">Individuals who own or control the corporate borrower — directors, PSCs, and shareholders identified via Companies House verification.</p>
+              ${(() => {
+                const ubos = (deal.borrowers || []).filter(b => ['director','ubo','psc','shareholder'].includes(b.role));
+                if (ubos.length === 0) return '<p style="font-size:12px;color:#FBBF24;margin:0;">No UBOs identified yet. Run Companies House verification above to populate.</p>';
+                return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
+                  <thead><tr style="background:rgba(255,255,255,0.03);">
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Name</th>
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Role</th>
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">CH Status</th>
+                  </tr></thead>
+                  <tbody>${ubos.map(b => {
+                    const rc = b.role === 'director' ? '#818CF8' : b.role === 'psc' ? '#34D399' : '#D4A853';
+                    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                      <td style="padding:6px 8px;font-size:12px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name)}</td>
+                      <td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:${rc};background:rgba(255,255,255,0.05);text-transform:uppercase;">${b.role}</span></td>
+                      <td style="padding:6px 8px;font-size:11px;color:${b.ch_verified_at ? '#34D399' : '#94A3B8'};">${b.ch_verified_at ? '&#10003; Verified' : 'Pending'}</td>
+                    </tr>`;
+                  }).join('')}</tbody>
+                </table>`;
+              })()}
+            </div>
+          </div>
+        </div>
+
+        <!-- Guarantor(s) — personal guarantees, joint & several -->
+        ${renderFieldRow('guarantors', 'Guarantor(s)', 'Personal guarantors providing joint & several liability',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-guarantors">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Guarantor & UBO Details</div>
-                ${canEdit ? `<button onclick="window.addGuarantorRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Guarantor / UBO</button>` : ''}
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Personal Guarantors</div>
+                ${canEdit ? `<button onclick="window.addGuarantorRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Guarantor</button>` : ''}
               </div>
-              ${(deal.borrowers && deal.borrowers.filter(b => b.role !== 'primary').length > 0) ? `
-              <p style="font-size:12px;color:#34D399;margin:0 0 8px;">&#10003; ${deal.borrowers.filter(b => b.role !== 'primary').length} non-primary party(ies) registered in Borrower Structure above.</p>
-              ` : `
-              <p style="font-size:12px;color:#FBBF24;margin:0 0 8px;">No guarantors or UBOs added yet.</p>
-              <p style="font-size:11px;color:#94A3B8;margin:0;">Add directors, personal guarantors, or UBOs who need to sign joint and several.</p>
-              `}
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 8px;">Individuals providing personal guarantees — not corporate officers unless also guaranteeing personally.</p>
+              ${(() => {
+                const guarantors = (deal.borrowers || []).filter(b => b.role === 'guarantor');
+                if (guarantors.length === 0) return '<p style="font-size:12px;color:#FBBF24;margin:0;">No personal guarantors added yet.</p>';
+                return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
+                  <thead><tr style="background:rgba(255,255,255,0.03);">
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Name</th>
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Type</th>
+                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">KYC</th>
+                  </tr></thead>
+                  <tbody>${guarantors.map(b => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                    <td style="padding:6px 8px;font-size:12px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name)}</td>
+                    <td style="padding:6px 8px;font-size:11px;color:#94A3B8;text-transform:capitalize;">${b.borrower_type || 'individual'}</td>
+                    <td style="padding:6px 8px;font-size:11px;color:${b.kyc_status === 'verified' ? '#34D399' : '#FBBF24'};">${b.kyc_status || 'pending'}</td>
+                  </tr>`).join('')}</tbody>
+                </table>`;
+              })()}
             </div>
           </div>
         </div>
@@ -2617,14 +2664,16 @@ export async function renderDealMatrix(deal) {
     const isEdit = !!(existing && existing.id);
     const v = existing || defaults || {};
     const defaultRole = v.role || 'primary';
-    const roleLabel = defaultRole === 'guarantor' ? 'Guarantor / UBO' : defaultRole === 'director' ? 'Director' : 'Borrower';
+    const _roleLabels = { primary:'Borrower', joint:'Joint Borrower', guarantor:'Guarantor', director:'Director', ubo:'UBO', psc:'PSC', shareholder:'Shareholder' };
+    const roleLabel = _roleLabels[defaultRole] || 'Borrower';
     const title = isEdit ? `Edit ${roleLabel}` : `Add ${roleLabel}`;
 
     const old = document.getElementById('dkf-borrower-modal');
     if (old) old.remove();
 
-    const roleOpts = ['primary', 'joint', 'guarantor', 'director'].map(r =>
-      `<option value="${r}" ${v.role === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+    const roleOptLabels = { primary: 'Primary Borrower', joint: 'Joint Borrower', director: 'Director', ubo: 'UBO (Beneficial Owner)', psc: 'PSC (Significant Control)', shareholder: 'Shareholder', guarantor: 'Guarantor' };
+    const roleOpts = Object.entries(roleOptLabels).map(([r, label]) =>
+      `<option value="${r}" ${v.role === r ? 'selected' : ''}>${label}</option>`
     ).join('');
 
     const typeOpts = ['individual', 'corporate', 'spv', 'llp', 'trust', 'partnership'].map(t =>
@@ -2841,7 +2890,8 @@ export async function renderDealMatrix(deal) {
       return fmt(label, formatted);
     };
 
-    const roleColor = bor.role === 'primary' ? '#34D399' : bor.role === 'guarantor' ? '#FBBF24' : bor.role === 'director' ? '#818CF8' : '#94A3B8';
+    const _rc = { primary:'#34D399', joint:'#34D399', guarantor:'#FBBF24', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
+    const roleColor = _rc[bor.role] || '#94A3B8';
     const chBadge = bor.ch_verified_at ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">&#10003; CH Verified — ${bor.ch_matched_role || bor.role}</span>` : '';
 
     const detailHtml = `
@@ -2867,10 +2917,22 @@ export async function renderDealMatrix(deal) {
                 ${fmt('Company No.', bor.company_number)}
                 ${fmt('Address', bor.address)}
               </div>
-              ${(bor.ch_match_data && typeof bor.ch_match_data === 'object' && Object.keys(bor.ch_match_data).length > 0) ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
-                <span style="font-size:10px;color:#34D399;font-weight:600;">CH MATCH DATA</span>
-                <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(JSON.stringify(bor.ch_match_data))}</div>
-              </div>` : ''}
+              ${(() => {
+                const chd = bor.ch_match_data;
+                if (!chd || typeof chd !== 'object' || Object.keys(chd).length === 0) return '';
+                // Format CH match data nicely instead of raw JSON
+                const items = [];
+                if (chd.roles && chd.roles.length) items.push(`<strong>Roles:</strong> ${chd.roles.join(', ')}`);
+                if (chd.control) items.push(`<strong>Control:</strong> ${sanitizeHtml(chd.control)}`);
+                if (chd.nationality) items.push(`<strong>Nationality:</strong> ${sanitizeHtml(chd.nationality)}`);
+                if (chd.appointed) items.push(`<strong>Appointed:</strong> ${sanitizeHtml(chd.appointed)}`);
+                if (chd.source) items.push(`<strong>Source:</strong> ${sanitizeHtml(chd.source)}`);
+                if (items.length === 0) return '';
+                return `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
+                  <span style="font-size:10px;color:#34D399;font-weight:600;">COMPANIES HOUSE MATCH</span>
+                  <div style="font-size:11px;color:#CBD5E1;margin-top:3px;line-height:1.5;">${items.join(' &nbsp;·&nbsp; ')}</div>
+                </div>`;
+              })()}
             </div>
           </div>
         </td>
@@ -4298,7 +4360,7 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
   }
 
   // Render reconciliation table
-  const roleOptions = ['director', 'primary', 'joint', 'guarantor'];
+  const roleOptions = ['director', 'ubo', 'psc', 'shareholder', 'primary', 'joint', 'guarantor'];
 
   container.innerHTML = `
     <div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.25);border-radius:10px;overflow:hidden;margin-top:4px;">
@@ -4467,8 +4529,10 @@ window._chConfirmRoles = async function(submissionId, matchData) {
       if (row) {
         const roleTd = row.children[1];
         if (roleTd) {
-          const roleColor = v.role === 'director' ? '#818CF8' : v.role === 'primary' ? '#34D399' : v.role === 'guarantor' ? '#FBBF24' : '#94A3B8';
-          const roleBg = v.role === 'director' ? 'rgba(129,140,248,0.1)' : v.role === 'primary' ? 'rgba(52,211,153,0.1)' : v.role === 'guarantor' ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.04)';
+          const _rColors = { primary:'#34D399', joint:'#34D399', guarantor:'#FBBF24', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
+          const _rBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', guarantor:'rgba(251,191,36,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
+          const roleColor = _rColors[v.role] || '#94A3B8';
+          const roleBg = _rBgs[v.role] || 'rgba(255,255,255,0.04)';
           roleTd.innerHTML = `<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${roleBg};color:${roleColor};text-transform:capitalize;">${v.role}</span>`;
         }
       }
