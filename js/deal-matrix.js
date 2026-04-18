@@ -593,21 +593,27 @@ export async function renderDealMatrix(deal) {
               ${(() => {
                 const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
                 const allBorrowers = deal.borrowers || [];
-                // Non-guarantors = primary borrower + its directly linked directors/PSCs.
-                // Excludes guarantors AND children of guarantors (those have parent_borrower_id set to a guarantor's id).
+                // Non-guarantors = rows that COULD belong to the primary borrower context.
+                // Excludes: guarantors, any row whose parent is a guarantor OR joint borrower
+                // (their officers live under their own party, not under the primary).
                 const nonGuarantors = allBorrowers.filter(b => {
                   if (b.role === 'guarantor') return false;
                   if (b.parent_borrower_id) {
                     const parent = allBorrowers.find(p => p.id === b.parent_borrower_id);
-                    if (parent && parent.role === 'guarantor') return false;
+                    if (parent && (parent.role === 'guarantor' || parent.role === 'joint' || parent.role === 'primary')) return false;
                   }
                   return true;
                 });
                 // Split into two semantic groups:
-                //   chOfficers  = directors / PSCs / UBOs / shareholders (people under the primary company, sourced from CH)
-                //   coBorrowers = primary / joint top-level co-borrowers (separate parties on the deal, not people under the primary)
-                const chOfficers = nonGuarantors.filter(b => ['director','psc','ubo','shareholder'].includes(b.role));
-                const coBorrowers = nonGuarantors.filter(b => ['primary','joint'].includes(b.role));
+                //   chOfficers  = directors / PSCs / UBOs / shareholders that belong to the PRIMARY (top-level, no parent)
+                //                 — excludes officers of joint borrowers / guarantors (those live under their own parent row)
+                //   coBorrowers = primary / joint top-level co-borrowers (separate parties on the deal)
+                const chOfficers = nonGuarantors.filter(b =>
+                  ['director','psc','ubo','shareholder'].includes(b.role) && !b.parent_borrower_id
+                );
+                const coBorrowers = nonGuarantors.filter(b =>
+                  ['primary','joint'].includes(b.role) && !b.parent_borrower_id
+                );
                 const allChVerified = chOfficers.length > 0 && chOfficers.every(b => b.ch_verified_at);
 
                 if (isCorporate && deal.company_name) {
