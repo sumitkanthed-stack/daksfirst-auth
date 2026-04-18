@@ -9,6 +9,7 @@ import { fetchWithAuth } from './auth.js';
 import { showToast, sanitizeHtml } from './utils.js';
 import { getCurrentRole } from './state.js';
 import { floatingProgress } from './floating-progress.js';
+import { renderFullVerification } from './companies-house.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // EDITABLE FIELD HELPER — renders input for editable roles, static text for read-only
@@ -612,6 +613,15 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('borrower_nationality', 'Nationality', deal.borrower_nationality, 'text', canEdit)}
                 ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
                 ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
+                ${deal.company_number ? `
+                  <div style="margin-top:6px;">
+                    <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}')"
+                      style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
+                      Verify at Companies House
+                    </button>
+                  </div>
+                  <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                ` : ''}
               </div>
             </div>
           </div>
@@ -4076,3 +4086,19 @@ export async function renderDealMatrix(deal) {
     }
   });
 }
+
+// ── Companies House verify from matrix ──────────────────────────────────────
+window._chMatrixVerify = async function(companyNumber) {
+  const btn = document.getElementById('ch-matrix-verify-btn');
+  const panel = document.getElementById('ch-matrix-panel');
+  if (!panel) return;
+
+  if (btn) { btn.textContent = 'Verifying...'; btn.disabled = true; }
+
+  try {
+    await renderFullVerification(companyNumber, panel);
+    if (btn) btn.style.display = 'none';
+  } catch (e) {
+    if (btn) { btn.textContent = 'Error — retry'; btn.disabled = false; btn.style.background = '#F87171'; }
+  }
+};
