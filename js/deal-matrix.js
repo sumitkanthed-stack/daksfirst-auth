@@ -915,46 +915,27 @@ export async function renderDealMatrix(deal) {
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('loan_amount', 'Loan Amount (£)', deal.loan_amount, 'money', canEdit)}
-                ${renderEditableField('ltv_requested', 'LTV Requested (%)', deal.ltv_requested, 'text', canEdit)}
-                ${renderEditableField('term_months', 'Term (months)', deal.term_months, 'text', canEdit)}
+                <div style="margin-bottom:12px">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <label style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;" for="mf-ltv_requested">LTV Requested (%)</label>
+                    ${canEdit ? '<button onclick="window.matrixApplyMaxLoan()" style="font-size:8px;font-weight:600;color:#60A5FA;background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.25);border-radius:4px;padding:1px 6px;cursor:pointer;margin-bottom:4px;" title="Set loan amount to max allowable (75% val / 90% PP)">Max LTV</button>' : ''}
+                  </div>
+                  ${canEdit
+                    ? '<input id="mf-ltv_requested" type="text" data-field="ltv_requested" data-type="text" style="width:100%;padding:8px 12px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#F1F5F9;font-size:13px;" value="' + (deal.ltv_requested || '') + '" placeholder="Auto-calculated" onblur="window.matrixValidateAndSave(\'ltv_requested\', this.value, \'text\')" />'
+                    : '<input type="hidden" id="mf-ltv_requested" value="' + (deal.ltv_requested || '') + '"><div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);border-radius:8px;color:#CBD5E1;font-size:13px;">' + (deal.ltv_requested || '—') + '</div>'
+                  }
+                  <div id="err-ltv_requested" style="font-size:10px;color:#F87171;margin-top:2px;display:none;"></div>
+                </div>
+                ${renderEditableField('term_months', 'Term (months)', deal.term_months || '12', 'text', canEdit)}
                 ${renderEditableField('rate_requested', 'Rate (%/month)', deal.rate_requested, 'text', isInternalUser && canEdit)}
-                ${renderEditableField('interest_servicing', 'Interest Servicing', deal.interest_servicing, 'select', canEdit, [
+                ${renderEditableField('interest_servicing', 'Interest Servicing', deal.interest_servicing || 'retained', 'select', canEdit, [
                   { value: 'retained', label: 'Retained (deducted upfront)' },
                   { value: 'serviced', label: 'Serviced (monthly payments)' },
                   { value: 'rolled', label: 'Rolled Up' }
                 ])}
                 ${renderEditableField('drawdown_date', 'Target Drawdown', deal.drawdown_date, 'date', canEdit)}
               </div>
-              ${(() => {
-                // Max loan = lower of 75% valuation or 90% purchase price
-                const valuation = num(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value);
-                const purchasePrice = num(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price);
-                const loanAmt = num(deal.loan_amount);
-                const maxOnVal = valuation ? Math.floor(valuation * 0.75) : 0;
-                const maxOnPP = purchasePrice ? Math.floor(purchasePrice * 0.90) : 0;
-                const limits = [maxOnVal, maxOnPP].filter(v => v > 0);
-                const maxLoan = limits.length > 0 ? Math.min(...limits) : 0;
-                const binding = maxLoan === maxOnVal ? '75% of valuation' : '90% of purchase price';
-                const overLimit = loanAmt > 0 && maxLoan > 0 && loanAmt > maxLoan;
-                const actualLtv = valuation > 0 && loanAmt > 0 ? ((loanAmt / valuation) * 100).toFixed(1) : null;
-
-                if (!maxLoan) return '<div style="font-size:10px;color:#64748B;margin-top:4px;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">Max loan will calculate once valuation and/or purchase price are entered.</div>';
-
-                return '<div id="loan-limit-indicator" style="margin-top:6px;padding:8px 12px;border-radius:8px;font-size:11px;'
-                  + (overLimit ? 'background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);' : 'background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);')
-                  + '">'
-                  + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                  + '<span style="color:#94A3B8;">Max Allowable Loan:</span>'
-                  + '<span style="font-weight:700;color:' + (overLimit ? '#F87171' : '#34D399') + ';">£' + maxLoan.toLocaleString() + '</span>'
-                  + '</div>'
-                  + '<div style="font-size:9px;color:#64748B;margin-top:3px;">Based on ' + binding
-                  + (maxOnVal ? ' · Val: £' + valuation.toLocaleString() + ' × 75% = £' + maxOnVal.toLocaleString() : '')
-                  + (maxOnPP ? ' · PP: £' + purchasePrice.toLocaleString() + ' × 90% = £' + maxOnPP.toLocaleString() : '')
-                  + '</div>'
-                  + (actualLtv ? '<div style="font-size:9px;color:#64748B;margin-top:2px;">Actual Day-1 LTV: ' + actualLtv + '%</div>' : '')
-                  + (overLimit ? '<div style="font-size:10px;font-weight:600;color:#F87171;margin-top:4px;">⚠ Requested loan exceeds maximum by £' + (loanAmt - maxLoan).toLocaleString() + '</div>' : '')
-                  + '</div>';
-              })()}
+              <div id="loan-limit-indicator"></div>
             </div>
           </div>
         </div>
@@ -1325,6 +1306,22 @@ export async function renderDealMatrix(deal) {
   // Inject into DOM
   container.innerHTML = html;
 
+  // ── Persist sensible defaults if not already set ──
+  // Term defaults to 12 months, interest servicing defaults to retained
+  (function applyDefaults() {
+    const defaults = {};
+    if (!deal.term_months) defaults.term_months = '12';
+    if (!deal.interest_servicing) defaults.interest_servicing = 'retained';
+    if (Object.keys(defaults).length > 0 && deal.submission_id) {
+      Object.assign(deal, defaults); // update in-memory
+      fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}/matrix-fields`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(defaults)
+      }).catch(() => {});
+    }
+  })();
+
   // ═══════════════════════════════════════════════════════════════════
   // ATTACH GLOBAL FUNCTIONS
   // ═══════════════════════════════════════════════════════════════════
@@ -1546,12 +1543,12 @@ export async function renderDealMatrix(deal) {
       }
     }
 
-    // Term months — sanity check
+    // Term months — minimum 12, max 24
     if (fieldKey === 'term_months') {
       const num = parseInt(trimmed, 10);
-      if (isNaN(num) || num < 1 || num > 60) {
+      if (isNaN(num) || num < 3 || num > 24) {
         if (el) el.style.borderColor = '#F87171';
-        if (errEl) { errEl.textContent = 'Term must be 1–60 months'; errEl.style.display = 'block'; }
+        if (errEl) { errEl.textContent = 'Term must be 3–24 months (standard: 12)'; errEl.style.display = 'block'; }
         return;
       }
     }
@@ -1579,8 +1576,34 @@ export async function renderDealMatrix(deal) {
           el.style.borderColor = '#34D399';
           setTimeout(() => { el.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
         }
-        // Recalculate completeness after every save
+        // Update deal object in memory so subsequent calculations use fresh data
+        deal[fieldKey] = value;
+
+        // Auto-calculate LTV when loan_amount changes
+        if (fieldKey === 'loan_amount') {
+          const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
+          const loanVal = parseFloat(stripCommas(String(value))) || 0;
+          if (valuation > 0 && loanVal > 0) {
+            const ltv = ((loanVal / valuation) * 100).toFixed(1);
+            const ltvEl = document.getElementById('mf-ltv_requested');
+            if (ltvEl) {
+              ltvEl.value = ltv;
+              ltvEl.style.borderColor = '#34D399';
+              setTimeout(() => { ltvEl.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
+            }
+            deal.ltv_requested = ltv;
+            // Save LTV to backend too
+            fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/matrix-fields`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ltv_requested: ltv })
+            }).catch(() => {});
+          }
+        }
+
+        // Recalculate completeness and loan limit after every save
         calculateCompleteness();
+        updateLoanLimitIndicator();
       } else {
         const err = await resp.json().catch(() => ({}));
         if (el) el.style.borderColor = '#F87171';
@@ -1591,6 +1614,86 @@ export async function renderDealMatrix(deal) {
       if (el) el.style.borderColor = '#F87171';
       showToast('Connection error saving field', 'error');
     }
+  };
+
+  // ── Loan limit indicator — updates dynamically after every save ──
+  function updateLoanLimitIndicator() {
+    const el = document.getElementById('loan-limit-indicator');
+    if (!el) return;
+
+    const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
+    const purchasePrice = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price) || 0;
+    const loanAmt = parseFloat(stripCommas(String(deal.loan_amount || '0'))) || 0;
+    const maxOnVal = valuation ? Math.floor(valuation * 0.75) : 0;
+    const maxOnPP = purchasePrice ? Math.floor(purchasePrice * 0.90) : 0;
+    const limits = [maxOnVal, maxOnPP].filter(v => v > 0);
+    const maxLoan = limits.length > 0 ? Math.min(...limits) : 0;
+    const binding = maxLoan === maxOnVal ? '75% of valuation' : '90% of purchase price';
+    const overLimit = loanAmt > 0 && maxLoan > 0 && loanAmt > maxLoan;
+    const withinLimit = loanAmt > 0 && maxLoan > 0 && !overLimit;
+    const actualLtv = valuation > 0 && loanAmt > 0 ? ((loanAmt / valuation) * 100).toFixed(1) : null;
+
+    if (!maxLoan) {
+      el.innerHTML = '<div style="font-size:10px;color:#64748B;margin-top:4px;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">Max loan will calculate once valuation and/or purchase price are entered.</div>';
+      return;
+    }
+
+    const borderColor = overLimit ? 'rgba(248,113,113,0.25)' : 'rgba(52,211,153,0.2)';
+    const bgColor = overLimit ? 'rgba(248,113,113,0.1)' : 'rgba(52,211,153,0.08)';
+    const amtColor = overLimit ? '#F87171' : '#34D399';
+
+    el.style.marginTop = '6px';
+    el.style.padding = '8px 12px';
+    el.style.borderRadius = '8px';
+    el.style.fontSize = '11px';
+    el.style.background = bgColor;
+    el.style.border = '1px solid ' + borderColor;
+
+    el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<span style="color:#94A3B8;">Max Allowable Loan:</span>'
+      + '<span style="font-weight:700;color:' + amtColor + ';">£' + maxLoan.toLocaleString() + '</span>'
+      + '</div>'
+      + '<div style="font-size:9px;color:#64748B;margin-top:3px;">Based on ' + binding
+      + (maxOnVal ? ' · Val: £' + valuation.toLocaleString() + ' × 75% = £' + maxOnVal.toLocaleString() : '')
+      + (maxOnPP ? ' · PP: £' + purchasePrice.toLocaleString() + ' × 90% = £' + maxOnPP.toLocaleString() : '')
+      + '</div>'
+      + (actualLtv ? '<div style="font-size:9px;color:#64748B;margin-top:2px;">Actual Day-1 LTV: ' + actualLtv + '%</div>' : '')
+      + (overLimit ? '<div style="font-size:10px;font-weight:600;color:#F87171;margin-top:4px;">⚠ Requested loan exceeds maximum by £' + (loanAmt - maxLoan).toLocaleString() + '</div>' : '')
+      + (withinLimit ? '<div style="font-size:10px;font-weight:600;color:#34D399;margin-top:4px;">✓ Within lending policy limits</div>' : '');
+  }
+  // Render on page load
+  updateLoanLimitIndicator();
+
+  // ── Max LTV button — sets loan amount to max allowable ──
+  window.matrixApplyMaxLoan = function() {
+    const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
+    const purchasePrice = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price) || 0;
+
+    if (!valuation && !purchasePrice) {
+      showToast('Need valuation or purchase price to calculate max loan', 'error');
+      return;
+    }
+
+    const maxOnVal = valuation ? Math.floor(valuation * 0.75) : Infinity;
+    const maxOnPP = purchasePrice ? Math.floor(purchasePrice * 0.90) : Infinity;
+    const maxLoan = Math.min(maxOnVal, maxOnPP);
+    const ltv = valuation > 0 ? ((maxLoan / valuation) * 100).toFixed(1) : '75.0';
+
+    // Set loan amount
+    const loanEl = document.getElementById('mf-loan_amount');
+    if (loanEl) {
+      loanEl.value = formatWithCommas(String(maxLoan));
+      window.matrixSaveField('loan_amount', String(maxLoan));
+    }
+
+    // Set LTV
+    const ltvEl = document.getElementById('mf-ltv_requested');
+    if (ltvEl) {
+      ltvEl.value = ltv;
+      window.matrixSaveField('ltv_requested', ltv);
+    }
+
+    showToast(`Max loan set: £${maxLoan.toLocaleString()} (${ltv}% LTV)`, 'success');
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3390,8 +3493,8 @@ export async function renderDealMatrix(deal) {
         nice: []
       },
       'Loan Terms': {
-        required: ['loan_amount', 'ltv_requested', 'term_months', 'interest_servicing', 'drawdown_date'],
-        nice: ['loan_purpose', 'use_of_funds']
+        required: ['loan_amount', 'drawdown_date'],
+        nice: ['ltv_requested', 'term_months', 'interest_servicing', 'loan_purpose', 'use_of_funds']
       },
       'Exit Strategy': {
         required: ['exit_strategy'],
