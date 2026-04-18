@@ -1232,12 +1232,29 @@ export async function renderDealMatrix(deal) {
                 const totalAreaM2 = pp.reduce((s, p) => s + num(p.epc_floor_area), 0);
                 const totalAreaSqft = totalAreaM2 * 10.764;
                 const psf = totalAreaSqft > 0 ? (totalMV / totalAreaSqft) : 0;
-                // Counters
-                const countBy = (key) => pp.reduce((acc, p) => { const k = (p[key] || 'unknown').toString().toLowerCase(); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
-                const fmtMix = (obj) => Object.entries(obj).filter(([k]) => k !== 'unknown' && k !== '').map(([k, v]) => v + ' ' + k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ')).join(' \u00B7 ') || '—';
-                const tenureMix = fmtMix(countBy('tenure'));
-                const occMix = fmtMix(countBy('occupancy'));
-                const typeMix = fmtMix(countBy('property_type'));
+                // Counters — use deal-level fallback same as Security Schedule rows
+                const tenureShort = { freehold: 'FH', leasehold: 'LH', share_of_freehold: 'SoF' };
+                const tenureCounts = pp.reduce((acc, p) => {
+                  const raw = ((p.tenure || deal.property_tenure) || '').toString().toLowerCase().trim().replace(/\s+/g, '_');
+                  if (!raw) return acc;
+                  const short = tenureShort[raw] || (raw.charAt(0).toUpperCase() + raw.slice(1));
+                  acc[short] = (acc[short] || 0) + 1;
+                  return acc;
+                }, {});
+                const tenureMix = Object.entries(tenureCounts).map(([k, v]) => v + ' ' + k).join(' \u00B7 ') || '—';
+
+                const mixWithFallback = (propKey, dealKey) => {
+                  const counts = pp.reduce((acc, p) => {
+                    const raw = ((p[propKey] || deal[dealKey]) || '').toString().toLowerCase().trim();
+                    if (!raw) return acc;
+                    const label = raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, ' ');
+                    acc[label] = (acc[label] || 0) + 1;
+                    return acc;
+                  }, {});
+                  return Object.entries(counts).map(([k, v]) => v + ' ' + k).join(' \u00B7 ') || '—';
+                };
+                const typeMix = mixWithFallback('property_type', 'asset_type');
+                const occMix = mixWithFallback('occupancy', 'occupancy_status');
                 // Geography
                 const geoFlags = pp.map(p => p.in_england_or_wales);
                 const anyOutside = geoFlags.some(f => f === false);
