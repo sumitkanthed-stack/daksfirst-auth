@@ -992,25 +992,36 @@ export async function renderDealMatrix(deal) {
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Postcode</th>
                       <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Value (£)</th>
                       <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Purchase (£)</th>
+                      <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);" title="Bedrooms + type: F=Flat, H=House, M=Maisonette, Bg=Bungalow. Derived from EPC habitable rooms (rooms-1).">Unit</th>
+                      <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);" title="Floor area from EPC">Area</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Tenure</th>
                       ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
                     </tr>
                   </thead>
                   <tbody>
-                    ${deal.properties.map((p, i) => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="prop-row-${p.id}">
+                    ${deal.properties.map((p, i) => {
+                      // Derive unit descriptor (e.g. "3BF", "2BH", "Studio") from EPC rooms + property type
+                      const _rooms = parseInt(p.epc_habitable_rooms) || 0;
+                      const _pt = (p.epc_property_type || '').toLowerCase();
+                      const _letter = _pt.includes('flat') ? 'F' : _pt.includes('maisonette') ? 'M' : _pt.includes('house') ? 'H' : _pt.includes('bungalow') ? 'Bg' : '';
+                      const _unit = !_rooms ? '—' : (_rooms === 1 ? 'Studio' : (_rooms - 1) + 'B' + _letter);
+                      const _area = p.epc_floor_area ? Number(p.epc_floor_area).toFixed(0) + ' m\u00B2' : '—';
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="prop-row-${p.id}">
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
                       <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.market_value ? '£' + Number(p.market_value).toLocaleString() : '—'}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.purchase_price ? '£' + Number(p.purchase_price).toLocaleString() : '—'}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;text-align:center;font-weight:700;font-size:11px;" title="Derived from EPC: ${_rooms} habitable rooms">${_unit}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-size:11px;">${_area}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
                       ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
                         <button onclick="window.editPropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
                         <button onclick="window.deletePropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
                       </td>` : ''}
-                    </tr>`).join('')}
+                    </tr>`;}).join('')}
                   </tbody>
                 </table>
               </div>
@@ -1054,15 +1065,37 @@ export async function renderDealMatrix(deal) {
                   meesHtml = '<div style="margin-top:4px;padding:4px 8px;background:' + meesCfg.bg + ';border-radius:4px;display:inline-block;"><span style="font-size:10px;color:' + meesCfg.color + ';font-weight:700;">' + meesCfg.label + '</span></div>';
                 }
 
+                // EPC score (numeric 0-100 behind the letter rating) — pull from property_search_data.epc.data
+                const epcCurrentScore = epcBlock.data ? epcBlock.data.epc_score : null;
+                const epcPotRating = p.epc_potential_rating || (epcBlock.data ? epcBlock.data.potential_rating : null);
+                const epcPotScore = epcBlock.data ? epcBlock.data.potential_score : null;
+                const epcInspection = p.epc_inspection_date || (epcBlock.data ? epcBlock.data.inspection_date : null);
+                // EPC certificate age — UK certs are valid 10 years (Energy Performance of Buildings Regs 2012)
+                let inspAgeHtml = '';
+                let inspColor = '#F1F5F9';
+                if (epcInspection) {
+                  const ageYears = Math.floor((Date.now() - new Date(epcInspection).getTime()) / (365.25*24*60*60*1000));
+                  if (ageYears >= 10) { inspColor = '#F87171'; inspAgeHtml = ' <span style="color:#F87171;font-weight:700;font-size:10px;">EXPIRED (' + ageYears + 'y)</span>'; }
+                  else if (ageYears >= 5) { inspColor = '#FBBF24'; inspAgeHtml = ' <span style="color:#FBBF24;font-size:10px;">(' + ageYears + 'y old)</span>'; }
+                  else { inspAgeHtml = ' <span style="color:#94A3B8;font-size:10px;">(' + ageYears + 'y)</span>'; }
+                }
+
                 let epcHtml = '';
                 if (rating) {
+                  const ratingCellInner = '<span style="' + ratingStyle + '">' + rating + '</span>' +
+                    (epcCurrentScore ? ' <span style="font-size:10px;color:#94A3B8;">(' + epcCurrentScore + ')</span>' : '');
+                  const potentialCell = (epcPotRating && epcPotRating !== rating)
+                    ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Potential</span><span style="' + 'background:' + (epcColor[epcPotRating] || '#64748B') + ';color:#111;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:800;' + '">' + epcPotRating + '</span>' + (epcPotScore ? ' <span style="font-size:10px;color:#94A3B8;">(' + epcPotScore + ')</span>' : '') + '</div>'
+                    : '';
                   epcHtml = '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">' +
-                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">EPC Rating</span><span style="' + ratingStyle + '">' + rating + '</span></div>' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">EPC Rating</span>' + ratingCellInner + '</div>' +
+                    potentialCell +
                     (p.epc_floor_area ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Floor Area</span><span style="font-size:12px;color:#F1F5F9;font-weight:600;">' + p.epc_floor_area + ' m\u00B2 (' + Math.round(p.epc_floor_area * 10.764) + ' sq ft)</span></div>' : '') +
                     (p.epc_property_type ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Type (EPC)</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_property_type) + '</span></div>' : '') +
                     (p.epc_built_form ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Built Form</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_built_form) + '</span></div>' : '') +
                     (p.epc_construction_age ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Construction</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_construction_age) + '</span></div>' : '') +
                     (p.epc_habitable_rooms ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Habitable Rooms</span><span style="font-size:12px;color:#F1F5F9;">' + p.epc_habitable_rooms + '</span></div>' : '') +
+                    (epcInspection ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Inspected</span><span style="font-size:12px;color:' + inspColor + ';">' + new Date(epcInspection).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}) + inspAgeHtml + '</span></div>' : '') +
                     (p.epc_certificate_id ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Cert ID</span><span style="font-size:10px;color:#94A3B8;font-family:monospace;">' + sanitizeHtml(String(p.epc_certificate_id).substring(0,16)) + '\u2026</span></div>' : '') +
                   '</div>' + meesHtml;
                 }
@@ -1126,31 +1159,54 @@ export async function renderDealMatrix(deal) {
                 const hasData = epcHtml || geoHtml || priceHtml;
                 if (!hasData) return '';
 
+                // Inline summary shown when panel is collapsed
+                const summaryBits = [];
+                if (p.local_authority) summaryBits.push(sanitizeHtml(p.local_authority));
+                const _sunit = (() => {
+                  const r = parseInt(p.epc_habitable_rooms) || 0;
+                  const pt2 = (p.epc_property_type || '').toLowerCase();
+                  const L = pt2.includes('flat') ? 'F' : pt2.includes('maisonette') ? 'M' : pt2.includes('house') ? 'H' : pt2.includes('bungalow') ? 'Bg' : '';
+                  return !r ? '' : (r === 1 ? 'Studio' : (r - 1) + 'B' + L);
+                })();
+                if (_sunit) summaryBits.push(_sunit);
+                if (p.epc_floor_area) summaryBits.push(Number(p.epc_floor_area).toFixed(0) + ' m\u00B2');
+                if (p.epc_rating) summaryBits.push('EPC ' + p.epc_rating);
+                const summaryText = summaryBits.join(' \u00B7 ') || 'Property searched';
+
                 const selectedNote = p.epc_selected_lmk_key ? '<span style="font-size:9px;color:#D4A853;margin-left:6px;">\u00B7 Manually selected</span>' : '';
                 const verifiedBadge = verified
                   ? '<span id="prop-accepted-' + p.id + '" style="font-size:10px;color:#34D399;font-weight:800;margin-left:6px;background:rgba(52,211,153,0.15);padding:2px 6px;border-radius:3px;">\u2713 ACCEPTED</span>'
                   : '<span id="prop-accepted-' + p.id + '" style="display:none;font-size:10px;color:#34D399;font-weight:800;margin-left:6px;background:rgba(52,211,153,0.15);padding:2px 6px;border-radius:3px;">\u2713 ACCEPTED</span>';
                 const acceptBtn = verified
-                  ? '<button id="prop-accept-btn-' + p.id + '" onclick="window._propertyUnverify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Undo Accept</button>'
-                  : '<button id="prop-accept-btn-' + p.id + '" onclick="window._propertyVerify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:#34D399;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:800;cursor:pointer;">\u2713 Accept</button>';
+                  ? '<button id="prop-accept-btn-' + p.id + '" onclick="event.stopPropagation();window._propertyUnverify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Undo Accept</button>'
+                  : '<button id="prop-accept-btn-' + p.id + '" onclick="event.stopPropagation();window._propertyVerify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:#34D399;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:800;cursor:pointer;">\u2713 Accept</button>';
                 const borderColor = verified ? 'rgba(52,211,153,0.45)' : 'rgba(52,211,153,0.15)';
 
+                // Default expand state: collapsed if verified, open if not verified
+                const bodyDisplay = verified ? 'none' : 'block';
+                const summaryDisplay = verified ? 'inline' : 'none';
+                const chevronRotate = verified ? '' : 'transform:rotate(90deg);';
+
                 return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
-                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
+                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;cursor:pointer;" onclick="window._togglePropPanel(' + p.id + ')">' +
                     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                      '<span id="prop-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + chevronRotate + 'transition:transform 0.15s;">\u25B6</span>' +
                       '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Property Intelligence</span>' +
                       selectedNote +
                       verifiedBadge +
+                      '<span id="prop-summary-' + p.id + '" style="display:' + summaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;">\u00B7 ' + summaryText + '</span>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       '<span style="font-size:9px;color:#64748B;">Searched ' + new Date(p.property_searched_at).toLocaleDateString('en-GB') + '</span>' +
                       acceptBtn +
-                      '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
+                      '<button onclick="event.stopPropagation();window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
                     '</div>' +
                   '</div>' +
+                  '<div id="prop-body-' + p.id + '" style="display:' + bodyDisplay + ';">' +
                   (geoHtml ? '<div style="margin-bottom:6px;">' + geoHtml + '</div>' : '') +
                   (epcHtml ? '<div style="margin-bottom:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + epcHtml + '</div>' : '') +
                   (priceHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
+                  '</div>' + // close prop-body
                 '</div>';
               }).join('')}
 
@@ -4689,9 +4745,28 @@ window._propertySearch = async function(propertyId, submissionId) {
   }
 };
 
+// ── Toggle Property Intelligence panel expand/collapse ─────────────────────
+// Pure DOM, no API call. Flip the body display, rotate the chevron, show/hide inline summary.
+window._togglePropPanel = function(propertyId) {
+  const body = document.getElementById('prop-body-' + propertyId);
+  const chevron = document.getElementById('prop-chevron-' + propertyId);
+  const summary = document.getElementById('prop-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
 // ── Accept the current EPC match (lock property) ────────────────────────────
-// Silent local update — no page refresh. Just marks the property as verified
-// in the DB and tweaks the local DOM to show the Accepted badge + Undo button.
+// Silent local update — no page refresh. Marks verified in DB, updates local DOM:
+// shows Accepted badge, swaps button to Undo, collapses body to inline summary.
 window._propertyVerify = async function(propertyId, submissionId) {
   const btn = event && event.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Accepting...'; btn.style.opacity = '0.6'; }
@@ -4707,18 +4782,24 @@ window._propertyVerify = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = '\u2713 Accept'; btn.style.opacity = '1'; }
       return;
     }
-    // ── Local DOM update: show Accepted badge, swap button to Undo, brighten border ──
+    // ── Local DOM update: badge, border, button swap, collapse body ──
     const panel = document.getElementById('prop-intel-' + propertyId);
     if (panel) panel.style.borderColor = 'rgba(52,211,153,0.45)';
     const badge = document.getElementById('prop-accepted-' + propertyId);
     if (badge) badge.style.display = 'inline-block';
+    const body = document.getElementById('prop-body-' + propertyId);
+    const summary = document.getElementById('prop-summary-' + propertyId);
+    const chevron = document.getElementById('prop-chevron-' + propertyId);
+    if (body) body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Undo Accept';
       btn.style.background = 'rgba(212,168,83,0.15)';
       btn.style.color = '#D4A853';
       btn.style.opacity = '1';
-      btn.setAttribute('onclick', "window._propertyUnverify(" + propertyId + ", '" + submissionId + "')");
+      btn.setAttribute('onclick', "event.stopPropagation();window._propertyUnverify(" + propertyId + ", '" + submissionId + "')");
     }
     showToast('Property accepted', 'success');
   } catch (err) {
@@ -4745,18 +4826,24 @@ window._propertyUnverify = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = 'Undo Accept'; btn.style.opacity = '1'; }
       return;
     }
-    // ── Local DOM update: hide Accepted badge, swap button back to Accept ──
+    // ── Local DOM update: hide badge, button swap, re-expand body ──
     const panel = document.getElementById('prop-intel-' + propertyId);
     if (panel) panel.style.borderColor = 'rgba(52,211,153,0.15)';
     const badge = document.getElementById('prop-accepted-' + propertyId);
     if (badge) badge.style.display = 'none';
+    const body = document.getElementById('prop-body-' + propertyId);
+    const summary = document.getElementById('prop-summary-' + propertyId);
+    const chevron = document.getElementById('prop-chevron-' + propertyId);
+    if (body) body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
     if (btn) {
       btn.disabled = false;
       btn.textContent = '\u2713 Accept';
       btn.style.background = '#34D399';
       btn.style.color = '#111';
       btn.style.opacity = '1';
-      btn.setAttribute('onclick', "window._propertyVerify(" + propertyId + ", '" + submissionId + "')");
+      btn.setAttribute('onclick', "event.stopPropagation();window._propertyVerify(" + propertyId + ", '" + submissionId + "')");
     }
     showToast('Property reset to editable', 'success');
   } catch (err) {
