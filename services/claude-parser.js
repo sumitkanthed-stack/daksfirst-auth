@@ -152,6 +152,8 @@ PROPERTY RULES (CRITICAL — follow exactly):
 - Each unique security property should appear exactly ONCE in parsedProperties
 - Each property must have its own correctly matched UK postcode
 - For market_value: use the CURRENT MARKET VALUE or OPEN MARKET VALUE from the valuation, NOT the GDV, NOT the purchase price, NOT a comparable sale price. If multiple values exist for the same property, use the professional valuation figure
+- For purchase_price: extract EACH property's individual purchase price. If the documents mention a total/aggregate purchase price for a portfolio but also break it down per unit, use the per-unit figures. If only a total is given for multiple properties, divide it proportionally by market value. NEVER leave purchase_price as 0 if a purchase price exists anywhere in the documents
+- EVERY security property must have: address, postcode, market_value, purchase_price (if mentioned anywhere). Do NOT only extract values for the first property and ignore the rest
 
 - Track source_document so the broker can verify which document each data point came from
 - Cross-reference data across documents: if the valuation report and broker pack both mention a property, use the valuation report figure for market_value
