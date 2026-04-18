@@ -579,8 +579,8 @@ export async function renderDealMatrix(deal) {
                       const roleColor = b.role === 'primary' ? '#34D399' : b.role === 'guarantor' ? '#FBBF24' : b.role === 'director' ? '#818CF8' : '#94A3B8';
                       const roleBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : b.role === 'guarantor' ? 'rgba(251,191,36,0.1)' : b.role === 'director' ? 'rgba(129,140,248,0.1)' : 'rgba(255,255,255,0.04)';
                       const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
-                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="borrower-row-${b.id}">
-                      <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name || '-')}</td>
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-${b.id}" onclick="window._toggleBorrowerDetail(${b.id})">
+                      <td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">${sanitizeHtml(b.full_name || '-')} <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>
                       <td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${roleBg};color:${roleColor};text-transform:capitalize;">${b.role || 'primary'}</span></td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">${sanitizeHtml(b.borrower_type || 'individual')}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;font-size:11px;">${b.company_name ? sanitizeHtml(b.company_name) + (b.company_number ? ` <span style="color:#94A3B8">(${sanitizeHtml(b.company_number)})</span>` : '') : '—'}</td>
@@ -589,7 +589,7 @@ export async function renderDealMatrix(deal) {
                         <span style="font-size:10px;font-weight:600;color:${kycColor};text-transform:capitalize;">${b.kyc_status || 'pending'}</span>
                         ${b.ch_verified_at ? '<span style="font-size:9px;color:#34D399;margin-left:4px;" title="CH role verified">&#10003;CH</span>' : ''}
                       </td>
-                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
+                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">
                         <button onclick="window.editBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
                         <button onclick="window.deleteBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
                       </td>` : ''}
@@ -597,9 +597,20 @@ export async function renderDealMatrix(deal) {
                   </tbody>
                 </table>
               </div>
-              <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:4px;">
-                <span style="font-size:10px;color:#6B7280;">Primary borrower flat fields (kept in sync with deal record):</span>
+
+              <!-- CH Verify button (at table level, always visible for corporate deals) -->
+              ${deal.company_number ? `
+              <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+                <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
+                  style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
+                  Verify &amp; Match Borrowers
+                </button>
+                ${(deal.borrowers || []).every(b => b.ch_verified_at) ? '<span style="font-size:11px;color:#34D399;font-weight:600;">&#10003; All roles verified</span>' : ''}
               </div>
+              <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+              <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+              ` : ''}
+
               ` : `
               <!-- ── No borrowers in deal_borrowers yet — show flat fields + add button ── -->
               <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
@@ -607,26 +618,19 @@ export async function renderDealMatrix(deal) {
                 ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
               </div>
               `}
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
-                ${renderEditableField('borrower_name', 'Full Name', deal.borrower_name, 'text', canEdit)}
-                ${renderEditableField('borrower_email', 'Email', deal.borrower_email, 'email', canEdit)}
-                ${renderEditableField('borrower_phone', 'Phone', deal.borrower_phone, 'tel', canEdit)}
-                ${renderEditableField('borrower_dob', 'Date of Birth', deal.borrower_dob, 'date', canEdit)}
-                ${renderEditableField('borrower_nationality', 'Nationality', deal.borrower_nationality, 'text', canEdit)}
-                ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
-                ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
-                ${deal.company_number ? `
-                  <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
-                    <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
-                      style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
-                      Verify &amp; Match Borrowers
-                    </button>
-                    ${(deal.borrowers || []).every(b => b.ch_verified_at) ? '<span style="font-size:11px;color:#34D399;font-weight:600;">&#10003; All roles verified</span>' : ''}
-                  </div>
-                  <div id="ch-matrix-panel" style="margin-top:8px;"></div>
-                  <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
-                ` : ''}
+
+              <!-- Primary borrower flat fields — hidden when borrower table exists, shown on click -->
+              <div id="borrower-flat-fields" style="${(deal.borrowers && deal.borrowers.length > 0) ? 'display:none;' : ''}">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                  ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
+                  ${renderEditableField('borrower_name', 'Full Name', deal.borrower_name, 'text', canEdit)}
+                  ${renderEditableField('borrower_email', 'Email', deal.borrower_email, 'email', canEdit)}
+                  ${renderEditableField('borrower_phone', 'Phone', deal.borrower_phone, 'tel', canEdit)}
+                  ${renderEditableField('borrower_dob', 'Date of Birth', deal.borrower_dob, 'date', canEdit)}
+                  ${renderEditableField('borrower_nationality', 'Nationality', deal.borrower_nationality, 'text', canEdit)}
+                  ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
+                  ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
+                </div>
               </div>
             </div>
           </div>
@@ -1396,7 +1400,7 @@ export async function renderDealMatrix(deal) {
     const detail = document.getElementById(detailId);
     if (detail) {
       const isOpen = detail.style.maxHeight !== '0px';
-      detail.style.maxHeight = isOpen ? '0px' : '1200px';
+      detail.style.maxHeight = isOpen ? '0px' : '4000px';
       detail.style.overflow = 'hidden';
       // Highlight the field row that triggered this detail
       const fieldKey = detailId.replace('detail-', '');
@@ -2788,6 +2792,101 @@ export async function renderDealMatrix(deal) {
         }
       })
       .catch(err => showToast('Failed to remove: ' + err.message, 'error'));
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TOGGLE BORROWER INLINE DETAIL — expand/collapse below clicked row
+  // ═══════════════════════════════════════════════════════════════════
+
+  window._toggleBorrowerDetail = function(borrowerId) {
+    const existingPanel = document.getElementById(`borrower-detail-${borrowerId}`);
+    if (existingPanel) {
+      // Collapse: animate then remove
+      existingPanel.style.maxHeight = '0';
+      existingPanel.style.opacity = '0';
+      setTimeout(() => existingPanel.remove(), 250);
+      // Reset row highlight
+      const row = document.getElementById(`borrower-row-${borrowerId}`);
+      if (row) row.style.background = '';
+      return;
+    }
+
+    // Close any other open detail panels first
+    document.querySelectorAll('[id^="borrower-detail-"]').forEach(el => {
+      el.style.maxHeight = '0';
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 250);
+    });
+    document.querySelectorAll('[id^="borrower-row-"]').forEach(r => r.style.background = '');
+
+    // Find borrower data
+    const bor = deal.borrowers ? deal.borrowers.find(b => b.id === borrowerId) : null;
+    if (!bor) return;
+
+    const row = document.getElementById(`borrower-row-${borrowerId}`);
+    if (!row) return;
+
+    // Highlight active row
+    row.style.background = 'rgba(212,168,83,0.06)';
+
+    // Count columns for colspan
+    const colCount = row.querySelectorAll('td').length;
+
+    // Build inline detail
+    const fmt = (label, val) => val ? `<div style="margin-bottom:6px;"><span style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;">${label}</span><div style="font-size:13px;color:#F1F5F9;margin-top:1px;">${sanitizeHtml(String(val))}</div></div>` : '';
+    const fmtDate = (label, val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      const formatted = isNaN(d) ? val : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      return fmt(label, formatted);
+    };
+
+    const roleColor = bor.role === 'primary' ? '#34D399' : bor.role === 'guarantor' ? '#FBBF24' : bor.role === 'director' ? '#818CF8' : '#94A3B8';
+    const chBadge = bor.ch_verified_at ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">&#10003; CH Verified — ${bor.ch_matched_role || bor.role}</span>` : '';
+
+    const detailHtml = `
+      <tr id="borrower-detail-${borrowerId}" style="transition:max-height .25s ease, opacity .25s ease;">
+        <td colspan="${colCount}" style="padding:0;border-bottom:1px solid rgba(212,168,83,0.15);">
+          <div style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;background:rgba(15,23,41,0.6);border-left:3px solid #D4A853;" id="borrower-detail-inner-${borrowerId}">
+            <div style="padding:12px 16px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:13px;font-weight:700;color:#F1F5F9;">${sanitizeHtml(bor.full_name || 'Unknown')}</div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${chBadge}
+                  <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:${roleColor};background:rgba(255,255,255,0.05);text-transform:capitalize;">${bor.role || 'primary'}</span>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;">
+                ${fmt('Type', (bor.borrower_type || 'individual').replace(/_/g,' '))}
+                ${fmt('Email', bor.email)}
+                ${fmt('Phone', bor.phone)}
+                ${fmtDate('Date of Birth', bor.date_of_birth)}
+                ${fmt('Nationality', bor.nationality)}
+                ${fmt('Jurisdiction', bor.jurisdiction)}
+                ${fmt('Company', bor.company_name)}
+                ${fmt('Company No.', bor.company_number)}
+                ${fmt('Address', bor.address)}
+              </div>
+              ${bor.ch_match_data ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
+                <span style="font-size:10px;color:#34D399;font-weight:600;">CH MATCH DATA</span>
+                <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(typeof bor.ch_match_data === 'string' ? bor.ch_match_data : JSON.stringify(bor.ch_match_data))}</div>
+              </div>` : ''}
+            </div>
+          </div>
+        </td>
+      </tr>`;
+
+    // Insert after the row
+    row.insertAdjacentHTML('afterend', detailHtml);
+
+    // Animate open
+    requestAnimationFrame(() => {
+      const inner = document.getElementById(`borrower-detail-inner-${borrowerId}`);
+      if (inner) {
+        inner.style.maxHeight = '400px';
+        inner.style.opacity = '1';
+      }
+    });
   };
 
   // ═══════════════════════════════════════════════════════════════════
