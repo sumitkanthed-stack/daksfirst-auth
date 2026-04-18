@@ -70,6 +70,53 @@ async function lookupPostcode(postcode) {
 //     Auth: Basic with email:apiKey, Accept: application/json
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Extract primary unit number from an address string.
+// Handles "Apartment No.82", "Flat 2", "No.82", "82A King Henrys Reach", "4b Park Road"
+// Returns lowercase number-with-optional-letter-suffix (e.g. "82", "4b") or null.
+function _extractPrimaryNumber(address) {
+  if (!address || typeof address !== 'string') return null;
+  // Prefer a number that follows a unit keyword (flat, apartment, apt, no, unit, suite)
+  const unitPattern = /\b(?:flat|apartment|apt|apt\.|no|no\.|number|unit|suite)\s*\.?\s*(\d+[a-z]?)\b/i;
+  const unitMatch = address.match(unitPattern);
+  if (unitMatch) return unitMatch[1].toLowerCase();
+  // Otherwise grab the first standalone number (house number)
+  const anyMatch = address.match(/\b(\d+[a-z]?)\b/i);
+  return anyMatch ? anyMatch[1].toLowerCase() : null;
+}
+
+// Normalize and tokenize an address for tie-break scoring.
+// Keeps tokens of 3+ chars AND any pure-digit token (so we don't lose house numbers).
+function _tokenize(addr) {
+  if (!addr) return [];
+  return addr.toLowerCase()
+    .replace(/[,.\-\/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(t => t.length >= 3 || /^\d+$/.test(t));
+}
+
+// Parse a raw EPC row into our standard data shape.
+function _parseEpcRow(row) {
+  return {
+    address: row.address,
+    postcode: row.postcode,
+    epc_rating: row['current-energy-rating'] || row.currentEnergyRating,
+    epc_score: parseInt(row['current-energy-efficiency'] || row.currentEnergyEfficiency) || null,
+    potential_rating: row['potential-energy-rating'] || row.potentialEnergyRating,
+    potential_score: parseInt(row['potential-energy-efficiency'] || row.potentialEnergyEfficiency) || null,
+    property_type: row['property-type'] || row.propertyType,
+    built_form: row['built-form'] || row.builtForm,
+    floor_area: parseFloat(row['total-floor-area'] || row.totalFloorArea) || null,
+    construction_age: row['construction-age-band'] || row.constructionAgeBand,
+    number_habitable_rooms: parseInt(row['number-habitable-rooms'] || row.numberHabitableRooms) || null,
+    lodgement_date: row['lodgement-date'] || row.lodgementDate,
+    inspection_date: row['inspection-date'] || row.inspectionDate,
+    transaction_type: row['transaction-type'] || row.transactionType,
+    lmk_key: row['lmk-key'] || row.lmkKey,
+  };
+}
+
 async function lookupEPC(postcode, address) {
   const apiKey = config.EPC_API_KEY;
   const apiEmail = config.EPC_API_EMAIL;
@@ -80,7 +127,6 @@ async function lookupEPC(postcode, address) {
   if (!postcode) return { success: false, error: 'No postcode for EPC lookup' };
 
   const clean = postcode.replace(/\s+/g, '').toUpperCase();
-  // Search by postcode; optionally filter by address later
   const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${encodeURIComponent(clean)}&size=100`;
   const auth = Buffer.from(`${apiEmail}:${apiKey}`).toString('base64');
 
@@ -88,11 +134,7 @@ async function lookupEPC(postcode, address) {
 
   try {
     const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Basic ${auth}`
-      },
-      timeout: 15000
+      headers: { 'Accept': 'application/json', 'Authorization': `Basic ${auth}` }
     });
 
     if (!res.ok) {
@@ -103,52 +145,72 @@ async function lookupEPC(postcode, address) {
 
     const json = await res.json();
     const rows = json.rows || [];
-
     if (rows.length === 0) {
       return { success: false, error: `No EPC certificates found for ${clean}` };
     }
 
-    // Try to match by address if provided
-    let bestMatch = rows[0]; // Default to first (most recent)
-    if (address) {
-      const addrLower = address.toLowerCase().replace(/[,.\-]/g, ' ').replace(/\s+/g, ' ').trim();
-      const addressTokens = addrLower.split(' ').filter(t => t.length > 2);
+    // ── Smart matching ────────────────────────────────────────────────
+    const ourNumber = _extractPrimaryNumber(address);
+    const ourTokens = _tokenize(address);
+    const totalRows = rows.length;
 
-      let bestScore = 0;
-      for (const row of rows) {
-        const rowAddr = (row.address || '').toLowerCase().replace(/[,.\-]/g, ' ').replace(/\s+/g, ' ').trim();
-        let score = 0;
-        for (const token of addressTokens) {
-          if (rowAddr.includes(token)) score++;
-        }
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = row;
-        }
+    // Helper to build a return envelope with confidence
+    const envelope = (confidence, bestRow, altRows, note) => ({
+      success: true,
+      match_confidence: confidence,            // 'exact' | 'ambiguous' | 'none'
+      data: bestRow ? _parseEpcRow(bestRow) : null,
+      alternative_matches: (altRows || []).slice(0, 10).map(_parseEpcRow),
+      total_results: totalRows,
+      our_number: ourNumber,
+      match_note: note || null,
+    });
+
+    // Pass 1 — number-based match (strongest signal)
+    if (ourNumber) {
+      const numberMatches = rows.filter(r => _extractPrimaryNumber(r.address) === ourNumber);
+      console.log(`[property-search] EPC match: ourNumber=${ourNumber}, numberMatches=${numberMatches.length}/${totalRows}`);
+
+      if (numberMatches.length === 1) {
+        return envelope('exact', numberMatches[0], [], `Unique number match on "${ourNumber}"`);
       }
+      if (numberMatches.length > 1) {
+        // Tie-break by street/building token overlap
+        const scored = numberMatches.map(r => {
+          const rt = _tokenize(r.address);
+          const score = ourTokens.filter(t => rt.includes(t)).length;
+          return { row: r, score };
+        }).sort((a, b) => b.score - a.score);
+        const topScore = scored[0].score;
+        const winners = scored.filter(s => s.score === topScore);
+        if (winners.length === 1 && topScore > 0) {
+          return envelope('exact', winners[0].row, numberMatches, `Number "${ourNumber}" + token tie-break (score ${topScore})`);
+        }
+        return envelope('ambiguous', null, numberMatches, `${numberMatches.length} EPC rows share number "${ourNumber}" — manual pick required`);
+      }
+      // ourNumber exists but no EPC row matches it → EPC data may be missing this flat
+      return envelope('none', null, rows, `No EPC row matches number "${ourNumber}" at ${clean}`);
     }
 
-    return {
-      success: true,
-      data: {
-        address: bestMatch.address,
-        postcode: bestMatch.postcode,
-        epc_rating: bestMatch['current-energy-rating'] || bestMatch.currentEnergyRating,
-        epc_score: parseInt(bestMatch['current-energy-efficiency'] || bestMatch.currentEnergyEfficiency) || null,
-        potential_rating: bestMatch['potential-energy-rating'] || bestMatch.potentialEnergyRating,
-        potential_score: parseInt(bestMatch['potential-energy-efficiency'] || bestMatch.potentialEnergyEfficiency) || null,
-        property_type: bestMatch['property-type'] || bestMatch.propertyType,
-        built_form: bestMatch['built-form'] || bestMatch.builtForm,           // e.g. "Detached", "Semi-Detached"
-        floor_area: parseFloat(bestMatch['total-floor-area'] || bestMatch.totalFloorArea) || null,  // sq metres
-        construction_age: bestMatch['construction-age-band'] || bestMatch.constructionAgeBand,
-        number_habitable_rooms: parseInt(bestMatch['number-habitable-rooms'] || bestMatch.numberHabitableRooms) || null,
-        lodgement_date: bestMatch['lodgement-date'] || bestMatch.lodgementDate,
-        inspection_date: bestMatch['inspection-date'] || bestMatch.inspectionDate,
-        transaction_type: bestMatch['transaction-type'] || bestMatch.transactionType,
-        lmk_key: bestMatch['lmk-key'] || bestMatch.lmkKey,                   // unique EPC certificate ID
-        total_results: rows.length,
-      }
-    };
+    // Pass 2 — fallback when our address has no extractable number
+    if (ourTokens.length === 0) {
+      // No address at all — truly ambiguous
+      return envelope('ambiguous', null, rows, 'No address provided — cannot match');
+    }
+    const scored = rows.map(r => {
+      const rt = _tokenize(r.address);
+      const score = ourTokens.filter(t => rt.includes(t)).length;
+      return { row: r, score };
+    }).sort((a, b) => b.score - a.score);
+    const topScore = scored[0].score;
+    if (topScore === 0) {
+      return envelope('none', null, rows, 'No token overlap with any EPC row');
+    }
+    const winners = scored.filter(s => s.score === topScore);
+    if (winners.length === 1) {
+      return envelope('exact', winners[0].row, [], `Token-only match (score ${topScore})`);
+    }
+    return envelope('ambiguous', null, winners.map(w => w.row), `${winners.length} EPC rows tied on token score ${topScore}`);
+
   } catch (err) {
     console.error('[property-search] EPC error:', err.message);
     return { success: false, error: err.message };

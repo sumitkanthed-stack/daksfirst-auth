@@ -295,8 +295,12 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
       }
     }
 
-    // EPC data
-    if (results.epc.success) {
+    // EPC data — only write fields when match is EXACT. Otherwise NULL out stale columns.
+    const epcCols = ['epc_rating','epc_score','epc_potential_rating','epc_floor_area',
+                     'epc_property_type','epc_built_form','epc_construction_age',
+                     'epc_habitable_rooms','epc_inspection_date','epc_certificate_id'];
+    const epcExact = results.epc.success && results.epc.match_confidence === 'exact' && results.epc.data;
+    if (epcExact) {
       const e = results.epc.data;
       const fields = [
         ['epc_rating', e.epc_rating], ['epc_score', e.epc_score],
@@ -307,11 +311,12 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
       ];
       for (const [col, val] of fields) {
         if (val !== null && val !== undefined) {
-          updates.push(`${col} = $${idx}`);
-          values.push(val);
-          idx++;
+          updates.push(`${col} = $${idx}`); values.push(val); idx++;
         }
       }
+    } else {
+      // Clear any stale EPC data so the previous (wrong) match doesn't linger
+      for (const col of epcCols) updates.push(`${col} = NULL`);
     }
 
     // Price paid data
@@ -324,7 +329,7 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
       updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
     }
 
-    // Full raw results + metadata
+    // Full raw results + metadata (includes EPC alternatives for picker UI)
     updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
     updates.push(`property_searched_at = NOW()`);
     updates.push(`property_searched_by = $${idx}`); values.push(req.user.userId); idx++;
@@ -340,23 +345,31 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
       );
     }
 
-    // Audit log
-    await logAudit(pool, {
-      dealId,
-      userId: req.user.userId,
-      action: 'property_search',
-      details: `Property search completed for ${prop.address || prop.postcode}: postcode=${results.postcode_lookup.success}, epc=${results.epc.success}, pricePaid=${results.price_paid.success}`
-    });
+    // Audit log — positional signature (dealId, action, fromVal, toVal, details, performedBy)
+    await logAudit(dealId, 'property_search', null, prop.address || prop.postcode, {
+      postcode_ok: results.postcode_lookup.success,
+      epc_confidence: results.epc.success ? results.epc.match_confidence : 'failed',
+      epc_alternatives: results.epc.success ? (results.epc.alternative_matches || []).length : 0,
+      price_paid_ok: results.price_paid.success,
+    }, req.user.userId);
 
     // Geography warning
     const geoWarning = results.postcode_lookup.success && !results.postcode_lookup.data.in_england_or_wales
       ? `WARNING: Property is in ${results.postcode_lookup.data.country} — outside Daksfirst lending geography (England & Wales only)`
       : null;
 
+    // EPC ambiguity warning (separate from error — analyst needs to pick)
+    const epcWarning = (results.epc.success && results.epc.match_confidence !== 'exact')
+      ? `EPC match: ${results.epc.match_confidence.toUpperCase()} — ${results.epc.match_note || 'review required'}`
+      : null;
+
     res.json({
       success: true,
       results,
+      match_confidence: results.epc.success ? results.epc.match_confidence : 'failed',
+      alternative_matches: results.epc.success ? (results.epc.alternative_matches || []) : [],
       geo_warning: geoWarning,
+      epc_warning: epcWarning,
       message: 'Property search completed'
     });
 
@@ -413,7 +426,11 @@ router.post('/:submissionId/properties/search-all', authenticateToken, async (re
             if (val !== null && val !== undefined) { updates.push(`${col} = $${idx}`); values.push(val); idx++; }
           }
         }
-        if (results.epc.success) {
+        // EPC — only write on exact match; clear stale otherwise
+        const epcColsSA = ['epc_rating','epc_score','epc_potential_rating','epc_floor_area',
+                           'epc_property_type','epc_built_form','epc_construction_age',
+                           'epc_habitable_rooms','epc_inspection_date','epc_certificate_id'];
+        if (results.epc.success && results.epc.match_confidence === 'exact' && results.epc.data) {
           const e = results.epc.data;
           for (const [col, val] of [
             ['epc_rating', e.epc_rating], ['epc_score', e.epc_score],
@@ -424,6 +441,8 @@ router.post('/:submissionId/properties/search-all', authenticateToken, async (re
           ]) {
             if (val !== null && val !== undefined) { updates.push(`${col} = $${idx}`); values.push(val); idx++; }
           }
+        } else {
+          for (const col of epcColsSA) updates.push(`${col} = NULL`);
         }
         if (results.price_paid.success) {
           const pp = results.price_paid.data;
