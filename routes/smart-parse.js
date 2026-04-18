@@ -589,14 +589,27 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
           // ── Sync ALL borrowers to deal_borrowers ──
           if (result.analysis && result.analysis.borrowers && result.analysis.borrowers.length > 0) {
             try {
-              // Clear old claude-parsed borrowers, then insert fresh
-              await pool.query(`DELETE FROM deal_borrowers WHERE deal_id = $1 AND kyc_status = 'pending'`, [deal.id]);
+              // Only delete pending borrowers that have NOT been CH-verified or KYC-verified
+              await pool.query(
+                `DELETE FROM deal_borrowers WHERE deal_id = $1 AND kyc_status = 'pending' AND ch_verified_at IS NULL`,
+                [deal.id]
+              );
               for (const b of result.analysis.borrowers) {
                 if (!b.full_name) continue;
+                // UPSERT: if borrower with same name exists on this deal, update missing fields only
                 await pool.query(
                   `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, kyc_status)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
-                   ON CONFLICT DO NOTHING`,
+                   ON CONFLICT (deal_id, LOWER(TRIM(full_name))) DO UPDATE SET
+                     date_of_birth = COALESCE(deal_borrowers.date_of_birth, EXCLUDED.date_of_birth),
+                     nationality = COALESCE(deal_borrowers.nationality, EXCLUDED.nationality),
+                     email = COALESCE(deal_borrowers.email, EXCLUDED.email),
+                     phone = COALESCE(deal_borrowers.phone, EXCLUDED.phone),
+                     role = COALESCE(deal_borrowers.role, EXCLUDED.role),
+                     borrower_type = COALESCE(deal_borrowers.borrower_type, EXCLUDED.borrower_type),
+                     company_name = COALESCE(deal_borrowers.company_name, EXCLUDED.company_name),
+                     company_number = COALESCE(deal_borrowers.company_number, EXCLUDED.company_number),
+                     updated_at = NOW()`,
                   [deal.id, b.full_name, b.date_of_birth || null, b.nationality || null,
                    b.email || null, b.phone || null, b.role || 'primary',
                    result.analysis.company?.borrower_type || 'individual',

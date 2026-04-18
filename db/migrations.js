@@ -602,6 +602,14 @@ async function runMigrations() {
       console.log('[migrate] Note on CH borrower columns:', err.message.substring(0, 60));
     }
 
+    // ── Unique constraint on deal_borrowers to prevent duplicate names per deal ──
+    try {
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_deal_borrowers_unique_name ON deal_borrowers(deal_id, LOWER(TRIM(full_name)))`);
+      console.log('[migrate] ✓ deal_borrowers unique name constraint');
+    } catch (err) {
+      console.log('[migrate] Note on borrower unique constraint:', err.message.substring(0, 80));
+    }
+
     // ── Company Verifications (Companies House API audit trail) ──
     await pool.query(`
       CREATE TABLE IF NOT EXISTS company_verifications (
