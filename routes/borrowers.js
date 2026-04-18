@@ -18,27 +18,48 @@ async function canEditDeal(req, submissionId) {
   return result.rows.length > 0;
 }
 
+// Helper: validate parent_borrower_id — must belong to same deal and be top-level (its own parent_borrower_id IS NULL).
+// Returns { ok: true } or { ok: false, error: '...' }.
+async function _validateParentBorrower(parentId, dealId) {
+  if (parentId === null || parentId === undefined || parentId === '') return { ok: true, value: null };
+  const pid = parseInt(parentId);
+  if (Number.isNaN(pid)) return { ok: false, error: 'parent_borrower_id must be an integer' };
+  const row = await pool.query(
+    `SELECT id, deal_id, parent_borrower_id FROM deal_borrowers WHERE id = $1`,
+    [pid]
+  );
+  if (row.rows.length === 0) return { ok: false, error: 'parent_borrower_id does not exist' };
+  if (row.rows[0].deal_id !== dealId) return { ok: false, error: 'parent_borrower_id belongs to a different deal' };
+  if (row.rows[0].parent_borrower_id !== null) return { ok: false, error: 'parent_borrower_id must be a top-level party (cannot be another child)' };
+  return { ok: true, value: pid };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE BORROWER
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
   try {
-    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number } = req.body;
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, parent_borrower_id } = req.body;
     if (!full_name) return res.status(400).json({ error: 'Full name is required' });
 
     const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    // Validate parent_borrower_id if provided (must exist, same deal, be top-level)
+    const parentCheck = await _validateParentBorrower(parent_borrower_id, dealId);
+    if (!parentCheck.ok) return res.status(400).json({ error: parentCheck.error });
 
     const result = await pool.query(
-      `INSERT INTO deal_borrowers (deal_id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-      [dealResult.rows[0].id, role || 'primary', full_name, date_of_birth || null, nationality || null,
+      `INSERT INTO deal_borrowers (deal_id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, parent_borrower_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [dealId, role || 'primary', full_name, date_of_birth || null, nationality || null,
        jurisdiction || null, email || null, phone || null, address || null, borrower_type || 'individual',
-       company_name || null, company_number || null]
+       company_name || null, company_number || null, parentCheck.value]
     );
 
-    await logAudit(dealResult.rows[0].id, 'borrower_added', null, full_name,
-      { role: role || 'primary', borrower_type: borrower_type || 'individual' }, req.user.userId);
+    await logAudit(dealId, 'borrower_added', null, full_name,
+      { role: role || 'primary', borrower_type: borrower_type || 'individual', parent_borrower_id: parentCheck.value }, req.user.userId);
 
     res.status(201).json({ success: true, borrower: result.rows[0] });
   } catch (error) {
@@ -76,24 +97,51 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
 
     const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data } = req.body;
 
+    // Parent hierarchy — handle separately so user can explicitly detach (null) vs "no change" (undefined)
+    const parentKeyPresent = Object.prototype.hasOwnProperty.call(req.body, 'parent_borrower_id');
+    let parentForUpdate = 'SKIP'; // sentinel
+    if (parentKeyPresent) {
+      // Need deal_id to validate parent belongs to same deal
+      const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+      if (dealRow.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+      // Prevent parenting self
+      if (req.body.parent_borrower_id && parseInt(req.body.parent_borrower_id) === parseInt(req.params.borrowerId)) {
+        return res.status(400).json({ error: 'A borrower cannot be its own parent' });
+      }
+      const parentCheck = await _validateParentBorrower(req.body.parent_borrower_id, dealRow.rows[0].id);
+      if (!parentCheck.ok) return res.status(400).json({ error: parentCheck.error });
+      parentForUpdate = parentCheck.value; // null or integer
+    }
+
+    // Build SET clause dynamically so parent_borrower_id can be set to NULL
+    const setClauses = [
+      'role = COALESCE($1, role)', 'full_name = COALESCE($2, full_name)',
+      'date_of_birth = COALESCE($3, date_of_birth)', 'nationality = COALESCE($4, nationality)',
+      'jurisdiction = COALESCE($5, jurisdiction)', 'email = COALESCE($6, email)',
+      'phone = COALESCE($7, phone)', 'address = COALESCE($8, address)',
+      'borrower_type = COALESCE($9, borrower_type)', 'company_name = COALESCE($10, company_name)',
+      'company_number = COALESCE($11, company_number)', 'kyc_status = COALESCE($12, kyc_status)',
+      'kyc_data = COALESCE($13, kyc_data)', 'updated_at = NOW()'
+    ];
+    const params = [
+      role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
+      borrower_type, company_name, company_number, kyc_status, kyc_data ? JSON.stringify(kyc_data) : null
+    ];
+    if (parentForUpdate !== 'SKIP') {
+      setClauses.push(`parent_borrower_id = $${params.length + 1}`);
+      params.push(parentForUpdate); // null to detach, or integer to re-parent
+    }
+    params.push(req.params.borrowerId);
+
     const result = await pool.query(
-      `UPDATE deal_borrowers SET
-        role = COALESCE($1, role), full_name = COALESCE($2, full_name),
-        date_of_birth = COALESCE($3, date_of_birth), nationality = COALESCE($4, nationality),
-        jurisdiction = COALESCE($5, jurisdiction), email = COALESCE($6, email),
-        phone = COALESCE($7, phone), address = COALESCE($8, address),
-        borrower_type = COALESCE($9, borrower_type), company_name = COALESCE($10, company_name),
-        company_number = COALESCE($11, company_number), kyc_status = COALESCE($12, kyc_status),
-        kyc_data = COALESCE($13, kyc_data), updated_at = NOW()
-       WHERE id = $14 RETURNING *`,
-      [role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
-       borrower_type, company_name, company_number, kyc_status, kyc_data ? JSON.stringify(kyc_data) : null,
-       req.params.borrowerId]
+      `UPDATE deal_borrowers SET ${setClauses.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Borrower not found' });
     res.json({ success: true, borrower: result.rows[0] });
   } catch (error) {
+    console.error('[borrower PUT] Error:', error);
     res.status(500).json({ error: 'Failed to update borrower' });
   }
 });

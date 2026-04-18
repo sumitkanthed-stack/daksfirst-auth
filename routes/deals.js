@@ -216,7 +216,8 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
               gender, id_type, id_number, id_expiry, residential_address, address_proof_status,
               credit_score, credit_score_source, credit_score_date,
               ccj_count, bankruptcy_status, pep_status, sanctions_status,
-              source_of_wealth, source_of_funds
+              source_of_wealth, source_of_funds,
+              parent_borrower_id
        FROM deal_borrowers WHERE deal_id = $1 ORDER BY role = 'primary' DESC, id`,
       [deal.id]
     );

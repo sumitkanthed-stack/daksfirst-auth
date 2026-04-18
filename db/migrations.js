@@ -660,6 +660,29 @@ async function runMigrations() {
     }
     console.log('[migrate] ✓ deal_borrowers individual person columns added');
 
+    // ── Hierarchical parent linkage on deal_borrowers (Phase G: Borrower+Guarantor architecture) ──
+    // parent_borrower_id points to the top-level party this person belongs to.
+    // Top-level parties (primary borrower, corporate guarantor, individual guarantor) have parent_borrower_id = NULL.
+    // Directors / PSCs / UBOs have parent_borrower_id set to their corporate parent's id.
+    // ON DELETE CASCADE — removing a corporate party removes its nested officers.
+    const borrowerHierarchyColumns = [
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS parent_borrower_id INT`,
+      `CREATE INDEX IF NOT EXISTS idx_deal_borrowers_parent ON deal_borrowers(parent_borrower_id)`
+    ];
+    for (const sql of borrowerHierarchyColumns) {
+      try { await pool.query(sql); } catch (e) { /* already exists */ }
+    }
+    // FK + self-reference check — separate so re-runs don't fail if already applied
+    try {
+      await pool.query(`ALTER TABLE deal_borrowers DROP CONSTRAINT IF EXISTS deal_borrowers_parent_fk`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD CONSTRAINT deal_borrowers_parent_fk FOREIGN KEY (parent_borrower_id) REFERENCES deal_borrowers(id) ON DELETE CASCADE`);
+    } catch (e) { console.warn('[migrate] parent_borrower_id FK:', e.message); }
+    try {
+      await pool.query(`ALTER TABLE deal_borrowers DROP CONSTRAINT IF EXISTS deal_borrowers_parent_not_self`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD CONSTRAINT deal_borrowers_parent_not_self CHECK (parent_borrower_id IS NULL OR parent_borrower_id <> id)`);
+    } catch (e) { console.warn('[migrate] parent_not_self check:', e.message); }
+    console.log('[migrate] ✓ deal_borrowers parent_borrower_id column + FK + index added');
+
     // ── Property search data columns on deal_properties ──
     const propertySearchColumns = [
       // Postcode lookup
