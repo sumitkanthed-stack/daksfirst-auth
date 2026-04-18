@@ -199,8 +199,10 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
               region, country, local_authority, admin_ward, latitude, longitude, in_england_or_wales,
               epc_rating, epc_score, epc_potential_rating, epc_floor_area, epc_property_type,
               epc_built_form, epc_construction_age, epc_habitable_rooms, epc_inspection_date,
+              epc_certificate_id, epc_selected_lmk_key,
               last_sale_price, last_sale_date, price_paid_data,
-              property_searched_at
+              property_search_data, property_searched_at,
+              property_verified_at, property_verified_by
        FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
       [deal.id]
     );

@@ -469,4 +469,122 @@ router.post('/:submissionId/properties/search-all', authenticateToken, async (re
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  VERIFY PROPERTY — Analyst accepts EPC match and locks the record
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/properties/:propertyId/verify', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, propertyId } = req.params;
+    if (!await canEditDeal(req, submissionId)) return res.status(403).json({ error: 'Access denied' });
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const result = await pool.query(
+      `UPDATE deal_properties
+       SET property_verified_at = NOW(), property_verified_by = $1, updated_at = NOW()
+       WHERE id = $2 AND deal_id = $3
+       RETURNING id, address, property_verified_at`,
+      [req.user.userId, propertyId, dealResult.rows[0].id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+
+    await logAudit(dealResult.rows[0].id, 'property_verified', null, result.rows[0].address,
+      { propertyId }, req.user.userId);
+
+    res.json({ success: true, property: result.rows[0] });
+  } catch (error) {
+    console.error('[property-verify] Error:', error);
+    res.status(500).json({ error: 'Verify failed: ' + error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UNVERIFY — Undo an accepted match so analyst can re-search or pick differently
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/properties/:propertyId/unverify', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, propertyId } = req.params;
+    if (!await canEditDeal(req, submissionId)) return res.status(403).json({ error: 'Access denied' });
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    const result = await pool.query(
+      `UPDATE deal_properties
+       SET property_verified_at = NULL, property_verified_by = NULL, updated_at = NOW()
+       WHERE id = $1 AND deal_id = $2
+       RETURNING id, address`,
+      [propertyId, dealResult.rows[0].id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+
+    await logAudit(dealResult.rows[0].id, 'property_unverified', null, result.rows[0].address,
+      { propertyId }, req.user.userId);
+
+    res.json({ success: true, property: result.rows[0] });
+  } catch (error) {
+    console.error('[property-unverify] Error:', error);
+    res.status(500).json({ error: 'Unverify failed: ' + error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SELECT EPC — Analyst manually picks an EPC from the alternative_matches list
+//  (used when auto-match was ambiguous or none)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/properties/:propertyId/select-epc', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, propertyId } = req.params;
+    const { lmk_key } = req.body;
+    if (!lmk_key) return res.status(400).json({ error: 'lmk_key required' });
+    if (!await canEditDeal(req, submissionId)) return res.status(403).json({ error: 'Access denied' });
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+
+    // Read the property's saved property_search_data to find the selected EPC row
+    const propResult = await pool.query(
+      `SELECT property_search_data FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      [propertyId, dealResult.rows[0].id]
+    );
+    if (propResult.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+
+    const searchData = propResult.rows[0].property_search_data || {};
+    const epcBlock = searchData.epc || {};
+    const pool_of_epcs = [epcBlock.data, ...(epcBlock.alternative_matches || [])].filter(Boolean);
+    const picked = pool_of_epcs.find(e => e && e.lmk_key === lmk_key);
+
+    if (!picked) {
+      return res.status(400).json({
+        error: 'Selected EPC not found in this property\'s search results. Try Re-Search first.',
+        available_keys: pool_of_epcs.map(e => e.lmk_key).filter(Boolean)
+      });
+    }
+
+    // Write the chosen EPC's fields over the property, and record which lmk_key was selected
+    await pool.query(
+      `UPDATE deal_properties SET
+         epc_rating = $1, epc_score = $2, epc_potential_rating = $3, epc_floor_area = $4,
+         epc_property_type = $5, epc_built_form = $6, epc_construction_age = $7,
+         epc_habitable_rooms = $8, epc_inspection_date = $9, epc_certificate_id = $10,
+         epc_selected_lmk_key = $10, updated_at = NOW()
+       WHERE id = $11 AND deal_id = $12`,
+      [picked.epc_rating || null, picked.epc_score || null, picked.potential_rating || null,
+       picked.floor_area || null, picked.property_type || null, picked.built_form || null,
+       picked.construction_age || null, picked.number_habitable_rooms || null,
+       picked.inspection_date || null, picked.lmk_key,
+       propertyId, dealResult.rows[0].id]
+    );
+
+    await logAudit(dealResult.rows[0].id, 'epc_manually_selected', null, picked.address,
+      { propertyId, lmk_key, epc_rating: picked.epc_rating }, req.user.userId);
+
+    res.json({ success: true, selected: picked });
+  } catch (error) {
+    console.error('[select-epc] Error:', error);
+    res.status(500).json({ error: 'Select EPC failed: ' + error.message });
+  }
+});
+
 module.exports = router;

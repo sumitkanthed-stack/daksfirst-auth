@@ -979,17 +979,63 @@ export async function renderDealMatrix(deal) {
               <!-- ── Property Search Results (EPC, Postcode, Price Paid) ── -->
               ${deal.properties.map((p, i) => {
                 const searched = !!p.property_searched_at;
+                const verified = !!p.property_verified_at;
                 const propLabel = deal.properties.length > 1 ? 'Property ' + (i + 1) + ': ' : '';
+                const subId = deal.submission_id;
+
+                // ── State 1: not searched ────────────────────────────────
                 if (!searched) {
                   return '<div style="margin-top:8px;padding:8px 12px;background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:6px;display:flex;align-items:center;justify-content:space-between;">' +
                     '<div style="font-size:11px;color:#D4A853;">' + propLabel + 'Property data not yet searched</div>' +
-                    '<button onclick="window._propertySearch(' + p.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:#D4A853;color:#111;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;">Search Property Data</button>' +
+                    '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:4px 12px;background:#D4A853;color:#111;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;">Search Property Data</button>' +
                   '</div>';
                 }
-                // Build result cards
+
+                // ── Parse match metadata from property_search_data ──────
+                let searchData = p.property_search_data || {};
+                if (typeof searchData === 'string') { try { searchData = JSON.parse(searchData); } catch (_) { searchData = {}; } }
+                const epcBlock = searchData.epc || {};
+                const alternatives = Array.isArray(epcBlock.alternative_matches) ? epcBlock.alternative_matches : [];
+                const matchConfidence = epcBlock.match_confidence || (p.epc_rating ? 'exact' : 'none');
+                const matchNote = epcBlock.match_note || '';
+                const hasEpc = !!p.epc_rating;
+
+                // ── State 2: verified → collapsed one-liner ──────────────
+                if (verified) {
+                  const bits = [];
+                  if (p.local_authority) bits.push(sanitizeHtml(p.local_authority));
+                  if (p.epc_property_type) bits.push(sanitizeHtml(p.epc_property_type));
+                  if (p.epc_floor_area) bits.push(p.epc_floor_area + ' m\u00B2');
+                  if (p.epc_habitable_rooms) bits.push(p.epc_habitable_rooms + ' hab. rooms');
+                  if (p.epc_rating) bits.push('EPC ' + p.epc_rating);
+                  return '<div style="margin-top:6px;padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;">' +
+                    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                      '<span style="color:#34D399;font-size:14px;font-weight:800;">\u2713</span>' +
+                      '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel.replace(/: $/,'') + '</span>' +
+                      '<span style="font-size:12px;color:#F1F5F9;">' + (bits.join(' \u00B7 ') || 'Verified') + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;">' +
+                      '<button onclick="window._propertyUnverify(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Undo</button>' +
+                      '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
+                    '</div>' +
+                  '</div>';
+                }
+
+                // ── Build expanded blocks (shared by exact/ambiguous states) ──
                 const epcColor = { A:'#22C55E', B:'#34D399', C:'#86EFAC', D:'#FBBF24', E:'#F97316', F:'#EF4444', G:'#DC2626' };
                 const rating = p.epc_rating || null;
                 const ratingStyle = rating ? 'background:' + (epcColor[rating] || '#64748B') + ';color:#111;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:800;' : '';
+
+                // MEES compliance (per Energy Efficiency (Private Rented Property) Regs 2015; proposed EPC C is under consultation, not yet law)
+                let meesHtml = '';
+                if (rating) {
+                  const meesCfg = ['A','B','C'].includes(rating)
+                    ? { color:'#34D399', bg:'rgba(52,211,153,0.12)', label:'\u2713 Meets MEES (current E + proposed C)' }
+                    : ['D','E'].includes(rating)
+                      ? { color:'#FBBF24', bg:'rgba(251,191,36,0.12)', label:'\u26A0 Meets current MEES E; may fail proposed C' }
+                      : { color:'#F87171', bg:'rgba(248,113,113,0.12)', label:'\u2717 Below MEES \u2014 cannot be let' };
+                  meesHtml = '<div style="margin-top:4px;padding:4px 8px;background:' + meesCfg.bg + ';border-radius:4px;display:inline-block;"><span style="font-size:10px;color:' + meesCfg.color + ';font-weight:700;">' + meesCfg.label + '</span></div>';
+                }
 
                 let epcHtml = '';
                 if (rating) {
@@ -999,8 +1045,9 @@ export async function renderDealMatrix(deal) {
                     (p.epc_property_type ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Type (EPC)</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_property_type) + '</span></div>' : '') +
                     (p.epc_built_form ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Built Form</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_built_form) + '</span></div>' : '') +
                     (p.epc_construction_age ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Construction</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_construction_age) + '</span></div>' : '') +
-                    (p.epc_habitable_rooms ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Rooms</span><span style="font-size:12px;color:#F1F5F9;">' + p.epc_habitable_rooms + '</span></div>' : '') +
-                  '</div>';
+                    (p.epc_habitable_rooms ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Habitable Rooms</span><span style="font-size:12px;color:#F1F5F9;">' + p.epc_habitable_rooms + '</span></div>' : '') +
+                    (p.epc_certificate_id ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Cert ID</span><span style="font-size:10px;color:#94A3B8;font-family:monospace;">' + sanitizeHtml(String(p.epc_certificate_id).substring(0,16)) + '\u2026</span></div>' : '') +
+                  '</div>' + meesHtml;
                 }
 
                 let geoHtml = '';
@@ -1027,15 +1074,53 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 }
 
+                // ── State 3: searched but no EPC → ambiguous or none, show picker ──
+                if (!hasEpc) {
+                  let pickerHtml = '';
+                  if (alternatives.length > 0) {
+                    const opts = alternatives.map(a => {
+                      const addr = (a.address || '').replace(/'/g, '&#39;');
+                      const tag = (a.epc_rating || '?') + ' \u00B7 ' + (a.floor_area ? a.floor_area + 'm\u00B2' : '?') + ' \u00B7 ' + (a.number_habitable_rooms || '?') + ' rooms';
+                      return '<option value="' + sanitizeHtml(a.lmk_key || '') + '">' + sanitizeHtml(addr) + ' \u2014 ' + tag + '</option>';
+                    }).join('');
+                    pickerHtml = '<div style="margin-top:6px;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;">' +
+                      '<div style="font-size:10px;color:#94A3B8;margin-bottom:4px;">Pick the correct EPC from ' + alternatives.length + ' candidates at this postcode:</div>' +
+                      '<div style="display:flex;gap:6px;align-items:center;">' +
+                        '<select id="epc-picker-' + p.id + '" style="flex:1;padding:4px 6px;background:#111;color:#F1F5F9;border:1px solid rgba(255,255,255,0.15);border-radius:4px;font-size:11px;">' +
+                          '<option value="">-- Select an EPC certificate --</option>' + opts +
+                        '</select>' +
+                        '<button onclick="window._propertySelectEpc(' + p.id + ', \'' + subId + '\')" style="padding:4px 10px;background:#D4A853;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Apply</button>' +
+                      '</div>' +
+                    '</div>';
+                  }
+                  return '<div style="margin-top:8px;padding:10px 12px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.25);border-radius:6px;">' +
+                    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+                      '<span style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'EPC Match ' + matchConfidence.toUpperCase() + '</span>' +
+                      '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:2px 8px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:9px;font-weight:600;cursor:pointer;">Re-Search</button>' +
+                    '</div>' +
+                    (matchNote ? '<div style="font-size:11px;color:#FBBF24;margin-bottom:6px;">' + sanitizeHtml(matchNote) + '</div>' : '') +
+                    (geoHtml ? '<div style="margin-bottom:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + geoHtml + '</div>' : '') +
+                    pickerHtml +
+                    (priceHtml ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
+                  '</div>';
+                }
+
+                // ── State 4: searched with EPC (exact or manually selected) → expanded + Accept ──
                 const hasData = epcHtml || geoHtml || priceHtml;
                 if (!hasData) return '';
 
-                return '<div style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">' +
-                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
-                    '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Property Intelligence</span>' +
+                const selectedNote = p.epc_selected_lmk_key ? '<span style="font-size:9px;color:#D4A853;margin-left:6px;">\u00B7 Manually selected</span>' : '';
+
+                return '<div style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid rgba(52,211,153,0.15);border-radius:6px;">' +
+                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                      '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Property Intelligence</span>' +
+                      selectedNote +
+                    '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       '<span style="font-size:9px;color:#64748B;">Searched ' + new Date(p.property_searched_at).toLocaleDateString('en-GB') + '</span>' +
-                      '<button onclick="window._propertySearch(' + p.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:9px;font-weight:600;cursor:pointer;">Re-Search</button>' +
+                      '<button onclick="window._propertyVerify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:#34D399;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:800;cursor:pointer;">\u2713 Accept</button>' +
+                      '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
                     '</div>' +
                   '</div>' +
                   (geoHtml ? '<div style="margin-bottom:6px;">' + geoHtml + '</div>' : '') +
@@ -4576,6 +4661,82 @@ window._propertySearch = async function(propertyId, submissionId) {
     console.error('[property-search] Error:', err);
     alert('Property search error: ' + err.message);
     if (btn) { btn.disabled = false; btn.textContent = 'Search Property Data'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Accept the current EPC match (lock property) ────────────────────────────
+window._propertyVerify = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Accepting...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const text = await res.text();
+    let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    if (!res.ok) {
+      alert('Accept failed (' + res.status + '): ' + (data.error || 'Unknown'));
+      if (btn) { btn.disabled = false; btn.textContent = '\u2713 Accept'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => window.location.reload(), 400);
+  } catch (err) {
+    console.error('[property-verify] Error:', err);
+    alert('Accept error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = '\u2713 Accept'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Undo the accept (re-editable) ───────────────────────────────────────────
+window._propertyUnverify = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Undoing...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/unverify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const text = await res.text();
+    let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    if (!res.ok) {
+      alert('Undo failed (' + res.status + '): ' + (data.error || 'Unknown'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Undo'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => window.location.reload(), 400);
+  } catch (err) {
+    console.error('[property-unverify] Error:', err);
+    alert('Undo error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Undo'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Manually select an EPC from the picker dropdown ─────────────────────────
+window._propertySelectEpc = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  const select = document.getElementById('epc-picker-' + propertyId);
+  const lmkKey = select ? select.value : '';
+  if (!lmkKey) { alert('Pick an EPC certificate from the dropdown first.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/select-epc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lmk_key: lmkKey })
+    });
+    const text = await res.text();
+    let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    if (!res.ok) {
+      alert('EPC selection failed (' + res.status + '): ' + (data.error || 'Unknown'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Apply'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => window.location.reload(), 600);
+  } catch (err) {
+    console.error('[select-epc] Error:', err);
+    alert('EPC selection error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Apply'; btn.style.opacity = '1'; }
   }
 };
 

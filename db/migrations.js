@@ -688,7 +688,12 @@ async function runMigrations() {
       // Search metadata
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_search_data JSONB DEFAULT '{}'::jsonb`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_searched_at TIMESTAMPTZ`,
-      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_searched_by INT`
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_searched_by INT`,
+      // Verification (Phase 2): analyst accepts the EPC match and locks the record
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_verified_at TIMESTAMPTZ`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_verified_by INT`,
+      // Tracks which EPC alternative was manually selected (empty for auto-match)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_selected_lmk_key VARCHAR(100)`
     ];
     for (const sql of propertySearchColumns) {
       try { await pool.query(sql); } catch (e) { /* column may already exist */ }
