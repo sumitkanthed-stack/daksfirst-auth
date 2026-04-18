@@ -548,111 +548,175 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Borrower Structure</div>
-                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
-              </div>
 
-              ${(deal.borrowers && deal.borrowers.length > 0) ? `
               ${(() => {
                 const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
+                const allBorrowers = deal.borrowers || [];
+                const nonGuarantors = allBorrowers.filter(b => b.role !== 'guarantor');
+                const allChVerified = nonGuarantors.length > 0 && nonGuarantors.every(b => b.ch_verified_at);
+
                 if (isCorporate && deal.company_name) {
-                  return `<div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                      <div style="font-size:10px;color:#D4A853;text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Primary Borrower (Corporate)</div>
-                      <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(deal.company_name)}${deal.company_number ? ` <span style="font-size:11px;color:#94A3B8;font-weight:400;">(${sanitizeHtml(deal.company_number)})</span>` : ''}</div>
+                  // ══════════════════════════════════════════════════════════
+                  // CORPORATE BORROWER FLOW
+                  // ══════════════════════════════════════════════════════════
+                  return `
+                    <!-- ── A. Corporate Borrower Identity ── -->
+                    <div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                        <div>
+                          <div style="font-size:10px;color:#D4A853;text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Primary Borrower (Corporate)</div>
+                          <div style="font-size:16px;font-weight:700;color:#F1F5F9;margin-top:3px;">${sanitizeHtml(deal.company_name)}</div>
+                          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:11px;">
+                            <span style="color:#94A3B8;">Co. No: <strong style="color:#E2E8F0;">${sanitizeHtml(deal.company_number || '—')}</strong></span>
+                            <span style="color:#94A3B8;">Type: <strong style="color:#E2E8F0;text-transform:capitalize;">${deal.borrower_type || 'corporate'}</strong></span>
+                            <span style="color:#94A3B8;">Jurisdiction: <strong style="color:#E2E8F0;">England & Wales</strong></span>
+                          </div>
+                        </div>
+                        <div style="text-align:right;">
+                          ${allChVerified
+                            ? '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.1);color:#34D399;">&#10003; CH VERIFIED</span>'
+                            : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">UNVERIFIED</span>'
+                          }
+                        </div>
+                      </div>
                     </div>
-                    <span style="font-size:10px;color:#94A3B8;text-transform:capitalize;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:10px;">${deal.borrower_type || 'corporate'}</span>
-                  </div>`;
+
+                    <!-- ── B. Companies House Verification ── -->
+                    ${deal.company_number ? `
+                    <div style="margin-bottom:12px;">
+                      ${allChVerified ? `
+                      <div id="ch-verified-summary" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:8px;cursor:pointer;" onclick="window._toggleChVerifiedDetail('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                          <span style="color:#34D399;font-size:14px;">&#10003;</span>
+                          <span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified</span>
+                          <span style="font-size:11px;color:#94A3B8;">— All roles confirmed · Click to review</span>
+                        </div>
+                        <span id="ch-verified-arrow" style="color:#64748B;font-size:10px;transition:transform .2s;">&#9660;</span>
+                      </div>
+                      <div id="ch-verified-detail" style="max-height:0;overflow:hidden;transition:max-height .35s ease;">
+                        <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                        <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+                      </div>
+                      ` : `
+                      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                        <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
+                          style="padding:6px 16px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
+                          Verify at Companies House
+                        </button>
+                        <span style="font-size:10px;color:#94A3B8;">Verifies company status, identifies directors, PSCs, and charges</span>
+                      </div>
+                      <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                      <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+                      `}
+                    </div>
+                    ` : ''}
+
+                    <!-- ── C. Connected Individuals (Directors, UBOs, PSCs) ── -->
+                    <div style="margin-bottom:4px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Directors, UBOs & PSCs — ${nonGuarantors.length} ${nonGuarantors.length === 1 ? 'Person' : 'People'}</span>
+                        ${canEdit ? '<button onclick="window.addBorrowerRow(\\'' + deal.submission_id + '\\')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : ''}
+                      </div>
+                      ${nonGuarantors.length > 0 ? `
+                      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead>
+                          <tr style="background:rgba(255,255,255,0.04);">
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Nationality</th>
+                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
+                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">CH</th>
+                            ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${nonGuarantors.map(b => {
+                            const roleColors = { primary:'#34D399', joint:'#34D399', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
+                            const roleBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
+                            const roleColor = roleColors[b.role] || '#94A3B8';
+                            const roleBg = roleBgs[b.role] || 'rgba(255,255,255,0.04)';
+                            const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + b.id + '" onclick="window._toggleBorrowerDetail(' + b.id + ')">' +
+                              '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(b.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>' +
+                              '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + roleBg + ';color:' + roleColor + ';text-transform:capitalize;">' + (b.role || 'primary') + '</span></td>' +
+                              '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(b.nationality || '—') + '</td>' +
+                              '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycColor + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
+                              '<td style="padding:6px 8px;text-align:center;">' + (b.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
+                              (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                                '<button onclick="window.editBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                              '</td>' : '') +
+                            '</tr>';
+                          }).join('')}
+                        </tbody>
+                      </table>
+                      ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification or add manually.</p>'}
+                    </div>
+                  `;
+                } else {
+                  // ══════════════════════════════════════════════════════════
+                  // INDIVIDUAL BORROWER FLOW
+                  // ══════════════════════════════════════════════════════════
+                  const borrowerList = allBorrowers.filter(b => b.role !== 'guarantor');
+                  if (borrowerList.length > 0) {
+                    return `
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                      <div style="font-size:14px;font-weight:700;color:#F1F5F9">Borrower Details</div>
+                      ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : ''}
+                    </div>
+                    <div style="margin-bottom:4px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Borrower Schedule — ${borrowerList.length} ${borrowerList.length === 1 ? 'Party' : 'Parties'}</span>
+                        ${canEdit ? '<button onclick="window.addBorrowerRow(\\'' + deal.submission_id + '\\')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>' : ''}
+                      </div>
+                      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead>
+                          <tr style="background:rgba(255,255,255,0.04);">
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Email</th>
+                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
+                            ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${borrowerList.map(b => {
+                            const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                            const roleColor = b.role === 'primary' ? '#34D399' : b.role === 'joint' ? '#34D399' : '#94A3B8';
+                            const roleBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.04)';
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + b.id + '" onclick="window._toggleBorrowerDetail(' + b.id + ')">' +
+                              '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(b.full_name || '-') + ' <span style="font-size:9px;color:#64748B;">&#9660;</span></td>' +
+                              '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + roleBg + ';color:' + roleColor + ';text-transform:capitalize;">' + (b.role || 'primary') + '</span></td>' +
+                              '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(b.email || '-') + '</td>' +
+                              '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycColor + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
+                              (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                                '<button onclick="window.editBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                              '</td>' : '') +
+                            '</tr>';
+                          }).join('')}
+                        </tbody>
+                      </table>
+                    </div>`;
+                  } else {
+                    return '';
+                  }
                 }
-                return '';
               })()}
-              <!-- ── Connected Individuals (from deal_borrowers) ── -->
-              <div style="margin-bottom:12px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                  <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">${['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase()) ? 'Connected Individuals' : 'Borrower Schedule'} — ${deal.borrowers.length} ${deal.borrowers.length === 1 ? 'Party' : 'Parties'}</span>
-                  <div style="display:flex;gap:6px;align-items:center;">
-                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>` : ''}
-                  </div>
-                </div>
-                <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                  <thead>
-                    <tr style="background:rgba(255,255,255,0.04);">
-                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
-                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
-                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
-                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Company</th>
-                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Email</th>
-                      <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
-                      ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${deal.borrowers.map(b => {
-                      const roleColors = { primary:'#34D399', joint:'#34D399', guarantor:'#FBBF24', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
-                      const roleBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', guarantor:'rgba(251,191,36,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
-                      const roleColor = roleColors[b.role] || '#94A3B8';
-                      const roleBg = roleBgs[b.role] || 'rgba(255,255,255,0.04)';
-                      const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
-                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-${b.id}" onclick="window._toggleBorrowerDetail(${b.id})">
-                      <td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">${sanitizeHtml(b.full_name || '-')} <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>
-                      <td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${roleBg};color:${roleColor};text-transform:capitalize;">${b.role || 'primary'}</span></td>
-                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">${sanitizeHtml(b.borrower_type || 'individual')}</td>
-                      <td style="padding:6px 8px;color:#F1F5F9;font-size:11px;">${b.company_name ? sanitizeHtml(b.company_name) + (b.company_number ? ` <span style="color:#94A3B8">(${sanitizeHtml(b.company_number)})</span>` : '') : '—'}</td>
-                      <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(b.email || '-')}</td>
-                      <td style="padding:6px 8px;text-align:center;">
-                        <span style="font-size:10px;font-weight:600;color:${kycColor};text-transform:capitalize;">${b.kyc_status || 'pending'}</span>
-                        ${b.ch_verified_at ? '<span style="font-size:9px;color:#34D399;margin-left:4px;" title="CH role verified">&#10003;CH</span>' : ''}
-                      </td>
-                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">
-                        <button onclick="window.editBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
-                        <button onclick="window.deleteBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
-                      </td>` : ''}
-                    </tr>`}).join('')}
-                  </tbody>
-                </table>
-              </div>
 
-              <!-- CH Verify / Verified summary -->
-              ${deal.company_number ? `
-              <div style="margin-top:8px;">
-                ${(deal.borrowers || []).every(b => b.ch_verified_at) ? `
-                <!-- Already verified: collapsible green bar — click to re-load CH data -->
-                <div id="ch-verified-summary" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:8px;cursor:pointer;" onclick="window._toggleChVerifiedDetail('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')">
-                  <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="color:#34D399;font-size:14px;">&#10003;</span>
-                    <span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified</span>
-                    <span style="font-size:11px;color:#94A3B8;">— All roles confirmed · Click to review</span>
-                  </div>
-                  <span id="ch-verified-arrow" style="color:#64748B;font-size:10px;transition:transform .2s;">&#9660;</span>
-                </div>
-                <div id="ch-verified-detail" style="max-height:0;overflow:hidden;transition:max-height .35s ease;">
-                  <div id="ch-matrix-panel" style="margin-top:8px;"></div>
-                  <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
-                </div>
-                ` : `
-                <!-- Not yet verified: show verify button -->
-                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                  <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
-                    style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
-                    Verify &amp; Match Borrowers
-                  </button>
-                </div>
-                <div id="ch-matrix-panel" style="margin-top:8px;"></div>
-                <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
-                `}
+              ${!(deal.borrowers && deal.borrowers.length > 0) ? `
+              <!-- ── No borrowers yet — show flat fields + add button ── -->
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Borrower Details</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : ''}
               </div>
-              ` : ''}
-
-              ` : `
-              <!-- ── No borrowers in deal_borrowers yet — show flat fields + add button ── -->
               <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
                 <span style="font-size:11px;color:#94A3B8;">${(deal.doc_summary && deal.doc_summary.unparsed > 0) ? 'Borrower details syncing — documents still being parsed.' : (deal.borrower_name ? 'Showing flat borrower fields. Re-parse to populate borrower schedule.' : 'No borrowers added yet.')}</span>
                 ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
               </div>
-              `}
+              ` : ''}
 
-              <!-- Primary borrower flat fields — hidden when borrower table exists, shown on click -->
+              <!-- Legacy flat fields — hidden when borrower table exists -->
               <div id="borrower-flat-fields" style="${(deal.borrowers && deal.borrowers.length > 0) ? 'display:none;' : ''}">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                   ${renderEditableField('borrower_type', 'Borrower Type', deal.borrower_type, 'select', canEdit, borrowerTypeOpts)}
@@ -669,41 +733,7 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
-        <!-- UBOs / Corporate Ownership — directors, PSCs, shareholders of the borrowing entity -->
-        ${renderFieldRow('ubos', 'UBOs / Corporate Ownership', 'Directors, PSCs, and beneficial owners of the corporate borrower',
-          ['not-started', 'not-started', 'not-started', 'not-started'])}
-
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-ubos">
-          <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">UBOs / Corporate Ownership</div>
-              </div>
-              <p style="font-size:11px;color:#94A3B8;margin:0 0 8px;">Individuals who own or control the corporate borrower — directors, PSCs, and shareholders identified via Companies House verification.</p>
-              ${(() => {
-                const ubos = (deal.borrowers || []).filter(b => ['director','ubo','psc','shareholder'].includes(b.role));
-                if (ubos.length === 0) return '<p style="font-size:12px;color:#FBBF24;margin:0;">No UBOs identified yet. Run Companies House verification above to populate.</p>';
-                return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
-                  <thead><tr style="background:rgba(255,255,255,0.03);">
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Name</th>
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Role</th>
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">CH Status</th>
-                  </tr></thead>
-                  <tbody>${ubos.map(b => {
-                    const rc = b.role === 'director' ? '#818CF8' : b.role === 'psc' ? '#34D399' : '#D4A853';
-                    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                      <td style="padding:6px 8px;font-size:12px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name)}</td>
-                      <td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:${rc};background:rgba(255,255,255,0.05);text-transform:uppercase;">${b.role}</span></td>
-                      <td style="padding:6px 8px;font-size:11px;color:${b.ch_verified_at ? '#34D399' : '#94A3B8'};">${b.ch_verified_at ? '&#10003; Verified' : 'Pending'}</td>
-                    </tr>`;
-                  }).join('')}</tbody>
-                </table>`;
-              })()}
-            </div>
-          </div>
-        </div>
-
-        <!-- Guarantor(s) — personal guarantees, joint & several -->
+        <!-- Guarantor(s) — separate from borrower, supports both corporate and individual deals -->
         ${renderFieldRow('guarantors', 'Guarantor(s)', 'Personal guarantors providing joint & several liability',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
