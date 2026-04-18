@@ -1220,9 +1220,62 @@ export async function renderDealMatrix(deal) {
                 '</div>';
               }).join('')}
 
-              <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:4px;">
-                <span style="font-size:10px;color:#6B7280;">Shared property details (applies to all properties):</span>
-              </div>
+              <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
+              ${(() => {
+                const pp = deal.properties;
+                const n = pp.length;
+                const num = (v) => Number(v) || 0;
+                const totalMV = pp.reduce((s, p) => s + num(p.market_value), 0);
+                const totalPP = pp.reduce((s, p) => s + num(p.purchase_price), 0);
+                const uplift = totalMV - totalPP;
+                const upliftPct = totalPP > 0 ? (uplift / totalPP * 100) : 0;
+                const totalAreaM2 = pp.reduce((s, p) => s + num(p.epc_floor_area), 0);
+                const totalAreaSqft = totalAreaM2 * 10.764;
+                const psf = totalAreaSqft > 0 ? (totalMV / totalAreaSqft) : 0;
+                // Counters
+                const countBy = (key) => pp.reduce((acc, p) => { const k = (p[key] || 'unknown').toString().toLowerCase(); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+                const fmtMix = (obj) => Object.entries(obj).filter(([k]) => k !== 'unknown' && k !== '').map(([k, v]) => v + ' ' + k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ')).join(' \u00B7 ') || '—';
+                const tenureMix = fmtMix(countBy('tenure'));
+                const occMix = fmtMix(countBy('occupancy'));
+                const typeMix = fmtMix(countBy('property_type'));
+                // Geography
+                const geoFlags = pp.map(p => p.in_england_or_wales);
+                const anyOutside = geoFlags.some(f => f === false);
+                const allInEnW = geoFlags.every(f => f === true);
+                const geoStyle = anyOutside ? 'color:#F87171;font-weight:700;' : allInEnW ? 'color:#34D399;font-weight:600;' : 'color:#94A3B8;';
+                const geoText = anyOutside ? '\u2717 Some outside E&W' : allInEnW ? '\u2713 All E&W' : 'Not verified';
+                // MEES
+                const withEpc = pp.filter(p => p.epc_rating);
+                const meesAboveC = withEpc.filter(p => ['A','B','C'].includes(p.epc_rating)).length;
+                const meesBelowE = withEpc.filter(p => ['F','G'].includes(p.epc_rating)).length;
+                const meesStyle = meesBelowE > 0 ? 'color:#F87171;font-weight:700;' : (meesAboveC === withEpc.length && withEpc.length > 0) ? 'color:#34D399;font-weight:600;' : 'color:#F1F5F9;';
+                const meesText = withEpc.length === 0 ? '—'
+                               : meesBelowE > 0 ? '\u26A0 ' + meesBelowE + ' below E (unlettable)'
+                               : meesAboveC === withEpc.length ? '\u2713 All ' + withEpc.length + ' EPC C+'
+                               : meesAboveC + '/' + withEpc.length + ' EPC C+';
+
+                const kpi = (label, value, extraStyle) => '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;letter-spacing:.3px;">' + label + '</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;' + (extraStyle || '') + '">' + value + '</span></div>';
+
+                return '<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;margin-top:10px;">' +
+                  '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-bottom:8px;">Portfolio Summary \u00B7 ' + n + ' ' + (n === 1 ? 'property' : 'properties') + '</div>' +
+                  // Row 1 — money/size aggregates
+                  '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid rgba(52,211,153,0.12);border-radius:6px;">' +
+                    kpi('Total Value', '\u00A3' + totalMV.toLocaleString()) +
+                    kpi('Total Purchase', '\u00A3' + totalPP.toLocaleString()) +
+                    kpi('Value Uplift', (uplift >= 0 ? '+' : '') + '\u00A3' + uplift.toLocaleString() + ' <span style="font-size:10px;color:' + (uplift >= 0 ? '#34D399' : '#F87171') + ';">(' + upliftPct.toFixed(1) + '%)</span>') +
+                    kpi('Floor Area', (totalAreaM2 > 0 ? totalAreaM2.toFixed(0) + ' m\u00B2 <span style="font-size:10px;color:#94A3B8;font-weight:400;">(' + Math.round(totalAreaSqft).toLocaleString() + ' sqft)</span>' : '\u2014')) +
+                    kpi('\u00A3/sq ft (weighted)', (psf > 0 ? '\u00A3' + Math.round(psf).toLocaleString() : '\u2014')) +
+                  '</div>' +
+                  // Row 2 — portfolio composition + flags
+                  '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:6px;">' +
+                    kpi('Tenure Mix', tenureMix) +
+                    kpi('Occupancy Mix', occMix) +
+                    kpi('Asset Type', typeMix) +
+                    kpi('Geography', geoText, geoStyle) +
+                    kpi('MEES', meesText, meesStyle) +
+                  '</div>' +
+                '</div>';
+              })()}
               ` : `
               <!-- ── Raw address fields (no deal_properties rows yet) ── -->
               <div style="margin-bottom:8px;padding:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
@@ -1234,12 +1287,9 @@ export async function renderDealMatrix(deal) {
                 </div>
                 <button onclick="window.reparseProperties && window.reparseProperties('${deal.submission_id}')" style="padding:3px 10px;background:#FBBF24;color:#111827;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">Re-Parse Properties</button>
               </div>
-              `}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${(deal.properties && deal.properties.length > 0) ? '' : `
                 ${renderEditableField('security_address', 'Security Address', deal.security_address, 'text', canEdit)}
                 ${renderEditableField('security_postcode', 'Postcode', deal.security_postcode, 'text', canEdit)}
-                `}
                 ${renderEditableField('asset_type', 'Asset Type', deal.asset_type, 'select', canEdit, [
                   { value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' },
                   { value: 'mixed_use', label: 'Mixed Use' }, { value: 'hmo', label: 'HMO' },
@@ -1252,6 +1302,7 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('occupancy_status', 'Occupancy', deal.occupancy_status, 'text', canEdit)}
                 ${renderEditableField('current_use', 'Current Use', deal.current_use, 'text', canEdit)}
               </div>
+              `}
             </div>
           </div>
         </div>
