@@ -13,11 +13,34 @@ import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
 
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
+// Preserves section expand state and scroll position.
 // Falls back to window.location.reload() if showDealDetail can't resolve (defensive).
 async function _refreshDealInPlace(submissionId) {
   try {
     if (typeof showDealDetail === 'function' && submissionId) {
+      // Capture which sections are currently expanded (body-{id} without .collapsed class)
+      const expandedSections = [];
+      document.querySelectorAll('[id^="body-"]').forEach(el => {
+        if (!el.classList.contains('collapsed')) {
+          expandedSections.push(el.id.replace(/^body-/, ''));
+        }
+      });
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+
       await showDealDetail(submissionId);
+
+      // Restore expand state + scroll after the new DOM settles
+      setTimeout(() => {
+        for (const id of expandedSections) {
+          const body = document.getElementById('body-' + id);
+          const chevron = document.getElementById('chev-' + id);
+          if (body && body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            if (chevron) chevron.classList.add('open');
+          }
+        }
+        if (scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
+      }, 60);
       return;
     }
   } catch (err) {
