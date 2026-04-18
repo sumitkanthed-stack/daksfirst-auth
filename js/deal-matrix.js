@@ -613,17 +613,35 @@ export async function renderDealMatrix(deal) {
                 </table>
               </div>
 
-              <!-- CH Verify button (at table level, always visible for corporate deals) -->
+              <!-- CH Verify / Verified summary -->
               ${deal.company_number ? `
-              <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-                <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
-                  style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
-                  Verify &amp; Match Borrowers
-                </button>
-                ${(deal.borrowers || []).every(b => b.ch_verified_at) ? '<span style="font-size:11px;color:#34D399;font-weight:600;">&#10003; All roles verified</span>' : ''}
+              <div style="margin-top:8px;">
+                ${(deal.borrowers || []).every(b => b.ch_verified_at) ? `
+                <!-- Already verified: collapsible green bar — click to re-load CH data -->
+                <div id="ch-verified-summary" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:8px;cursor:pointer;" onclick="window._toggleChVerifiedDetail('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="color:#34D399;font-size:14px;">&#10003;</span>
+                    <span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified</span>
+                    <span style="font-size:11px;color:#94A3B8;">— All roles confirmed · Click to review</span>
+                  </div>
+                  <span id="ch-verified-arrow" style="color:#64748B;font-size:10px;transition:transform .2s;">&#9660;</span>
+                </div>
+                <div id="ch-verified-detail" style="max-height:0;overflow:hidden;transition:max-height .35s ease;">
+                  <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                  <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+                </div>
+                ` : `
+                <!-- Not yet verified: show verify button -->
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                  <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
+                    style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
+                    Verify &amp; Match Borrowers
+                  </button>
+                </div>
+                <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+                `}
               </div>
-              <div id="ch-matrix-panel" style="margin-top:8px;"></div>
-              <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
               ` : ''}
 
               ` : `
@@ -4267,6 +4285,52 @@ export async function renderDealMatrix(deal) {
   };
 
   // ═══════════════════════════════════════════════════════════════════
+  // TOGGLE CH VERIFIED DETAIL — collapse/expand CH data after verification
+  // ═══════════════════════════════════════════════════════════════════
+  window._chVerifiedLoaded = false;
+  window._toggleChVerifiedDetail = async function(companyNumber, submissionId) {
+    const detail = document.getElementById('ch-verified-detail');
+    const arrow = document.getElementById('ch-verified-arrow');
+    if (!detail) return;
+    const isOpen = detail.style.maxHeight !== '0px' && detail.style.maxHeight !== '';
+
+    if (isOpen) {
+      // Collapse
+      detail.style.maxHeight = '0px';
+      if (arrow) arrow.style.transform = 'rotate(0deg)';
+    } else {
+      // Expand — lazy-load CH data on first open
+      if (!window._chVerifiedLoaded && companyNumber) {
+        const panel = document.getElementById('ch-matrix-panel');
+        const reconPanel = document.getElementById('ch-reconciliation-panel');
+        if (panel) {
+          panel.innerHTML = '<div style="padding:12px;text-align:center;color:#94A3B8;font-size:12px;">Loading Companies House data...</div>';
+          try {
+            await renderFullVerification(companyNumber, panel);
+            // Also load reconciliation
+            if (reconPanel && submissionId) {
+              const [chResp, bResp] = await Promise.all([
+                fetchWithAuth(`${API_BASE}/api/companies-house/verify/${companyNumber}`),
+                fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers`)
+              ]);
+              const chData = await chResp.json();
+              const bData = await bResp.json();
+              if (chData.verification?.found && bData.borrowers?.length > 0) {
+                renderReconciliation(reconPanel, chData.verification, bData.borrowers, submissionId);
+              }
+            }
+            window._chVerifiedLoaded = true;
+          } catch (e) {
+            panel.innerHTML = '<div style="padding:12px;color:#F87171;font-size:12px;">Failed to load — click to retry</div>';
+          }
+        }
+      }
+      detail.style.maxHeight = '4000px';
+      if (arrow) arrow.style.transform = 'rotate(180deg)';
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
   // REFRESH DOC REPO — called after upload to refresh document list
   // ═══════════════════════════════════════════════════════════════════
   window.refreshDocRepo = async function() {
@@ -4555,6 +4619,9 @@ window._chConfirmRoles = async function(submissionId, matchData) {
     if (typeof calculateCompleteness === 'function') calculateCompleteness();
 
     showToast(`${data.count} borrower roles verified and saved`, 'success');
+
+    // Reload after 2s so the page renders with the verified state (collapsible summary bar)
+    setTimeout(() => window.location.reload(), 2000);
 
   } catch (e) {
     console.error('[ch-confirm-roles] Error:', e);
