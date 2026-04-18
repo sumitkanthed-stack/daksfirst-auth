@@ -590,7 +590,17 @@ export async function renderDealMatrix(deal) {
               ${(() => {
                 const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
                 const allBorrowers = deal.borrowers || [];
-                const nonGuarantors = allBorrowers.filter(b => b.role !== 'guarantor');
+                // Non-guarantors = primary borrower + its directly linked directors/PSCs.
+                // Excludes guarantors AND children of guarantors (those have parent_borrower_id set to a guarantor's id).
+                const nonGuarantors = allBorrowers.filter(b => {
+                  if (b.role === 'guarantor') return false;
+                  // If this row has a parent, check that the parent is not a guarantor
+                  if (b.parent_borrower_id) {
+                    const parent = allBorrowers.find(p => p.id === b.parent_borrower_id);
+                    if (parent && parent.role === 'guarantor') return false;
+                  }
+                  return true;
+                });
                 const allChVerified = nonGuarantors.length > 0 && nonGuarantors.every(b => b.ch_verified_at);
 
                 if (isCorporate && deal.company_name) {
@@ -695,7 +705,7 @@ export async function renderDealMatrix(deal) {
                   // ══════════════════════════════════════════════════════════
                   // INDIVIDUAL BORROWER FLOW
                   // ══════════════════════════════════════════════════════════
-                  const borrowerList = allBorrowers.filter(b => b.role !== 'guarantor');
+                  const borrowerList = nonGuarantors;
                   if (borrowerList.length > 0) {
                     return `
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -778,26 +788,206 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-guarantors">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Personal Guarantors</div>
-                ${canEdit ? `<button onclick="window.addGuarantorRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Guarantor</button>` : ''}
-              </div>
-              <p style="font-size:11px;color:#94A3B8;margin:0 0 8px;">Individuals providing personal guarantees — not corporate officers unless also guaranteeing personally.</p>
               ${(() => {
-                const guarantors = (deal.borrowers || []).filter(b => b.role === 'guarantor');
-                if (guarantors.length === 0) return '<p style="font-size:12px;color:#FBBF24;margin:0;">No personal guarantors added yet.</p>';
-                return `<table style="width:100%;border-collapse:collapse;margin-top:4px;">
-                  <thead><tr style="background:rgba(255,255,255,0.03);">
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Name</th>
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">Type</th>
-                    <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;">KYC</th>
-                  </tr></thead>
-                  <tbody>${guarantors.map(b => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                    <td style="padding:6px 8px;font-size:12px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(b.full_name)}</td>
-                    <td style="padding:6px 8px;font-size:11px;color:#94A3B8;text-transform:capitalize;">${b.borrower_type || 'individual'}</td>
-                    <td style="padding:6px 8px;font-size:11px;color:${b.kyc_status === 'verified' ? '#34D399' : '#FBBF24'};">${b.kyc_status || 'pending'}</td>
-                  </tr>`).join('')}</tbody>
-                </table>`;
+                const allB = deal.borrowers || [];
+                const _isCorp = (t) => ['corporate','spv','ltd','llp'].includes((t || '').toLowerCase());
+
+                // Top-level guarantors only (parent_borrower_id IS NULL)
+                const corpGuarantors = allB.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && _isCorp(b.borrower_type));
+                const indGuarantors = allB.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && !_isCorp(b.borrower_type));
+                const childrenOf = (pid) => allB.filter(b => b.parent_borrower_id === pid);
+
+                // Count aggregate
+                const totalG = corpGuarantors.length + indGuarantors.length;
+
+                // ── Header strip: aggregate ──
+                const header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+                  '<div>' +
+                    '<div style="font-size:14px;font-weight:700;color:#F1F5F9;">Guarantors</div>' +
+                    '<div style="font-size:11px;color:#94A3B8;margin-top:2px;">' + (totalG === 0
+                      ? 'No guarantors added yet.'
+                      : corpGuarantors.length + ' corporate \u00B7 ' + indGuarantors.length + ' individual') + '</div>' +
+                  '</div>' +
+                '</div>';
+
+                // ── Corporate Guarantor card renderer ──
+                const renderCorpCard = (g) => {
+                  const kids = childrenOf(g.id);
+                  const chVerified = !!g.ch_verified_at;
+                  // Detect if any child matches a primary-borrower director by name (same-person tag)
+                  const primaryKids = allB.filter(b => b.parent_borrower_id && b.parent_borrower_id !== g.id);
+                  const sameNameIds = new Set(primaryKids.map(p => (p.full_name || '').toLowerCase().trim()).filter(Boolean));
+
+                  const kidsTable = kids.length > 0
+                    ? '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">' +
+                        '<thead><tr style="background:rgba(255,255,255,0.04);">' +
+                          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>' +
+                          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>' +
+                          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Nationality</th>' +
+                          '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>' +
+                          '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">CH</th>' +
+                          (canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : '') +
+                        '</tr></thead><tbody>' +
+                        kids.map(k => {
+                          const rBg = k.role === 'director' ? 'rgba(129,140,248,0.1)' : k.role === 'psc' ? 'rgba(56,189,248,0.1)' : k.role === 'ubo' ? 'rgba(167,139,250,0.1)' : 'rgba(255,255,255,0.04)';
+                          const rCol = k.role === 'director' ? '#818CF8' : k.role === 'psc' ? '#38BDF8' : k.role === 'ubo' ? '#A78BFA' : '#94A3B8';
+                          const kycCol = k.kyc_status === 'verified' ? '#34D399' : k.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                          const sameTag = sameNameIds.has((k.full_name || '').toLowerCase().trim())
+                            ? ' <span style="font-size:9px;color:#D4A853;background:rgba(212,168,83,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">Same as Borrower</span>'
+                            : '';
+                          return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + k.id + '" onclick="window._toggleBorrowerDetail(' + k.id + ')">' +
+                            '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(k.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span>' + sameTag + '</td>' +
+                            '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + rBg + ';color:' + rCol + ';text-transform:capitalize;">' + (k.role || 'director') + '</span></td>' +
+                            '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(k.nationality || '—') + '</td>' +
+                            '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (k.kyc_status || 'pending') + '</span></td>' +
+                            '<td style="padding:6px 8px;text-align:center;">' + (k.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
+                            (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                              '<button onclick="window.editBorrowerRow(' + k.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                              '<button onclick="window.deleteBorrowerRow(' + k.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                            '</td>' : '') +
+                          '</tr>';
+                        }).join('') +
+                      '</tbody></table>'
+                    : '<p style="font-size:11px;color:#FBBF24;margin:6px 0 0 0;">No directors/PSCs captured yet. Add manually or run CH verification (coming).</p>';
+
+                  return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #818CF8;border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
+                    // Identity card
+                    '<div style="background:rgba(129,140,248,0.05);border:1px solid rgba(129,140,248,0.18);border-radius:6px;padding:10px 14px;margin-bottom:10px;">' +
+                      '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                        '<div>' +
+                          '<div style="font-size:10px;color:#818CF8;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate Guarantor</div>' +
+                          '<div style="font-size:15px;font-weight:700;color:#F1F5F9;margin-top:3px;">' + sanitizeHtml(g.company_name || g.full_name || 'Unnamed') + '</div>' +
+                          '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:11px;color:#94A3B8;">' +
+                            '<span>Co. No: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.company_number || '—') + '</strong></span>' +
+                            '<span>Type: <strong style="color:#E2E8F0;text-transform:capitalize;">' + (g.borrower_type || 'corporate') + '</strong></span>' +
+                            (g.jurisdiction ? '<span>Jurisdiction: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.jurisdiction) + '</strong></span>' : '') +
+                          '</div>' +
+                        '</div>' +
+                        '<div style="display:flex;gap:6px;align-items:center;">' +
+                          (chVerified
+                            ? '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(129,140,248,0.15);color:#818CF8;">&#10003; CH VERIFIED</span>'
+                            : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">UNVERIFIED</span>') +
+                          (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
+                          (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove guarantor">\u2715</button>' : '') +
+                        '</div>' +
+                      '</div>' +
+                    '</div>' +
+                    // Children block
+                    '<div>' +
+                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
+                        '<span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this guarantor') + ' — ' + kids.length + '</span>' +
+                        (canEdit ? '<button onclick="window.addChildToParent(\'' + deal.submission_id + '\', ' + g.id + ')" style="padding:3px 10px;background:#818CF8;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : '') +
+                      '</div>' +
+                      kidsTable +
+                    '</div>' +
+                  '</div>';
+                };
+
+                // ── Individual Guarantor card renderer (Alessandra-Cenci style 2-col detail) ──
+                const fmtDate = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
+                const fieldInline = (label, val, stage) => {
+                  const v = val && String(val).trim();
+                  return '<div style="margin-bottom:8px;">' +
+                    '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+                    (v ? '<div style="font-size:12px;color:#F1F5F9;font-weight:500;">' + sanitizeHtml(String(val)) + '</div>'
+                       : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained' + (stage ? ' <span style="font-size:9px;color:#334155;">(' + stage + ')</span>' : '') + '</div>') +
+                  '</div>';
+                };
+                const statusPillInline = (label, status) => {
+                  const map = { clear:'#34D399', verified:'#34D399', not_screened:'#64748B', not_obtained:'#64748B', none:'#34D399', flagged:'#F87171', active:'#F87171', undischarged:'#F87171', discharged:'#D4A853', obtained:'#D4A853' };
+                  const c = map[status] || '#64748B';
+                  const bg = c === '#34D399' ? 'rgba(52,211,153,0.1)' : c === '#F87171' ? 'rgba(248,113,113,0.1)' : c === '#D4A853' ? 'rgba(212,168,83,0.1)' : 'rgba(255,255,255,0.04)';
+                  const dstat = status ? String(status).replace(/_/g, ' ') : 'not screened';
+                  return '<div style="margin-bottom:8px;">' +
+                    '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">' + label + '</div>' +
+                    '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + bg + ';color:' + c + ';text-transform:capitalize;">' + dstat + '</span>' +
+                  '</div>';
+                };
+                const renderIndCard = (g) => {
+                  const kycCol = g.kyc_status === 'verified' ? '#34D399' : g.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                  const kycLabel = g.kyc_status === 'verified' ? '\u2713 KYC VERIFIED' : (g.kyc_status || 'pending').toUpperCase();
+                  const idDocInner = (g.id_type || g.id_number)
+                    ? '<div style="font-size:12px;color:#F1F5F9;font-weight:500;text-transform:capitalize;">' + sanitizeHtml((g.id_type || 'ID').replace(/_/g,' ')) + (g.id_number ? ': ' + sanitizeHtml(g.id_number) : '') + '</div>' +
+                      (g.id_expiry ? '<div style="font-size:10px;color:#94A3B8;margin-top:1px;">Expires: ' + fmtDate(g.id_expiry) + '</div>' : '')
+                    : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(DIP)</span></div>';
+                  const creditInner = g.credit_score
+                    ? (() => { const sc = g.credit_score >= 700 ? '#34D399' : g.credit_score >= 500 ? '#D4A853' : '#F87171';
+                        return '<div style="display:flex;align-items:baseline;gap:6px;">' +
+                          '<span style="font-size:18px;font-weight:800;color:' + sc + ';">' + g.credit_score + '</span>' +
+                          (g.credit_score_source ? '<span style="font-size:10px;color:#64748B;">' + sanitizeHtml(g.credit_score_source) + '</span>' : '') +
+                          (g.credit_score_date ? '<span style="font-size:10px;color:#475569;">(' + fmtDate(g.credit_score_date) + ')</span>' : '') +
+                        '</div>'; })()
+                    : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(Underwriting)</span></div>';
+
+                  return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #FBBF24;border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
+                    // Identity header
+                    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                      '<div>' +
+                        '<div style="font-size:10px;color:#FBBF24;text-transform:uppercase;font-weight:700;letter-spacing:.5px;">Personal Guarantor (Individual)</div>' +
+                        '<div style="font-size:15px;font-weight:700;color:#F1F5F9;margin-top:3px;">' + sanitizeHtml(g.full_name || 'Unnamed') + '</div>' +
+                      '</div>' +
+                      '<div style="display:flex;gap:6px;align-items:center;">' +
+                        '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.1);color:' + kycCol + ';">' + kycLabel + '</span>' +
+                        (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
+                        (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove">\u2715</button>' : '') +
+                      '</div>' +
+                    '</div>' +
+                    // 2-column detail grid (Alessandra-Cenci style)
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+                      // LEFT: Personal Identity
+                      '<div>' +
+                        '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Personal Identity</div>' +
+                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                          fieldInline('Date of Birth', fmtDate(g.date_of_birth), 'DIP') +
+                          fieldInline('Gender', g.gender, 'DIP') +
+                          fieldInline('Nationality', g.nationality, 'DIP') +
+                          fieldInline('Email', g.email, 'DIP') +
+                          fieldInline('Phone', g.phone, 'DIP') +
+                        '</div>' +
+                        '<div style="margin-bottom:8px;">' +
+                          '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ID Document</div>' +
+                          idDocInner +
+                        '</div>' +
+                        fieldInline('Residential Address', g.residential_address || g.address, 'DIP') +
+                        statusPillInline('Address Proof', g.address_proof_status || 'not_obtained') +
+                      '</div>' +
+                      // RIGHT: Compliance & Verification
+                      '<div>' +
+                        '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Compliance &amp; Verification</div>' +
+                        '<div style="margin-bottom:8px;">' +
+                          '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Credit Score</div>' +
+                          creditInner +
+                        '</div>' +
+                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                          statusPillInline('CCJs', g.ccj_count > 0 ? (g.ccj_count + ' found') : (g.ccj_count === 0 ? 'None' : 'not_screened')) +
+                          statusPillInline('Bankruptcy', g.bankruptcy_status || 'none') +
+                          statusPillInline('PEP Screening', g.pep_status || 'not_screened') +
+                          statusPillInline('Sanctions', g.sanctions_status || 'not_screened') +
+                        '</div>' +
+                        fieldInline('Source of Wealth', g.source_of_wealth, 'Underwriting') +
+                        fieldInline('Source of Funds', g.source_of_funds, 'Underwriting') +
+                      '</div>' +
+                    '</div>' +
+                  '</div>';
+                };
+
+                // ── Main body ──
+                let body = header;
+                if (totalG === 0) {
+                  body += '<p style="font-size:12px;color:#FBBF24;margin:0 0 12px 0;">No guarantors added yet. Use the buttons below to add corporate or individual guarantors.</p>';
+                } else {
+                  body += corpGuarantors.map(renderCorpCard).join('');
+                  body += indGuarantors.map(renderIndCard).join('');
+                }
+
+                // ── Add buttons ──
+                if (canEdit) {
+                  body += '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">' +
+                    '<button onclick="window.addCorporateGuarantor(\'' + deal.submission_id + '\')" style="padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;border-radius:6px;border:1px dashed rgba(129,140,248,0.4);background:rgba(129,140,248,0.06);color:#818CF8;">+ Add Corporate Guarantor</button>' +
+                    '<button onclick="window.addIndividualGuarantor(\'' + deal.submission_id + '\')" style="padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;border-radius:6px;border:1px dashed rgba(251,191,36,0.4);background:rgba(251,191,36,0.06);color:#FBBF24;">+ Add Individual Guarantor</button>' +
+                  '</div>';
+                }
+                return body;
               })()}
             </div>
           </div>
@@ -3141,6 +3331,10 @@ export async function renderDealMatrix(deal) {
         company_number: document.getElementById('bm-company_number').value.trim() || null,
         address: document.getElementById('bm-address').value.trim() || null
       };
+      // Preserve parent_borrower_id if it was passed as a default (e.g. when adding a director to a specific corporate guarantor)
+      if (v.parent_borrower_id !== undefined) {
+        payload.parent_borrower_id = v.parent_borrower_id;
+      }
 
       if (!payload.full_name) {
         showToast('Full name is required', 'error');
@@ -3187,6 +3381,25 @@ export async function renderDealMatrix(deal) {
 
   window.addGuarantorRow = function(submissionId) {
     _showBorrowerModal(submissionId, null, { role: 'guarantor' });
+  };
+
+  // Add a corporate guarantor (top-level, role=guarantor + corporate type pre-selected)
+  window.addCorporateGuarantor = function(submissionId) {
+    _showBorrowerModal(submissionId, null, { role: 'guarantor', borrower_type: 'corporate' });
+  };
+
+  // Add an individual guarantor (top-level, role=guarantor + individual type pre-selected)
+  window.addIndividualGuarantor = function(submissionId) {
+    _showBorrowerModal(submissionId, null, { role: 'guarantor', borrower_type: 'individual' });
+  };
+
+  // Add a director/PSC/UBO as a child of a specific corporate party (borrower or guarantor)
+  window.addChildToParent = function(submissionId, parentBorrowerId) {
+    _showBorrowerModal(submissionId, null, {
+      role: 'director',
+      borrower_type: 'individual',
+      parent_borrower_id: parseInt(parentBorrowerId)
+    });
   };
 
   window.editBorrowerRow = function(borrowerId, submissionId) {
