@@ -4550,15 +4550,18 @@ window._propertySearch = async function(propertyId, submissionId) {
   if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; btn.style.opacity = '0.6'; }
 
   try {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${window.API_BASE || ''}/api/deals/${submissionId}/properties/${propertyId}/search`, {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/search`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' }
     });
-    const data = await res.json();
+
+    // Guard against empty body (upstream error) before calling .json()
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text || 'Empty response from server' }; }
 
     if (!res.ok) {
-      alert('Property search failed: ' + (data.error || 'Unknown error'));
+      alert('Property search failed (' + res.status + '): ' + (data.error || 'Unknown error'));
       if (btn) { btn.disabled = false; btn.textContent = 'Search Property Data'; btn.style.opacity = '1'; }
       return;
     }
