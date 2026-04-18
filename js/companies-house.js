@@ -344,31 +344,31 @@ function buildFullPanel(v) {
           <span style="text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Registered Address:</span> <span style="color:#CBD5E1;">${addrStr}</span>
         </div>
 
-        <!-- Expandable sections -->
+        <!-- Expandable sections — scope-aware (this) so multiple panels on one page don't collide -->
         <div style="border-top:1px solid rgba(255,255,255,0.04);">
-          <div onclick="window._toggleChSection('risks')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+          <div onclick="window._toggleChSection('risks', this)" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
             <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Risk Flags (${v.risk_flags?.length || 0})</span>
-            <span id="ch-arrow-risks" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+            <span class="ch-arrow-risks" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
           </div>
-          <div id="ch-body-risks" style="display:none;padding:4px 14px 8px;">${flagsHtml}</div>
+          <div class="ch-body-risks" style="display:none;padding:4px 14px 8px;">${flagsHtml}</div>
 
-          <div onclick="window._toggleChSection('directors')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+          <div onclick="window._toggleChSection('directors', this)" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
             <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Directors (${directors.length})</span>
-            <span id="ch-arrow-directors" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+            <span class="ch-arrow-directors" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
           </div>
-          <div id="ch-body-directors" style="display:none;padding:4px 14px 8px;">${directorsHtml}</div>
+          <div class="ch-body-directors" style="display:none;padding:4px 14px 8px;">${directorsHtml}</div>
 
-          <div onclick="window._toggleChSection('pscs')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+          <div onclick="window._toggleChSection('pscs', this)" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
             <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Persons with Significant Control (${v.psc_count})</span>
-            <span id="ch-arrow-pscs" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+            <span class="ch-arrow-pscs" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
           </div>
-          <div id="ch-body-pscs" style="display:none;padding:4px 14px 8px;">${pscsHtml}</div>
+          <div class="ch-body-pscs" style="display:none;padding:4px 14px 8px;">${pscsHtml}</div>
 
-          <div onclick="window._toggleChSection('charges')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+          <div onclick="window._toggleChSection('charges', this)" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
             <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Outstanding Charges (${v.charges_outstanding?.length || 0})</span>
-            <span id="ch-arrow-charges" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+            <span class="ch-arrow-charges" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
           </div>
-          <div id="ch-body-charges" style="display:none;padding:4px 14px 8px;">${chargesHtml}</div>
+          <div class="ch-body-charges" style="display:none;padding:4px 14px 8px;">${chargesHtml}</div>
         </div>
       </div>
 
@@ -397,10 +397,24 @@ function buildFullPanel(v) {
   `;
 }
 
-// ─── Toggle expandable sections (internal panel) ─────────────────────────────
-window._toggleChSection = function(section) {
-  const body = document.getElementById(`ch-body-${section}`);
-  const arrow = document.getElementById(`ch-arrow-${section}`);
+// ─── Toggle expandable sections (scoped to the clicked panel) ────────────────
+// Multiple panels (primary borrower + each corporate guarantor) can exist on one page,
+// so we can't use getElementById — we walk from the clicked header to its sibling body.
+window._toggleChSection = function(section, clickedEl) {
+  let body = null;
+  let arrow = null;
+  if (clickedEl && clickedEl.nextElementSibling) {
+    // Adjacent to the clicked header
+    body = clickedEl.nextElementSibling;
+    arrow = clickedEl.querySelector('.ch-arrow-' + section);
+  } else if (clickedEl && clickedEl.parentElement) {
+    // Fallback: search within the nearest panel container
+    body = clickedEl.parentElement.querySelector('.ch-body-' + section);
+    arrow = clickedEl.parentElement.querySelector('.ch-arrow-' + section);
+  }
+  // Last-resort fallback for legacy callers still passing just the section name
+  if (!body) body = document.querySelector('.ch-body-' + section) || document.getElementById('ch-body-' + section);
+  if (!arrow) arrow = document.querySelector('.ch-arrow-' + section) || document.getElementById('ch-arrow-' + section);
   if (!body) return;
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
