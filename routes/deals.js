@@ -205,7 +205,11 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     const borrowersResult = await pool.query(
       `SELECT id, role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
               borrower_type, company_name, company_number, kyc_status,
-              ch_matched_role, ch_match_confidence, ch_verified_by, ch_verified_at, ch_match_data
+              ch_matched_role, ch_match_confidence, ch_verified_by, ch_verified_at, ch_match_data,
+              gender, id_type, id_number, id_expiry, residential_address, address_proof_status,
+              credit_score, credit_score_source, credit_score_date,
+              ccj_count, bankruptcy_status, pep_status, sanctions_status,
+              source_of_wealth, source_of_funds
        FROM deal_borrowers WHERE deal_id = $1 ORDER BY role = 'primary' DESC, id`,
       [deal.id]
     );

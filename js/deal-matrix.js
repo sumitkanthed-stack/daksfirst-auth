@@ -2942,71 +2942,165 @@ export async function renderDealMatrix(deal) {
     // Count columns for colspan
     const colCount = row.querySelectorAll('td').length;
 
-    // Build inline detail
-    const fmt = (label, val) => val ? `<div style="margin-bottom:6px;"><span style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;">${label}</span><div style="font-size:13px;color:#F1F5F9;margin-top:1px;">${sanitizeHtml(String(val))}</div></div>` : '';
-    const fmtDate = (label, val) => {
-      if (!val) return '';
-      const d = new Date(val);
-      const formatted = isNaN(d) ? val : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-      return fmt(label, formatted);
-    };
-
+    // ── Build person-centric inline detail panel ──
     const _rc = { primary:'#34D399', joint:'#34D399', guarantor:'#FBBF24', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
     const roleColor = _rc[bor.role] || '#94A3B8';
-    const chBadge = bor.ch_verified_at ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">&#10003; CH Verified — ${bor.ch_matched_role || bor.role}</span>` : '';
+    const chBadge = bor.ch_verified_at
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">&#10003; CH Verified — ' + sanitizeHtml(bor.ch_matched_role || bor.role) + '</span>'
+      : '';
 
-    const detailHtml = `
-      <tr id="borrower-detail-${borrowerId}" style="transition:max-height .25s ease, opacity .25s ease;">
-        <td colspan="${colCount}" style="padding:0;border-bottom:1px solid rgba(212,168,83,0.15);">
-          <div style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;background:rgba(15,23,41,0.6);border-left:3px solid #D4A853;" id="borrower-detail-inner-${borrowerId}">
-            <div style="padding:12px 16px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <div style="font-size:13px;font-weight:700;color:#F1F5F9;">${sanitizeHtml(bor.full_name || 'Unknown')}</div>
-                <div style="display:flex;gap:6px;align-items:center;">
-                  ${chBadge}
-                  <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:${roleColor};background:rgba(255,255,255,0.05);text-transform:capitalize;">${bor.role || 'primary'}</span>
-                </div>
-              </div>
-              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;">
-                ${fmt('Type', (bor.borrower_type || 'individual').replace(/_/g,' '))}
-                ${fmt('Email', bor.email)}
-                ${fmt('Phone', bor.phone)}
-                ${fmtDate('Date of Birth', bor.date_of_birth)}
-                ${fmt('Nationality', bor.nationality)}
-                ${fmt('Jurisdiction', bor.jurisdiction)}
-                ${fmt('Company', bor.company_name)}
-                ${fmt('Company No.', bor.company_number)}
-                ${fmt('Address', bor.address)}
-              </div>
-              ${(() => {
-                const chd = bor.ch_match_data;
-                if (!chd || typeof chd !== 'object' || Object.keys(chd).length === 0) return '';
-                // Format CH match data nicely instead of raw JSON
-                const items = [];
-                if (chd.roles && chd.roles.length) items.push(`<strong>Roles:</strong> ${chd.roles.join(', ')}`);
-                if (chd.control) items.push(`<strong>Control:</strong> ${sanitizeHtml(chd.control)}`);
-                if (chd.nationality) items.push(`<strong>Nationality:</strong> ${sanitizeHtml(chd.nationality)}`);
-                if (chd.appointed) items.push(`<strong>Appointed:</strong> ${sanitizeHtml(chd.appointed)}`);
-                if (chd.source) items.push(`<strong>Source:</strong> ${sanitizeHtml(chd.source)}`);
-                if (items.length === 0) return '';
-                return `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
-                  <span style="font-size:10px;color:#34D399;font-weight:600;">COMPANIES HOUSE MATCH</span>
-                  <div style="font-size:11px;color:#CBD5E1;margin-top:3px;line-height:1.5;">${items.join(' &nbsp;·&nbsp; ')}</div>
-                </div>`;
-              })()}
-            </div>
-          </div>
-        </td>
-      </tr>`;
+    // ── Helpers ──
+    const fmtDate = (v) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return isNaN(d) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    // Field renderer: shows value if present, grey placeholder if not
+    const field = (label, val, stage) => {
+      if (val && String(val).trim()) {
+        return '<div style="margin-bottom:8px;">' +
+          '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+          '<div style="font-size:12px;color:#F1F5F9;font-weight:500;">' + sanitizeHtml(String(val)) + '</div>' +
+        '</div>';
+      }
+      // Empty — show as pending with stage hint
+      const stageLabel = stage || '';
+      return '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+        '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained' + (stageLabel ? ' <span style="font-size:9px;color:#334155;">(' + stageLabel + ')</span>' : '') + '</div>' +
+      '</div>';
+    };
+
+    // Status pill renderer
+    const statusPill = (label, status, colorMap) => {
+      const map = colorMap || { clear:'#34D399', verified:'#34D399', not_screened:'#64748B', not_obtained:'#64748B', none:'#34D399', flagged:'#F87171', active:'#F87171', undischarged:'#F87171', discharged:'#D4A853', obtained:'#D4A853' };
+      const c = map[status] || '#64748B';
+      const bg = c === '#34D399' ? 'rgba(52,211,153,0.1)' : c === '#F87171' ? 'rgba(248,113,113,0.1)' : c === '#D4A853' ? 'rgba(212,168,83,0.1)' : 'rgba(255,255,255,0.04)';
+      const displayStatus = status ? status.replace(/_/g, ' ') : 'not screened';
+      return '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">' + label + '</div>' +
+        '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + bg + ';color:' + c + ';text-transform:capitalize;">' + displayStatus + '</span>' +
+      '</div>';
+    };
+
+    // ── CH Match Data block ──
+    let chMatchHtml = '';
+    const chd = bor.ch_match_data;
+    if (chd && typeof chd === 'object' && Object.keys(chd).length > 0) {
+      const items = [];
+      if (chd.roles && chd.roles.length) items.push('<strong>Roles:</strong> ' + chd.roles.join(', '));
+      if (chd.control) items.push('<strong>Control:</strong> ' + sanitizeHtml(chd.control));
+      if (chd.nationality) items.push('<strong>Nationality:</strong> ' + sanitizeHtml(chd.nationality));
+      if (chd.appointed) items.push('<strong>Appointed:</strong> ' + sanitizeHtml(chd.appointed));
+      if (chd.source) items.push('<strong>Source:</strong> ' + sanitizeHtml(chd.source));
+      if (items.length > 0) {
+        chMatchHtml = '<div style="margin-top:10px;padding:8px 12px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.12);border-radius:6px;">' +
+          '<div style="font-size:9px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Companies House Match</div>' +
+          '<div style="font-size:11px;color:#CBD5E1;line-height:1.6;">' + items.join(' &nbsp;·&nbsp; ') + '</div>' +
+        '</div>';
+      }
+    }
+
+    // ── Credit Score display ──
+    let creditHtml = '';
+    if (bor.credit_score) {
+      const scoreColor = bor.credit_score >= 700 ? '#34D399' : bor.credit_score >= 500 ? '#D4A853' : '#F87171';
+      creditHtml = '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Credit Score</div>' +
+        '<div style="display:flex;align-items:baseline;gap:6px;">' +
+          '<span style="font-size:18px;font-weight:800;color:' + scoreColor + ';">' + bor.credit_score + '</span>' +
+          (bor.credit_score_source ? '<span style="font-size:10px;color:#64748B;">' + sanitizeHtml(bor.credit_score_source) + '</span>' : '') +
+          (bor.credit_score_date ? '<span style="font-size:10px;color:#475569;">(' + fmtDate(bor.credit_score_date) + ')</span>' : '') +
+        '</div>' +
+      '</div>';
+    } else {
+      creditHtml = '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Credit Score</div>' +
+        '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(Underwriting)</span></div>' +
+      '</div>';
+    }
+
+    // ── ID document display ──
+    let idDocHtml = '';
+    if (bor.id_type || bor.id_number) {
+      const idLabel = (bor.id_type || 'ID').replace(/_/g, ' ');
+      idDocHtml = '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ID Document</div>' +
+        '<div style="font-size:12px;color:#F1F5F9;font-weight:500;text-transform:capitalize;">' + sanitizeHtml(idLabel) + (bor.id_number ? ': ' + sanitizeHtml(bor.id_number) : '') + '</div>' +
+        (bor.id_expiry ? '<div style="font-size:10px;color:#94A3B8;margin-top:1px;">Expires: ' + fmtDate(bor.id_expiry) + '</div>' : '') +
+      '</div>';
+    } else {
+      idDocHtml = '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ID Document</div>' +
+        '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(DIP)</span></div>' +
+      '</div>';
+    }
+
+    const detailHtml = '<tr id="borrower-detail-' + borrowerId + '">' +
+      '<td colspan="' + colCount + '" style="padding:0;border-bottom:1px solid rgba(212,168,83,0.15);">' +
+        '<div style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;background:rgba(15,23,41,0.6);border-left:3px solid #D4A853;" id="borrower-detail-inner-' + borrowerId + '">' +
+          '<div style="padding:14px 16px;">' +
+
+            // ── Header: Name + Badges ──
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<div style="font-size:14px;font-weight:700;color:#F1F5F9;">' + sanitizeHtml(bor.full_name || 'Unknown') + '</div>' +
+              '<div style="display:flex;gap:6px;align-items:center;">' +
+                chBadge +
+                '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:' + roleColor + ';background:rgba(255,255,255,0.05);text-transform:capitalize;">' + (bor.role || 'primary') + '</span>' +
+              '</div>' +
+            '</div>' +
+
+            // ── Two-column layout ──
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+
+              // ── LEFT COLUMN: Personal Identity ──
+              '<div>' +
+                '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Personal Identity</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                  field('Date of Birth', fmtDate(bor.date_of_birth), 'DIP') +
+                  field('Gender', bor.gender, 'DIP') +
+                  field('Nationality', bor.nationality, 'DIP') +
+                  field('Email', bor.email, 'DIP') +
+                  field('Phone', bor.phone, 'DIP') +
+                '</div>' +
+                idDocHtml +
+                field('Residential Address', bor.residential_address || bor.address, 'DIP') +
+                statusPill('Address Proof', bor.address_proof_status || 'not_obtained') +
+              '</div>' +
+
+              // ── RIGHT COLUMN: Compliance & Verification ──
+              '<div>' +
+                '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Compliance & Verification</div>' +
+                creditHtml +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                  statusPill('CCJs', bor.ccj_count > 0 ? bor.ccj_count + ' found' : (bor.ccj_count === 0 ? 'None' : 'not_screened'), { None:'#34D399', 'not_screened':'#64748B' }) +
+                  statusPill('Bankruptcy', bor.bankruptcy_status || 'none') +
+                  statusPill('PEP Screening', bor.pep_status || 'not_screened') +
+                  statusPill('Sanctions', bor.sanctions_status || 'not_screened') +
+                '</div>' +
+                field('Source of Wealth', bor.source_of_wealth, 'Underwriting') +
+                field('Source of Funds', bor.source_of_funds, 'Underwriting') +
+              '</div>' +
+
+            '</div>' +
+
+            // ── CH Match Data (bottom) ──
+            chMatchHtml +
+
+          '</div>' +
+        '</div>' +
+      '</td>' +
+    '</tr>';
 
     // Insert after the row
     row.insertAdjacentHTML('afterend', detailHtml);
 
     // Animate open
     requestAnimationFrame(() => {
-      const inner = document.getElementById(`borrower-detail-inner-${borrowerId}`);
+      const inner = document.getElementById('borrower-detail-inner-' + borrowerId);
       if (inner) {
-        inner.style.maxHeight = '400px';
+        inner.style.maxHeight = '600px';
         inner.style.opacity = '1';
       }
     });

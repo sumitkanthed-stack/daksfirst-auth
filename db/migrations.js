@@ -637,6 +637,29 @@ async function runMigrations() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_verif_number ON company_verifications(company_number);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_verif_risk ON company_verifications(risk_score);`);
 
+    // ── Individual person fields on deal_borrowers (KYC, compliance, credit) ──
+    const personColumns = [
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS gender VARCHAR(10)`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS id_type VARCHAR(30)`,            // passport, driving_licence, national_id
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS id_number VARCHAR(50)`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS id_expiry DATE`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS residential_address TEXT`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS address_proof_status VARCHAR(20) DEFAULT 'not_obtained'`,  // not_obtained, obtained, verified
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS credit_score INT`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS credit_score_source VARCHAR(30)`, // Experian, Equifax, TransUnion
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS credit_score_date DATE`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ccj_count INT DEFAULT 0`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS bankruptcy_status VARCHAR(20) DEFAULT 'none'`,  // none, discharged, active, undischarged
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pep_status VARCHAR(20) DEFAULT 'not_screened'`, // not_screened, clear, flagged
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS sanctions_status VARCHAR(20) DEFAULT 'not_screened'`, // not_screened, clear, flagged
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_wealth TEXT`,
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_funds TEXT`
+    ];
+    for (const sql of personColumns) {
+      try { await pool.query(sql); } catch (e) { /* column may already exist */ }
+    }
+    console.log('[migrate] ✓ deal_borrowers individual person columns added');
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
