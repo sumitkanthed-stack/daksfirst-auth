@@ -63,11 +63,12 @@ async function syncDealProperties(pool, dealId, parsed, opts = {}) {
 
     const result = await pool.query(
       `INSERT INTO deal_properties
-       (deal_id, address, postcode, property_type, tenure, market_value, day1_ltv, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, address, postcode, market_value`,
+       (deal_id, address, postcode, property_type, tenure, market_value, purchase_price, day1_ltv, occupancy, current_use, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, address, postcode, market_value, purchase_price`,
       [dealId, prop.address, prop.postcode, prop.property_type, prop.tenure,
-       prop.market_value, day1Ltv, source]
+       prop.market_value, prop.purchase_price || null, day1Ltv,
+       prop.occupancy_status || null, prop.current_use || null, source]
     );
     inserted.push(result.rows[0]);
   }
