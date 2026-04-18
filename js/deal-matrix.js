@@ -705,43 +705,174 @@ export async function renderDealMatrix(deal) {
                       ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification to populate automatically.</p>'}
                     </div>
 
-                    <!-- ── D. Joint Borrowers (other top-level parties on this deal, NOT directors of the primary) ── -->
-                    <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
-                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Joint Borrowers — ${coBorrowers.length} ${coBorrowers.length === 1 ? 'Party' : 'Parties'}</span>
-                        ${canEdit ? '<button onclick="window.addJointBorrower(\'' + deal.submission_id + '\')" style="padding:3px 10px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Joint Borrower</button>' : ''}
-                      </div>
-                      ${coBorrowers.length > 0 ? `
-                      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                        <thead>
-                          <tr style="background:rgba(255,255,255,0.04);">
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
-                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
-                            ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${coBorrowers.map(b => {
-                            const rBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : 'rgba(52,211,153,0.06)';
-                            const rCol = '#34D399';
-                            const kycCol = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
-                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + b.id + '" onclick="window._toggleBorrowerDetail(' + b.id + ')">' +
-                              '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(b.company_name || b.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>' +
-                              '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + rBg + ';color:' + rCol + ';text-transform:capitalize;">' + (b.role || 'joint') + '</span></td>' +
-                              '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">' + sanitizeHtml(b.borrower_type || 'individual') + '</td>' +
-                              '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
-                              (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
-                                '<button onclick="window.editBorrowerRow(' + b.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
-                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
-                              '</td>' : '') +
-                            '</tr>';
-                          }).join('')}
-                        </tbody>
-                      </table>
-                      ` : '<p style="font-size:11px;color:#64748B;margin:4px 0;font-style:italic;">No joint borrowers. Use the button above to add another party as a co-borrower.</p>'}
-                    </div>
+                    <!-- ── D. Joint Borrowers — other top-level parties on this deal, rendered as cards ── -->
+                    ${(() => {
+                      const _isCorpType = (t) => ['corporate','spv','ltd','llp','trust','partnership'].includes((t || '').toLowerCase());
+                      const childrenOfJoint = (pid) => allBorrowers.filter(b => b.parent_borrower_id === pid);
+                      const corpJoints = coBorrowers.filter(b => _isCorpType(b.borrower_type));
+                      const indJoints = coBorrowers.filter(b => !_isCorpType(b.borrower_type));
+                      const subId = deal.submission_id;
+                      const fmtDateJ = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? v : d.toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}); };
+                      const fieldJ = (label, val, stage) => {
+                        const s = val && String(val).trim();
+                        return '<div style="margin-bottom:8px;"><div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+                          (s ? '<div style="font-size:12px;color:#F1F5F9;font-weight:500;">' + sanitizeHtml(String(val)) + '</div>'
+                             : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained' + (stage ? ' <span style="font-size:9px;color:#334155;">(' + stage + ')</span>' : '') + '</div>') +
+                        '</div>';
+                      };
+                      const statusJ = (label, status) => {
+                        const map = { clear:'#34D399', verified:'#34D399', not_screened:'#64748B', not_obtained:'#64748B', none:'#34D399', flagged:'#F87171', active:'#F87171', undischarged:'#F87171', discharged:'#D4A853', obtained:'#D4A853' };
+                        const c = map[status] || '#64748B';
+                        const bg = c === '#34D399' ? 'rgba(52,211,153,0.1)' : c === '#F87171' ? 'rgba(248,113,113,0.1)' : c === '#D4A853' ? 'rgba(212,168,83,0.1)' : 'rgba(255,255,255,0.04)';
+                        return '<div style="margin-bottom:8px;"><div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">' + label + '</div>' +
+                          '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + bg + ';color:' + c + ';text-transform:capitalize;">' + (status ? String(status).replace(/_/g,' ') : 'not screened') + '</span></div>';
+                      };
+
+                      // Corporate Joint card — identity + CH verify + directors/PSCs table + full-detail lazy panel
+                      const _jointCorpCard = (g) => {
+                        const kids = childrenOfJoint(g.id);
+                        const chV = !!g.ch_verified_at;
+                        const chDetailBlock = chV ? (
+                          '<div id="ch-cg-summary-' + g.id + '" onclick="window._toggleCorpGuarChDetail(\'' + (g.company_number || '').replace(/\'/g, '') + '\', ' + g.id + ')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;cursor:pointer;margin-bottom:10px;">' +
+                            '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#34D399;font-size:14px;">\u2713</span><span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified \u2014 ' + sanitizeHtml(g.company_name || '') + '</span><span style="font-size:11px;color:#94A3B8;">\u2014 click to view full details</span></div>' +
+                            '<span id="ch-cg-arrow-' + g.id + '" style="color:#64748B;font-size:10px;transition:transform .2s;">\u25BC</span>' +
+                          '</div>' +
+                          '<div id="ch-cg-detail-' + g.id + '" style="max-height:0;overflow:hidden;transition:max-height .35s ease;margin-bottom:10px;">' +
+                            '<div id="ch-cg-panel-' + g.id + '" style="margin-top:4px;"></div>' +
+                          '</div>'
+                        ) : '';
+
+                        const kidsTable = kids.length > 0 ?
+                          '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">' +
+                            '<thead><tr style="background:rgba(255,255,255,0.04);">' +
+                              '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>' +
+                              '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>' +
+                              '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Nationality</th>' +
+                              '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>' +
+                              '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">CH</th>' +
+                              (canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : '') +
+                            '</tr></thead><tbody>' +
+                            kids.map(k => {
+                              const rBg = k.role === 'director' ? 'rgba(129,140,248,0.1)' : k.role === 'psc' ? 'rgba(56,189,248,0.1)' : k.role === 'ubo' ? 'rgba(167,139,250,0.1)' : 'rgba(255,255,255,0.04)';
+                              const rCol = k.role === 'director' ? '#818CF8' : k.role === 'psc' ? '#38BDF8' : k.role === 'ubo' ? '#A78BFA' : '#94A3B8';
+                              const kycCol = k.kyc_status === 'verified' ? '#34D399' : k.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                              return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + k.id + '" onclick="window._toggleBorrowerDetail(' + k.id + ')">' +
+                                '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(k.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>' +
+                                '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + rBg + ';color:' + rCol + ';text-transform:capitalize;">' + (k.role || 'director') + '</span></td>' +
+                                '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(k.nationality || '—') + '</td>' +
+                                '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (k.kyc_status || 'pending') + '</span></td>' +
+                                '<td style="padding:6px 8px;text-align:center;">' + (k.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
+                                (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                                  '<button onclick="window.editBorrowerRow(' + k.id + ', \'' + subId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                  '<button onclick="window.deleteBorrowerRow(' + k.id + ', \'' + subId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                                '</td>' : '') +
+                              '</tr>';
+                            }).join('') +
+                          '</tbody></table>'
+                          : '<p style="font-size:11px;color:#FBBF24;margin:6px 0 0 0;">No directors/PSCs yet. Click Verify at Companies House to auto-populate.</p>';
+
+                        return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #34D399;border-radius:8px;padding:12px 14px;margin-bottom:10px;">' +
+                          '<div style="background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.18);border-radius:6px;padding:10px 14px;margin-bottom:10px;">' +
+                            '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">' +
+                              '<div>' +
+                                '<div style="font-size:10px;color:#34D399;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Joint Borrower (Corporate)</div>' +
+                                '<div style="font-size:15px;font-weight:700;color:#F1F5F9;margin-top:3px;">' + sanitizeHtml(g.company_name || g.full_name || 'Unnamed') + '</div>' +
+                                '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:11px;color:#94A3B8;">' +
+                                  '<span>Co. No: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.company_number || '—') + '</strong></span>' +
+                                  '<span>Type: <strong style="color:#E2E8F0;text-transform:capitalize;">' + (g.borrower_type || 'corporate') + '</strong></span>' +
+                                  (g.jurisdiction ? '<span>Jurisdiction: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.jurisdiction) + '</strong></span>' : '') +
+                                '</div>' +
+                              '</div>' +
+                              '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+                                (chV
+                                  ? '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.15);color:#34D399;">&#10003; CH VERIFIED</span>'
+                                  : (canEdit && g.company_number
+                                    ? '<button onclick="window._chVerifyCorporateParty(' + g.id + ', \'' + subId + '\')" style="padding:4px 12px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Verify at Companies House</button>'
+                                    : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">' + (g.company_number ? 'UNVERIFIED' : 'NO CO. NUMBER') + '</span>')) +
+                                (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
+                                (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + subId + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove joint borrower">\u2715</button>' : '') +
+                              '</div>' +
+                            '</div>' +
+                          '</div>' +
+                          chDetailBlock +
+                          '<div>' +
+                            '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:6px;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this joint borrower') + ' — ' + kids.length + '</div>' +
+                            kidsTable +
+                          '</div>' +
+                        '</div>';
+                      };
+
+                      // Individual Joint card — Alessandra-Cenci 2-col detail with green accent
+                      const _jointIndCard = (g) => {
+                        const kycCol = g.kyc_status === 'verified' ? '#34D399' : g.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                        const kycLabel = g.kyc_status === 'verified' ? '\u2713 KYC VERIFIED' : (g.kyc_status || 'pending').toUpperCase();
+                        const idDocInner = (g.id_type || g.id_number)
+                          ? '<div style="font-size:12px;color:#F1F5F9;font-weight:500;text-transform:capitalize;">' + sanitizeHtml((g.id_type || 'ID').replace(/_/g,' ')) + (g.id_number ? ': ' + sanitizeHtml(g.id_number) : '') + '</div>' +
+                            (g.id_expiry ? '<div style="font-size:10px;color:#94A3B8;margin-top:1px;">Expires: ' + fmtDateJ(g.id_expiry) + '</div>' : '')
+                          : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(DIP)</span></div>';
+                        const creditInner = g.credit_score
+                          ? (() => { const sc = g.credit_score >= 700 ? '#34D399' : g.credit_score >= 500 ? '#D4A853' : '#F87171';
+                              return '<div style="display:flex;align-items:baseline;gap:6px;">' +
+                                '<span style="font-size:18px;font-weight:800;color:' + sc + ';">' + g.credit_score + '</span>' +
+                                (g.credit_score_source ? '<span style="font-size:10px;color:#64748B;">' + sanitizeHtml(g.credit_score_source) + '</span>' : '') +
+                                (g.credit_score_date ? '<span style="font-size:10px;color:#475569;">(' + fmtDateJ(g.credit_score_date) + ')</span>' : '') +
+                              '</div>'; })()
+                          : '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained <span style="font-size:9px;color:#334155;">(Underwriting)</span></div>';
+
+                        return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #34D399;border-radius:8px;padding:12px 14px;margin-bottom:10px;">' +
+                          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);flex-wrap:wrap;gap:6px;">' +
+                            '<div>' +
+                              '<div style="font-size:10px;color:#34D399;text-transform:uppercase;font-weight:700;letter-spacing:.5px;">Joint Co-Borrower (Individual)</div>' +
+                              '<div style="font-size:15px;font-weight:700;color:#F1F5F9;margin-top:3px;">' + sanitizeHtml(g.full_name || 'Unnamed') + '</div>' +
+                            '</div>' +
+                            '<div style="display:flex;gap:6px;align-items:center;">' +
+                              '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.1);color:' + kycCol + ';">' + kycLabel + '</span>' +
+                              (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
+                              (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + subId + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove">\u2715</button>' : '') +
+                            '</div>' +
+                          '</div>' +
+                          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+                            '<div>' +
+                              '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Personal Identity</div>' +
+                              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                                fieldJ('Date of Birth', fmtDateJ(g.date_of_birth), 'DIP') +
+                                fieldJ('Gender', g.gender, 'DIP') +
+                                fieldJ('Nationality', g.nationality, 'DIP') +
+                                fieldJ('Email', g.email, 'DIP') +
+                                fieldJ('Phone', g.phone, 'DIP') +
+                              '</div>' +
+                              '<div style="margin-bottom:8px;"><div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ID Document</div>' + idDocInner + '</div>' +
+                              fieldJ('Residential Address', g.residential_address || g.address, 'DIP') +
+                              statusJ('Address Proof', g.address_proof_status || 'not_obtained') +
+                            '</div>' +
+                            '<div>' +
+                              '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Compliance &amp; Verification</div>' +
+                              '<div style="margin-bottom:8px;"><div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Credit Score</div>' + creditInner + '</div>' +
+                              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                                statusJ('CCJs', g.ccj_count > 0 ? (g.ccj_count + ' found') : (g.ccj_count === 0 ? 'None' : 'not_screened')) +
+                                statusJ('Bankruptcy', g.bankruptcy_status || 'none') +
+                                statusJ('PEP Screening', g.pep_status || 'not_screened') +
+                                statusJ('Sanctions', g.sanctions_status || 'not_screened') +
+                              '</div>' +
+                              fieldJ('Source of Wealth', g.source_of_wealth, 'Underwriting') +
+                              fieldJ('Source of Funds', g.source_of_funds, 'Underwriting') +
+                            '</div>' +
+                          '</div>' +
+                        '</div>';
+                      };
+
+                      const cardsHtml = corpJoints.map(_jointCorpCard).join('') + indJoints.map(_jointIndCard).join('');
+                      return '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">' +
+                        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
+                          '<div>' +
+                            '<span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Joint Borrowers \u2014 ' + coBorrowers.length + ' ' + (coBorrowers.length === 1 ? 'Party' : 'Parties') + '</span>' +
+                            (coBorrowers.length > 0 ? '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">' + corpJoints.length + ' corporate \u00B7 ' + indJoints.length + ' individual</div>' : '') +
+                          '</div>' +
+                          (canEdit ? '<button onclick="window.addJointBorrower(\'' + subId + '\')" title="Add another primary/joint co-borrower (NOT a director or guarantor)" style="padding:5px 14px;background:rgba(52,211,153,0.12);color:#34D399;border:1px solid #34D399;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;">\u21B3 Add Joint Co-Borrower</button>' : '') +
+                        '</div>' +
+                        (coBorrowers.length > 0 ? cardsHtml : '<p style="font-size:11px;color:#64748B;margin:4px 0;font-style:italic;">No joint borrowers. Use the button above to add another party as a co-borrower.</p>') +
+                      '</div>';
+                    })()}
                   `;
                 } else {
                   // ══════════════════════════════════════════════════════════
@@ -3548,6 +3679,18 @@ export async function renderDealMatrix(deal) {
         borrower_type: selectedType
       };
 
+      // ── Defensive role validation — stops cross-flow accidents (e.g. a joint-borrower save
+      //    ending up as a guarantor because something weird happened to the dropdown) ──
+      if (isJointAdd && !['primary','joint'].includes(payload.role)) {
+        showToast('Joint borrower flow allows only Primary or Joint role', 'error'); return;
+      }
+      if (isGuarantorAdd && payload.role !== 'guarantor') {
+        showToast('Guarantor flow requires role = Guarantor', 'error'); return;
+      }
+      if (isChildAdd && !['director','psc','ubo','shareholder'].includes(payload.role)) {
+        showToast('Directors/PSCs/UBOs/Shareholders are the only valid roles for a child of a corporate party', 'error'); return;
+      }
+
       if (isCorp) {
         // Corporate — only name + number + jurisdiction. Rest will be pulled from CH.
         const cname = document.getElementById('bm-company_name').value.trim();
@@ -5286,12 +5429,19 @@ export async function renderDealMatrix(deal) {
               const chData = await chResp.json();
               const bData = await bResp.json();
               if (chData.verification?.found && bData.borrowers?.length > 0) {
-                // Exclude guarantors and children-of-guarantors — they belong to a different party, not the primary borrower
+                // Reconciliation only makes sense for INDIVIDUALS who could legitimately be officers
+                // of the primary company. Exclude:
+                //   - corporate entities (a company is not a person and can't be a director here)
+                //   - guarantors and their children (they belong to a separate party)
+                //   - joint borrowers and their children (officers of a different company)
+                const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+                const _isCorpType = (t) => _corpTypes.includes((t || '').toLowerCase());
                 const _primaryOnly = bData.borrowers.filter(b => {
-                  if (b.role === 'guarantor') return false;
+                  if (b.role === 'guarantor' || b.role === 'joint') return false;
+                  if (_isCorpType(b.borrower_type)) return false;
                   if (b.parent_borrower_id) {
                     const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
-                    if (parent && parent.role === 'guarantor') return false;
+                    if (parent && (parent.role === 'guarantor' || parent.role === 'joint')) return false;
                   }
                   return true;
                 });
@@ -5526,12 +5676,16 @@ window._chMatrixVerify = async function(companyNumber, submissionId) {
       const bData = await bResp.json();
 
       if (chData.verification?.found && bData.borrowers?.length > 0) {
-        // Exclude guarantors and children-of-guarantors — they belong to a different party
+        // Only individuals linked to the primary can be officers — exclude corporates, guarantors,
+        // joint borrowers, and children of those parties (their officers belong to their own parent).
+        const _corpTypes2 = ['corporate','spv','ltd','llp','trust','partnership'];
+        const _isCorpType2 = (t) => _corpTypes2.includes((t || '').toLowerCase());
         const _primaryOnly = bData.borrowers.filter(b => {
-          if (b.role === 'guarantor') return false;
+          if (b.role === 'guarantor' || b.role === 'joint') return false;
+          if (_isCorpType2(b.borrower_type)) return false;
           if (b.parent_borrower_id) {
             const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
-            if (parent && parent.role === 'guarantor') return false;
+            if (parent && (parent.role === 'guarantor' || parent.role === 'joint')) return false;
           }
           return true;
         });
