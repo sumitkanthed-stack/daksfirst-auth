@@ -3506,7 +3506,11 @@ export async function renderDealMatrix(deal) {
         const data = await resp.json();
         if (data.success) {
           document.getElementById('dkf-borrower-modal').remove();
-          showToast(isEdit ? 'Borrower updated' : 'Borrower added', 'success');
+          // Toast reflects the role actually saved (Guarantor / Director / PSC / UBO / Shareholder / Borrower)
+          const savedRole = (data.borrower && data.borrower.role) || payload.role || 'borrower';
+          const _lbl = { primary:'Borrower', joint:'Joint Borrower', guarantor:'Guarantor', director:'Director', ubo:'UBO', psc:'PSC', shareholder:'Shareholder' };
+          const savedLabel = _lbl[savedRole] || 'Borrower';
+          showToast(isEdit ? `${savedLabel} updated` : `${savedLabel} added`, 'success');
           setTimeout(() => _refreshDealInPlace(submissionId), 800);
         } else {
           showToast(data.error || 'Failed to save', 'error');
