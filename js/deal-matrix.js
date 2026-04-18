@@ -585,7 +585,10 @@ export async function renderDealMatrix(deal) {
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">${sanitizeHtml(b.borrower_type || 'individual')}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;font-size:11px;">${b.company_name ? sanitizeHtml(b.company_name) + (b.company_number ? ` <span style="color:#94A3B8">(${sanitizeHtml(b.company_number)})</span>` : '') : '—'}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(b.email || '-')}</td>
-                      <td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:${kycColor};text-transform:capitalize;">${b.kyc_status || 'pending'}</span></td>
+                      <td style="padding:6px 8px;text-align:center;">
+                        <span style="font-size:10px;font-weight:600;color:${kycColor};text-transform:capitalize;">${b.kyc_status || 'pending'}</span>
+                        ${b.ch_verified_at ? '<span style="font-size:9px;color:#34D399;margin-left:4px;" title="CH role verified">&#10003;CH</span>' : ''}
+                      </td>
                       ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
                         <button onclick="window.editBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
                         <button onclick="window.deleteBorrowerRow(${b.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
@@ -614,13 +617,15 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('company_name', 'Company Name', deal.company_name, 'text', canEdit)}
                 ${renderEditableField('company_number', 'Company Number', deal.company_number, 'text', canEdit)}
                 ${deal.company_number ? `
-                  <div style="margin-top:6px;">
-                    <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}')"
+                  <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+                    <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
                       style="padding:5px 14px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
-                      Verify at Companies House
+                      Verify &amp; Match Borrowers
                     </button>
+                    ${(deal.borrowers || []).every(b => b.ch_verified_at) ? '<span style="font-size:11px;color:#34D399;font-weight:600;">&#10003; All roles verified</span>' : ''}
                   </div>
                   <div id="ch-matrix-panel" style="margin-top:8px;"></div>
+                  <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
                 ` : ''}
               </div>
             </div>
@@ -1771,6 +1776,7 @@ export async function renderDealMatrix(deal) {
     borrower_name: 'Borrower Name', borrower_email: 'Email', borrower_phone: 'Phone',
     borrower_dob: 'Date of Birth', borrower_nationality: 'Nationality', borrower_type: 'Borrower Type',
     company_name: 'Company Name', company_number: 'Company Number',
+    ch_role_verification: 'CH Role Verification (verify borrower roles against Companies House)',
     security_address: 'Property Address', security_postcode: 'Postcode',
     asset_type: 'Asset Type', property_tenure: 'Tenure', occupancy_status: 'Occupancy',
     current_use: 'Current Use', current_value: 'Current Value', purchase_price: 'Purchase Price',
@@ -3753,6 +3759,27 @@ export async function renderDealMatrix(deal) {
       result.sections[name] = section;
     }
 
+    // ── CH Role Verification gate for corporate borrowers ──
+    const bType = (deal.borrower_type || 'individual').toLowerCase();
+    const isCorporateDeal = ['corporate', 'spv', 'ltd', 'llp'].includes(bType);
+    if (isCorporateDeal && deal.borrowers && deal.borrowers.length > 0) {
+      const unverified = deal.borrowers.filter(b => !b.ch_verified_at);
+      if (unverified.length > 0) {
+        result.ready = false;
+        result.chGateBlocked = true;
+        result.chUnverifiedCount = unverified.length;
+        // Add to Borrower / KYC section missing
+        if (result.sections['Borrower / KYC']) {
+          result.sections['Borrower / KYC'].status = 'partial';
+          result.sections['Borrower / KYC'].missing.push('ch_role_verification');
+          result.totalRequired++;
+        }
+      } else {
+        result.totalRequired++;
+        result.totalFilled++;
+      }
+    }
+
     // Overall completeness — based on current tier's required fields only (smart, not inflated)
     result.pct = result.totalRequired > 0 ? Math.round((result.totalFilled / result.totalRequired) * 100) : 0;
     result.requiredPct = result.pct; // Same thing now — both based on required fields for current tier
@@ -4087,18 +4114,257 @@ export async function renderDealMatrix(deal) {
   });
 }
 
-// ── Companies House verify from matrix ──────────────────────────────────────
-window._chMatrixVerify = async function(companyNumber) {
+// ── Companies House verify + borrower reconciliation from matrix ─────────────
+window._chMatrixVerify = async function(companyNumber, submissionId) {
   const btn = document.getElementById('ch-matrix-verify-btn');
   const panel = document.getElementById('ch-matrix-panel');
+  const reconPanel = document.getElementById('ch-reconciliation-panel');
   if (!panel) return;
 
   if (btn) { btn.textContent = 'Verifying...'; btn.disabled = true; }
 
   try {
+    // 1. Run CH verification
     await renderFullVerification(companyNumber, panel);
     if (btn) btn.style.display = 'none';
+
+    // 2. Fetch CH data + borrowers for reconciliation
+    if (reconPanel && submissionId) {
+      const [chResp, bResp] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/api/companies-house/verify/${companyNumber}`),
+        fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers`)
+      ]);
+      const chData = await chResp.json();
+      const bData = await bResp.json();
+
+      if (chData.verification?.found && bData.borrowers?.length > 0) {
+        renderReconciliation(reconPanel, chData.verification, bData.borrowers, submissionId);
+      }
+    }
   } catch (e) {
+    console.error('[ch-verify] Error:', e);
     if (btn) { btn.textContent = 'Error — retry'; btn.disabled = false; btn.style.background = '#F87171'; }
+  }
+};
+
+/**
+ * Render borrower ↔ Companies House reconciliation panel
+ * Auto-matches borrowers against directors/PSCs by name similarity
+ */
+function renderReconciliation(container, chData, borrowers, submissionId) {
+  const officers = chData.officers || [];
+  const pscs = chData.pscs || [];
+
+  // Build CH person list (directors + PSCs deduplicated)
+  const chPersons = [];
+  officers.filter(o => o.officer_role === 'director').forEach(o => {
+    chPersons.push({ name: o.name, roles: ['Director'], appointed: o.appointed_on, nationality: o.nationality, source: 'officer' });
+  });
+  pscs.forEach(p => {
+    const existing = chPersons.find(c => nameMatch(c.name, p.name));
+    if (existing) {
+      existing.roles.push('PSC');
+      existing.control = (p.natures_of_control || []).map(n => n.replace(/-/g, ' ')).join(', ');
+    } else {
+      chPersons.push({ name: p.name, roles: ['PSC'], nationality: p.nationality, control: (p.natures_of_control || []).map(n => n.replace(/-/g, ' ')).join(', '), source: 'psc' });
+    }
+  });
+
+  // Match each borrower against CH persons
+  const matches = borrowers.map(b => {
+    const match = chPersons.find(c => nameMatch(c.name, b.full_name));
+    return {
+      borrower: b,
+      chMatch: match || null,
+      confidence: match ? 'matched' : 'no_match',
+      suggestedRole: match ? (match.roles.includes('Director') ? 'director' : 'primary') : (b.role === 'primary' ? 'guarantor' : b.role),
+      alreadyVerified: !!b.ch_verified_at
+    };
+  });
+
+  // Check if all already verified
+  if (matches.every(m => m.alreadyVerified)) {
+    container.innerHTML = `
+      <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:14px 16px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:#34D399;font-size:16px;">&#10003;</span>
+          <div>
+            <span style="font-size:13px;font-weight:700;color:#34D399;">All Borrower Roles Verified</span>
+            <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Verified by ${borrowers[0].ch_verified_by ? 'RM' : 'system'} on ${new Date(borrowers[0].ch_verified_at).toLocaleDateString()}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Render reconciliation table
+  const roleOptions = ['director', 'primary', 'joint', 'guarantor'];
+
+  container.innerHTML = `
+    <div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.25);border-radius:10px;overflow:hidden;margin-top:4px;">
+      <div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#D4A853;">Borrower Role Verification</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Cross-referenced against Companies House. Confirm each person's role before proceeding to DIP.</div>
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:rgba(255,255,255,0.03);">
+            <th style="text-align:left;padding:8px 12px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Borrower</th>
+            <th style="text-align:left;padding:8px 12px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">CH Match</th>
+            <th style="text-align:center;padding:8px 12px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Status</th>
+            <th style="text-align:left;padding:8px 12px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Confirmed Role</th>
+            <th style="text-align:center;padding:8px 12px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${matches.map((m, idx) => {
+            const matchColor = m.confidence === 'matched' ? '#34D399' : '#FBBF24';
+            const matchIcon = m.confidence === 'matched' ? '&#10003;' : '&#9888;';
+            const matchText = m.chMatch
+              ? m.chMatch.roles.join(' + ') + (m.chMatch.control ? ` (${m.chMatch.control})` : '')
+              : 'Not found in company records';
+
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="ch-recon-row-${idx}">
+              <td style="padding:8px 12px;">
+                <div style="font-size:12px;font-weight:600;color:#F1F5F9;">${sanitizeHtml(m.borrower.full_name)}</div>
+                <div style="font-size:10px;color:#64748B;">Current: ${m.borrower.role || 'primary'} · ${m.borrower.borrower_type || 'individual'}</div>
+              </td>
+              <td style="padding:8px 12px;">
+                <div style="font-size:11px;color:${matchColor};font-weight:600;">${matchText}</div>
+                ${m.chMatch ? `<div style="font-size:10px;color:#64748B;">${m.chMatch.nationality || ''} ${m.chMatch.appointed ? '· Since ' + m.chMatch.appointed : ''}</div>` : ''}
+              </td>
+              <td style="padding:8px 12px;text-align:center;">
+                <span style="font-size:14px;color:${matchColor};">${matchIcon}</span>
+              </td>
+              <td style="padding:8px 12px;">
+                <select id="ch-role-${idx}" style="padding:5px 8px;background:#0f1729;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:11px;font-weight:600;">
+                  ${roleOptions.map(r => `<option value="${r}" ${r === m.suggestedRole ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
+                </select>
+              </td>
+              <td style="padding:8px 12px;text-align:center;">
+                ${m.alreadyVerified
+                  ? '<span style="font-size:10px;color:#34D399;font-weight:600;">Verified</span>'
+                  : `<span style="font-size:10px;color:#94A3B8;">Pending</span>`
+                }
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+
+      <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:flex-end;gap:8px;">
+        <button id="ch-confirm-roles-btn" onclick="window._chConfirmRoles('${submissionId}', ${JSON.stringify(matches.map((m,i) => ({ idx: i, borrower_id: m.borrower.id, full_name: m.borrower.full_name, ch_match: m.chMatch, confidence: m.confidence }))).replace(/'/g, '&#39;')})"
+          style="padding:8px 20px;font-size:12px;font-weight:700;background:#34D399;color:#111;border:none;border-radius:6px;cursor:pointer;transition:background .15s;"
+          onmouseover="this.style.background='#2DD48A'" onmouseout="this.style.background='#34D399'">
+          Confirm All Roles &#10003;
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Name matching — normalise and compare (Companies House uses UPPERCASE, SURNAME FIRST)
+ */
+function nameMatch(chName, borrowerName) {
+  if (!chName || !borrowerName) return false;
+  const norm = s => s.toLowerCase().replace(/[^a-z]/g, ' ').replace(/\s+/g, ' ').trim();
+  const a = norm(chName);
+  const b = norm(borrowerName);
+
+  // Exact match
+  if (a === b) return true;
+
+  // CH format is often "SURNAME, Firstname" — try reversing
+  const aParts = a.split(/[, ]+/).filter(Boolean);
+  const bParts = b.split(/\s+/).filter(Boolean);
+
+  // Check if all parts of one appear in the other (order-agnostic)
+  const aSet = new Set(aParts);
+  const bSet = new Set(bParts);
+
+  if (bParts.length >= 2 && bParts.every(p => aSet.has(p))) return true;
+  if (aParts.length >= 2 && aParts.every(p => bSet.has(p))) return true;
+
+  return false;
+}
+
+/**
+ * RM confirms all borrower roles
+ */
+window._chConfirmRoles = async function(submissionId, matchData) {
+  const btn = document.getElementById('ch-confirm-roles-btn');
+  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+  try {
+    const verifications = matchData.map(m => {
+      const roleEl = document.getElementById(`ch-role-${m.idx}`);
+      return {
+        borrower_id: m.borrower_id,
+        confirmed_role: roleEl ? roleEl.value : null,
+        ch_matched_role: m.ch_match ? m.ch_match.roles.join(', ') : 'no_match',
+        ch_match_confidence: m.confidence,
+        ch_match_data: m.ch_match || {}
+      };
+    });
+
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/verify-roles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verifications })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      if (btn) { btn.textContent = 'Error — retry'; btn.disabled = false; btn.style.background = '#F87171'; }
+      showToast(data.error || 'Failed to verify roles', 'error');
+      return;
+    }
+
+    // Update UI to show verified state
+    const reconPanel = document.getElementById('ch-reconciliation-panel');
+    if (reconPanel) {
+      reconPanel.innerHTML = `
+        <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:14px 16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:#34D399;font-size:16px;">&#10003;</span>
+            <div>
+              <span style="font-size:13px;font-weight:700;color:#34D399;">All ${data.count} Borrower Roles Verified</span>
+              <div style="font-size:11px;color:#94A3B8;margin-top:2px;">
+                ${data.verified.map(v => `${sanitizeHtml(v.full_name)}: <strong>${v.role}</strong> (CH: ${v.ch_matched_role || 'no match'})`).join(' · ')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Update borrower table rows to reflect new roles
+    for (const v of data.verified) {
+      const row = document.getElementById(`borrower-row-${v.id}`);
+      if (row) {
+        const roleTd = row.children[1];
+        if (roleTd) {
+          const roleColor = v.role === 'director' ? '#818CF8' : v.role === 'primary' ? '#34D399' : v.role === 'guarantor' ? '#FBBF24' : '#94A3B8';
+          const roleBg = v.role === 'director' ? 'rgba(129,140,248,0.1)' : v.role === 'primary' ? 'rgba(52,211,153,0.1)' : v.role === 'guarantor' ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.04)';
+          roleTd.innerHTML = `<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${roleBg};color:${roleColor};text-transform:capitalize;">${v.role}</span>`;
+        }
+      }
+    }
+
+    // Recalculate completeness to reflect verified state
+    if (typeof calculateCompleteness === 'function') calculateCompleteness();
+
+    showToast(`${data.count} borrower roles verified and saved`, 'success');
+
+  } catch (e) {
+    console.error('[ch-confirm-roles] Error:', e);
+    if (btn) { btn.textContent = 'Error — retry'; btn.disabled = false; btn.style.background = '#F87171'; }
+    showToast('Network error — please try again', 'error');
   }
 };

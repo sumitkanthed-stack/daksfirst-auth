@@ -591,6 +591,17 @@ async function runMigrations() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_deal ON deal_financials(deal_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_cat ON deal_financials(category);`);
 
+    // ── Companies House role verification columns on deal_borrowers ──
+    try {
+      await pool.query(`ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ch_matched_role VARCHAR(50)`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ch_match_confidence VARCHAR(20)`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ch_verified_by INT REFERENCES users(id)`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ch_verified_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS ch_match_data JSONB DEFAULT '{}'::jsonb`);
+    } catch (err) {
+      console.log('[migrate] Note on CH borrower columns:', err.message.substring(0, 60));
+    }
+
     // ── Company Verifications (Companies House API audit trail) ──
     await pool.query(`
       CREATE TABLE IF NOT EXISTS company_verifications (

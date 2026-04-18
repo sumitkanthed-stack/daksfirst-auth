@@ -115,4 +115,55 @@ router.delete('/:submissionId/borrowers/:borrowerId', authenticateToken, async (
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  CH ROLE VERIFICATION — RM confirms each borrower's role after CH check
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/borrowers/verify-roles', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { verifications } = req.body;
+    // verifications = [{ borrower_id, confirmed_role, ch_matched_role, ch_match_confidence, ch_match_data }]
+    if (!verifications || !Array.isArray(verifications) || verifications.length === 0) {
+      return res.status(400).json({ error: 'No verifications provided' });
+    }
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const results = [];
+    for (const v of verifications) {
+      const result = await pool.query(
+        `UPDATE deal_borrowers SET
+          role = COALESCE($1, role),
+          ch_matched_role = $2,
+          ch_match_confidence = $3,
+          ch_verified_by = $4,
+          ch_verified_at = NOW(),
+          ch_match_data = COALESCE($5, '{}'::jsonb),
+          updated_at = NOW()
+         WHERE id = $6 AND deal_id = $7 RETURNING id, full_name, role, ch_matched_role, ch_match_confidence`,
+        [
+          v.confirmed_role || null,
+          v.ch_matched_role || null,
+          v.ch_match_confidence || 'manual',
+          req.user.userId,
+          v.ch_match_data ? JSON.stringify(v.ch_match_data) : null,
+          v.borrower_id,
+          dealId
+        ]
+      );
+      if (result.rows.length > 0) results.push(result.rows[0]);
+    }
+
+    await logAudit(dealId, 'ch_roles_verified', null, `${results.length} borrower roles verified`,
+      { verifications: results.map(r => ({ id: r.id, name: r.full_name, role: r.role, ch_role: r.ch_matched_role })) },
+      req.user.userId);
+
+    res.json({ success: true, verified: results, count: results.length });
+  } catch (error) {
+    console.error('[borrower/verify-roles] Error:', error);
+    res.status(500).json({ error: 'Failed to verify borrower roles' });
+  }
+});
+
 module.exports = router;
