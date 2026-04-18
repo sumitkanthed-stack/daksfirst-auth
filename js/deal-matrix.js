@@ -579,6 +579,9 @@ export async function renderDealMatrix(deal) {
       ], isInternalUser)}
 
       <div id="content-s1" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
+        <!-- Party Relationships analysis (auto-populated after render when 2+ corporate parties on the deal) -->
+        <div style="padding:0 26px;"><div id="party-relationships-panel-placeholder"></div></div>
+
         <!-- Primary Borrower -->
         ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
           ['not-started', 'not-started', 'locked', 'locked'])}
@@ -2168,6 +2171,13 @@ export async function renderDealMatrix(deal) {
 
   // Inject into DOM
   container.innerHTML = html;
+
+  // ── Party Relationships analysis (auto-compute after DOM mounts) ──
+  // Fires in the background — does not block matrix render. Populates the placeholder div
+  // at the top of the Borrower/KYC section when 2+ corporate parties are present on the deal.
+  if (typeof window._loadAndRenderPartyRelationships === 'function') {
+    setTimeout(() => window._loadAndRenderPartyRelationships(deal), 80);
+  }
 
   // ── Persist sensible defaults if not already set ──
   // Term defaults to 12 months, interest servicing defaults to retained
@@ -3786,6 +3796,346 @@ export async function renderDealMatrix(deal) {
       borrower_type: 'individual',
       parent_borrower_id: parseInt(parentBorrowerId)
     });
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PARTY RELATIONSHIPS ANALYSIS (Phase G4)
+  // Runs after CH data is loaded for 2+ corporate parties. Detects shared PSCs,
+  // shared directors, corporate-entity PSCs pointing to other parties, common
+  // registered offices, new-SPV flags, and SIC overlaps.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Normalize a person's name for cross-party matching (strip titles, punctuation, case).
+  function _pr_normalizeName(name) {
+    if (!name) return '';
+    return String(name).toLowerCase()
+      .replace(/,/g, ' ')
+      .replace(/\b(mr|mrs|ms|miss|dr|prof|sir|dame|lord|lady)\.?\b/g, '')
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Normalize a CH registered office address to a postcode-level key for matching.
+  function _pr_addressKey(addr) {
+    if (!addr || typeof addr !== 'object') return '';
+    const pc = (addr.postal_code || '').replace(/\s+/g, '').toUpperCase();
+    const line = (addr.address_line_1 || addr.line_1 || '').toLowerCase().trim();
+    if (!pc) return '';
+    // Match building/floor + postcode — not just postcode alone (same postcode can have many buildings)
+    return line + '|' + pc;
+  }
+
+  // Format an address for display.
+  function _pr_addressDisplay(addr) {
+    if (!addr) return '—';
+    const parts = [addr.address_line_1 || addr.line_1, addr.locality, addr.postal_code, addr.country].filter(Boolean);
+    return parts.join(', ');
+  }
+
+  // Core analysis: given an array of { role, company_name, company_number, verification } objects,
+  // returns an array of finding objects with { type, severity, ... }.
+  function _analyzePartyRelationships(corporateParties) {
+    const findings = [];
+    if (!Array.isArray(corporateParties) || corporateParties.length < 2) return findings;
+
+    // Flatten all officers + PSCs across parties, tagged with their source party
+    const allOfficers = [];
+    const allPSCs = [];
+    for (const party of corporateParties) {
+      const v = party.verification || {};
+      (v.officers || []).forEach(o => allOfficers.push(Object.assign({}, o, { _party: party })));
+      (v.pscs || []).forEach(p => allPSCs.push(Object.assign({}, p, { _party: party })));
+    }
+
+    // ── 1. SHARED PSCs (individuals appearing as PSC at 2+ parties) ──
+    const pscByName = {};
+    allPSCs.filter(p => p.kind !== 'corporate-entity-with-significant-control' && p.kind !== 'legal-person-with-significant-control').forEach(p => {
+      const key = _pr_normalizeName(p.name);
+      if (!key) return;
+      if (!pscByName[key]) pscByName[key] = [];
+      pscByName[key].push(p);
+    });
+    const sharedPscNames = new Set();
+    for (const [key, pscs] of Object.entries(pscByName)) {
+      const uniqueCos = [...new Set(pscs.map(p => p._party.company_number))];
+      if (uniqueCos.length < 2) continue;
+      sharedPscNames.add(key);
+      findings.push({
+        type: 'shared_psc', severity: 'high', icon: '\u{1F517}',
+        title: 'Shared PSC \u2014 consolidated control',
+        person: pscs[0].name,
+        instances: pscs.map(p => ({
+          company: p._party.company_name,
+          role: p._party.role,
+          natures: Array.isArray(p.natures_of_control) ? p.natures_of_control : []
+        })),
+        // TODO: align with Daksfirst Credit Policy v6.0 — generic industry note below
+        credit_note: 'Same individual holds significant control in multiple corporate parties. Loan is NOT diversified at UBO level; default correlation should be treated as consolidated.'
+      });
+    }
+
+    // ── 2. SHARED DIRECTORS (not also PSC — already captured above) ──
+    const officerByName = {};
+    allOfficers.forEach(o => {
+      const key = _pr_normalizeName(o.name);
+      if (!key) return;
+      if (!officerByName[key]) officerByName[key] = [];
+      officerByName[key].push(o);
+    });
+    for (const [key, officers] of Object.entries(officerByName)) {
+      if (sharedPscNames.has(key)) continue; // avoid duplicate with shared-PSC finding
+      const uniqueCos = [...new Set(officers.map(o => o._party.company_number))];
+      if (uniqueCos.length < 2) continue;
+      findings.push({
+        type: 'shared_director', severity: 'medium', icon: '\u{1F465}',
+        title: 'Shared Director (no PSC link)',
+        person: officers[0].name,
+        instances: officers.map(o => ({
+          company: o._party.company_name,
+          role: o._party.role,
+          officer_role: o.officer_role
+        })),
+        // TODO: align with Daksfirst Credit Policy v6.0
+        credit_note: 'Same individual directs multiple corporate parties without being PSC at each. Governance concentration — possibly a professional / nominee director arrangement.'
+      });
+    }
+
+    // ── 3. CORPORATE-ENTITY PSC pointing to another party on this deal ──
+    // CH returns the corporate PSC name in `name`. Match by normalizing vs other parties' company_name.
+    const partiesByNameKey = {};
+    corporateParties.forEach(p => {
+      const key = _pr_normalizeName(p.company_name);
+      if (key) partiesByNameKey[key] = p;
+    });
+    allPSCs.filter(p => p.kind === 'corporate-entity-with-significant-control').forEach(corpPSC => {
+      const key = _pr_normalizeName(corpPSC.name);
+      const parent = partiesByNameKey[key];
+      if (!parent) return;
+      if (parent.company_number === corpPSC._party.company_number) return; // self-reference
+      findings.push({
+        type: 'corporate_parent', severity: 'high', icon: '\u{1F3E2}',
+        title: 'Corporate parent detected',
+        parent_party: { name: parent.company_name, role: parent.role, company_number: parent.company_number },
+        child_party: { name: corpPSC._party.company_name, role: corpPSC._party.role, company_number: corpPSC._party.company_number },
+        natures: Array.isArray(corpPSC.natures_of_control) ? corpPSC.natures_of_control : [],
+        // TODO: align with Daksfirst Credit Policy v6.0
+        credit_note: 'One party on this deal is listed as a significant-control corporate PSC of another. Parent/subsidiary relationship confirmed. Group guarantee effectively covers upstream cash flows.'
+      });
+    });
+
+    // ── 4. COMMON REGISTERED OFFICE ──
+    const officeGroups = {};
+    for (const party of corporateParties) {
+      const v = party.verification || {};
+      const addr = v.registered_office_address || v.address;
+      const key = _pr_addressKey(addr);
+      if (!key) continue;
+      if (!officeGroups[key]) officeGroups[key] = [];
+      officeGroups[key].push({ party, address: addr });
+    }
+    for (const [key, group] of Object.entries(officeGroups)) {
+      if (group.length < 2) continue;
+      findings.push({
+        type: 'common_office', severity: 'low', icon: '\u{1F3E0}',
+        title: 'Common Registered Office',
+        address: _pr_addressDisplay(group[0].address),
+        parties: group.map(g => ({ name: g.party.company_name, role: g.party.role })),
+        // TODO: align with Daksfirst Credit Policy v6.0
+        credit_note: 'Shared registered office. Often indicates the same formation agent or an intragroup structure; not conclusive ownership evidence, but worth cross-checking PSCs.'
+      });
+    }
+
+    // ── 5. NEW SPV (< 6 months since incorporation) ──
+    for (const party of corporateParties) {
+      const v = party.verification || {};
+      if (!v.incorporated_on) continue;
+      const ageMs = Date.now() - new Date(v.incorporated_on).getTime();
+      const ageMonths = Math.floor(ageMs / (30.44 * 24 * 60 * 60 * 1000));
+      if (ageMonths < 0 || ageMonths >= 6) continue;
+      findings.push({
+        type: 'new_spv', severity: 'medium', icon: '\u{1F4C5}',
+        title: 'New SPV',
+        party: { name: party.company_name, role: party.role, company_number: party.company_number },
+        age_months: ageMonths,
+        incorporated_on: v.incorporated_on,
+        // TODO: align with Daksfirst Credit Policy v6.0
+        credit_note: 'Incorporated less than 6 months ago \u2014 no filed accounts yet (first accounts due ~21 months post-incorporation per Companies Act 2006 s.442). Financial analysis must rely on business plan, bank statements, and director/PSC trading history.'
+      });
+    }
+
+    // ── 6. SIC CODE overlap ──
+    const sicCount = {};
+    for (const party of corporateParties) {
+      const sics = Array.isArray((party.verification || {}).sic_codes) ? party.verification.sic_codes : [];
+      for (const s of sics) {
+        if (!sicCount[s]) sicCount[s] = new Set();
+        sicCount[s].add(party.company_number);
+      }
+    }
+    const sharedSics = Object.entries(sicCount).filter(([, set]) => set.size >= 2).map(([code, set]) => ({ code, count: set.size }));
+    if (sharedSics.length > 0 && corporateParties.length >= 2) {
+      findings.push({
+        type: 'sic_overlap', severity: 'low', icon: '\u{1F3E2}',
+        title: 'SIC overlap across parties',
+        shared_sics: sharedSics,
+        // TODO: align with Daksfirst Credit Policy v6.0
+        credit_note: 'All flagged parties operate in overlapping sectors per their SIC 2007 codes. Indicates portfolio-level exposure \u2014 not sector-diversified.'
+      });
+    }
+
+    // Sort by severity (high first)
+    const sevRank = { high: 3, medium: 2, low: 1 };
+    findings.sort((a, b) => (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0));
+    return findings;
+  }
+
+  // Render findings as HTML. Returns '' when fewer than 2 corporate parties.
+  function _renderPartyRelationshipsPanel(findings, corporateCount, corporateParties) {
+    if (corporateCount < 2) return ''; // nothing to compare
+
+    const sevColor = { high: '#F87171', medium: '#FBBF24', low: '#34D399' };
+    const sevBg = { high: 'rgba(248,113,113,0.08)', medium: 'rgba(251,191,36,0.06)', low: 'rgba(52,211,153,0.05)' };
+    let overallSev = 'low';
+    if (findings.some(f => f.severity === 'high')) overallSev = 'high';
+    else if (findings.some(f => f.severity === 'medium')) overallSev = 'medium';
+
+    const borderColor = findings.length === 0 ? '#34D399' : sevColor[overallSev];
+    const bgColor = findings.length === 0 ? 'rgba(52,211,153,0.04)' : sevBg[overallSev];
+
+    const headerText = findings.length === 0
+      ? '\u2713 Parties appear independent'
+      : overallSev === 'high' ? 'Review required \u2014 consolidated control detected'
+      : overallSev === 'medium' ? 'Review required \u2014 governance overlap'
+      : 'Minor overlap \u2014 informational';
+
+    const partiesList = corporateParties.map(p =>
+      '<span style="display:inline-block;padding:2px 8px;background:rgba(255,255,255,0.04);border-radius:10px;font-size:10px;color:#CBD5E1;margin-right:4px;">' +
+      sanitizeHtml(p.company_name) + ' <span style="color:#64748B;">\u00B7 ' + p.role + '</span></span>'
+    ).join('');
+
+    const findingsHtml = findings.length === 0
+      ? '<p style="font-size:12px;color:#34D399;margin:8px 0 0 0;">No shared controllers, directors, corporate-parent links, or common offices detected between the ' + corporateCount + ' corporate parties. Parties appear independent based on Companies House records.</p>'
+      : findings.map(f => {
+          let body = '';
+          if (f.type === 'shared_psc' || f.type === 'shared_director') {
+            body = '<div style="font-size:12px;color:#F1F5F9;font-weight:700;margin:4px 0 2px;">' + sanitizeHtml(f.person) + '</div>' +
+              '<ul style="margin:2px 0 6px 18px;padding:0;font-size:11px;color:#CBD5E1;">' +
+              f.instances.map(i => '<li>' + sanitizeHtml(i.company) + ' <span style="color:#64748B;">(' + i.role + (i.officer_role ? ' \u00B7 ' + i.officer_role : '') + ')</span>' +
+                (Array.isArray(i.natures) && i.natures.length > 0 ? ' <span style="font-size:10px;color:#94A3B8;">\u2014 ' + i.natures.map(n => sanitizeHtml(n.replace(/-/g, ' '))).join(', ') + '</span>' : '') +
+              '</li>').join('') +
+              '</ul>';
+          } else if (f.type === 'corporate_parent') {
+            body = '<div style="font-size:12px;color:#F1F5F9;font-weight:700;margin:4px 0 2px;">' + sanitizeHtml(f.parent_party.name) + ' \u2192 parent of \u2192 ' + sanitizeHtml(f.child_party.name) + '</div>' +
+              '<div style="font-size:11px;color:#CBD5E1;margin-bottom:4px;">Roles on deal: ' + f.parent_party.role + ' \u2194 ' + f.child_party.role + '</div>' +
+              (f.natures.length > 0 ? '<div style="font-size:10px;color:#94A3B8;">Control type: ' + f.natures.map(n => sanitizeHtml(n.replace(/-/g, ' '))).join(', ') + '</div>' : '');
+          } else if (f.type === 'common_office') {
+            body = '<div style="font-size:11px;color:#CBD5E1;margin:4px 0 2px;">' + sanitizeHtml(f.address) + '</div>' +
+              '<div style="font-size:11px;color:#94A3B8;">Parties: ' + f.parties.map(p => sanitizeHtml(p.name) + ' (' + p.role + ')').join(' \u00B7 ') + '</div>';
+          } else if (f.type === 'new_spv') {
+            body = '<div style="font-size:12px;color:#F1F5F9;font-weight:700;margin:4px 0 2px;">' + sanitizeHtml(f.party.name) + ' \u00B7 ' + f.party.role + '</div>' +
+              '<div style="font-size:11px;color:#CBD5E1;">Incorporated ' + new Date(f.incorporated_on).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}) + ' (' + f.age_months + ' month' + (f.age_months === 1 ? '' : 's') + ' old)</div>';
+          } else if (f.type === 'sic_overlap') {
+            body = '<div style="font-size:11px;color:#CBD5E1;margin:4px 0;">Shared SIC codes: ' +
+              f.shared_sics.map(s => '<span style="color:#D4A853;font-family:monospace;font-weight:700;">' + s.code + '</span> <span style="color:#64748B;">(' + s.count + ' parties)</span>').join(' \u00B7 ') + '</div>';
+          }
+          return '<div style="margin:10px 0;padding:10px 12px;background:' + sevBg[f.severity] + ';border-left:3px solid ' + sevColor[f.severity] + ';border-radius:4px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:15px;">' + f.icon + '</span>' +
+            '<span style="font-size:12px;font-weight:700;color:' + sevColor[f.severity] + ';text-transform:uppercase;letter-spacing:.3px;">' + sanitizeHtml(f.title) + '</span>' +
+            '<span style="font-size:9px;color:#64748B;margin-left:auto;text-transform:uppercase;">' + f.severity + '</span></div>' +
+            body +
+            '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.05);font-size:11px;color:#94A3B8;font-style:italic;">Credit read: ' + sanitizeHtml(f.credit_note) + '</div>' +
+          '</div>';
+        }).join('');
+
+    return '<div id="party-relationships-panel" style="margin:10px 0 14px 0;background:#111827;border:1px solid ' + borderColor + ';border-radius:10px;padding:14px 16px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;">' +
+        '<div>' +
+          '<span style="font-size:10px;color:' + borderColor + ';text-transform:uppercase;font-weight:700;letter-spacing:.4px;">Party Relationships \u00B7 ' + corporateCount + ' corporate parties</span>' +
+          '<div style="font-size:13px;color:#F1F5F9;font-weight:700;margin-top:2px;">' + headerText + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#64748B;margin-bottom:4px;">' + partiesList + '</div>' +
+      findingsHtml +
+    '</div>';
+  }
+
+  // Orchestrator: collect all corporate parties, fetch CH data as needed, analyze, inject panel.
+  // Called after deal-matrix HTML is inserted into DOM. Safe to call multiple times.
+  window._loadAndRenderPartyRelationships = async function(deal) {
+    try {
+      if (!deal) return;
+      const placeholder = document.getElementById('party-relationships-panel-placeholder');
+      if (!placeholder) return;
+
+      const _corpTypesPR = ['corporate','spv','ltd','llp','trust','partnership'];
+      const _isCorpPR = (t) => _corpTypesPR.includes((t || '').toLowerCase());
+
+      const parties = [];
+      // Primary corporate (stored on deal, not deal_borrowers)
+      if (_isCorpPR(deal.borrower_type) && deal.company_number) {
+        parties.push({ source: 'primary', role: 'Primary Borrower', company_name: deal.company_name, company_number: deal.company_number, verification: null });
+      }
+      // Joint + Guarantor corporates from deal_borrowers
+      for (const b of (deal.borrowers || [])) {
+        if (b.parent_borrower_id) continue; // only top-level parties
+        if (!_isCorpPR(b.borrower_type)) continue;
+        if (!b.company_number) continue;
+        let v = b.ch_match_data;
+        if (v && typeof v === 'string') { try { v = JSON.parse(v); } catch (_) { v = null; } }
+        // Only accept if it looks like a full verification payload (has officers/pscs or company_number)
+        if (v && (v.officers || v.pscs || v.company_number)) {
+          parties.push({
+            source: b.role === 'guarantor' ? 'guarantor' : 'joint',
+            role: b.role === 'guarantor' ? 'Corporate Guarantor' : 'Joint Borrower',
+            company_name: b.company_name,
+            company_number: b.company_number,
+            verification: v
+          });
+        } else {
+          // Not CH-verified yet — include placeholder so the count is accurate but skip analysis for this party
+          parties.push({
+            source: b.role === 'guarantor' ? 'guarantor' : 'joint',
+            role: b.role === 'guarantor' ? 'Corporate Guarantor' : 'Joint Borrower',
+            company_name: b.company_name,
+            company_number: b.company_number,
+            verification: null
+          });
+        }
+      }
+
+      if (parties.length < 2) {
+        placeholder.innerHTML = ''; // hide entirely when only 1 (or 0) corporate parties
+        return;
+      }
+
+      // Fetch CH data for any party missing verification (typically just the primary)
+      const needsFetch = parties.filter(p => !p.verification);
+      if (needsFetch.length > 0) {
+        placeholder.innerHTML = '<div style="margin:8px 0;padding:10px 12px;background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:8px;font-size:11px;color:#94A3B8;">Loading Companies House data for relationship analysis\u2026</div>';
+        await Promise.all(needsFetch.map(async p => {
+          try {
+            const resp = await fetchWithAuth(API_BASE + '/api/companies-house/verify/' + encodeURIComponent(p.company_number));
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data && data.verification && data.verification.found) {
+              p.verification = data.verification;
+            }
+          } catch (_) { /* ignore */ }
+        }));
+      }
+
+      const readyParties = parties.filter(p => p.verification);
+      if (readyParties.length < 2) {
+        placeholder.innerHTML = '<div style="margin:8px 0;padding:10px 12px;background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.18);border-radius:8px;font-size:11px;color:#FBBF24;">Relationship analysis needs at least 2 corporate parties with completed Companies House verification. Verify the remaining corporate ' + (parties.length - readyParties.length) + ' part' + (parties.length - readyParties.length === 1 ? 'y' : 'ies') + ' to see the analysis.</div>';
+        return;
+      }
+
+      const findings = _analyzePartyRelationships(readyParties);
+      placeholder.innerHTML = _renderPartyRelationshipsPanel(findings, readyParties.length, readyParties);
+    } catch (err) {
+      console.warn('[party-relationships] analysis failed:', err);
+    }
   };
 
   // Toggle the CH detail panel for a specific corporate guarantor (lazy-loaded on first open)
