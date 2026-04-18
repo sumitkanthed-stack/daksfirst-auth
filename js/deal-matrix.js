@@ -1254,7 +1254,20 @@ export async function renderDealMatrix(deal) {
                   return Object.entries(counts).map(([k, v]) => v + ' ' + k).join(' \u00B7 ') || '—';
                 };
                 const typeMix = mixWithFallback('property_type', 'asset_type');
-                const occMix = mixWithFallback('occupancy', 'occupancy_status');
+
+                // Occupancy — NO deal-level fallback. Each property must be individually known.
+                // Deal-level occupancy_status is a placeholder and would mislead credit decisions.
+                const occCounts = pp.reduce((acc, p) => {
+                  const raw = (p.occupancy || '').toString().toLowerCase().trim();
+                  if (!raw) return acc;
+                  const label = raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, ' ');
+                  acc[label] = (acc[label] || 0) + 1;
+                  return acc;
+                }, {});
+                const occSet = Object.values(occCounts).reduce((s, v) => s + v, 0);
+                const occMix = occSet === 0
+                  ? '—'
+                  : Object.entries(occCounts).map(([k, v]) => v + ' ' + k).join(' \u00B7 ') + (occSet < pp.length ? ' \u00B7 ' + (pp.length - occSet) + ' Unknown' : '');
                 // Geography
                 const geoFlags = pp.map(p => p.in_england_or_wales);
                 const anyOutside = geoFlags.some(f => f === false);
