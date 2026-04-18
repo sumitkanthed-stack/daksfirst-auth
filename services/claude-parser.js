@@ -33,8 +33,11 @@ JSON schema to populate:
       "email": "string or null",
       "phone": "string or null",
       "role": "primary or guarantor or director",
+      "gender": "male or female or null — infer from name/title if not explicitly stated (Mr = male, Mrs/Ms/Miss = female)",
       "passport_number": "string or null",
       "passport_expiry": "YYYY-MM-DD or null",
+      "id_type": "passport or driving_licence or national_id or null — type of primary ID document",
+      "residential_address": "full residential address of this individual or null",
       "source_document": "filename this was extracted from"
     }
   ],
@@ -632,8 +635,8 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         if (!b.full_name) continue;
         // UPSERT: if borrower with same name exists on this deal, update missing fields only
         await pool.query(
-          `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, kyc_status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+          `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, gender, id_type, id_number, id_expiry, residential_address, kyc_status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending')
            ON CONFLICT (deal_id, LOWER(TRIM(full_name))) DO UPDATE SET
              date_of_birth = COALESCE(deal_borrowers.date_of_birth, EXCLUDED.date_of_birth),
              nationality = COALESCE(deal_borrowers.nationality, EXCLUDED.nationality),
@@ -643,11 +646,19 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
              borrower_type = COALESCE(deal_borrowers.borrower_type, EXCLUDED.borrower_type),
              company_name = COALESCE(deal_borrowers.company_name, EXCLUDED.company_name),
              company_number = COALESCE(deal_borrowers.company_number, EXCLUDED.company_number),
+             gender = COALESCE(deal_borrowers.gender, EXCLUDED.gender),
+             id_type = COALESCE(deal_borrowers.id_type, EXCLUDED.id_type),
+             id_number = COALESCE(deal_borrowers.id_number, EXCLUDED.id_number),
+             id_expiry = COALESCE(deal_borrowers.id_expiry, EXCLUDED.id_expiry),
+             residential_address = COALESCE(deal_borrowers.residential_address, EXCLUDED.residential_address),
              updated_at = NOW()`,
           [dealId, b.full_name, b.date_of_birth || null, b.nationality || null,
            b.email || null, b.phone || null, b.role || 'primary',
            mergedAnalysis.company?.borrower_type || 'individual',
-           mergedAnalysis.company?.name || null, mergedAnalysis.company?.company_number || null]
+           mergedAnalysis.company?.name || null, mergedAnalysis.company?.company_number || null,
+           b.gender || null, b.id_type || (b.passport_number ? 'passport' : null),
+           b.passport_number || null, b.passport_expiry || null,
+           b.residential_address || null]
         );
       }
       // Update primary borrower on deal_submissions

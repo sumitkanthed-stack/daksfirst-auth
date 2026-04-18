@@ -598,8 +598,8 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
                 if (!b.full_name) continue;
                 // UPSERT: if borrower with same name exists on this deal, update missing fields only
                 await pool.query(
-                  `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, kyc_status)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+                  `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, gender, id_type, id_number, id_expiry, residential_address, kyc_status)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending')
                    ON CONFLICT (deal_id, LOWER(TRIM(full_name))) DO UPDATE SET
                      date_of_birth = COALESCE(deal_borrowers.date_of_birth, EXCLUDED.date_of_birth),
                      nationality = COALESCE(deal_borrowers.nationality, EXCLUDED.nationality),
@@ -609,11 +609,19 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
                      borrower_type = COALESCE(deal_borrowers.borrower_type, EXCLUDED.borrower_type),
                      company_name = COALESCE(deal_borrowers.company_name, EXCLUDED.company_name),
                      company_number = COALESCE(deal_borrowers.company_number, EXCLUDED.company_number),
+                     gender = COALESCE(deal_borrowers.gender, EXCLUDED.gender),
+                     id_type = COALESCE(deal_borrowers.id_type, EXCLUDED.id_type),
+                     id_number = COALESCE(deal_borrowers.id_number, EXCLUDED.id_number),
+                     id_expiry = COALESCE(deal_borrowers.id_expiry, EXCLUDED.id_expiry),
+                     residential_address = COALESCE(deal_borrowers.residential_address, EXCLUDED.residential_address),
                      updated_at = NOW()`,
                   [deal.id, b.full_name, b.date_of_birth || null, b.nationality || null,
                    b.email || null, b.phone || null, b.role || 'primary',
                    result.analysis.company?.borrower_type || 'individual',
-                   result.analysis.company?.name || null, result.analysis.company?.company_number || null]
+                   result.analysis.company?.name || null, result.analysis.company?.company_number || null,
+                   b.gender || null, b.id_type || (b.passport_number ? 'passport' : null),
+                   b.passport_number || null, b.passport_expiry || null,
+                   b.residential_address || null]
                 );
               }
               console.log(`[parse-confirmed] Synced ${result.analysis.borrowers.length} borrowers to deal_borrowers`);
