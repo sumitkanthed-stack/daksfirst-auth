@@ -1329,6 +1329,7 @@ export async function renderDealMatrix(deal) {
   window.matrixToggleSection = function(sectionId) {
     const content = document.getElementById(`content-${sectionId}`);
     const chevron = document.getElementById(`chevron-${sectionId}`);
+    const header = document.querySelector(`[data-section-header="${sectionId}"]`);
     if (content) {
       const isOpen = content.style.maxHeight !== '0px';
       content.style.maxHeight = isOpen ? '0px' : '8000px';
@@ -1337,6 +1338,11 @@ export async function renderDealMatrix(deal) {
         chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
         chevron.style.background = isOpen ? 'rgba(255,255,255,0.06)' : 'rgba(212,168,83,0.25)';
         chevron.style.color = isOpen ? '#94A3B8' : '#D4A853';
+      }
+      // Highlight open section header
+      if (header) {
+        header.style.borderLeft = isOpen ? 'none' : '3px solid #D4A853';
+        header.style.background = isOpen ? '' : 'rgba(212,168,83,0.06)';
       }
     }
   };
@@ -1347,6 +1353,13 @@ export async function renderDealMatrix(deal) {
       const isOpen = detail.style.maxHeight !== '0px';
       detail.style.maxHeight = isOpen ? '0px' : '1200px';
       detail.style.overflow = 'hidden';
+      // Highlight the field row that triggered this detail
+      const fieldKey = detailId.replace('detail-', '');
+      const rows = document.querySelectorAll(`[onclick*="'${detailId}'"]`);
+      rows.forEach(row => {
+        row.style.borderLeft = isOpen ? 'none' : '3px solid #60A5FA';
+        row.style.background = isOpen ? '' : 'rgba(96,165,250,0.06)';
+      });
     }
   };
 
