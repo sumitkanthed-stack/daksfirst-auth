@@ -588,7 +588,7 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #D4A853;border-radius:10px;padding:14px 16px">
 
               ${(() => {
                 const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
