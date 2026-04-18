@@ -62,6 +62,10 @@ module.exports = {
   // Companies House API
   COMPANIES_HOUSE_API_KEY: process.env.COMPANIES_HOUSE_API_KEY || '',
 
+  // EPC Register API (free — register at https://epc.opendatacommunities.org/login)
+  EPC_API_KEY: process.env.EPC_API_KEY || '',
+  EPC_API_EMAIL: process.env.EPC_API_EMAIL || '',
+
   // Twilio SMS
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',

@@ -660,6 +660,41 @@ async function runMigrations() {
     }
     console.log('[migrate] ✓ deal_borrowers individual person columns added');
 
+    // ── Property search data columns on deal_properties ──
+    const propertySearchColumns = [
+      // Postcode lookup
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS region VARCHAR(50)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS country VARCHAR(30)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS local_authority VARCHAR(100)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS admin_ward VARCHAR(100)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,6)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,6)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS in_england_or_wales BOOLEAN`,
+      // EPC data
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_rating VARCHAR(2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_score INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_potential_rating VARCHAR(2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_floor_area NUMERIC(10,2)`,  // sq metres
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_property_type VARCHAR(50)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_built_form VARCHAR(50)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_construction_age VARCHAR(50)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_habitable_rooms INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_inspection_date DATE`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_certificate_id VARCHAR(100)`,
+      // Price paid
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS last_sale_price NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS last_sale_date DATE`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS price_paid_data JSONB DEFAULT '[]'::jsonb`,
+      // Search metadata
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_search_data JSONB DEFAULT '{}'::jsonb`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_searched_at TIMESTAMPTZ`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_searched_by INT`
+    ];
+    for (const sql of propertySearchColumns) {
+      try { await pool.query(sql); } catch (e) { /* column may already exist */ }
+    }
+    console.log('[migrate] ✓ deal_properties property search columns added');
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

@@ -195,7 +195,12 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     const propsResult = await pool.query(
       `SELECT id, address, postcode, property_type, tenure, occupancy, current_use,
               market_value, purchase_price, gdv, reinstatement, day1_ltv, title_number,
-              solicitor_firm, solicitor_ref, notes
+              solicitor_firm, solicitor_ref, notes,
+              region, country, local_authority, admin_ward, latitude, longitude, in_england_or_wales,
+              epc_rating, epc_score, epc_potential_rating, epc_floor_area, epc_property_type,
+              epc_built_form, epc_construction_age, epc_habitable_rooms, epc_inspection_date,
+              last_sale_price, last_sale_date, price_paid_data,
+              property_searched_at
        FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
       [deal.id]
     );

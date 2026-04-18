@@ -622,6 +622,53 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
       }));
       await syncDealProperties(pool, dealId, claudeProperties, { force: true });
       await updateProgress('wrote_properties', `Saved ${claudeProperties.length} properties to database`);
+
+      // ── Auto-trigger property search (Postcodes.io + EPC + Price Paid) ──
+      try {
+        const { searchProperty } = require('./property-search');
+        const unsearched = await pool.query(
+          `SELECT id, address, postcode FROM deal_properties WHERE deal_id = $1 AND property_searched_at IS NULL`,
+          [dealId]
+        );
+        for (const prop of unsearched.rows) {
+          if (!prop.postcode && !prop.address) continue;
+          try {
+            const results = await searchProperty(prop.postcode, prop.address);
+            // Write key fields to columns
+            const sets = [];
+            const vals = [];
+            let i = 1;
+            if (results.postcode_lookup.success) {
+              const pc = results.postcode_lookup.data;
+              for (const [c, v] of [['region',pc.region],['country',pc.country],['local_authority',pc.admin_district],['admin_ward',pc.admin_ward],['latitude',pc.latitude],['longitude',pc.longitude],['in_england_or_wales',pc.in_england_or_wales]]) {
+                if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
+              }
+            }
+            if (results.epc.success) {
+              const e = results.epc.data;
+              for (const [c, v] of [['epc_rating',e.epc_rating],['epc_score',e.epc_score],['epc_potential_rating',e.potential_rating],['epc_floor_area',e.floor_area],['epc_property_type',e.property_type],['epc_built_form',e.built_form],['epc_construction_age',e.construction_age],['epc_habitable_rooms',e.number_habitable_rooms],['epc_inspection_date',e.inspection_date],['epc_certificate_id',e.lmk_key]]) {
+                if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
+              }
+            }
+            if (results.price_paid.success) {
+              const pp = results.price_paid.data;
+              if (pp.latest_price) { sets.push(`last_sale_price=$${i}`); vals.push(pp.latest_price); i++; sets.push(`last_sale_date=$${i}`); vals.push(pp.latest_date); i++; }
+              sets.push(`price_paid_data=$${i}`); vals.push(JSON.stringify(pp.transactions||[])); i++;
+            }
+            sets.push(`property_search_data=$${i}`); vals.push(JSON.stringify(results)); i++;
+            sets.push(`property_searched_at=NOW()`);
+            sets.push(`updated_at=NOW()`);
+            vals.push(prop.id);
+            await pool.query(`UPDATE deal_properties SET ${sets.join(',')} WHERE id=$${i}`, vals);
+            console.log(`[claude-parser] ✓ Auto-searched property ${prop.id}: ${prop.postcode}`);
+          } catch (psErr) {
+            console.warn(`[claude-parser] Property search failed for ${prop.id}:`, psErr.message);
+          }
+        }
+        await updateProgress('property_search', `Auto-searched ${unsearched.rows.length} properties`);
+      } catch (psErr) {
+        console.warn('[claude-parser] Property auto-search skipped:', psErr.message);
+      }
     }
 
     // ── 6b. Write borrowers to deal_borrowers table ──

@@ -235,4 +235,219 @@ router.post('/:submissionId/reparse', authenticateToken, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  PROPERTY AUTO-SEARCH — Postcodes.io + EPC + Land Registry Price Paid
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /:submissionId/properties/:propertyId/search
+ * Runs all three property data APIs in parallel and writes results to deal_properties.
+ * Can be triggered manually (button click) or automatically after parse.
+ */
+router.post('/:submissionId/properties/:propertyId/search', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, propertyId } = req.params;
+
+    // Auth check
+    if (!await canEditDeal(req, submissionId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get property record
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const propResult = await pool.query(
+      `SELECT id, address, postcode FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      [propertyId, dealId]
+    );
+    if (propResult.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+
+    const prop = propResult.rows[0];
+    if (!prop.postcode && !prop.address) {
+      return res.status(400).json({ error: 'Property has no postcode or address to search' });
+    }
+
+    // Run the search
+    const { searchProperty } = require('../services/property-search');
+    const results = await searchProperty(prop.postcode, prop.address);
+
+    // Write results to deal_properties
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    // Postcode data
+    if (results.postcode_lookup.success) {
+      const pc = results.postcode_lookup.data;
+      const fields = [
+        ['region', pc.region], ['country', pc.country], ['local_authority', pc.admin_district],
+        ['admin_ward', pc.admin_ward], ['latitude', pc.latitude], ['longitude', pc.longitude],
+        ['in_england_or_wales', pc.in_england_or_wales]
+      ];
+      for (const [col, val] of fields) {
+        if (val !== null && val !== undefined) {
+          updates.push(`${col} = $${idx}`);
+          values.push(val);
+          idx++;
+        }
+      }
+    }
+
+    // EPC data
+    if (results.epc.success) {
+      const e = results.epc.data;
+      const fields = [
+        ['epc_rating', e.epc_rating], ['epc_score', e.epc_score],
+        ['epc_potential_rating', e.potential_rating], ['epc_floor_area', e.floor_area],
+        ['epc_property_type', e.property_type], ['epc_built_form', e.built_form],
+        ['epc_construction_age', e.construction_age], ['epc_habitable_rooms', e.number_habitable_rooms],
+        ['epc_inspection_date', e.inspection_date], ['epc_certificate_id', e.lmk_key]
+      ];
+      for (const [col, val] of fields) {
+        if (val !== null && val !== undefined) {
+          updates.push(`${col} = $${idx}`);
+          values.push(val);
+          idx++;
+        }
+      }
+    }
+
+    // Price paid data
+    if (results.price_paid.success) {
+      const pp = results.price_paid.data;
+      if (pp.latest_price) {
+        updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++;
+        updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++;
+      }
+      updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
+    }
+
+    // Full raw results + metadata
+    updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
+    updates.push(`property_searched_at = NOW()`);
+    updates.push(`property_searched_by = $${idx}`); values.push(req.user.userId); idx++;
+    updates.push(`updated_at = NOW()`);
+
+    // property ID for WHERE clause
+    values.push(propertyId);
+
+    if (updates.length > 0) {
+      await pool.query(
+        `UPDATE deal_properties SET ${updates.join(', ')} WHERE id = $${idx}`,
+        values
+      );
+    }
+
+    // Audit log
+    await logAudit(pool, {
+      dealId,
+      userId: req.user.userId,
+      action: 'property_search',
+      details: `Property search completed for ${prop.address || prop.postcode}: postcode=${results.postcode_lookup.success}, epc=${results.epc.success}, pricePaid=${results.price_paid.success}`
+    });
+
+    // Geography warning
+    const geoWarning = results.postcode_lookup.success && !results.postcode_lookup.data.in_england_or_wales
+      ? `WARNING: Property is in ${results.postcode_lookup.data.country} — outside Daksfirst lending geography (England & Wales only)`
+      : null;
+
+    res.json({
+      success: true,
+      results,
+      geo_warning: geoWarning,
+      message: 'Property search completed'
+    });
+
+  } catch (error) {
+    console.error('[property-search] Route error:', error);
+    res.status(500).json({ error: 'Property search failed: ' + error.message });
+  }
+});
+
+/**
+ * POST /:submissionId/properties/search-all
+ * Search all properties on a deal at once (used by auto-trigger after parse)
+ */
+router.post('/:submissionId/properties/search-all', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    if (!await canEditDeal(req, submissionId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const props = await pool.query(
+      `SELECT id, address, postcode FROM deal_properties WHERE deal_id = $1 AND property_searched_at IS NULL ORDER BY id`,
+      [dealId]
+    );
+
+    if (props.rows.length === 0) {
+      return res.json({ success: true, message: 'No unsearched properties found', results: [] });
+    }
+
+    const { searchProperty } = require('../services/property-search');
+    const allResults = [];
+
+    for (const prop of props.rows) {
+      if (!prop.postcode && !prop.address) continue;
+      try {
+        const results = await searchProperty(prop.postcode, prop.address);
+
+        // Same write logic as single search
+        const updates = [];
+        const values = [];
+        let idx = 1;
+
+        if (results.postcode_lookup.success) {
+          const pc = results.postcode_lookup.data;
+          for (const [col, val] of [
+            ['region', pc.region], ['country', pc.country], ['local_authority', pc.admin_district],
+            ['admin_ward', pc.admin_ward], ['latitude', pc.latitude], ['longitude', pc.longitude],
+            ['in_england_or_wales', pc.in_england_or_wales]
+          ]) {
+            if (val !== null && val !== undefined) { updates.push(`${col} = $${idx}`); values.push(val); idx++; }
+          }
+        }
+        if (results.epc.success) {
+          const e = results.epc.data;
+          for (const [col, val] of [
+            ['epc_rating', e.epc_rating], ['epc_score', e.epc_score],
+            ['epc_potential_rating', e.potential_rating], ['epc_floor_area', e.floor_area],
+            ['epc_property_type', e.property_type], ['epc_built_form', e.built_form],
+            ['epc_construction_age', e.construction_age], ['epc_habitable_rooms', e.number_habitable_rooms],
+            ['epc_inspection_date', e.inspection_date], ['epc_certificate_id', e.lmk_key]
+          ]) {
+            if (val !== null && val !== undefined) { updates.push(`${col} = $${idx}`); values.push(val); idx++; }
+          }
+        }
+        if (results.price_paid.success) {
+          const pp = results.price_paid.data;
+          if (pp.latest_price) { updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++; updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++; }
+          updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
+        }
+        updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
+        updates.push(`property_searched_at = NOW()`);
+        updates.push(`property_searched_by = $${idx}`); values.push(req.user.userId); idx++;
+        updates.push(`updated_at = NOW()`);
+        values.push(prop.id);
+
+        await pool.query(`UPDATE deal_properties SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+        allResults.push({ propertyId: prop.id, address: prop.address, success: true, results });
+      } catch (err) {
+        allResults.push({ propertyId: prop.id, address: prop.address, success: false, error: err.message });
+      }
+    }
+
+    res.json({ success: true, searched: allResults.length, results: allResults });
+  } catch (error) {
+    console.error('[property-search] Search-all error:', error);
+    res.status(500).json({ error: 'Property search-all failed: ' + error.message });
+  }
+});
+
 module.exports = router;

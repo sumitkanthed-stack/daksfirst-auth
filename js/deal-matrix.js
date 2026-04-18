@@ -976,6 +976,74 @@ export async function renderDealMatrix(deal) {
                   </tbody>
                 </table>
               </div>
+              <!-- ── Property Search Results (EPC, Postcode, Price Paid) ── -->
+              ${deal.properties.map((p, i) => {
+                const searched = !!p.property_searched_at;
+                const propLabel = deal.properties.length > 1 ? 'Property ' + (i + 1) + ': ' : '';
+                if (!searched) {
+                  return '<div style="margin-top:8px;padding:8px 12px;background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:6px;display:flex;align-items:center;justify-content:space-between;">' +
+                    '<div style="font-size:11px;color:#D4A853;">' + propLabel + 'Property data not yet searched</div>' +
+                    '<button onclick="window._propertySearch(' + p.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:#D4A853;color:#111;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;">Search Property Data</button>' +
+                  '</div>';
+                }
+                // Build result cards
+                const epcColor = { A:'#22C55E', B:'#34D399', C:'#86EFAC', D:'#FBBF24', E:'#F97316', F:'#EF4444', G:'#DC2626' };
+                const rating = p.epc_rating || null;
+                const ratingStyle = rating ? 'background:' + (epcColor[rating] || '#64748B') + ';color:#111;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:800;' : '';
+
+                let epcHtml = '';
+                if (rating) {
+                  epcHtml = '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">EPC Rating</span><span style="' + ratingStyle + '">' + rating + '</span></div>' +
+                    (p.epc_floor_area ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Floor Area</span><span style="font-size:12px;color:#F1F5F9;font-weight:600;">' + p.epc_floor_area + ' m\u00B2 (' + Math.round(p.epc_floor_area * 10.764) + ' sq ft)</span></div>' : '') +
+                    (p.epc_property_type ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Type (EPC)</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_property_type) + '</span></div>' : '') +
+                    (p.epc_built_form ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Built Form</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_built_form) + '</span></div>' : '') +
+                    (p.epc_construction_age ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Construction</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.epc_construction_age) + '</span></div>' : '') +
+                    (p.epc_habitable_rooms ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Rooms</span><span style="font-size:12px;color:#F1F5F9;">' + p.epc_habitable_rooms + '</span></div>' : '') +
+                  '</div>';
+                }
+
+                let geoHtml = '';
+                if (p.local_authority) {
+                  const geoOk = p.in_england_or_wales;
+                  const geoBadge = geoOk === false
+                    ? '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(248,113,113,0.15);color:#F87171;">OUTSIDE LENDING AREA</span>'
+                    : geoOk === true
+                      ? '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.1);color:#34D399;">' + sanitizeHtml(p.country || 'England') + '</span>'
+                      : '';
+                  geoHtml = '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Local Authority</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.local_authority) + '</span></div>' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Region</span><span style="font-size:12px;color:#F1F5F9;">' + sanitizeHtml(p.region || '—') + '</span></div>' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Geography</span>' + geoBadge + '</div>' +
+                  '</div>';
+                }
+
+                let priceHtml = '';
+                if (p.last_sale_price) {
+                  priceHtml = '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Last Sale Price</span><span style="font-size:14px;color:#F1F5F9;font-weight:700;">\u00A3' + Number(p.last_sale_price).toLocaleString() + '</span></div>' +
+                    '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Sale Date</span><span style="font-size:12px;color:#F1F5F9;">' + (p.last_sale_date ? new Date(p.last_sale_date).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}) : '—') + '</span></div>' +
+                    (p.market_value && p.last_sale_price ? '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;">Value vs Last Sale</span><span style="font-size:12px;font-weight:600;color:' + (Number(p.market_value) >= Number(p.last_sale_price) ? '#34D399' : '#F87171') + ';">' + (Number(p.market_value) >= Number(p.last_sale_price) ? '+' : '') + Math.round((Number(p.market_value) - Number(p.last_sale_price)) / Number(p.last_sale_price) * 100) + '%</span></div>' : '') +
+                  '</div>';
+                }
+
+                const hasData = epcHtml || geoHtml || priceHtml;
+                if (!hasData) return '';
+
+                return '<div style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">' +
+                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+                    '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Property Intelligence</span>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                      '<span style="font-size:9px;color:#64748B;">Searched ' + new Date(p.property_searched_at).toLocaleDateString('en-GB') + '</span>' +
+                      '<button onclick="window._propertySearch(' + p.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:9px;font-weight:600;cursor:pointer;">Re-Search</button>' +
+                    '</div>' +
+                  '</div>' +
+                  (geoHtml ? '<div style="margin-bottom:6px;">' + geoHtml + '</div>' : '') +
+                  (epcHtml ? '<div style="margin-bottom:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + epcHtml + '</div>' : '') +
+                  (priceHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
+                '</div>';
+              }).join('')}
+
               <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:4px;">
                 <span style="font-size:10px;color:#6B7280;">Shared property details (applies to all properties):</span>
               </div>
@@ -4475,6 +4543,38 @@ export async function renderDealMatrix(deal) {
     }
   });
 }
+
+// ── Property Auto-Search (Postcodes.io + EPC + Price Paid) ──────────────────
+window._propertySearch = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; btn.style.opacity = '0.6'; }
+
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${window.API_BASE || ''}/api/deals/${submissionId}/properties/${propertyId}/search`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert('Property search failed: ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Search Property Data'; btn.style.opacity = '1'; }
+      return;
+    }
+
+    if (data.geo_warning) {
+      alert(data.geo_warning);
+    }
+
+    // Reload to show results
+    setTimeout(() => window.location.reload(), 1500);
+  } catch (err) {
+    console.error('[property-search] Error:', err);
+    alert('Property search error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Search Property Data'; btn.style.opacity = '1'; }
+  }
+};
 
 // ── Companies House verify + borrower reconciliation from matrix ─────────────
 window._chMatrixVerify = async function(companyNumber, submissionId) {
