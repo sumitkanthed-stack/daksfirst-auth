@@ -10,6 +10,21 @@ import { showToast, sanitizeHtml } from './utils.js';
 import { getCurrentRole } from './state.js';
 import { floatingProgress } from './floating-progress.js';
 import { renderFullVerification } from './companies-house.js';
+import { showDealDetail } from './deal-detail.js';
+
+// ── Refresh the current deal in-place without kicking back to the dashboard ──
+// Falls back to window.location.reload() if showDealDetail can't resolve (defensive).
+async function _refreshDealInPlace(submissionId) {
+  try {
+    if (typeof showDealDetail === 'function' && submissionId) {
+      await showDealDetail(submissionId);
+      return;
+    }
+  } catch (err) {
+    console.warn('[refresh] showDealDetail failed, falling back to reload:', err);
+  }
+  window.location.reload();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // EDITABLE FIELD HELPER — renders input for editable roles, static text for read-only
@@ -2642,8 +2657,8 @@ export async function renderDealMatrix(deal) {
                 clearInterval(pollInterval);
                 floatingProgress.updateStep(1, 'done');
                 floatingProgress.updateStep(2, 'done');
-                floatingProgress.complete({ label: 'Extraction Complete', message: 'AI extracted all deal data. Reloading...' });
-                setTimeout(() => window.location.reload(), 2500);
+                floatingProgress.complete({ label: 'Extraction Complete', message: 'AI extracted all deal data. Refreshing...' });
+                setTimeout(() => _refreshDealInPlace(submissionId), 2500);
               } else if (progData.progress.status === 'error') {
                 clearInterval(pollInterval);
                 floatingProgress.error({ label: 'Parse Failed', message: progData.progress.message || 'Unknown error' });
@@ -2799,7 +2814,7 @@ export async function renderDealMatrix(deal) {
         if (data.success) {
           document.getElementById('dkf-property-modal').remove();
           showToast(isEdit ? 'Property updated' : 'Property added', 'success');
-          setTimeout(() => window.location.reload(), 800);
+          setTimeout(() => _refreshDealInPlace(submissionId), 800);
         } else {
           showToast(data.error || 'Failed to save property', 'error');
           btn.disabled = false;
@@ -2861,8 +2876,8 @@ export async function renderDealMatrix(deal) {
           // Remove the row from DOM immediately for instant feedback
           const row = document.getElementById(`prop-row-${propertyId}`);
           if (row) row.remove();
-          // Reload after short delay to refresh totals and completeness
-          setTimeout(() => window.location.reload(), 1200);
+          // Refresh in-place after short delay to update totals and completeness
+          setTimeout(() => _refreshDealInPlace(submissionId), 1200);
         } else {
           showToast(data.error || 'Failed to delete property', 'error');
         }
@@ -2994,7 +3009,7 @@ export async function renderDealMatrix(deal) {
         if (data.success) {
           document.getElementById('dkf-borrower-modal').remove();
           showToast(isEdit ? 'Borrower updated' : 'Borrower added', 'success');
-          setTimeout(() => window.location.reload(), 800);
+          setTimeout(() => _refreshDealInPlace(submissionId), 800);
         } else {
           showToast(data.error || 'Failed to save', 'error');
           btn.disabled = false;
@@ -3049,7 +3064,7 @@ export async function renderDealMatrix(deal) {
           showToast('Borrower removed', 'success');
           const row = document.getElementById(`borrower-row-${borrowerId}`);
           if (row) row.remove();
-          setTimeout(() => window.location.reload(), 1200);
+          setTimeout(() => _refreshDealInPlace(submissionId), 1200);
         } else {
           showToast(data.error || 'Failed to remove borrower', 'error');
         }
@@ -3357,7 +3372,7 @@ export async function renderDealMatrix(deal) {
         if (data.success) {
           document.getElementById('dkf-financial-modal').remove();
           showToast(isEdit ? `${catLabel} updated` : `${catLabel} added`, 'success');
-          setTimeout(() => window.location.reload(), 800);
+          setTimeout(() => _refreshDealInPlace(submissionId), 800);
         } else {
           showToast(data.error || `Failed to save ${catLabel.toLowerCase()}`, 'error');
           btn.disabled = false;
@@ -3408,7 +3423,7 @@ export async function renderDealMatrix(deal) {
           showToast('Record removed', 'success');
           const row = document.getElementById(`fin-row-${financialId}`);
           if (row) row.remove();
-          setTimeout(() => window.location.reload(), 1200);
+          setTimeout(() => _refreshDealInPlace(submissionId), 1200);
         } else {
           showToast(data.error || 'Failed to remove record', 'error');
         }
@@ -4655,8 +4670,8 @@ window._propertySearch = async function(propertyId, submissionId) {
       alert(data.geo_warning);
     }
 
-    // Reload to show results
-    setTimeout(() => window.location.reload(), 1500);
+    // Refresh the deal in place (stays on the matrix view)
+    setTimeout(() => _refreshDealInPlace(submissionId), 600);
   } catch (err) {
     console.error('[property-search] Error:', err);
     alert('Property search error: ' + err.message);
@@ -4680,7 +4695,7 @@ window._propertyVerify = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = '\u2713 Accept'; btn.style.opacity = '1'; }
       return;
     }
-    setTimeout(() => window.location.reload(), 400);
+    setTimeout(() => _refreshDealInPlace(submissionId), 300);
   } catch (err) {
     console.error('[property-verify] Error:', err);
     alert('Accept error: ' + err.message);
@@ -4704,7 +4719,7 @@ window._propertyUnverify = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = 'Undo'; btn.style.opacity = '1'; }
       return;
     }
-    setTimeout(() => window.location.reload(), 400);
+    setTimeout(() => _refreshDealInPlace(submissionId), 300);
   } catch (err) {
     console.error('[property-unverify] Error:', err);
     alert('Undo error: ' + err.message);
@@ -4732,7 +4747,7 @@ window._propertySelectEpc = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = 'Apply'; btn.style.opacity = '1'; }
       return;
     }
-    setTimeout(() => window.location.reload(), 600);
+    setTimeout(() => _refreshDealInPlace(submissionId), 500);
   } catch (err) {
     console.error('[select-epc] Error:', err);
     alert('EPC selection error: ' + err.message);
@@ -5008,8 +5023,8 @@ window._chConfirmRoles = async function(submissionId, matchData) {
 
     showToast(`${data.count} borrower roles verified and saved`, 'success');
 
-    // Reload after 2s so the page renders with the verified state (collapsible summary bar)
-    setTimeout(() => window.location.reload(), 2000);
+    // Refresh in-place after 2s so the page renders with the verified state (collapsible summary bar)
+    setTimeout(() => _refreshDealInPlace(submissionId), 2000);
 
   } catch (e) {
     console.error('[ch-confirm-roles] Error:', e);
