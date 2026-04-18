@@ -816,3 +816,30 @@
       .admin-nav { flex-wrap: wrap; }
       .admin-nav-item { padding: 12px 15px; font-size: 0.85rem; }
     }
+
+/* ───────────────────────────────────────────────────────
+ * Native <select> dropdown — dark theme for <option> list
+ * Fixes: browsers render open <option> list with default
+ * white background against dark theme → unreadable.
+ * Applies globally so every modal (Property, Borrower,
+ * Financial, etc.) renders consistently.
+ * ─────────────────────────────────────────────────────── */
+select {
+  color-scheme: dark;
+}
+select option {
+  background-color: #1a2233;
+  color: #F1F5F9;
+  padding: 4px 8px;
+}
+select option:disabled {
+  color: #64748B;
+}
+select option:hover,
+select option:focus,
+select option:active,
+select option:checked {
+  background-color: #D4A853 !important;
+  color: #111 !important;
+  font-weight: 600;
+}
