@@ -863,10 +863,12 @@ export async function renderDealMatrix(deal) {
                             (g.jurisdiction ? '<span>Jurisdiction: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.jurisdiction) + '</strong></span>' : '') +
                           '</div>' +
                         '</div>' +
-                        '<div style="display:flex;gap:6px;align-items:center;">' +
+                        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
                           (chVerified
                             ? '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(129,140,248,0.15);color:#818CF8;">&#10003; CH VERIFIED</span>'
-                            : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">UNVERIFIED</span>') +
+                            : (canEdit && g.company_number
+                              ? '<button onclick="window._chVerifyCorporateParty(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:#818CF8;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Verify at Companies House</button>'
+                              : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">' + (g.company_number ? 'UNVERIFIED' : 'NO CO. NUMBER') + '</span>')) +
                           (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
                           (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove guarantor">\u2715</button>' : '') +
                         '</div>' +
@@ -3400,6 +3402,35 @@ export async function renderDealMatrix(deal) {
       borrower_type: 'individual',
       parent_borrower_id: parseInt(parentBorrowerId)
     });
+  };
+
+  // Per-corporate-guarantor CH verify — fetches company + officers + PSCs from Companies House,
+  // creates child borrower rows under this guarantor, and marks it verified.
+  window._chVerifyCorporateParty = async function(borrowerId, submissionId) {
+    const btn = event && event.target;
+    if (!confirm('Run Companies House verification for this corporate party?\n\n' +
+                 'This will fetch its directors and PSCs from CH and add them as children of this party.')) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; btn.style.opacity = '0.6'; }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}/ch-verify-populate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const text = await res.text();
+      let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+      if (!res.ok) {
+        alert('CH verify failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+        if (btn) { btn.disabled = false; btn.textContent = 'Verify at Companies House'; btn.style.opacity = '1'; }
+        return;
+      }
+      showToast(data.message || 'Companies House verification complete', 'success');
+      // Refresh deal in-place so new children + verified badge render
+      setTimeout(() => _refreshDealInPlace(submissionId), 400);
+    } catch (err) {
+      console.error('[ch-verify-populate]', err);
+      alert('CH verify error: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Verify at Companies House'; btn.style.opacity = '1'; }
+    }
   };
 
   window.editBorrowerRow = function(borrowerId, submissionId) {

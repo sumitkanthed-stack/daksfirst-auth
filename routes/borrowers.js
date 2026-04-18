@@ -214,4 +214,137 @@ router.post('/:submissionId/borrowers/verify-roles', authenticateToken, authenti
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  PER-CORPORATE CH VERIFY & POPULATE — Phase G2b
+//  Runs Companies House verification on a specific corporate borrower row
+//  (e.g. a corporate guarantor) and auto-creates its officers & PSCs as child
+//  borrower rows with parent_borrower_id set.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authenticateToken, async (req, res) => {
+  try {
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission for this deal' });
+    }
+
+    // Load the target borrower and confirm it belongs to this deal
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const borResult = await pool.query(
+      `SELECT id, role, full_name, borrower_type, company_name, company_number, parent_borrower_id
+       FROM deal_borrowers WHERE id = $1 AND deal_id = $2`,
+      [req.params.borrowerId, dealId]
+    );
+    if (borResult.rows.length === 0) return res.status(404).json({ error: 'Borrower not found on this deal' });
+    const parent = borResult.rows[0];
+
+    // Must be a corporate party with a company number, and be top-level
+    if (!parent.company_number) return res.status(400).json({ error: 'This borrower has no company_number — set it before running CH verify' });
+    if (parent.parent_borrower_id) return res.status(400).json({ error: 'CH verify is only supported on top-level corporate parties, not on nested children' });
+
+    // Run CH verification (same service used by /api/companies-house/verify)
+    const companiesHouse = require('../services/companies-house');
+    let verification;
+    try {
+      verification = await companiesHouse.verifyCompany(parent.company_number);
+    } catch (chErr) {
+      console.error('[borrowers/ch-verify-populate] CH API error:', chErr.message);
+      const status = chErr.message && chErr.message.includes('Rate limited') ? 429 : 502;
+      return res.status(status).json({ error: 'Companies House API error: ' + chErr.message });
+    }
+
+    if (!verification || !verification.found) {
+      return res.status(404).json({ error: 'Company not found at Companies House', companyNumber: parent.company_number });
+    }
+
+    // Load existing children so we don't duplicate
+    const childRows = await pool.query(
+      `SELECT id, full_name FROM deal_borrowers WHERE parent_borrower_id = $1`,
+      [parent.id]
+    );
+    const existingNames = new Set(childRows.rows.map(c => (c.full_name || '').toLowerCase().trim()));
+
+    // Create child rows for officers (directors / secretaries / LLP members)
+    const created = [];
+    const officers = Array.isArray(verification.officers) ? verification.officers : [];
+    for (const o of officers) {
+      const nameKey = (o.name || '').toLowerCase().trim();
+      if (!nameKey || existingNames.has(nameKey)) continue;
+      const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
+      const mappedRole = roleMap[o.officer_role] || 'director';
+      try {
+        const ins = await pool.query(
+          `INSERT INTO deal_borrowers
+            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, address, kyc_status)
+           VALUES ($1, $2, $3, $4, 'individual', $5, $6, 'pending')
+           RETURNING id, full_name, role`,
+          [dealId, mappedRole, o.name, o.nationality || null, parent.id,
+           o.address ? [o.address.line_1, o.address.locality, o.address.postal_code, o.address.country].filter(Boolean).join(', ') : null]
+        );
+        if (ins.rows.length > 0) {
+          created.push({ ...ins.rows[0], source: 'officer', raw_role: o.officer_role });
+          existingNames.add(nameKey);
+        }
+      } catch (e) { console.warn('[ch-verify-populate] officer insert:', e.message); }
+    }
+
+    // Create child rows for PSCs — mark role as 'psc' if not already captured as a director
+    const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
+    for (const p of pscs) {
+      const nameKey = (p.name || '').toLowerCase().trim();
+      if (!nameKey) continue;
+      if (existingNames.has(nameKey)) {
+        // Already exists (probably already a director) — skip creating a second row
+        continue;
+      }
+      try {
+        const ins = await pool.query(
+          `INSERT INTO deal_borrowers
+            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, kyc_status)
+           VALUES ($1, 'psc', $2, $3, 'individual', $4, 'pending')
+           RETURNING id, full_name, role`,
+          [dealId, p.name, p.nationality || null, parent.id]
+        );
+        if (ins.rows.length > 0) {
+          created.push({ ...ins.rows[0], source: 'psc', natures_of_control: p.natures_of_control || [] });
+          existingNames.add(nameKey);
+        }
+      } catch (e) { console.warn('[ch-verify-populate] PSC insert:', e.message); }
+    }
+
+    // Mark the parent corporate borrower as CH verified, stash the verification
+    await pool.query(
+      `UPDATE deal_borrowers
+       SET ch_verified_at = NOW(), ch_verified_by = $1,
+           ch_match_data = $2::jsonb, ch_match_confidence = 'auto-populated',
+           updated_at = NOW()
+       WHERE id = $3`,
+      [req.user.userId, JSON.stringify(verification), parent.id]
+    );
+
+    await logAudit(dealId, 'ch_verified_and_populated', null, parent.company_name || parent.full_name,
+      { companyNumber: parent.company_number, created_children: created.length, officers: officers.length, pscs: pscs.length },
+      req.user.userId);
+
+    res.json({
+      success: true,
+      verification: {
+        company_name: verification.company_name,
+        company_number: verification.company_number,
+        company_status: verification.company_status,
+        incorporated_on: verification.incorporated_on,
+        officer_count: officers.length,
+        psc_count: pscs.length,
+      },
+      created_children: created,
+      skipped: (officers.length + pscs.length) - created.length,
+      message: `Verified ${verification.company_name} and populated ${created.length} officer(s)/PSC(s)`
+    });
+  } catch (error) {
+    console.error('[ch-verify-populate] Error:', error);
+    res.status(500).json({ error: 'CH verify & populate failed: ' + error.message });
+  }
+});
+
 module.exports = router;
