@@ -3258,6 +3258,25 @@ export async function renderDealMatrix(deal) {
       `<option value="${t}" ${v.borrower_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
     ).join('');
 
+    // Nationality list — common UK/EU/global nationalities (source: ISO 3166 country name adjective forms)
+    const _nationalities = [
+      'British','American','Irish','French','German','Italian','Spanish','Portuguese','Dutch','Belgian',
+      'Swiss','Austrian','Swedish','Norwegian','Danish','Finnish','Icelandic','Polish','Romanian','Bulgarian',
+      'Czech','Slovak','Hungarian','Croatian','Serbian','Slovenian','Greek','Cypriot','Maltese','Turkish',
+      'Russian','Ukrainian','Belarusian','Estonian','Latvian','Lithuanian','Luxembourger','Albanian','Bosnian',
+      'Indian','Pakistani','Bangladeshi','Sri Lankan','Nepalese','Chinese','Hong Kong','Japanese','South Korean',
+      'Taiwanese','Singaporean','Malaysian','Indonesian','Filipino','Thai','Vietnamese','Australian','New Zealander',
+      'Canadian','Mexican','Brazilian','Argentine','Chilean','Colombian','Peruvian','Venezuelan',
+      'Nigerian','Ghanaian','Kenyan','South African','Egyptian','Moroccan','Algerian','Tunisian','Ethiopian',
+      'Lebanese','Jordanian','Syrian','Israeli','Iranian','Iraqi','Saudi','Emirati','Qatari','Kuwaiti','Bahraini','Omani',
+      'Afghan','Kazakhstani','Uzbek','Georgian','Armenian','Azerbaijani','Other'
+    ];
+    const natOpts = '<option value="">— Select —</option>' +
+      _nationalities.map(n => `<option value="${n}" ${v.nationality === n ? 'selected' : ''}>${n}</option>`).join('');
+
+    const isCorporateType = (t) => ['corporate','spv','ltd','llp','trust','partnership'].includes(t || '');
+    const initialIsCorporate = isCorporateType(v.borrower_type);
+
     const modalHtml = `
       <div id="dkf-borrower-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;">
         <div style="background:#1E293B;border:1px solid rgba(212,168,83,0.3);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:85vh;overflow-y:auto;">
@@ -3265,7 +3284,9 @@ export async function renderDealMatrix(deal) {
             <span style="font-size:16px;font-weight:700;color:#F1F5F9;">${title}</span>
             <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+
+          <!-- Always-visible: Role + Type -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
             <div>
               <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Role *</label>
               <select id="bm-role" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
@@ -3278,39 +3299,60 @@ export async function renderDealMatrix(deal) {
                 ${typeOpts}
               </select>
             </div>
-            <div style="grid-column:1/-1;">
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Full Name *</label>
-              <input id="bm-full_name" value="${_escAttr(v.full_name || '')}" placeholder="Full legal name" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+          </div>
+
+          <!-- Corporate-only section — live CH search by name -->
+          <div id="bm-corporate-section" style="display:${initialIsCorporate ? 'block' : 'none'};margin-bottom:10px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div style="grid-column:1/-1;position:relative;">
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Name * <span style="color:#D4A853;font-weight:400;">(type to search Companies House)</span></label>
+                <input id="bm-company_name" autocomplete="off" value="${_escAttr(v.company_name || '')}" placeholder="Start typing company name..." style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+                <div id="bm-ch-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:#0F172A;border:1px solid rgba(212,168,83,0.4);border-radius:6px;margin-top:2px;max-height:220px;overflow-y:auto;z-index:10001;box-shadow:0 4px 12px rgba(0,0,0,0.4);"></div>
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Number *</label>
+                <input id="bm-company_number" value="${_escAttr(v.company_number || '')}" placeholder="e.g. 12345678" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Jurisdiction</label>
+                <input id="bm-jurisdiction" value="${_escAttr(v.jurisdiction || 'England & Wales')}" placeholder="e.g. England & Wales" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
             </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Email</label>
-              <input id="bm-email" type="email" value="${_escAttr(v.email || '')}" placeholder="email@example.com" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Phone</label>
-              <input id="bm-phone" type="tel" value="${_escAttr(v.phone || '')}" placeholder="+44..." style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Date of Birth</label>
-              <input id="bm-dob" type="date" value="${v.date_of_birth ? String(v.date_of_birth).substring(0,10) : ''}" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Nationality</label>
-              <input id="bm-nationality" value="${_escAttr(v.nationality || '')}" placeholder="e.g. British" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Name</label>
-              <input id="bm-company_name" value="${_escAttr(v.company_name || '')}" placeholder="If corporate borrower" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Company Number</label>
-              <input id="bm-company_number" value="${_escAttr(v.company_number || '')}" placeholder="e.g. 12345678" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
-            </div>
-            <div style="grid-column:1/-1;">
-              <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Address</label>
-              <input id="bm-address" value="${_escAttr(v.address || '')}" placeholder="Full residential or registered address" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+            <div style="margin-top:8px;font-size:10px;color:#64748B;">Directors, PSCs and registered address will be auto-populated after saving via Companies House verify.</div>
+          </div>
+
+          <!-- Individual-only section -->
+          <div id="bm-individual-section" style="display:${initialIsCorporate ? 'none' : 'block'};">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div style="grid-column:1/-1;">
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Full Name *</label>
+                <input id="bm-full_name" value="${_escAttr(v.full_name || '')}" placeholder="Full legal name" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Email</label>
+                <input id="bm-email" type="email" value="${_escAttr(v.email || '')}" placeholder="email@example.com" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Phone</label>
+                <input id="bm-phone" type="tel" value="${_escAttr(v.phone || '')}" placeholder="+44..." style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Date of Birth</label>
+                <input id="bm-dob" type="date" value="${v.date_of_birth ? String(v.date_of_birth).substring(0,10) : ''}" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Nationality</label>
+                <select id="bm-nationality" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+                  ${natOpts}
+                </select>
+              </div>
+              <div style="grid-column:1/-1;">
+                <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Residential Address</label>
+                <input id="bm-address" value="${_escAttr(v.address || v.residential_address || '')}" placeholder="Full residential address" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
+              </div>
             </div>
           </div>
+
           <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
             <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#94A3B8;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
             <button id="bm-save-btn" style="padding:8px 20px;background:#D4A853;border:none;border-radius:6px;color:#0B1120;font-size:12px;font-weight:700;cursor:pointer;">${isEdit ? 'Save Changes' : `Add ${roleLabel}`}</button>
@@ -3320,27 +3362,108 @@ export async function renderDealMatrix(deal) {
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
+    // Toggle individual vs corporate sections when Type changes
+    const typeEl = document.getElementById('bm-borrower_type');
+    const indSec = document.getElementById('bm-individual-section');
+    const corpSec = document.getElementById('bm-corporate-section');
+    typeEl.addEventListener('change', () => {
+      const corporate = isCorporateType(typeEl.value);
+      indSec.style.display = corporate ? 'none' : 'block';
+      corpSec.style.display = corporate ? 'block' : 'none';
+    });
+
+    // Companies House live search — debounced as user types in company name
+    const nameInput = document.getElementById('bm-company_name');
+    const numberInput = document.getElementById('bm-company_number');
+    const resultsBox = document.getElementById('bm-ch-search-results');
+    let _chSearchTimer = null;
+    let _chSearchToken = 0;
+
+    const hideResults = () => { resultsBox.style.display = 'none'; resultsBox.innerHTML = ''; };
+
+    nameInput.addEventListener('input', () => {
+      const q = nameInput.value.trim();
+      if (_chSearchTimer) clearTimeout(_chSearchTimer);
+      if (q.length < 2) { hideResults(); return; }
+      _chSearchToken++;
+      const myToken = _chSearchToken;
+      _chSearchTimer = setTimeout(async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/companies-house/search?q=${encodeURIComponent(q)}`);
+          if (myToken !== _chSearchToken) return; // stale response
+          if (!res.ok) { hideResults(); return; }
+          const data = await res.json();
+          const results = (data.results || []).slice(0, 8);
+          if (results.length === 0) { hideResults(); return; }
+          resultsBox.innerHTML = results.map(r => {
+            const status = r.company_status ? `<span style="color:${r.company_status === 'active' ? '#34D399' : '#F87171'};font-size:10px;text-transform:capitalize;">${r.company_status}</span>` : '';
+            const addr = r.address_snippet ? `<div style="font-size:10px;color:#64748B;margin-top:2px;">${(r.address_snippet + '').replace(/[<>"]/g, '')}</div>` : '';
+            return `<div class="bm-ch-hit" data-num="${r.company_number}" data-name="${(r.company_name + '').replace(/"/g, '&quot;')}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <div>
+                  <div style="font-size:12px;color:#F1F5F9;font-weight:600;">${(r.company_name + '').replace(/[<>"]/g, '')}</div>
+                  ${addr}
+                </div>
+                <div style="text-align:right;white-space:nowrap;">
+                  <div style="font-size:11px;color:#D4A853;font-weight:600;">${r.company_number}</div>
+                  ${status}
+                </div>
+              </div>
+            </div>`;
+          }).join('');
+          resultsBox.style.display = 'block';
+          // Hook click handlers
+          resultsBox.querySelectorAll('.bm-ch-hit').forEach(el => {
+            el.addEventListener('mouseenter', () => { el.style.background = 'rgba(212,168,83,0.12)'; });
+            el.addEventListener('mouseleave', () => { el.style.background = ''; });
+            el.addEventListener('mousedown', (e) => {
+              e.preventDefault(); // don't blur the input before click registers
+              nameInput.value = el.getAttribute('data-name') || '';
+              numberInput.value = el.getAttribute('data-num') || '';
+              hideResults();
+            });
+          });
+        } catch (err) { console.warn('[bm-ch-search]', err); hideResults(); }
+      }, 300);
+    });
+    // Hide search results when clicking outside
+    nameInput.addEventListener('blur', () => { setTimeout(hideResults, 200); });
+
     document.getElementById('bm-save-btn').addEventListener('click', async () => {
+      const selectedType = document.getElementById('bm-borrower_type').value;
+      const isCorp = isCorporateType(selectedType);
+
+      // Common fields
       const payload = {
         role: document.getElementById('bm-role').value,
-        borrower_type: document.getElementById('bm-borrower_type').value,
-        full_name: document.getElementById('bm-full_name').value.trim(),
-        email: document.getElementById('bm-email').value.trim() || null,
-        phone: document.getElementById('bm-phone').value.trim() || null,
-        date_of_birth: document.getElementById('bm-dob').value || null,
-        nationality: document.getElementById('bm-nationality').value.trim() || null,
-        company_name: document.getElementById('bm-company_name').value.trim() || null,
-        company_number: document.getElementById('bm-company_number').value.trim() || null,
-        address: document.getElementById('bm-address').value.trim() || null
+        borrower_type: selectedType
       };
-      // Preserve parent_borrower_id if it was passed as a default (e.g. when adding a director to a specific corporate guarantor)
-      if (v.parent_borrower_id !== undefined) {
-        payload.parent_borrower_id = v.parent_borrower_id;
+
+      if (isCorp) {
+        // Corporate — only name + number + jurisdiction. Rest will be pulled from CH.
+        const cname = document.getElementById('bm-company_name').value.trim();
+        const cnum = document.getElementById('bm-company_number').value.trim();
+        if (!cname) { showToast('Company Name is required', 'error'); return; }
+        if (!cnum) { showToast('Company Number is required', 'error'); return; }
+        payload.company_name = cname;
+        payload.company_number = cnum;
+        payload.full_name = cname; // DB requires full_name NOT NULL — use company name for corporates
+        payload.jurisdiction = document.getElementById('bm-jurisdiction').value.trim() || null;
+      } else {
+        // Individual — personal identity fields only
+        const fullName = document.getElementById('bm-full_name').value.trim();
+        if (!fullName) { showToast('Full Name is required', 'error'); return; }
+        payload.full_name = fullName;
+        payload.email = document.getElementById('bm-email').value.trim() || null;
+        payload.phone = document.getElementById('bm-phone').value.trim() || null;
+        payload.date_of_birth = document.getElementById('bm-dob').value || null;
+        payload.nationality = document.getElementById('bm-nationality').value || null;
+        payload.address = document.getElementById('bm-address').value.trim() || null;
       }
 
-      if (!payload.full_name) {
-        showToast('Full name is required', 'error');
-        return;
+      // Preserve parent_borrower_id if it was passed as a default
+      if (v.parent_borrower_id !== undefined) {
+        payload.parent_borrower_id = v.parent_borrower_id;
       }
 
       const btn = document.getElementById('bm-save-btn');
