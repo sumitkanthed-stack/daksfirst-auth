@@ -3650,20 +3650,25 @@ export async function renderDealMatrix(deal) {
 
   window.deleteBorrowerRow = function(borrowerId, submissionId) {
     const bor = deal.borrowers ? deal.borrowers.find(b => b.id === borrowerId) : null;
-    const label = bor ? (bor.full_name || `Borrower #${borrowerId}`) : `Borrower #${borrowerId}`;
+    const _delLabels = { primary:'Borrower', joint:'Joint Borrower', guarantor:'Guarantor', director:'Director', ubo:'UBO', psc:'PSC', shareholder:'Shareholder' };
+    const partyLabel = bor ? (_delLabels[bor.role] || 'Borrower') : 'Borrower';
+    const fullName = bor ? (bor.company_name || bor.full_name || `${partyLabel} #${borrowerId}`) : `${partyLabel} #${borrowerId}`;
+    // Warn extra hard if this is a corporate party with children — DB CASCADE will remove them too
+    const childCount = bor && deal.borrowers ? deal.borrowers.filter(b => b.parent_borrower_id === borrowerId).length : 0;
+    const cascadeWarn = childCount > 0 ? `\n\nWARNING: This will also remove ${childCount} linked ${childCount === 1 ? 'person' : 'people'} (directors / PSCs).` : '';
 
-    if (!confirm(`Remove "${label}" from this deal?\n\nThis cannot be undone.`)) return;
+    if (!confirm(`Remove "${fullName}" (${partyLabel}) from this deal?${cascadeWarn}\n\nThis cannot be undone.`)) return;
 
     fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { method: 'DELETE' })
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          showToast('Borrower removed', 'success');
+          showToast(`${partyLabel} removed`, 'success');
           const row = document.getElementById(`borrower-row-${borrowerId}`);
           if (row) row.remove();
           setTimeout(() => _refreshDealInPlace(submissionId), 1200);
         } else {
-          showToast(data.error || 'Failed to remove borrower', 'error');
+          showToast(data.error || `Failed to remove ${partyLabel.toLowerCase()}`, 'error');
         }
       })
       .catch(err => showToast('Failed to remove: ' + err.message, 'error'));
