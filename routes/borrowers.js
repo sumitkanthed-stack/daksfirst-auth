@@ -265,7 +265,8 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
     );
     const existingNames = new Set(childRows.rows.map(c => (c.full_name || '').toLowerCase().trim()));
 
-    // Create child rows for officers (directors / secretaries / LLP members)
+    // Create child rows for officers (directors / secretaries / LLP members).
+    // Each created row is stamped as CH-verified since the source IS Companies House.
     const created = [];
     const officers = Array.isArray(verification.officers) ? verification.officers : [];
     for (const o of officers) {
@@ -273,14 +274,27 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
       if (!nameKey || existingNames.has(nameKey)) continue;
       const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
       const mappedRole = roleMap[o.officer_role] || 'director';
+      const chData = {
+        source: 'ch_officers_endpoint',
+        company_number: parent.company_number,
+        officer_role: o.officer_role,
+        appointed: o.appointed_on || null,
+        nationality: o.nationality || null,
+        country_of_residence: o.country_of_residence || null,
+        occupation: o.occupation || null,
+        date_of_birth: o.date_of_birth || null,
+      };
       try {
         const ins = await pool.query(
           `INSERT INTO deal_borrowers
-            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, address, kyc_status)
-           VALUES ($1, $2, $3, $4, 'individual', $5, $6, 'pending')
+            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, address, kyc_status,
+             ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+           VALUES ($1, $2, $3, $4, 'individual', $5, $6, 'pending',
+             NOW(), $7, $8, 'ch_direct', $9::jsonb)
            RETURNING id, full_name, role`,
           [dealId, mappedRole, o.name, o.nationality || null, parent.id,
-           o.address ? [o.address.line_1, o.address.locality, o.address.postal_code, o.address.country].filter(Boolean).join(', ') : null]
+           o.address ? [o.address.line_1, o.address.locality, o.address.postal_code, o.address.country].filter(Boolean).join(', ') : null,
+           req.user.userId, o.officer_role || mappedRole, JSON.stringify(chData)]
         );
         if (ins.rows.length > 0) {
           created.push({ ...ins.rows[0], source: 'officer', raw_role: o.officer_role });
@@ -289,22 +303,31 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
       } catch (e) { console.warn('[ch-verify-populate] officer insert:', e.message); }
     }
 
-    // Create child rows for PSCs — mark role as 'psc' if not already captured as a director
+    // Create child rows for PSCs — same CH-verified stamp.
     const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
     for (const p of pscs) {
       const nameKey = (p.name || '').toLowerCase().trim();
       if (!nameKey) continue;
-      if (existingNames.has(nameKey)) {
-        // Already exists (probably already a director) — skip creating a second row
-        continue;
-      }
+      if (existingNames.has(nameKey)) continue; // already a director, skip dup
+      const chData = {
+        source: 'ch_psc_endpoint',
+        company_number: parent.company_number,
+        psc_kind: p.kind || null,
+        notified: p.notified_on || null,
+        nationality: p.nationality || null,
+        country_of_residence: p.country_of_residence || null,
+        natures_of_control: p.natures_of_control || [],
+        date_of_birth: p.date_of_birth || null,
+      };
       try {
         const ins = await pool.query(
           `INSERT INTO deal_borrowers
-            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, kyc_status)
-           VALUES ($1, 'psc', $2, $3, 'individual', $4, 'pending')
+            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, kyc_status,
+             ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+           VALUES ($1, 'psc', $2, $3, 'individual', $4, 'pending',
+             NOW(), $5, 'psc', 'ch_direct', $6::jsonb)
            RETURNING id, full_name, role`,
-          [dealId, p.name, p.nationality || null, parent.id]
+          [dealId, p.name, p.nationality || null, parent.id, req.user.userId, JSON.stringify(chData)]
         );
         if (ins.rows.length > 0) {
           created.push({ ...ins.rows[0], source: 'psc', natures_of_control: p.natures_of_control || [] });

@@ -14,6 +14,83 @@ let _lastVerifiedNumber = null;
 let _verificationData = null;
 let _searchTimeout = null;
 
+// ─── UK SIC 2007 code → description (source: UK Office for National Statistics
+//     Standard Industrial Classification 2007, abbreviated to common codes for
+//     property, finance, construction, real estate, professional services). ───
+const _SIC_DESCRIPTIONS = {
+  // Property / Real estate (most relevant for bridging)
+  '41100':'Development of building projects',
+  '41201':'Construction of commercial buildings',
+  '41202':'Construction of domestic buildings',
+  '68100':'Buying and selling of own real estate',
+  '68201':'Renting and operating of Housing Association real estate',
+  '68202':'Letting and operating of conference and exhibition centres',
+  '68209':'Other letting and operating of own or leased real estate',
+  '68310':'Real estate agencies',
+  '68320':'Management of real estate on a fee or contract basis',
+  // Finance / Holding / Investment
+  '64110':'Central banking',
+  '64190':'Other monetary intermediation',
+  '64202':'Activities of production holding companies',
+  '64205':'Activities of financial services holding companies',
+  '64209':'Activities of other holding companies n.e.c.',
+  '64301':'Activities of investment trusts',
+  '64302':'Activities of unit trusts',
+  '64303':'Activities of venture and development capital companies',
+  '64304':'Activities of open-ended investment companies',
+  '64305':'Activities of property unit trusts',
+  '64306':'Activities of real estate investment trusts',
+  '64910':'Financial leasing',
+  '64921':'Credit granting by non-deposit taking finance houses',
+  '64922':'Activities of mortgage finance companies',
+  '64929':'Other credit granting n.e.c.',
+  '64991':'Security dealing on own account',
+  '64999':'Financial intermediation not elsewhere classified',
+  '66110':'Administration of financial markets',
+  '66120':'Security and commodity contracts dealing activities',
+  '66190':'Other activities auxiliary to financial services',
+  '66220':'Activities of insurance agents and brokers',
+  '66300':'Fund management activities',
+  // Construction / Trade
+  '43110':'Demolition','43120':'Site preparation','43210':'Electrical installation',
+  '43220':'Plumbing, heat and air-conditioning installation','43290':'Other construction installation',
+  '43310':'Plastering','43320':'Joinery installation','43330':'Floor and wall covering',
+  '43341':'Painting','43342':'Glazing','43390':'Other building completion and finishing',
+  '43991':'Scaffold erection','43999':'Other specialised construction activities n.e.c.',
+  // Professional services
+  '69101':'Barristers at law','69102':'Solicitors','69109':'Activities of patent and copyright agents',
+  '69201':'Accounting and auditing activities','69202':'Bookkeeping activities','69203':'Tax consultancy',
+  '70100':'Activities of head offices','70210':'Public relations and communication activities',
+  '70221':'Financial management','70229':'Management consultancy activities other than financial management',
+  '71111':'Architectural activities','71112':'Urban planning and landscape architectural activities',
+  '71121':'Engineering design activities for industrial process','71122':'Engineering related scientific consulting',
+  '71129':'Other engineering activities','71200':'Technical testing and analysis',
+  // Retail / Hospitality
+  '47110':'Retail sale in non-specialised stores (food predominating)',
+  '47190':'Other retail sale in non-specialised stores','47910':'Retail sale via mail order or Internet',
+  '55100':'Hotels and similar accommodation','55201':'Holiday centres and villages',
+  '55300':'Camping grounds, recreational vehicle parks','55900':'Other accommodation',
+  '56101':'Licensed restaurants','56102':'Unlicensed restaurants and cafes',
+  '56103':'Take-away food shops and mobile food stands','56210':'Event catering activities',
+  '56290':'Other food services','56302':'Public houses and bars',
+  // Healthcare / Education / Other
+  '85100':'Pre-primary education','85200':'Primary education','85310':'General secondary education',
+  '86101':'Hospital activities','86210':'General medical practice','86220':'Specialist medical practice',
+  '87100':'Residential nursing care activities','87300':'Residential care for the elderly and disabled',
+  // Tech / Info
+  '62012':'Business and domestic software development','62020':'IT consultancy activities',
+  '62090':'Other IT service activities','63110':'Data processing, hosting and related activities',
+  // Special / catch-all
+  '82990':'Other business support service activities n.e.c.',
+  '99999':'Dormant Company',
+  '74909':'Other professional, scientific and technical activities n.e.c.',
+};
+function _sicDescription(code) {
+  if (!code) return null;
+  const key = String(code).trim();
+  return _SIC_DESCRIPTIONS[key] || null;
+}
+
 // ─── Init: attach event listeners to deal form fields (broker view) ──────────
 export function initCompaniesHouse() {
   const companyNumberField = document.getElementById('deal-company-number');
@@ -343,6 +420,22 @@ function buildFullPanel(v) {
         <div style="padding:4px 14px 6px;font-size:10px;color:#64748B;border-top:1px solid rgba(255,255,255,0.04);">
           <span style="text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Registered Address:</span> <span style="color:#CBD5E1;">${addrStr}</span>
         </div>
+
+        <!-- SIC Codes — what the company is registered to do (UK ONS SIC 2007) -->
+        ${(v.sic_codes && v.sic_codes.length > 0) ? `
+        <div style="padding:6px 14px 8px;font-size:10px;border-top:1px solid rgba(255,255,255,0.04);background:rgba(212,168,83,0.04);">
+          <span style="text-transform:uppercase;font-weight:600;letter-spacing:.3px;color:#D4A853;">SIC Codes — Permitted Activities</span>
+          <div style="margin-top:4px;display:flex;flex-direction:column;gap:3px;">
+            ${v.sic_codes.map(code => {
+              const desc = _sicDescription(code);
+              return `<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;">
+                <span style="color:#D4A853;font-weight:700;font-family:monospace;min-width:50px;">${code}</span>
+                <span style="color:${desc ? '#CBD5E1' : '#64748B'};${desc ? '' : 'font-style:italic;'}">${desc || 'Unknown SIC code (not in our reference list)'}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
 
         <!-- Expandable sections — scope-aware (this) so multiple panels on one page don't collide -->
         <div style="border-top:1px solid rgba(255,255,255,0.04);">
