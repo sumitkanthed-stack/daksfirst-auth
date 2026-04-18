@@ -3,6 +3,7 @@ import { showScreen, showAlert, hideAlert, showToast, formatNumber, formatDate, 
 import { getAuthToken, getCurrentUser, getCurrentRole, fetchWithAuth } from './auth.js';
 import { setCurrentDealData, setCurrentDealId, getCurrentDealId } from './state.js';
 import { initBrokerSidebar } from './broker-sidebar.js';
+import { initCompaniesHouse } from './companies-house.js';
 
 let currentDealTab = 0;
 const dealTabIds = ['dt-overview', 'dt-borrower', 'dt-property', 'dt-funds'];
@@ -34,6 +35,9 @@ export function showDealForm() {
   });
 
   showScreen('screen-deal');
+
+  // Initialize Companies House auto-verification for corporate borrowers
+  try { initCompaniesHouse(); } catch (e) { console.warn('[deals] Companies House init:', e.message); }
 }
 
 /**

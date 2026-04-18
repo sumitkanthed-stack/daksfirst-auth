@@ -21,6 +21,7 @@ const smartParseRoutes = require('./routes/smart-parse');
 const docusignWebhookRoutes = require('./routes/docusign-webhook');
 const matrixRoutes = require('./routes/matrix');
 const financialsRoutes = require('./routes/financials');
+const companiesHouseRoutes = require('./routes/companies-house');
 
 // Initialize Express app
 const app = express();
@@ -68,7 +69,8 @@ app.get('/api/health', async (req, res) => {
     timestamp: new Date().toISOString(),
     database: dbOk ? 'connected' : 'disconnected',
     webhook: config.N8N_WEBHOOK_URL ? 'configured' : 'not configured',
-    onedrive: (config.AZURE_CLIENT_ID && config.AZURE_TENANT_ID && config.AZURE_CLIENT_SECRET) ? 'configured' : 'not configured'
+    onedrive: (config.AZURE_CLIENT_ID && config.AZURE_TENANT_ID && config.AZURE_CLIENT_SECRET) ? 'configured' : 'not configured',
+    companies_house: config.COMPANIES_HOUSE_API_KEY ? 'configured' : 'not configured'
   });
 });
 
@@ -85,6 +87,7 @@ app.use('/api/smart-parse', smartParseRoutes);
 app.use('/api/docusign', docusignWebhookRoutes);
 app.use('/api/matrix', matrixRoutes);
 app.use('/api/deals', financialsRoutes);
+app.use('/api/companies-house', companiesHouseRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {

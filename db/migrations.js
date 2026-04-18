@@ -591,6 +591,24 @@ async function runMigrations() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_deal ON deal_financials(deal_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_financials_cat ON deal_financials(category);`);
 
+    // ── Company Verifications (Companies House API audit trail) ──
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS company_verifications (
+        id                SERIAL PRIMARY KEY,
+        company_number    VARCHAR(20)   NOT NULL UNIQUE,
+        company_name      VARCHAR(300),
+        company_status    VARCHAR(50),
+        risk_score        VARCHAR(20),
+        risk_flags        JSONB         DEFAULT '[]',
+        verification_data JSONB         DEFAULT '{}',
+        verified_by       INT           REFERENCES users(id),
+        verified_at       TIMESTAMPTZ   DEFAULT NOW(),
+        created_at        TIMESTAMPTZ   DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_verif_number ON company_verifications(company_number);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_verif_risk ON company_verifications(risk_score);`);
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

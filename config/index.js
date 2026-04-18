@@ -59,6 +59,9 @@ module.exports = {
   DOCUSIGN_AUTH_SERVER: process.env.DOCUSIGN_AUTH_SERVER || 'https://account-d.docusign.com',
   DOCUSIGN_WEBHOOK_URL: process.env.DOCUSIGN_WEBHOOK_URL || 'https://daksfirst-auth.onrender.com/api/docusign/webhook',
 
+  // Companies House API
+  COMPANIES_HOUSE_API_KEY: process.env.COMPANIES_HOUSE_API_KEY || '',
+
   // Twilio SMS
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',

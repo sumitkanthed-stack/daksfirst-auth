@@ -221,6 +221,41 @@ export async function showDealDetail(dealId) {
     ]});
     setField('detail-company-name', deal.company_name || '', { field: 'company_name' });
     setField('detail-company-number', deal.company_number || '', { field: 'company_number' });
+
+    // Add Companies House verification for internal team
+    if (deal.company_number) {
+      const cnEl = document.getElementById('detail-company-number');
+      if (cnEl && !document.getElementById('ch-verify-btn')) {
+        // Add verify button
+        const btn = document.createElement('button');
+        btn.id = 'ch-verify-btn';
+        btn.textContent = 'Verify at Companies House';
+        btn.style.cssText = 'margin-left:10px;padding:4px 12px;font-size:11px;font-weight:600;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;vertical-align:middle;';
+
+        // Add container for full verification panel
+        const panelContainer = document.createElement('div');
+        panelContainer.id = 'ch-detail-panel';
+        panelContainer.style.cssText = 'margin-top:8px;';
+
+        btn.onclick = async () => {
+          btn.textContent = 'Verifying...';
+          btn.disabled = true;
+          try {
+            const { renderFullVerification } = await import('./companies-house.js');
+            await renderFullVerification(deal.company_number, panelContainer);
+            btn.style.display = 'none'; // Hide button after panel loads
+          } catch (e) {
+            btn.textContent = 'Error — retry';
+            btn.disabled = false;
+            btn.style.background = '#F87171';
+          }
+        };
+
+        cnEl.parentElement?.appendChild(btn);
+        cnEl.parentElement?.parentElement?.appendChild(panelContainer);
+      }
+    }
+
     setField('detail-borrower-email', deal.borrower_email || '', { field: 'borrower_email', type: 'email' });
     setField('detail-borrower-phone', deal.borrower_phone || '', { field: 'borrower_phone', type: 'tel' });
 
