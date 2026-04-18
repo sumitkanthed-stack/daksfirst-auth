@@ -303,93 +303,97 @@ function buildFullPanel(v) {
       }).join('')
     : '<span style="font-size:12px;color:#34D399;">&#10003; No risk flags</span>';
 
+  // Compact accounts summary
+  const acctStatus = v.accounts?.overdue ? '<span style="color:#F87171;">Accts OVERDUE</span>' : `Accts: ${v.accounts?.last_made_up_to || 'Not filed'}`;
+  const csStatus = v.confirmation_statement?.overdue ? '<span style="color:#F87171;">CS OVERDUE</span>' : `CS: ${v.confirmation_statement?.last_made_up_to || 'Not filed'}`;
+
+  // Accounts & CS detail
+  const acctDate = v.accounts?.last_made_up_to || 'Not filed';
+  const acctNext = v.accounts?.next_due ? `Next due: ${v.accounts.next_due}` : '';
+  const acctOverdue = v.accounts?.overdue;
+  const csDate = v.confirmation_statement?.last_made_up_to || 'Not filed';
+  const csNext = v.confirmation_statement?.next_due ? `Next due: ${v.confirmation_statement.next_due}` : '';
+  const csOverdue = v.confirmation_statement?.overdue;
+
   return `
-    <div style="background:${rc.bg};border:1px solid ${rc.border};border-radius:10px;overflow:hidden;margin-top:8px;">
-      <!-- Header -->
-      <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:18px;">${rc.icon}</span>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:#F1F5F9;">${v.company_name}</div>
-            <div style="font-size:11px;color:#94A3B8;">${v.company_number} · ${v.company_type || 'ltd'} · Est. ${v.date_of_creation || 'N/A'}${v.age_months != null ? ` (${v.age_months} months)` : ''}</div>
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:8px;">
+      <!-- LEFT: Company info + expandable sections -->
+      <div style="background:${rc.bg};border:1px solid ${rc.border};border-radius:8px;overflow:hidden;">
+        <!-- Header -->
+        <div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:15px;">${rc.icon}</span>
+            <div>
+              <span style="font-size:13px;font-weight:700;color:#F1F5F9;">${v.company_name}</span>
+              <div style="font-size:10px;color:#94A3B8;">${v.company_number} · ${v.company_type || 'ltd'} · Est. ${v.date_of_creation || ''}${v.age_months != null ? ` (${v.age_months} months)` : ''}</div>
+            </div>
           </div>
+          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${rc.text};border:1px solid ${rc.border};padding:2px 8px;border-radius:10px;white-space:nowrap;">${v.risk_score} risk</span>
         </div>
-        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${rc.text};border:1px solid ${rc.border};padding:3px 10px;border-radius:12px;">${v.risk_score} risk</span>
-      </div>
 
-      <!-- Quick facts grid -->
-      <div style="padding:10px 16px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div><div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Status</div>
-          <div style="font-size:13px;font-weight:600;color:${v.company_status === 'active' ? '#34D399' : '#F87171'};">${(v.company_status || '').toUpperCase()}</div></div>
-        <div><div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Directors</div>
-          <div style="font-size:13px;font-weight:600;color:#E2E8F0;">${v.director_count}</div></div>
-        <div><div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">PSCs</div>
-          <div style="font-size:13px;font-weight:600;color:#E2E8F0;">${v.psc_count}</div></div>
-        <div><div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Charges</div>
-          <div style="font-size:13px;font-weight:600;color:${v.charges_outstanding?.length > 0 ? '#FBBF24' : '#34D399'};">${v.charges_outstanding?.length || 0} outstanding</div></div>
-      </div>
-
-      <!-- Address -->
-      <div style="padding:8px 16px;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Registered Address: </span>
-        <span style="font-size:12px;color:#CBD5E1;">${addrStr}</span>
-      </div>
-
-      <!-- Expandable: Risk Flags -->
-      <div style="border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div onclick="window._toggleChSection('risks')" style="padding:8px 16px;cursor:pointer;display:flex;justify-content:space-between;">
-          <span style="font-size:12px;font-weight:700;color:#E2E8F0;">Risk Flags (${v.risk_flags?.length || 0})</span>
-          <span id="ch-arrow-risks" style="color:#64748B;font-size:10px;">&#9660;</span>
+        <!-- Stats row -->
+        <div style="padding:6px 14px;display:flex;flex-wrap:wrap;gap:12px;border-top:1px solid rgba(255,255,255,0.04);font-size:11px;">
+          <span style="color:${v.company_status === 'active' ? '#34D399' : '#F87171'};font-weight:700;">${(v.company_status || '').toUpperCase()}</span>
+          <span style="color:#94A3B8;">Dir: <strong style="color:#E2E8F0;">${v.director_count}</strong></span>
+          <span style="color:#94A3B8;">PSC: <strong style="color:#E2E8F0;">${v.psc_count}</strong></span>
+          <span style="color:#94A3B8;">Charges: <strong style="color:${v.charges_outstanding?.length > 0 ? '#FBBF24' : '#34D399'};">${v.charges_outstanding?.length || 0} outstanding</strong></span>
         </div>
-        <div id="ch-body-risks" style="display:none;padding:0 16px 10px;">${flagsHtml}</div>
-      </div>
 
-      <!-- Expandable: Directors -->
-      <div style="border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div onclick="window._toggleChSection('directors')" style="padding:8px 16px;cursor:pointer;display:flex;justify-content:space-between;">
-          <span style="font-size:12px;font-weight:700;color:#E2E8F0;">Directors (${directors.length})</span>
-          <span id="ch-arrow-directors" style="color:#64748B;font-size:10px;">&#9660;</span>
+        <!-- Address -->
+        <div style="padding:4px 14px 6px;font-size:10px;color:#64748B;border-top:1px solid rgba(255,255,255,0.04);">
+          <span style="text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Registered Address:</span> <span style="color:#CBD5E1;">${addrStr}</span>
         </div>
-        <div id="ch-body-directors" style="display:none;padding:0 16px 10px;">${directorsHtml}</div>
-      </div>
 
-      <!-- Expandable: PSCs -->
-      <div style="border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div onclick="window._toggleChSection('pscs')" style="padding:8px 16px;cursor:pointer;display:flex;justify-content:space-between;">
-          <span style="font-size:12px;font-weight:700;color:#E2E8F0;">Persons with Significant Control (${v.psc_count})</span>
-          <span id="ch-arrow-pscs" style="color:#64748B;font-size:10px;">&#9660;</span>
-        </div>
-        <div id="ch-body-pscs" style="display:none;padding:0 16px 10px;">${pscsHtml}</div>
-      </div>
+        <!-- Expandable sections -->
+        <div style="border-top:1px solid rgba(255,255,255,0.04);">
+          <div onclick="window._toggleChSection('risks')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+            <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Risk Flags (${v.risk_flags?.length || 0})</span>
+            <span id="ch-arrow-risks" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+          </div>
+          <div id="ch-body-risks" style="display:none;padding:4px 14px 8px;">${flagsHtml}</div>
 
-      <!-- Expandable: Charges -->
-      <div>
-        <div onclick="window._toggleChSection('charges')" style="padding:8px 16px;cursor:pointer;display:flex;justify-content:space-between;">
-          <span style="font-size:12px;font-weight:700;color:#E2E8F0;">Outstanding Charges (${v.charges_outstanding?.length || 0})</span>
-          <span id="ch-arrow-charges" style="color:#64748B;font-size:10px;">&#9660;</span>
-        </div>
-        <div id="ch-body-charges" style="display:none;padding:0 16px 10px;">${chargesHtml}</div>
-      </div>
-    </div>
+          <div onclick="window._toggleChSection('directors')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+            <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Directors (${directors.length})</span>
+            <span id="ch-arrow-directors" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+          </div>
+          <div id="ch-body-directors" style="display:none;padding:4px 14px 8px;">${directorsHtml}</div>
 
-    <!-- Accounts & Confirmation -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 14px;">
-        <div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Last Accounts</div>
-        <div style="font-size:12px;color:#E2E8F0;margin-top:3px;">${v.accounts?.last_made_up_to || 'Not filed'}</div>
-        <div style="font-size:11px;color:${v.accounts?.overdue ? '#F87171' : '#94A3B8'};margin-top:2px;">
-          ${v.accounts?.overdue ? '&#9888; OVERDUE' : `Next due: ${v.accounts?.next_due || 'N/A'}`}
+          <div onclick="window._toggleChSection('pscs')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03);">
+            <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Persons with Significant Control (${v.psc_count})</span>
+            <span id="ch-arrow-pscs" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+          </div>
+          <div id="ch-body-pscs" style="display:none;padding:4px 14px 8px;">${pscsHtml}</div>
+
+          <div onclick="window._toggleChSection('charges')" style="padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;font-weight:600;color:#E2E8F0;">Outstanding Charges (${v.charges_outstanding?.length || 0})</span>
+            <span id="ch-arrow-charges" style="color:#64748B;font-size:9px;transition:transform .2s;">&#9660;</span>
+          </div>
+          <div id="ch-body-charges" style="display:none;padding:4px 14px 8px;">${chargesHtml}</div>
         </div>
       </div>
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 14px;">
-        <div style="font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;">Confirmation Statement</div>
-        <div style="font-size:12px;color:#E2E8F0;margin-top:3px;">${v.confirmation_statement?.last_made_up_to || 'Not filed'}</div>
-        <div style="font-size:11px;color:${v.confirmation_statement?.overdue ? '#F87171' : '#94A3B8'};margin-top:2px;">
-          ${v.confirmation_statement?.overdue ? '&#9888; OVERDUE' : `Next due: ${v.confirmation_statement?.next_due || 'N/A'}`}
+
+      <!-- RIGHT: Accounts, CS, and source info -->
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <!-- Last Accounts -->
+        <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;">
+          <div style="font-size:10px;color:#64748B;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:4px;">Last Accounts</div>
+          <div style="font-size:14px;font-weight:700;color:${acctOverdue ? '#F87171' : '#F1F5F9'};">${acctOverdue ? 'OVERDUE' : acctDate}</div>
+          ${acctNext ? `<div style="font-size:10px;color:#94A3B8;margin-top:2px;">${acctNext}</div>` : ''}
+        </div>
+
+        <!-- Confirmation Statement -->
+        <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;">
+          <div style="font-size:10px;color:#64748B;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:4px;">Confirmation Statement</div>
+          <div style="font-size:14px;font-weight:700;color:${csOverdue ? '#F87171' : '#F1F5F9'};">${csDate}</div>
+          ${csNext ? `<div style="font-size:10px;color:#94A3B8;margin-top:2px;">${csNext}</div>` : ''}
+        </div>
+
+        <!-- Source -->
+        <div style="text-align:right;padding:4px 0;">
+          <span style="font-size:9px;color:#64748B;">Source: Companies House API · ${v.api_time_ms}ms</span>
         </div>
       </div>
     </div>
-    <div style="text-align:right;margin-top:4px;"><span style="font-size:10px;color:#64748B;">Source: Companies House API · ${v.api_time_ms}ms</span></div>
   `;
 }
 

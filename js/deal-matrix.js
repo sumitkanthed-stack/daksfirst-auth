@@ -554,12 +554,25 @@ export async function renderDealMatrix(deal) {
               </div>
 
               ${(deal.borrowers && deal.borrowers.length > 0) ? `
-              <!-- ── Borrower Portfolio Table (from deal_borrowers — source of truth) ── -->
+              ${(() => {
+                const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
+                if (isCorporate && deal.company_name) {
+                  return `<div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <div style="font-size:10px;color:#D4A853;text-transform:uppercase;font-weight:600;letter-spacing:.3px;">Primary Borrower (Corporate)</div>
+                      <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-top:2px;">${sanitizeHtml(deal.company_name)}${deal.company_number ? ` <span style="font-size:11px;color:#94A3B8;font-weight:400;">(${sanitizeHtml(deal.company_number)})</span>` : ''}</div>
+                    </div>
+                    <span style="font-size:10px;color:#94A3B8;text-transform:capitalize;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:10px;">${deal.borrower_type || 'corporate'}</span>
+                  </div>`;
+                }
+                return '';
+              })()}
+              <!-- ── Connected Individuals (from deal_borrowers) ── -->
               <div style="margin-bottom:12px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                  <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Borrower Schedule — ${deal.borrowers.length} ${deal.borrowers.length === 1 ? 'Party' : 'Parties'}</span>
+                  <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">${['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase()) ? 'Connected Individuals' : 'Borrower Schedule'} — ${deal.borrowers.length} ${deal.borrowers.length === 1 ? 'Party' : 'Parties'}</span>
                   <div style="display:flex;gap:6px;align-items:center;">
-                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>` : ''}
+                    ${canEdit ? `<button onclick="window.addBorrowerRow('${deal.submission_id}')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>` : ''}
                   </div>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
