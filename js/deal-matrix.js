@@ -369,6 +369,20 @@ export async function renderDealMatrix(deal) {
   const fmtPct = (v) => num(v) ? num(v).toFixed(1) : '0.0';
   const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
 
+  // Portfolio totals — sum across all properties, fallback to flat deal fields
+  const portfolioValuation = () => {
+    if (deal.properties && deal.properties.length > 0) {
+      return deal.properties.reduce((sum, p) => sum + (parseFloat(p.market_value) || 0), 0);
+    }
+    return parseFloat(deal.current_value) || 0;
+  };
+  const portfolioPurchasePrice = () => {
+    if (deal.properties && deal.properties.length > 0) {
+      return deal.properties.reduce((sum, p) => sum + (parseFloat(p.purchase_price) || 0), 0);
+    }
+    return parseFloat(deal.purchase_price) || 0;
+  };
+
   // Section visibility gating — brokers only see sections relevant to their deal stage
   // DIP stage: S1 (Borrower), S3 (Property), S4 (Loan), S5 (Exit) — the basics to price a deal
   // Post-termsheet: additionally S2 (Financials/AML), S6 (Legal/Insurance)
@@ -812,6 +826,7 @@ export async function renderDealMatrix(deal) {
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Address</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Postcode</th>
                       <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Value (£)</th>
+                      <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Purchase (£)</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Tenure</th>
                       ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
@@ -823,6 +838,7 @@ export async function renderDealMatrix(deal) {
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
                       <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.market_value ? '£' + Number(p.market_value).toLocaleString() : '—'}</td>
+                      <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-weight:600;">${p.purchase_price ? '£' + Number(p.purchase_price).toLocaleString() : '—'}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
                       ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
@@ -877,10 +893,24 @@ export async function renderDealMatrix(deal) {
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Valuation & Pricing</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('current_value', 'Current Value (£)', deal.current_value, 'money', canEdit)}
-                ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
-              </div>
+              ${deal.properties && deal.properties.length > 1
+                ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                    <div style="margin-bottom:12px">
+                      <label style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;display:block">Portfolio Total Value (£)</label>
+                      <div style="padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:8px;color:#34D399;font-size:13px;font-weight:700;">£${portfolioValuation().toLocaleString()}</div>
+                      <div style="font-size:9px;color:#64748B;margin-top:3px;">Sum of ${deal.properties.length} properties</div>
+                    </div>
+                    <div style="margin-bottom:12px">
+                      <label style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;display:block">Portfolio Total Purchase Price (£)</label>
+                      <div style="padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:8px;color:#34D399;font-size:13px;font-weight:700;">£${portfolioPurchasePrice().toLocaleString()}</div>
+                      <div style="font-size:9px;color:#64748B;margin-top:3px;">Sum of ${deal.properties.length} properties</div>
+                    </div>
+                  </div>`
+                : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                    ${renderEditableField('current_value', 'Current Value (£)', deal.current_value, 'money', canEdit)}
+                    ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
+                  </div>`
+              }
             </div>
           </div>
         </div>
@@ -1594,7 +1624,7 @@ export async function renderDealMatrix(deal) {
 
         // Auto-calculate LTV when loan_amount changes
         if (fieldKey === 'loan_amount') {
-          const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
+          const valuation = portfolioValuation();
           const loanVal = parseFloat(stripCommas(String(value))) || 0;
           if (valuation > 0 && loanVal > 0) {
             const ltv = ((loanVal / valuation) * 100).toFixed(1);
@@ -1634,8 +1664,8 @@ export async function renderDealMatrix(deal) {
     const el = document.getElementById('loan-limit-indicator');
     if (!el) return;
 
-    const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
-    const purchasePrice = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price) || 0;
+    const valuation = portfolioValuation();
+    const purchasePrice = portfolioPurchasePrice();
     const loanAmt = parseFloat(stripCommas(String(deal.loan_amount || '0'))) || 0;
     const maxOnVal = valuation ? Math.floor(valuation * 0.75) : 0;
     const maxOnPP = purchasePrice ? Math.floor(purchasePrice * 0.90) : 0;
@@ -1679,8 +1709,8 @@ export async function renderDealMatrix(deal) {
 
   // ── Max LTV button — sets loan amount to max allowable ──
   window.matrixApplyMaxLoan = function() {
-    const valuation = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].market_value : deal.current_value) || 0;
-    const purchasePrice = parseFloat(deal.properties && deal.properties[0] ? deal.properties[0].purchase_price : deal.purchase_price) || 0;
+    const valuation = portfolioValuation();
+    const purchasePrice = portfolioPurchasePrice();
 
     if (!valuation && !purchasePrice) {
       showToast('Need valuation or purchase price to calculate max loan', 'error');
