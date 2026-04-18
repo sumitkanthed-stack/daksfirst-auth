@@ -615,7 +615,7 @@ export async function renderDealMatrix(deal) {
                     <div style="margin-bottom:4px;">
                       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                         <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Directors, UBOs & PSCs — ${nonGuarantors.length} ${nonGuarantors.length === 1 ? 'Person' : 'People'}</span>
-                        ${canEdit ? '<button onclick="window.addBorrowerRow(\\'' + deal.submission_id + '\\')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : ''}
+                        ${canEdit ? '<button onclick="window.addBorrowerRow(&#39;' + deal.submission_id + '&#39;)" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : ''}
                       </div>
                       ${nonGuarantors.length > 0 ? `
                       <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -643,8 +643,8 @@ export async function renderDealMatrix(deal) {
                               '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycColor + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
                               '<td style="padding:6px 8px;text-align:center;">' + (b.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
                               (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
-                                '<button onclick="window.editBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
-                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                                '<button onclick="window.editBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
                               '</td>' : '') +
                             '</tr>';
                           }).join('')}
@@ -667,7 +667,7 @@ export async function renderDealMatrix(deal) {
                     <div style="margin-bottom:4px;">
                       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                         <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Borrower Schedule — ${borrowerList.length} ${borrowerList.length === 1 ? 'Party' : 'Parties'}</span>
-                        ${canEdit ? '<button onclick="window.addBorrowerRow(\\'' + deal.submission_id + '\\')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>' : ''}
+                        ${canEdit ? '<button onclick="window.addBorrowerRow(&#39;' + deal.submission_id + '&#39;)" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Borrower</button>' : ''}
                       </div>
                       <table style="width:100%;border-collapse:collapse;font-size:12px;">
                         <thead>
@@ -690,8 +690,8 @@ export async function renderDealMatrix(deal) {
                               '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(b.email || '-') + '</td>' +
                               '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycColor + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
                               (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
-                                '<button onclick="window.editBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
-                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \\'' + deal.submission_id + '\\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                                '<button onclick="window.editBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
                               '</td>' : '') +
                             '</tr>';
                           }).join('')}
