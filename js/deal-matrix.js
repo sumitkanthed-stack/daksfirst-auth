@@ -2867,9 +2867,9 @@ export async function renderDealMatrix(deal) {
                 ${fmt('Company No.', bor.company_number)}
                 ${fmt('Address', bor.address)}
               </div>
-              ${bor.ch_match_data ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
+              ${(bor.ch_match_data && typeof bor.ch_match_data === 'object' && Object.keys(bor.ch_match_data).length > 0) ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;">
                 <span style="font-size:10px;color:#34D399;font-weight:600;">CH MATCH DATA</span>
-                <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(typeof bor.ch_match_data === 'string' ? bor.ch_match_data : JSON.stringify(bor.ch_match_data))}</div>
+                <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(JSON.stringify(bor.ch_match_data))}</div>
               </div>` : ''}
             </div>
           </div>
@@ -4356,7 +4356,7 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
       </table>
 
       <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:flex-end;gap:8px;">
-        <button id="ch-confirm-roles-btn" onclick="window._chConfirmRoles('${submissionId}', ${JSON.stringify(matches.map((m,i) => ({ idx: i, borrower_id: m.borrower.id, full_name: m.borrower.full_name, ch_match: m.chMatch, confidence: m.confidence }))).replace(/'/g, '&#39;')})"
+        <button id="ch-confirm-roles-btn"
           style="padding:8px 20px;font-size:12px;font-weight:700;background:#34D399;color:#111;border:none;border-radius:6px;cursor:pointer;transition:background .15s;"
           onmouseover="this.style.background='#2DD48A'" onmouseout="this.style.background='#34D399'">
           Confirm All Roles &#10003;
@@ -4364,6 +4364,24 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
       </div>
     </div>
   `;
+
+  // Attach click handler with match data stored in closure (avoids JSON-in-onclick issues)
+  const _confirmMatchData = matches.map((m, i) => ({
+    idx: i,
+    borrower_id: m.borrower.id,
+    full_name: m.borrower.full_name,
+    ch_match: m.chMatch,
+    confidence: m.confidence
+  }));
+
+  requestAnimationFrame(() => {
+    const confirmBtn = document.getElementById('ch-confirm-roles-btn');
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', () => {
+        window._chConfirmRoles(submissionId, _confirmMatchData);
+      });
+    }
+  });
 }
 
 /**
