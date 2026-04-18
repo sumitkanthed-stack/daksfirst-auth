@@ -850,6 +850,21 @@ export async function renderDealMatrix(deal) {
                       '</tbody></table>'
                     : '<p style="font-size:11px;color:#FBBF24;margin:6px 0 0 0;">No directors/PSCs captured yet. Add manually or run CH verification (coming).</p>';
 
+                  // CH expandable detail block — only shown when verified, lazy-loaded on first click
+                  const chDetailBlock = chVerified ? (
+                    '<div id="ch-cg-summary-' + g.id + '" onclick="window._toggleCorpGuarChDetail(\'' + (g.company_number || '').replace(/'/g, '') + '\', ' + g.id + ')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(129,140,248,0.08);border:1px solid rgba(129,140,248,0.25);border-radius:8px;cursor:pointer;margin-bottom:10px;">' +
+                      '<div style="display:flex;align-items:center;gap:8px;">' +
+                        '<span style="color:#818CF8;font-size:14px;">\u2713</span>' +
+                        '<span style="font-size:12px;font-weight:700;color:#818CF8;">Companies House Verified \u2014 ' + sanitizeHtml(g.company_name || '') + '</span>' +
+                        '<span style="font-size:11px;color:#94A3B8;">\u2014 click to view full details</span>' +
+                      '</div>' +
+                      '<span id="ch-cg-arrow-' + g.id + '" style="color:#64748B;font-size:10px;transition:transform .2s;">\u25BC</span>' +
+                    '</div>' +
+                    '<div id="ch-cg-detail-' + g.id + '" style="max-height:0;overflow:hidden;transition:max-height .35s ease;margin-bottom:10px;">' +
+                      '<div id="ch-cg-panel-' + g.id + '" style="margin-top:4px;"></div>' +
+                    '</div>'
+                  ) : '';
+
                   return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #818CF8;border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
                     // Identity card
                     '<div style="background:rgba(129,140,248,0.05);border:1px solid rgba(129,140,248,0.18);border-radius:6px;padding:10px 14px;margin-bottom:10px;">' +
@@ -874,6 +889,7 @@ export async function renderDealMatrix(deal) {
                         '</div>' +
                       '</div>' +
                     '</div>' +
+                    chDetailBlock +
                     // Children block
                     '<div>' +
                       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
@@ -3553,6 +3569,37 @@ export async function renderDealMatrix(deal) {
     });
   };
 
+  // Toggle the CH detail panel for a specific corporate guarantor (lazy-loaded on first open)
+  // Mirrors _toggleChVerifiedDetail for primary borrower but keyed per-guarantor-id so multiple
+  // corporate guarantors each have their own expandable panel.
+  window._toggleCorpGuarChDetail = async function(companyNumber, guarantorId) {
+    const detail = document.getElementById('ch-cg-detail-' + guarantorId);
+    const arrow = document.getElementById('ch-cg-arrow-' + guarantorId);
+    const panel = document.getElementById('ch-cg-panel-' + guarantorId);
+    if (!detail || !panel) return;
+    const isOpen = detail.style.maxHeight !== '0px' && detail.style.maxHeight !== '';
+
+    if (isOpen) {
+      detail.style.maxHeight = '0px';
+      if (arrow) arrow.style.transform = 'rotate(0deg)';
+      return;
+    }
+
+    // Expand — lazy-load on first open (cache via data-attribute)
+    if (!panel.dataset.loaded && companyNumber) {
+      panel.innerHTML = '<div style="padding:12px;text-align:center;color:#94A3B8;font-size:12px;">Loading Companies House data for ' + companyNumber + '\u2026</div>';
+      try {
+        await renderFullVerification(companyNumber, panel);
+        panel.dataset.loaded = '1';
+      } catch (e) {
+        panel.innerHTML = '<div style="padding:12px;color:#F87171;font-size:12px;">Failed to load \u2014 click to retry</div>';
+        panel.dataset.loaded = ''; // allow retry
+      }
+    }
+    detail.style.maxHeight = '4000px';
+    if (arrow) arrow.style.transform = 'rotate(180deg)';
+  };
+
   // Per-corporate-guarantor CH verify — fetches company + officers + PSCs from Companies House,
   // creates child borrower rows under this guarantor, and marks it verified.
   window._chVerifyCorporateParty = async function(borrowerId, submissionId) {
@@ -5158,7 +5205,16 @@ export async function renderDealMatrix(deal) {
               const chData = await chResp.json();
               const bData = await bResp.json();
               if (chData.verification?.found && bData.borrowers?.length > 0) {
-                renderReconciliation(reconPanel, chData.verification, bData.borrowers, submissionId);
+                // Exclude guarantors and children-of-guarantors — they belong to a different party, not the primary borrower
+                const _primaryOnly = bData.borrowers.filter(b => {
+                  if (b.role === 'guarantor') return false;
+                  if (b.parent_borrower_id) {
+                    const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
+                    if (parent && parent.role === 'guarantor') return false;
+                  }
+                  return true;
+                });
+                renderReconciliation(reconPanel, chData.verification, _primaryOnly, submissionId);
               }
             }
             window._chVerifiedLoaded = true;
@@ -5389,7 +5445,16 @@ window._chMatrixVerify = async function(companyNumber, submissionId) {
       const bData = await bResp.json();
 
       if (chData.verification?.found && bData.borrowers?.length > 0) {
-        renderReconciliation(reconPanel, chData.verification, bData.borrowers, submissionId);
+        // Exclude guarantors and children-of-guarantors — they belong to a different party
+        const _primaryOnly = bData.borrowers.filter(b => {
+          if (b.role === 'guarantor') return false;
+          if (b.parent_borrower_id) {
+            const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
+            if (parent && parent.role === 'guarantor') return false;
+          }
+          return true;
+        });
+        renderReconciliation(reconPanel, chData.verification, _primaryOnly, submissionId);
       }
     }
   } catch (e) {
