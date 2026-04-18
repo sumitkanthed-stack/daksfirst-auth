@@ -3315,9 +3315,17 @@ export async function renderDealMatrix(deal) {
     //   - Generic add: all roles
     const isChildAdd = !isEdit && v && v.parent_borrower_id != null;
     const isGuarantorAdd = !isEdit && v && v.role === 'guarantor' && v.parent_borrower_id == null;
-    const allowedRoles = isChildAdd
-      ? ['director','psc','ubo','shareholder']
-      : Object.keys(roleOptLabels);
+    const isJointAdd = !isEdit && v && ['joint','primary'].includes(v.role) && v.parent_borrower_id == null && v.role !== 'guarantor';
+    let allowedRoles;
+    if (isChildAdd) {
+      // Children of a corporate party can only be director / PSC / UBO / shareholder
+      allowedRoles = ['director','psc','ubo','shareholder'];
+    } else if (isJointAdd) {
+      // Joint borrower flow: only primary / joint — no guarantor or officer roles
+      allowedRoles = ['primary','joint'];
+    } else {
+      allowedRoles = Object.keys(roleOptLabels);
+    }
     const roleOpts = allowedRoles.map(r =>
       `<option value="${r}" ${v.role === r ? 'selected' : ''}>${roleOptLabels[r] || r}</option>`
     ).join('');
