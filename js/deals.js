@@ -2,6 +2,7 @@ import { API_BASE, N8N_WEBHOOK } from './config.js';
 import { showScreen, showAlert, hideAlert, showToast, formatNumber, formatDate, sanitizeHtml } from './utils.js';
 import { getAuthToken, getCurrentUser, getCurrentRole, fetchWithAuth } from './auth.js';
 import { setCurrentDealData, setCurrentDealId, getCurrentDealId } from './state.js';
+import { initBrokerSidebar } from './broker-sidebar.js';
 
 let currentDealTab = 0;
 const dealTabIds = ['dt-overview', 'dt-borrower', 'dt-property', 'dt-funds'];
@@ -268,6 +269,9 @@ export async function showDashboard() {
     // Lazy import
     import('./onboarding.js').then(m => m.checkBrokerOnboardingStatus?.());
   }
+
+  // Initialize broker sidebar widgets (onboarding, pipeline, quick actions, earnings)
+  initBrokerSidebar();
 }
 
 /**

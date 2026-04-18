@@ -497,12 +497,15 @@
             <a onclick="window.showDashboard && window.showDashboard()" class="sidebar-nav-item" id="nav-deals" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
               <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9724;</span> My Deals
             </a>
-            <a onclick="window.newSubmission && window.newSubmission()" class="sidebar-nav-item" id="nav-new" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+            <a onclick="window.showDealForm && window.showDealForm()" class="sidebar-nav-item" id="nav-new" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
               <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">+</span> New Submission
             </a>
-            <a class="sidebar-nav-item" id="nav-docs" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+            <a onclick="window.showDashboard && window.showDashboard()" class="sidebar-nav-item" id="nav-docs" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
               <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9776;</span> Documents
             </a>
+
+            <!-- Broker Widgets Container (populated by broker-sidebar.js) -->
+            <div id="broker-sidebar-widgets" style="margin-top:16px;display:none;"></div>
 
             <div id="sidebar-admin-section" style="margin-top:24px;display:none;">
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#64748B;padding:0 12px;margin-bottom:8px;">Admin</div>

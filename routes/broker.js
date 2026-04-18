@@ -35,6 +35,115 @@ router.get('/broker/onboarding', authenticateToken, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  BROKER CLIENTS (CRM)
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/broker/clients', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'broker') return res.status(403).json({ error: 'Broker access only' });
+
+    // Get unique borrowers across all this broker's deals
+    // Sources: deal_borrowers table (structured) + deal_submissions fields (fallback)
+    const result = await pool.query(`
+      WITH borrower_deals AS (
+        -- From deal_borrowers table (preferred, has structured data)
+        SELECT
+          b.full_name,
+          b.email,
+          b.phone,
+          b.company_name,
+          b.borrower_type,
+          b.kyc_status,
+          ds.id as deal_id,
+          ds.submission_id,
+          ds.loan_amount,
+          ds.deal_stage,
+          ds.security_address,
+          ds.updated_at
+        FROM deal_borrowers b
+        JOIN deal_submissions ds ON b.deal_id = ds.id
+        WHERE ds.user_id = $1 AND b.role = 'primary'
+
+        UNION ALL
+
+        -- Fallback: deals with no deal_borrowers entry
+        SELECT
+          ds.borrower_name as full_name,
+          ds.borrower_email as email,
+          ds.borrower_phone as phone,
+          ds.borrower_company as company_name,
+          'individual' as borrower_type,
+          'pending' as kyc_status,
+          ds.id as deal_id,
+          ds.submission_id,
+          ds.loan_amount,
+          ds.deal_stage,
+          ds.security_address,
+          ds.updated_at
+        FROM deal_submissions ds
+        WHERE ds.user_id = $1
+          AND ds.borrower_name IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM deal_borrowers b2
+            WHERE b2.deal_id = ds.id AND b2.role = 'primary'
+          )
+      ),
+      client_agg AS (
+        SELECT
+          COALESCE(NULLIF(TRIM(full_name), ''), 'Unknown') as client_name,
+          MAX(email) as email,
+          MAX(phone) as phone,
+          MAX(company_name) as company_name,
+          MAX(borrower_type) as borrower_type,
+          MAX(kyc_status) as kyc_status,
+          COUNT(DISTINCT deal_id) as deal_count,
+          SUM(loan_amount) as total_loan_value,
+          MAX(updated_at) as last_activity,
+          json_agg(json_build_object(
+            'deal_id', deal_id,
+            'submission_id', submission_id,
+            'loan_amount', loan_amount,
+            'deal_stage', deal_stage,
+            'security_address', security_address,
+            'updated_at', updated_at
+          ) ORDER BY updated_at DESC) as deals
+        FROM borrower_deals
+        WHERE full_name IS NOT NULL AND TRIM(full_name) != ''
+        GROUP BY LOWER(TRIM(full_name))
+      )
+      SELECT * FROM client_agg ORDER BY last_activity DESC
+    `, [req.user.userId]);
+
+    // Get document counts per deal for these clients
+    const dealIds = result.rows.flatMap(c =>
+      (c.deals || []).map(d => d.deal_id)
+    ).filter(Boolean);
+
+    let docCounts = {};
+    if (dealIds.length > 0) {
+      const docResult = await pool.query(
+        `SELECT deal_id, COUNT(*) as doc_count
+         FROM deal_documents
+         WHERE deal_id = ANY($1)
+         GROUP BY deal_id`,
+        [dealIds]
+      );
+      docResult.rows.forEach(r => { docCounts[r.deal_id] = parseInt(r.doc_count); });
+    }
+
+    // Attach doc counts to each client
+    const clients = result.rows.map(c => ({
+      ...c,
+      total_documents: (c.deals || []).reduce((sum, d) => sum + (docCounts[d.deal_id] || 0), 0)
+    }));
+
+    res.json({ success: true, clients });
+  } catch (error) {
+    console.error('[broker-clients] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch broker clients' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  BROKER ONBOARDING: UPDATE
 // ═══════════════════════════════════════════════════════════════════════════
 router.put('/broker/onboarding', authenticateToken, async (req, res) => {
