@@ -594,14 +594,18 @@ export async function renderDealMatrix(deal) {
                 // Excludes guarantors AND children of guarantors (those have parent_borrower_id set to a guarantor's id).
                 const nonGuarantors = allBorrowers.filter(b => {
                   if (b.role === 'guarantor') return false;
-                  // If this row has a parent, check that the parent is not a guarantor
                   if (b.parent_borrower_id) {
                     const parent = allBorrowers.find(p => p.id === b.parent_borrower_id);
                     if (parent && parent.role === 'guarantor') return false;
                   }
                   return true;
                 });
-                const allChVerified = nonGuarantors.length > 0 && nonGuarantors.every(b => b.ch_verified_at);
+                // Split into two semantic groups:
+                //   chOfficers  = directors / PSCs / UBOs / shareholders (people under the primary company, sourced from CH)
+                //   coBorrowers = primary / joint top-level co-borrowers (separate parties on the deal, not people under the primary)
+                const chOfficers = nonGuarantors.filter(b => ['director','psc','ubo','shareholder'].includes(b.role));
+                const coBorrowers = nonGuarantors.filter(b => ['primary','joint'].includes(b.role));
+                const allChVerified = chOfficers.length > 0 && chOfficers.every(b => b.ch_verified_at);
 
                 if (isCorporate && deal.company_name) {
                   // ══════════════════════════════════════════════════════════
@@ -659,13 +663,13 @@ export async function renderDealMatrix(deal) {
                     </div>
                     ` : ''}
 
-                    <!-- ── C. Connected Individuals (Directors, UBOs, PSCs) ── -->
+                    <!-- ── C. Connected Individuals (Directors, UBOs, PSCs) — auto-populated from Companies House ── -->
                     <div style="margin-bottom:4px;">
-                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Directors, UBOs & PSCs — ${nonGuarantors.length} ${nonGuarantors.length === 1 ? 'Person' : 'People'}</span>
-                        ${canEdit ? '<button onclick="window.addBorrowerRow(&#39;' + deal.submission_id + '&#39;)" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : ''}
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Directors, UBOs & PSCs — ${chOfficers.length} ${chOfficers.length === 1 ? 'Person' : 'People'}</span>
+                        <span style="font-size:9px;color:#64748B;font-style:italic;">Auto-populated from Companies House · individual KYC only</span>
                       </div>
-                      ${nonGuarantors.length > 0 ? `
+                      ${chOfficers.length > 0 ? `
                       <table style="width:100%;border-collapse:collapse;font-size:12px;">
                         <thead>
                           <tr style="background:rgba(255,255,255,0.04);">
@@ -678,7 +682,7 @@ export async function renderDealMatrix(deal) {
                           </tr>
                         </thead>
                         <tbody>
-                          ${nonGuarantors.map(b => {
+                          ${chOfficers.map(b => {
                             const roleColors = { primary:'#34D399', joint:'#34D399', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
                             const roleBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
                             const roleColor = roleColors[b.role] || '#94A3B8';
@@ -698,7 +702,45 @@ export async function renderDealMatrix(deal) {
                           }).join('')}
                         </tbody>
                       </table>
-                      ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification or add manually.</p>'}
+                      ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification to populate automatically.</p>'}
+                    </div>
+
+                    <!-- ── D. Joint Borrowers (other top-level parties on this deal, NOT directors of the primary) ── -->
+                    <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Joint Borrowers — ${coBorrowers.length} ${coBorrowers.length === 1 ? 'Party' : 'Parties'}</span>
+                        ${canEdit ? '<button onclick="window.addJointBorrower(\'' + deal.submission_id + '\')" style="padding:3px 10px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Joint Borrower</button>' : ''}
+                      </div>
+                      ${coBorrowers.length > 0 ? `
+                      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead>
+                          <tr style="background:rgba(255,255,255,0.04);">
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
+                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
+                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
+                            ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${coBorrowers.map(b => {
+                            const rBg = b.role === 'primary' ? 'rgba(52,211,153,0.1)' : 'rgba(52,211,153,0.06)';
+                            const rCol = '#34D399';
+                            const kycCol = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + b.id + '" onclick="window._toggleBorrowerDetail(' + b.id + ')">' +
+                              '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(b.company_name || b.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>' +
+                              '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + rBg + ';color:' + rCol + ';text-transform:capitalize;">' + (b.role || 'joint') + '</span></td>' +
+                              '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;text-transform:capitalize;">' + sanitizeHtml(b.borrower_type || 'individual') + '</td>' +
+                              '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
+                              (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                                '<button onclick="window.editBorrowerRow(' + b.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+                              '</td>' : '') +
+                            '</tr>';
+                          }).join('')}
+                        </tbody>
+                      </table>
+                      ` : '<p style="font-size:11px;color:#64748B;margin:4px 0;font-style:italic;">No joint borrowers. Use the button above to add another party as a co-borrower.</p>'}
                     </div>
                   `;
                 } else {
@@ -3569,6 +3611,11 @@ export async function renderDealMatrix(deal) {
 
   window.addGuarantorRow = function(submissionId) {
     _showBorrowerModal(submissionId, null, { role: 'guarantor' });
+  };
+
+  // Add another top-level co-borrower (primary / joint). Distinct from adding a director/PSC to a company.
+  window.addJointBorrower = function(submissionId) {
+    _showBorrowerModal(submissionId, null, { role: 'joint' });
   };
 
   // Add a corporate guarantor (top-level, role=guarantor + corporate type pre-selected)
