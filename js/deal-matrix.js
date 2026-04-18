@@ -3250,9 +3250,21 @@ export async function renderDealMatrix(deal) {
     if (old) old.remove();
 
     const roleOptLabels = { primary: 'Primary Borrower', joint: 'Joint Borrower', director: 'Director', ubo: 'UBO (Beneficial Owner)', psc: 'PSC (Significant Control)', shareholder: 'Shareholder', guarantor: 'Guarantor' };
-    const roleOpts = Object.entries(roleOptLabels).map(([r, label]) =>
-      `<option value="${r}" ${v.role === r ? 'selected' : ''}>${label}</option>`
+    // Decide which roles the user can pick based on context:
+    //   - Edit mode: all roles
+    //   - Adding a child of a corporate party: director/psc/ubo/shareholder only
+    //   - Adding a guarantor (top-level): role is locked to 'guarantor' — hidden from UI
+    //   - Generic add: all roles
+    const isChildAdd = !isEdit && v && v.parent_borrower_id != null;
+    const isGuarantorAdd = !isEdit && v && v.role === 'guarantor' && v.parent_borrower_id == null;
+    const allowedRoles = isChildAdd
+      ? ['director','psc','ubo','shareholder']
+      : Object.keys(roleOptLabels);
+    const roleOpts = allowedRoles.map(r =>
+      `<option value="${r}" ${v.role === r ? 'selected' : ''}>${roleOptLabels[r] || r}</option>`
     ).join('');
+    // Whether to hide the Role selector entirely (only for top-level guarantor add)
+    const hideRoleUI = isGuarantorAdd;
 
     const typeOpts = ['individual', 'corporate', 'spv', 'llp', 'trust', 'partnership'].map(t =>
       `<option value="${t}" ${v.borrower_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
@@ -3285,7 +3297,16 @@ export async function renderDealMatrix(deal) {
             <button onclick="document.getElementById('dkf-borrower-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
           </div>
 
-          <!-- Always-visible: Role + Type -->
+          <!-- Role + Type — Role is hidden (locked) when user clicked a specific Add button for Guarantor -->
+          ${hideRoleUI ? `
+          <input type="hidden" id="bm-role" value="${v.role || 'guarantor'}" />
+          <div style="margin-bottom:10px;">
+            <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Type *</label>
+            <select id="bm-borrower_type" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;">
+              ${typeOpts}
+            </select>
+          </div>
+          ` : `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
             <div>
               <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Role *</label>
@@ -3300,6 +3321,7 @@ export async function renderDealMatrix(deal) {
               </select>
             </div>
           </div>
+          `}
 
           <!-- Corporate-only section — live CH search by name -->
           <div id="bm-corporate-section" style="display:${initialIsCorporate ? 'block' : 'none'};margin-bottom:10px;">
