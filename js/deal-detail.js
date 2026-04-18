@@ -341,7 +341,7 @@ export async function showDealDetail(dealId) {
       }
     }
 
-    showScreen('screen-deal-detail');
+    showScreen('screen-deal-detail', { dealId });
   } catch (err) {
     console.error('Error loading deal detail:', err);
     showToast('Failed to load deal details', true);

@@ -70,7 +70,7 @@ export function hideAlert(alertId) {
 /**
  * Show or hide a screen by ID
  */
-export function showScreen(screenId) {
+export function showScreen(screenId, opts = {}) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const screen = document.getElementById(screenId);
   if (screen) screen.classList.add('active');
@@ -81,7 +81,35 @@ export function showScreen(screenId) {
     const loggedInScreens = ['screen-dashboard', 'screen-deal-detail', 'screen-admin'];
     sidebar.style.display = loggedInScreens.includes(screenId) ? 'flex' : 'none';
   }
+
+  // Push browser history so back/forward buttons work between views
+  // Skip for auth screens (login, register, verify) and if called from popstate handler
+  const historyScreens = ['screen-dashboard', 'screen-deal-detail', 'screen-admin', 'screen-deal'];
+  if (!opts._fromPopState && historyScreens.includes(screenId)) {
+    const state = { screen: screenId, dealId: opts.dealId || null };
+    const current = history.state;
+    // Don't push duplicate state
+    if (!current || current.screen !== screenId || current.dealId !== state.dealId) {
+      history.pushState(state, '', '');
+    }
+  }
 }
+
+// Handle browser back/forward buttons
+window.addEventListener('popstate', (e) => {
+  if (e.state && e.state.screen) {
+    if (e.state.screen === 'screen-deal-detail' && e.state.dealId) {
+      // Re-open the deal
+      import('./deal-detail.js').then(m => m.showDealDetail(e.state.dealId));
+    } else {
+      showScreen(e.state.screen, { _fromPopState: true });
+      // If going back to dashboard, refresh the deals list
+      if (e.state.screen === 'screen-dashboard') {
+        import('./deals.js').then(m => m.showDashboard()).catch(() => {});
+      }
+    }
+  }
+});
 
 /**
  * Parse a formatted number string back to a raw number
