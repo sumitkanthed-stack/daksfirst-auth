@@ -3867,14 +3867,22 @@ export async function renderDealMatrix(deal) {
       const uniqueCos = [...new Set(pscs.map(p => p._party.company_number))];
       if (uniqueCos.length < 2) continue;
       sharedPscNames.add(key);
+      // Group PSCs by company_number so the same person doesn't render twice per company.
+      // Merge their natures_of_control into a single set.
+      const byCoPSC = {};
+      pscs.forEach(p => {
+        const cn = p._party.company_number;
+        if (!byCoPSC[cn]) byCoPSC[cn] = { party: p._party, natures: new Set() };
+        (Array.isArray(p.natures_of_control) ? p.natures_of_control : []).forEach(n => byCoPSC[cn].natures.add(n));
+      });
       findings.push({
         type: 'shared_psc', severity: 'high', icon: '\u{1F517}',
         title: 'Shared PSC \u2014 consolidated control',
         person: pscs[0].name,
-        instances: pscs.map(p => ({
-          company: p._party.company_name,
-          role: p._party.role,
-          natures: Array.isArray(p.natures_of_control) ? p.natures_of_control : []
+        instances: Object.values(byCoPSC).map(entry => ({
+          company: entry.party.company_name,
+          role: entry.party.role,
+          natures: [...entry.natures]
         })),
         // TODO: align with Daksfirst Credit Policy v6.0 — generic industry note below
         credit_note: 'Same individual holds significant control in multiple corporate parties. Loan is NOT diversified at UBO level; default correlation should be treated as consolidated.'
@@ -3893,14 +3901,21 @@ export async function renderDealMatrix(deal) {
       if (sharedPscNames.has(key)) continue; // avoid duplicate with shared-PSC finding
       const uniqueCos = [...new Set(officers.map(o => o._party.company_number))];
       if (uniqueCos.length < 2) continue;
+      // Group by company — merge multiple officer roles at the same co (e.g. "director + secretary")
+      const byCoOff = {};
+      officers.forEach(o => {
+        const cn = o._party.company_number;
+        if (!byCoOff[cn]) byCoOff[cn] = { party: o._party, officer_roles: new Set() };
+        if (o.officer_role) byCoOff[cn].officer_roles.add(o.officer_role);
+      });
       findings.push({
         type: 'shared_director', severity: 'medium', icon: '\u{1F465}',
         title: 'Shared Director (no PSC link)',
         person: officers[0].name,
-        instances: officers.map(o => ({
-          company: o._party.company_name,
-          role: o._party.role,
-          officer_role: o.officer_role
+        instances: Object.values(byCoOff).map(entry => ({
+          company: entry.party.company_name,
+          role: entry.party.role,
+          officer_role: [...entry.officer_roles].join(' + ') || 'officer'
         })),
         // TODO: align with Daksfirst Credit Policy v6.0
         credit_note: 'Same individual directs multiple corporate parties without being PSC at each. Governance concentration — possibly a professional / nominee director arrangement.'
@@ -4109,6 +4124,24 @@ export async function renderDealMatrix(deal) {
           });
         }
       }
+
+      // Deduplicate by company_number — same company should never appear twice (e.g. as both
+      // Primary AND Joint Borrower — that's a stale data row, not two separate parties).
+      // Keep the first occurrence (which is the primary, since we push primary first).
+      const seenCoNos = new Set();
+      const partiesDeduped = parties.filter(p => {
+        const cn = (p.company_number || '').toUpperCase().replace(/\s+/g, '');
+        if (!cn) return true;
+        if (seenCoNos.has(cn)) {
+          console.warn('[party-relationships] duplicate company_number deduped:', cn, p.company_name, '(' + p.role + ')');
+          return false;
+        }
+        seenCoNos.add(cn);
+        return true;
+      });
+      // Replace the array contents
+      parties.length = 0;
+      partiesDeduped.forEach(p => parties.push(p));
 
       if (parties.length < 2) {
         placeholder.innerHTML = ''; // hide entirely when only 1 (or 0) corporate parties
