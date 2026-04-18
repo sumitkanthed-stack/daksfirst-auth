@@ -996,6 +996,7 @@ export async function renderDealMatrix(deal) {
                       <th style="text-align:right;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);" title="Floor area from EPC">Area</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Type</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Tenure</th>
+                      <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);" title="Occupancy: vacant / tenanted / regulated / owner-occupied">Occupancy</th>
                       ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
                     </tr>
                   </thead>
@@ -1007,6 +1008,14 @@ export async function renderDealMatrix(deal) {
                       const _letter = _pt.includes('flat') ? 'F' : _pt.includes('maisonette') ? 'M' : _pt.includes('house') ? 'H' : _pt.includes('bungalow') ? 'Bg' : '';
                       const _unit = !_rooms ? '—' : (_rooms === 1 ? 'Studio' : (_rooms - 1) + 'B' + _letter);
                       const _area = p.epc_floor_area ? Number(p.epc_floor_area).toFixed(0) + ' m\u00B2' : '—';
+                      // Occupancy — colour-coded by lending risk. Uses existing deal_properties.occupancy column.
+                      const _occ = (p.occupancy || '').toLowerCase();
+                      const _occColor = _occ.includes('vacant') ? '#34D399'
+                                       : _occ.includes('regulated') ? '#F87171'
+                                       : (_occ.includes('tenant') || _occ.includes('let') || _occ.includes('rent') || _occ.includes('ast')) ? '#FBBF24'
+                                       : _occ.includes('owner') ? '#94A3B8'
+                                       : '#64748B';
+                      const _occDisplay = p.occupancy ? sanitizeHtml(p.occupancy) : '—';
                       return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="prop-row-${p.id}">
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
@@ -1017,6 +1026,7 @@ export async function renderDealMatrix(deal) {
                       <td style="padding:6px 8px;color:#F1F5F9;text-align:right;font-size:11px;">${_area}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
+                      <td style="padding:6px 8px;color:${_occColor};font-size:11px;font-weight:${p.occupancy ? '600' : '400'};text-transform:capitalize;">${_occDisplay}</td>
                       ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
                         <button onclick="window.editPropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
                         <button onclick="window.deletePropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
