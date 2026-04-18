@@ -1038,28 +1038,7 @@ export async function renderDealMatrix(deal) {
                 const matchNote = epcBlock.match_note || '';
                 const hasEpc = !!p.epc_rating;
 
-                // ── State 2: verified → collapsed one-liner ──────────────
-                if (verified) {
-                  const bits = [];
-                  if (p.local_authority) bits.push(sanitizeHtml(p.local_authority));
-                  if (p.epc_property_type) bits.push(sanitizeHtml(p.epc_property_type));
-                  if (p.epc_floor_area) bits.push(p.epc_floor_area + ' m\u00B2');
-                  if (p.epc_habitable_rooms) bits.push(p.epc_habitable_rooms + ' hab. rooms');
-                  if (p.epc_rating) bits.push('EPC ' + p.epc_rating);
-                  return '<div style="margin-top:6px;padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;">' +
-                    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-                      '<span style="color:#34D399;font-size:14px;font-weight:800;">\u2713</span>' +
-                      '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel.replace(/: $/,'') + '</span>' +
-                      '<span style="font-size:12px;color:#F1F5F9;">' + (bits.join(' \u00B7 ') || 'Verified') + '</span>' +
-                    '</div>' +
-                    '<div style="display:flex;gap:6px;">' +
-                      '<button onclick="window._propertyUnverify(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Undo</button>' +
-                      '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
-                    '</div>' +
-                  '</div>';
-                }
-
-                // ── Build expanded blocks (shared by exact/ambiguous states) ──
+                // ── Build expanded blocks (shared by exact/ambiguous/verified states) ──
                 const epcColor = { A:'#22C55E', B:'#34D399', C:'#86EFAC', D:'#FBBF24', E:'#F97316', F:'#EF4444', G:'#DC2626' };
                 const rating = p.epc_rating || null;
                 const ratingStyle = rating ? 'background:' + (epcColor[rating] || '#64748B') + ';color:#111;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:800;' : '';
@@ -1112,7 +1091,7 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 }
 
-                // ── State 3: searched but no EPC → ambiguous or none, show picker ──
+                // ── State 2: searched but no EPC → ambiguous or none, show picker ──
                 if (!hasEpc) {
                   let pickerHtml = '';
                   if (alternatives.length > 0) {
@@ -1143,21 +1122,29 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 }
 
-                // ── State 4: searched with EPC (exact or manually selected) → expanded + Accept ──
+                // ── State 3: searched with EPC (exact or manually selected) → expanded panel with Accept/Undo ──
                 const hasData = epcHtml || geoHtml || priceHtml;
                 if (!hasData) return '';
 
                 const selectedNote = p.epc_selected_lmk_key ? '<span style="font-size:9px;color:#D4A853;margin-left:6px;">\u00B7 Manually selected</span>' : '';
+                const verifiedBadge = verified
+                  ? '<span id="prop-accepted-' + p.id + '" style="font-size:10px;color:#34D399;font-weight:800;margin-left:6px;background:rgba(52,211,153,0.15);padding:2px 6px;border-radius:3px;">\u2713 ACCEPTED</span>'
+                  : '<span id="prop-accepted-' + p.id + '" style="display:none;font-size:10px;color:#34D399;font-weight:800;margin-left:6px;background:rgba(52,211,153,0.15);padding:2px 6px;border-radius:3px;">\u2713 ACCEPTED</span>';
+                const acceptBtn = verified
+                  ? '<button id="prop-accept-btn-' + p.id + '" onclick="window._propertyUnverify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Undo Accept</button>'
+                  : '<button id="prop-accept-btn-' + p.id + '" onclick="window._propertyVerify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:#34D399;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:800;cursor:pointer;">\u2713 Accept</button>';
+                const borderColor = verified ? 'rgba(52,211,153,0.45)' : 'rgba(52,211,153,0.15)';
 
-                return '<div style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid rgba(52,211,153,0.15);border-radius:6px;">' +
+                return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
-                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
                       '<span style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Property Intelligence</span>' +
                       selectedNote +
+                      verifiedBadge +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       '<span style="font-size:9px;color:#64748B;">Searched ' + new Date(p.property_searched_at).toLocaleDateString('en-GB') + '</span>' +
-                      '<button onclick="window._propertyVerify(' + p.id + ', \'' + subId + '\')" style="padding:3px 12px;background:#34D399;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:800;cursor:pointer;">\u2713 Accept</button>' +
+                      acceptBtn +
                       '<button onclick="window._propertySearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Re-Search</button>' +
                     '</div>' +
                   '</div>' +
@@ -4703,6 +4690,8 @@ window._propertySearch = async function(propertyId, submissionId) {
 };
 
 // ── Accept the current EPC match (lock property) ────────────────────────────
+// Silent local update — no page refresh. Just marks the property as verified
+// in the DB and tweaks the local DOM to show the Accepted badge + Undo button.
 window._propertyVerify = async function(propertyId, submissionId) {
   const btn = event && event.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Accepting...'; btn.style.opacity = '0.6'; }
@@ -4718,7 +4707,20 @@ window._propertyVerify = async function(propertyId, submissionId) {
       if (btn) { btn.disabled = false; btn.textContent = '\u2713 Accept'; btn.style.opacity = '1'; }
       return;
     }
-    setTimeout(() => _refreshDealInPlace(submissionId), 300);
+    // ── Local DOM update: show Accepted badge, swap button to Undo, brighten border ──
+    const panel = document.getElementById('prop-intel-' + propertyId);
+    if (panel) panel.style.borderColor = 'rgba(52,211,153,0.45)';
+    const badge = document.getElementById('prop-accepted-' + propertyId);
+    if (badge) badge.style.display = 'inline-block';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Undo Accept';
+      btn.style.background = 'rgba(212,168,83,0.15)';
+      btn.style.color = '#D4A853';
+      btn.style.opacity = '1';
+      btn.setAttribute('onclick', "window._propertyUnverify(" + propertyId + ", '" + submissionId + "')");
+    }
+    showToast('Property accepted', 'success');
   } catch (err) {
     console.error('[property-verify] Error:', err);
     alert('Accept error: ' + err.message);
@@ -4727,6 +4729,7 @@ window._propertyVerify = async function(propertyId, submissionId) {
 };
 
 // ── Undo the accept (re-editable) ───────────────────────────────────────────
+// Also a silent local update — no page refresh.
 window._propertyUnverify = async function(propertyId, submissionId) {
   const btn = event && event.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Undoing...'; btn.style.opacity = '0.6'; }
@@ -4739,14 +4742,27 @@ window._propertyUnverify = async function(propertyId, submissionId) {
     let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
     if (!res.ok) {
       alert('Undo failed (' + res.status + '): ' + (data.error || 'Unknown'));
-      if (btn) { btn.disabled = false; btn.textContent = 'Undo'; btn.style.opacity = '1'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Undo Accept'; btn.style.opacity = '1'; }
       return;
     }
-    setTimeout(() => _refreshDealInPlace(submissionId), 300);
+    // ── Local DOM update: hide Accepted badge, swap button back to Accept ──
+    const panel = document.getElementById('prop-intel-' + propertyId);
+    if (panel) panel.style.borderColor = 'rgba(52,211,153,0.15)';
+    const badge = document.getElementById('prop-accepted-' + propertyId);
+    if (badge) badge.style.display = 'none';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '\u2713 Accept';
+      btn.style.background = '#34D399';
+      btn.style.color = '#111';
+      btn.style.opacity = '1';
+      btn.setAttribute('onclick', "window._propertyVerify(" + propertyId + ", '" + submissionId + "')");
+    }
+    showToast('Property reset to editable', 'success');
   } catch (err) {
     console.error('[property-unverify] Error:', err);
     alert('Undo error: ' + err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Undo'; btn.style.opacity = '1'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Undo Accept'; btn.style.opacity = '1'; }
   }
 };
 
