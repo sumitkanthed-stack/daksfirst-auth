@@ -14,6 +14,86 @@ const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  G5 — Group borrowers hierarchically for DIP / TS party rendering (2026-04-20)
+//  Returns { primary, joint, corporate_guarantors, individual_guarantors, officers_by_parent }
+//  Phase G model: parent_borrower_id NULL = top-level party; officers point to parent.
+//  Role + borrower_type combined to derive logical categories (role 'guarantor' + borrower_type
+//  distinguishes corporate vs individual guarantor).
+// ═══════════════════════════════════════════════════════════════════════════
+function groupBorrowersForDip(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      primary: [],
+      joint: [],
+      corporate_guarantors: [],
+      individual_guarantors: [],
+      officers_by_parent: {}
+    };
+  }
+
+  const isCorp = (bt) => {
+    const t = (bt || '').toLowerCase();
+    return ['corporate', 'spv', 'ltd', 'llp', 'limited', 'plc', 'company'].includes(t);
+  };
+
+  // Top-level parties vs child officers
+  const topLevel = rows.filter(r => !r.parent_borrower_id);
+  const officers = rows.filter(r => r.parent_borrower_id);
+
+  // Format a top-level party into a uniform shape for templates
+  const formatParty = (b) => ({
+    id: b.id,
+    full_name: b.full_name,
+    borrower_type: b.borrower_type,       // 'corporate' | 'individual' | 'spv' | etc
+    company_number: b.company_number,
+    nationality: b.nationality,
+    email: b.email,
+    address: b.address,                    // single TEXT field on deal_borrowers
+    kyc_status: b.kyc_status,              // 'pending' | 'submitted' | 'verified' | 'rejected'
+    kyc_verified: b.kyc_status === 'verified',
+    ch_verified_at: b.ch_verified_at,
+    ch_match_confidence: b.ch_match_confidence,
+    ch_match_data: b.ch_match_data,
+    role: b.role                           // raw role from DB ('primary' | 'joint' | 'guarantor' | etc)
+  });
+
+  // Format a child officer — caller filters out resigned_on ≠ null per G5 Q3
+  const formatOfficer = (o) => {
+    const chData = o.ch_match_data || {};
+    return {
+      id: o.id,
+      parent_borrower_id: o.parent_borrower_id,
+      full_name: o.full_name,
+      role_label: chData.officer_role || o.ch_matched_role || 'Director',
+      appointed_on: chData.appointed_on,
+      resigned_on: chData.resigned_on,
+      nationality: o.nationality || chData.nationality,
+      is_psc: !!chData.is_psc,
+      psc_percentage: chData.psc_percentage
+    };
+  };
+
+  // Guarantors split by borrower_type: corporate vs individual
+  const primary = topLevel.filter(r => r.role === 'primary').map(formatParty);
+  const joint = topLevel.filter(r => r.role === 'joint').map(formatParty);
+  const allGuarantors = topLevel.filter(r => r.role === 'guarantor');
+  const corporate_guarantors = allGuarantors.filter(r => isCorp(r.borrower_type)).map(formatParty);
+  const individual_guarantors = allGuarantors.filter(r => !isCorp(r.borrower_type)).map(formatParty);
+
+  // Group active child officers by parent
+  const officers_by_parent = {};
+  officers.forEach(o => {
+    const formatted = formatOfficer(o);
+    if (formatted.resigned_on) return;    // G5 Q3 — active only
+    const parentKey = o.parent_borrower_id;
+    if (!officers_by_parent[parentKey]) officers_by_parent[parentKey] = [];
+    officers_by_parent[parentKey].push(formatted);
+  });
+
+  return { primary, joint, corporate_guarantors, individual_guarantors, officers_by_parent };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  FIELD LOCK & SNAPSHOT SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -654,23 +734,42 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
     }
 
     // 2. Get borrowers + properties for this deal (for the DIP PDF)
+    // G5: expanded SELECT to return fields needed for Option B party rendering
     const borrowersResult = await pool.query(
-      `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`,
+      `SELECT id, full_name, role, email, kyc_status, borrower_type, company_number,
+              nationality, address, parent_borrower_id,
+              ch_verified_at, ch_matched_role, ch_match_confidence, ch_match_data
+       FROM deal_borrowers WHERE deal_id = $1
+       ORDER BY
+         CASE role
+           WHEN 'primary' THEN 1
+           WHEN 'joint' THEN 2
+           WHEN 'guarantor' THEN 3
+           WHEN 'director' THEN 4
+           ELSE 5
+         END,
+         parent_borrower_id NULLS FIRST,
+         id`,
       [dealId]
     );
     const propertiesResult = await pool.query(
       `SELECT address, postcode, market_value, property_type, tenure FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
       [dealId]
     );
+    // G5: build both legacy flat array (backward compat) + new grouped structure
+    const flatBorrowers = borrowersResult.rows.map(b => ({
+      name: b.full_name,
+      role: b.role,
+      email: b.email,
+      kyc_verified: b.kyc_status === 'verified'
+    }));
+    const partiesGrouped = groupBorrowersForDip(borrowersResult.rows);
+
     const dipDataWithBorrowers = {
       ...dip_data,
       notes,
-      borrowers: borrowersResult.rows.map(b => ({
-        name: b.full_name,
-        role: b.role,
-        email: b.email,
-        kyc_verified: b.kyc_status === 'verified'
-      })),
+      borrowers: flatBorrowers,               // legacy, current generator reads this
+      parties_grouped: partiesGrouped,        // G5 new structure, G5.2+ generators will use
       properties: propertiesResult.rows
     };
 
