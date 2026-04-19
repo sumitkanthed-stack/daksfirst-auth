@@ -857,6 +857,7 @@ export async function renderDealMatrix(deal) {
                               '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
                                 (chV
                                   ? '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.15);color:#34D399;">&#10003; CH VERIFIED</span>'
+                                    + (canEdit && g.company_number ? '<button onclick="window._chVerifyCorporateParty(' + g.id + ', \'' + subId + '\')" title="Re-run CH verify — updates officers, PSCs, and auto-recurses into corporate PSCs" style="padding:3px 10px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">\u21BB Re-verify</button>' : '')
                                   : (canEdit && g.company_number
                                     ? '<button onclick="window._chVerifyCorporateParty(' + g.id + ', \'' + subId + '\')" style="padding:4px 12px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Verify at Companies House</button>'
                                     : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">' + (g.company_number ? 'UNVERIFIED' : 'NO CO. NUMBER') + '</span>')) +

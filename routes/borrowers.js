@@ -249,9 +249,13 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
     return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0 };
   }
 
-  // Load existing children so we don't duplicate
-  const childRows = await pool.query(`SELECT id, full_name FROM deal_borrowers WHERE parent_borrower_id = $1`, [parentRowId]);
-  const existingNames = new Set(childRows.rows.map(c => (c.full_name || '').toLowerCase().trim()));
+  // Load existing children so we don't duplicate; keep id mapping so we can recurse on existing corporate PSCs
+  const childRows = await pool.query(
+    `SELECT id, full_name, ch_match_data FROM deal_borrowers WHERE parent_borrower_id = $1`,
+    [parentRowId]
+  );
+  const existingByName = new Map(childRows.rows.map(c => [(c.full_name || '').toLowerCase().trim(), c]));
+  const existingNames = new Set(existingByName.keys());
 
   let officersInserted = 0;
   let pscsInserted = 0;
@@ -294,17 +298,36 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
     } catch (e) { console.warn(`[ch-recurse depth=${depth}] officer insert:`, e.message); }
   }
 
-  // Insert PSCs as children; queue corporate PSCs for recursion
+  // Insert PSCs as children; queue corporate PSCs for recursion (incl. existing ones not yet recursed)
   const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
   for (const p of pscs) {
     const nameKey = (p.name || '').toLowerCase().trim();
-    if (!nameKey || existingNames.has(nameKey)) continue;
+    if (!nameKey) continue;
     const pscKindStr = String(p.kind || '').toLowerCase();
     const isCorporatePsc = pscKindStr.includes('corporate-entity') || pscKindStr.includes('legal-person');
     const pscBorrowerType = isCorporatePsc ? 'corporate' : 'individual';
     const pscOwnCompanyNumber = (isCorporatePsc && p.identification && p.identification.registration_number)
       ? String(p.identification.registration_number)
       : null;
+
+    // If existing — skip insert but still queue for recursion if corporate AND not yet recursed
+    if (existingNames.has(nameKey)) {
+      if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
+        const existingChild = existingByName.get(nameKey);
+        const existingChMatch = existingChild.ch_match_data || {};
+        const alreadyRecursed = !!(existingChMatch.nested_verification);
+        if (!alreadyRecursed) {
+          // Backfill the company_number on the existing row so future runs know
+          await pool.query(
+            `UPDATE deal_borrowers SET company_number = COALESCE(company_number, $1),
+                ch_match_data = ch_match_data || $2::jsonb, updated_at = NOW() WHERE id = $3`,
+            [pscOwnCompanyNumber, JSON.stringify({ psc_own_company_number: pscOwnCompanyNumber, psc_identification: p.identification || null }), existingChild.id]
+          );
+          corporatePscsToRecurse.push({ rowId: existingChild.id, companyNumber: pscOwnCompanyNumber });
+        }
+      }
+      continue;  // skip the insert
+    }
     const chData = {
       source: 'ch_psc_endpoint',
       company_number: companyNumber,
