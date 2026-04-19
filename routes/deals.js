@@ -923,9 +923,23 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
       dipData.arrangement_fee_pct = dipData.credit_override_arr_fee;
     }
 
-    // Get borrowers
+    // Get borrowers — G5: expanded SELECT so preview matches issue-dip output
     const borrowersResult = await pool.query(
-      `SELECT full_name, role, email, kyc_status FROM deal_borrowers WHERE deal_id = $1 ORDER BY id`, [dealId]
+      `SELECT id, full_name, role, email, kyc_status, borrower_type, company_number,
+              nationality, address, parent_borrower_id,
+              ch_verified_at, ch_matched_role, ch_match_confidence, ch_match_data
+       FROM deal_borrowers WHERE deal_id = $1
+       ORDER BY
+         CASE role
+           WHEN 'primary' THEN 1
+           WHEN 'joint' THEN 2
+           WHEN 'guarantor' THEN 3
+           WHEN 'director' THEN 4
+           ELSE 5
+         END,
+         parent_borrower_id NULLS FIRST,
+         id`,
+      [dealId]
     );
 
     // Get properties (individual addresses, postcodes, valuations)
@@ -933,9 +947,16 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
       `SELECT address, postcode, market_value, property_type, tenure FROM deal_properties WHERE deal_id = $1 ORDER BY id`, [dealId]
     );
 
+    // G5: build both legacy flat array + new grouped structure (mirrors issue-dip handler)
+    const flatBorrowersPreview = borrowersResult.rows.map(b => ({
+      name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified'
+    }));
+    const partiesGroupedPreview = groupBorrowersForDip(borrowersResult.rows);
+
     const dipDataWithBorrowers = {
       ...dipData,
-      borrowers: borrowersResult.rows.map(b => ({ name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified' })),
+      borrowers: flatBorrowersPreview,
+      parties_grouped: partiesGroupedPreview,
       properties: propertiesResult.rows
     };
 
