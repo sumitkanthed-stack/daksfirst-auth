@@ -26,7 +26,8 @@ async function lookupPostcode(postcode) {
   console.log(`[property-search] Postcodes.io GET ${clean}`);
 
   try {
-    const res = await fetch(url, { timeout: 10000 });
+    // Node built-in fetch ignores {timeout: N} — use AbortSignal.timeout for real cancellation
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
       if (res.status === 404) return { success: false, error: `Postcode ${clean} not found` };
       return { success: false, error: `Postcodes.io returned ${res.status}` };
@@ -133,8 +134,10 @@ async function lookupEPC(postcode, address) {
   console.log(`[property-search] EPC Register GET postcode=${clean}`);
 
   try {
+    // AbortSignal.timeout ensures EPC hangs don't propagate to Render proxy timeouts
     const res = await fetch(url, {
-      headers: { 'Accept': 'application/json', 'Authorization': `Basic ${auth}` }
+      headers: { 'Accept': 'application/json', 'Authorization': `Basic ${auth}` },
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!res.ok) {
@@ -225,60 +228,50 @@ async function lookupEPC(postcode, address) {
 //     No API key needed.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Normalize any UK postcode input into the canonical "OUTER INNER" format with a single space.
+// Land Registry's ld-platform filter expects the canonical spacing — queries with "W69RH"
+// (no space) return ZERO results even when data exists.
+// Examples: "w69rh" → "W6 9RH", "SW1A1AA" → "SW1A 1AA", "W6  9RH" → "W6 9RH"
+function _normalizePostcode(pc) {
+  if (!pc) return '';
+  const trimmed = String(pc).replace(/\s+/g, '').toUpperCase();
+  if (trimmed.length < 5 || trimmed.length > 7) return trimmed; // malformed — return as-is, API will reject
+  const inward = trimmed.slice(-3);
+  const outward = trimmed.slice(0, -3);
+  return outward + ' ' + inward;
+}
+
 async function lookupPricePaid(postcode, address) {
   if (!postcode) return { success: false, error: 'No postcode for Price Paid lookup' };
 
-  const clean = postcode.replace(/\s+/g, '').toUpperCase();
+  // FIX #1: Land Registry ld-platform expects UK canonical postcode WITH space ("W6 9RH"),
+  // not stripped ("W69RH"). Previous code sent stripped form — returned zero items every time.
+  const canonicalPostcode = _normalizePostcode(postcode);
 
-  // Use the Land Registry linked data API with SPARQL
-  const sparql = `
-    PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
-    PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+  // REST filter endpoint — returns JSON, supports field filters + pagination
+  const restUrl = `https://landregistry.data.gov.uk/data/ppi/transaction-record.json?propertyAddress.postcode=${encodeURIComponent(canonicalPostcode)}&_pageSize=50&_sort=-transactionDate`;
 
-    SELECT ?paon ?saon ?street ?town ?county ?amount ?date ?type ?category ?status
-    WHERE {
-      ?tx lrppi:propertyAddress ?addr ;
-          lrppi:pricePaid ?amount ;
-          lrppi:transactionDate ?date ;
-          lrppi:propertyType ?typeUri ;
-          lrppi:transactionCategory ?catUri ;
-          lrppi:recordStatus ?statusUri .
-
-      ?addr lrcommon:postcode "${clean}" .
-
-      OPTIONAL { ?addr lrcommon:paon ?paon }
-      OPTIONAL { ?addr lrcommon:saon ?saon }
-      OPTIONAL { ?addr lrcommon:street ?street }
-      OPTIONAL { ?addr lrcommon:town ?town }
-      OPTIONAL { ?addr lrcommon:county ?county }
-
-      BIND(STRAFTER(STR(?typeUri), "http://landregistry.data.gov.uk/def/common/") AS ?type)
-      BIND(STRAFTER(STR(?catUri), "http://landregistry.data.gov.uk/def/ppi/") AS ?category)
-      BIND(STRAFTER(STR(?statusUri), "http://landregistry.data.gov.uk/def/ppi/") AS ?status)
-    }
-    ORDER BY DESC(?date)
-    LIMIT 50
-  `.trim();
-
-  const url = `https://landregistry.data.gov.uk/app/root/qonsole/query?output=json&q=${encodeURIComponent(sparql)}`;
-
-  console.log(`[property-search] Land Registry Price Paid SPARQL for ${clean}`);
+  console.log(`[property-search] Land Registry Price Paid GET ${canonicalPostcode}`);
 
   try {
-    // Use the simpler REST endpoint first
-    const restUrl = `https://landregistry.data.gov.uk/data/ppi/transaction-record.json?propertyAddress.postcode=${encodeURIComponent(clean)}&_pageSize=50&_sort=-transactionDate`;
-
-    const res = await fetch(restUrl, { timeout: 15000 });
+    // FIX #2: Node's built-in fetch IGNORES {timeout: N} — must use AbortSignal.timeout.
+    // 15s cap so Land Registry hangs don't propagate to Render proxy timeouts.
+    const res = await fetch(restUrl, {
+      signal: AbortSignal.timeout(15000),
+      headers: { 'Accept': 'application/json' }
+    });
 
     if (!res.ok) {
+      console.warn(`[property-search] Land Registry returned ${res.status} for ${canonicalPostcode}`);
       return { success: false, error: `Land Registry API returned ${res.status}` };
     }
 
     const json = await res.json();
     const items = json.result?.items || [];
+    console.log(`[property-search] Land Registry returned ${items.length} transactions for ${canonicalPostcode}`);
 
     if (items.length === 0) {
-      return { success: false, error: `No price paid records for ${clean}` };
+      return { success: false, error: `No price paid records for ${canonicalPostcode}` };
     }
 
     // Parse transactions
@@ -286,7 +279,7 @@ async function lookupPricePaid(postcode, address) {
       const addr = item.propertyAddress || {};
       return {
         address: [addr.saon, addr.paon, addr.street, addr.town, addr.county].filter(Boolean).join(', '),
-        postcode: addr.postcode || clean,
+        postcode: addr.postcode || canonicalPostcode,
         price: item.pricePaid,
         date: item.transactionDate,
         property_type: _ppPropertyType(item.propertyType),
@@ -299,7 +292,8 @@ async function lookupPricePaid(postcode, address) {
     let matched = transactions;
     if (address) {
       const addrLower = address.toLowerCase().replace(/[,.\-]/g, ' ').replace(/\s+/g, ' ').trim();
-      const tokens = addrLower.split(' ').filter(t => t.length > 2 && !clean.toLowerCase().includes(t));
+      const pcNoSpace = canonicalPostcode.replace(/\s+/g, '').toLowerCase();
+      const tokens = addrLower.split(' ').filter(t => t.length > 2 && !pcNoSpace.includes(t));
 
       if (tokens.length > 0) {
         const scored = transactions.map(tx => {
