@@ -1982,6 +1982,8 @@ export async function renderDealMatrix(deal) {
           ${sgCorpGuarantors.length > 0 ? `
             <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Corporate Guarantee</div>
             ${sgCorpGuarantors.map(c => {
+              // Inline date formatter — fmtDate is scoped to other render fns, not in this template's scope
+              const _sgFmtDate = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
               const cChm = c.ch_match_data || {};
               const electedFromName = cChm.elected_from_name || null;
               const electedFromRole = cChm.elected_from_role || null;
@@ -1989,7 +1991,7 @@ export async function renderDealMatrix(deal) {
               const crossBorder = cChm.broker_trace_required === true;
               const roleDisplay = electedFromRole ? String(electedFromRole).toUpperCase() : null;
               const electedLine = electedFromName
-                ? `<div style="color:#A78BFA;font-size:10px;margin-top:4px;font-weight:600;">\u2696 Elected from <strong>${sanitizeHtml(electedFromName)}</strong>${roleDisplay ? ` <span style="color:#94A3B8;font-weight:400;">(was: ${sanitizeHtml(roleDisplay)})</span>` : ''}${electedAtIso ? ` <span style="color:#64748B;font-weight:400;">\u00B7 ${fmtDate(electedAtIso)}</span>` : ''}</div>`
+                ? `<div style="color:#A78BFA;font-size:10px;margin-top:4px;font-weight:600;">\u2696 Elected from <strong>${sanitizeHtml(electedFromName)}</strong>${roleDisplay ? ` <span style="color:#94A3B8;font-weight:400;">(was: ${sanitizeHtml(roleDisplay)})</span>` : ''}${electedAtIso ? ` <span style="color:#64748B;font-weight:400;">\u00B7 ${_sgFmtDate(electedAtIso)}</span>` : ''}</div>`
                 : '';
               const crossBorderPill = crossBorder
                 ? `<div style="margin-top:6px;padding:5px 8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:4px;font-size:10px;color:#FBBF24;line-height:1.4;">\u26A0 Cross-border entity \u2014 foreign legal opinion / local counsel likely required for this guarantee</div>`
