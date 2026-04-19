@@ -319,14 +319,23 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
       for (const col of epcCols) updates.push(`${col} = NULL`);
     }
 
-    // Price paid data
+    // Price paid data — write fresh values on success; CLEAR stale values on no-match
+    // (prevents old wrong data lingering when the unit-number matcher correctly rejects it)
     if (results.price_paid.success) {
       const pp = results.price_paid.data;
       if (pp.latest_price) {
         updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++;
         updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++;
+      } else {
+        updates.push(`last_sale_price = NULL`);
+        updates.push(`last_sale_date = NULL`);
       }
       updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
+    } else {
+      // Land Registry returned no match — clear any stale cached values from a previous (buggy) query
+      updates.push(`last_sale_price = NULL`);
+      updates.push(`last_sale_date = NULL`);
+      updates.push(`price_paid_data = '[]'::jsonb`);
     }
 
     // Full raw results + metadata (includes EPC alternatives for picker UI)
@@ -447,7 +456,13 @@ router.post('/:submissionId/properties/search-all', authenticateToken, async (re
         if (results.price_paid.success) {
           const pp = results.price_paid.data;
           if (pp.latest_price) { updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++; updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++; }
+          else { updates.push(`last_sale_price = NULL`); updates.push(`last_sale_date = NULL`); }
           updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
+        } else {
+          // No match — clear stale values from previous (buggy) queries
+          updates.push(`last_sale_price = NULL`);
+          updates.push(`last_sale_date = NULL`);
+          updates.push(`price_paid_data = '[]'::jsonb`);
         }
         updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
         updates.push(`property_searched_at = NOW()`);
