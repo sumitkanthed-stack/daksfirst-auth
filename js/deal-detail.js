@@ -963,7 +963,7 @@ export function renderInternalWorkflowControls(deal) {
           </div>
           <div>
             <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Arrangement Fee (%)</label>
-            <input type="number" step="0.01" id="dip-arrangement-fee" value="2.00" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+            <input type="number" step="0.01" id="dip-arrangement-fee" value="${deal.arrangement_fee_pct || '2.00'}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
           </div>
           <div>
             <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">LTV (%)</label>
@@ -983,7 +983,7 @@ export function renderInternalWorkflowControls(deal) {
             </div>
             <div>
               <label style="font-size:11px;color:#92400e;display:block;margin-bottom:4px;font-weight:600;">Broker Fee (%)</label>
-              <input type="number" step="0.01" id="dip-broker-fee" value="0" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+              <input type="number" step="0.01" id="dip-broker-fee" value="${deal.broker_fee_pct || '0'}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
               <span style="font-size:10px;color:#b45309;font-weight:600;">Paid from Arrangement Fee (not additional)</span>
             </div>
           </div>
