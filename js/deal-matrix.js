@@ -4733,6 +4733,291 @@ export async function renderDealMatrix(deal) {
   };
 
   // ═══════════════════════════════════════════════════════════════════
+  // G5.3 Part B — Shared corporate panel renderer
+  // Used for:
+  //   (a) the inline detail panel when user clicks a corporate row
+  //   (b) recursively nested corporate children (Holdings' PSCs that are themselves corp)
+  // Reads everything from bor.ch_match_data + deal.borrowers (already in memory);
+  // no async fetch. Amber advisory rendered when broker_trace_required is set.
+  // ═══════════════════════════════════════════════════════════════════
+
+  window._toggleNestedCorporate = function(panelId) {
+    const el = document.getElementById(panelId);
+    if (!el) return;
+    const arrow = document.getElementById(panelId + '-arrow');
+    if (el.style.maxHeight && el.style.maxHeight !== '0px') {
+      el.style.maxHeight = '0px';
+      el.style.opacity = '0';
+      if (arrow) arrow.innerHTML = '\u25B6'; // right
+    } else {
+      el.style.maxHeight = '4000px';
+      el.style.opacity = '1';
+      if (arrow) arrow.innerHTML = '\u25BC'; // down
+    }
+  };
+
+  window._renderCorporatePanelHtml = function(bor, deal, canEdit, nestLevel) {
+    nestLevel = nestLevel || 0;
+    if (nestLevel > 4) {
+      // Recursion guard — should never hit given data depth, but safety first
+      return '<div style="padding:8px;color:#64748B;font-size:11px;">Max render depth reached.</div>';
+    }
+
+    const _fmtDate = (v) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return isNaN(d) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+    const _field = (label, val, stage) => {
+      if (val && String(val).trim()) {
+        return '<div style="margin-bottom:8px;">' +
+          '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+          '<div style="font-size:12px;color:#F1F5F9;font-weight:500;">' + sanitizeHtml(String(val)) + '</div>' +
+        '</div>';
+      }
+      return '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + label + '</div>' +
+        '<div style="font-size:11px;color:#475569;font-style:italic;">Not yet obtained' + (stage ? ' <span style="font-size:9px;color:#334155;">(' + stage + ')</span>' : '') + '</div>' +
+      '</div>';
+    };
+
+    const chd2 = bor.ch_match_data || {};
+    const companyNo = bor.company_number || chd2.psc_own_company_number || chd2.company_number || '—';
+
+    // Registered Address: column first, else flatten CH JSON object
+    let regAddr = bor.address || bor.residential_address || null;
+    if (!regAddr && chd2.registered_address && typeof chd2.registered_address === 'object') {
+      const ra = chd2.registered_address;
+      regAddr = [ra.line_1, ra.line_2, ra.locality, ra.region, ra.postal_code, ra.country]
+        .filter(x => x && String(x).trim()).join(', ') || null;
+    }
+
+    // Nature of Control: self → psc_natures → parent's pscs[] matched by name
+    let natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control.slice() : [];
+    if (natures.length === 0 && Array.isArray(chd2.psc_natures_of_control)) {
+      natures = chd2.psc_natures_of_control.slice();
+    }
+    if (natures.length === 0 && bor.parent_borrower_id) {
+      const parentRow = (deal.borrowers || []).find(b => b.id === bor.parent_borrower_id);
+      const parentPscs = parentRow && parentRow.ch_match_data && Array.isArray(parentRow.ch_match_data.pscs)
+        ? parentRow.ch_match_data.pscs : [];
+      const myNameLc = (bor.full_name || '').trim().toLowerCase();
+      const matching = parentPscs.find(p => p && p.name && p.name.trim().toLowerCase() === myNameLc);
+      if (matching && Array.isArray(matching.natures_of_control)) natures = matching.natures_of_control.slice();
+    }
+
+    const nestedVer = chd2.nested_verification || null;
+    const nestedIns = chd2.nested_inserted || null;
+    const brokerTrace = chd2.broker_trace_required === true;
+    const brokerReason = chd2.broker_trace_reason || 'This entity cannot be traced further via UK Companies House. Broker to provide the UBO chain.';
+
+    // Nested children: officers + PSCs of this corporate
+    const nestedKids = (deal.borrowers || []).filter(b => b.parent_borrower_id === bor.id);
+    const chBadge = bor.ch_verified_at
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(52,211,153,0.1);color:#34D399;">\u2713 CH Verified \u2014 ' + sanitizeHtml(bor.ch_matched_role || bor.role || '') + '</span>'
+      : '';
+    const borderColour = nestLevel === 0 ? '#38BDF8' : (nestLevel === 1 ? '#A78BFA' : (nestLevel === 2 ? '#FBBF24' : '#F87171'));
+
+    // ── Broker trace banner (amber) ──
+    const brokerBanner = brokerTrace
+      ? '<div style="margin-bottom:10px;padding:10px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.35);border-left:3px solid #FBBF24;border-radius:6px;">' +
+          '<div style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u26A0 Broker Input Required \u2014 UBO Chain</div>' +
+          '<div style="font-size:11px;color:#FEF3C7;line-height:1.5;">' + sanitizeHtml(brokerReason) + '</div>' +
+        '</div>'
+      : '';
+
+    // ── Header ──
+    const headerHtml =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+        '<div>' +
+          '<div style="font-size:10px;color:' + borderColour + ';text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate ' + (bor.role === 'psc' ? 'PSC' : (bor.role || 'Entity').toUpperCase()) + (nestLevel > 0 ? ' \u00B7 Level ' + nestLevel : '') + '</div>' +
+          '<div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-top:2px;">' + sanitizeHtml(bor.full_name || 'Unknown Company') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+          chBadge +
+          '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:' + borderColour + ';background:rgba(56,189,248,0.1);text-transform:capitalize;">' + sanitizeHtml(bor.role || 'psc') + '</span>' +
+        '</div>' +
+      '</div>';
+
+    // ── 2-column top ──
+    const topGrid =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+        '<div>' +
+          '<div style="font-size:9px;color:' + borderColour + ';font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Corporate Identity</div>' +
+          _field('Company Number', companyNo, 'CH') +
+          _field('Jurisdiction', bor.jurisdiction || chd2.jurisdiction || 'England and Wales', 'CH') +
+          _field('Registered Address', regAddr, 'CH') +
+          (natures.length > 0
+            ? '<div style="margin-bottom:8px;">' +
+                '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nature of Control</div>' +
+                '<div style="font-size:11px;color:#F1F5F9;line-height:1.5;">' + natures.map(n => sanitizeHtml(String(n).replace(/-/g, ' '))).join('<br/>') + '</div>' +
+              '</div>'
+            : _field('Nature of Control', null, 'CH')) +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:9px;color:' + borderColour + ';font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Companies House Verification</div>' +
+          _field('CH Verified At', bor.ch_verified_at ? _fmtDate(bor.ch_verified_at) : null, 'Broker') +
+          _field('Matched Role', bor.ch_matched_role || null, 'CH') +
+          _field('Match Confidence', bor.ch_match_confidence || null, 'CH') +
+          (bor.company_number && canEdit
+            ? '<div style="margin-top:10px;">' +
+                '<button onclick="event.stopPropagation(); window._chVerifyCorporateParty(' + bor.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u21BB Re-verify at CH</button>' +
+              '</div>'
+            : '') +
+        '</div>' +
+      '</div>';
+
+    // ── CH Summary pills ──
+    const summaryStrip = (function() {
+      const riskCol = chd2.risk_score === 'low' ? '#34D399' : chd2.risk_score === 'medium' ? '#FBBF24' : chd2.risk_score === 'high' ? '#F87171' : '#94A3B8';
+      const riskBg = riskCol === '#34D399' ? 'rgba(52,211,153,0.1)' : riskCol === '#FBBF24' ? 'rgba(251,191,36,0.1)' : riskCol === '#F87171' ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.04)';
+      const statusCol = chd2.company_status === 'active' ? '#34D399' : '#F87171';
+      const statusBg = chd2.company_status === 'active' ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
+      const pills = [];
+      if (chd2.company_status) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + statusBg + ';color:' + statusCol + ';text-transform:capitalize;">' + sanitizeHtml(chd2.company_status) + '</span>');
+      if (chd2.age_months != null) {
+        const yrs = Math.floor(chd2.age_months / 12);
+        const mos = chd2.age_months % 12;
+        const ageStr = yrs > 0 ? (yrs + 'y ' + mos + 'm') : (mos + 'm');
+        pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Age: ' + ageStr + '</span>');
+      }
+      if (chd2.risk_score) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + riskBg + ';color:' + riskCol + ';text-transform:capitalize;">Risk: ' + sanitizeHtml(chd2.risk_score) + '</span>');
+      if (chd2.charges_total != null) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Charges: ' + chd2.charges_total + ' total / ' + ((chd2.charges_outstanding || []).length) + ' outstanding</span>');
+      if (chd2.has_insolvency_history === true) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(248,113,113,0.15);color:#F87171;">\u26A0 Insolvency history</span>');
+      if (Array.isArray(chd2.sic_codes) && chd2.sic_codes.length > 0) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">SIC: ' + chd2.sic_codes.join(', ') + '</span>');
+      if (chd2.accounts && chd2.accounts.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Accounts due: ' + _fmtDate(chd2.accounts.next_due) + (chd2.accounts.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
+      if (chd2.confirmation_statement && chd2.confirmation_statement.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Conf stmt due: ' + _fmtDate(chd2.confirmation_statement.next_due) + (chd2.confirmation_statement.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
+      if (pills.length === 0) return '';
+      return '<div style="margin-top:12px;padding:10px 12px;background:rgba(56,189,248,0.04);border:1px solid rgba(56,189,248,0.15);border-radius:6px;">' +
+        '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">CH Summary</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + pills.join('') + '</div>' +
+      '</div>';
+    })();
+
+    // ── Outstanding Charges ──
+    const chargesHtml = (function() {
+      const charges = Array.isArray(chd2.charges_outstanding) ? chd2.charges_outstanding : [];
+      if (charges.length === 0) return '';
+      return '<div style="margin-top:12px;">' +
+        '<div style="font-size:9px;color:#F87171;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Outstanding Charges \u2014 ' + charges.length + '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+          '<thead><tr style="background:rgba(248,113,113,0.06);">' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Charge Code</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Created</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Entitled</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
+          '</tr></thead><tbody>' +
+          charges.map(c => {
+            const entitled = Array.isArray(c.persons_entitled) && c.persons_entitled.length > 0
+              ? c.persons_entitled.map(p => sanitizeHtml(p.name || '')).join('; ') : '—';
+            const flags = [];
+            if (c.particulars && c.particulars.contains_fixed_charge) flags.push('Fixed');
+            if (c.particulars && c.particulars.contains_floating_charge) flags.push('Floating');
+            if (c.particulars && c.particulars.floating_charge_covers_all) flags.push('All assets');
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(c.charge_code || '—') + '</td>' +
+              '<td style="padding:4px 8px;color:#94A3B8;">' + (c.created_on ? _fmtDate(c.created_on) : '—') + '</td>' +
+              '<td style="padding:4px 8px;color:#E2E8F0;">' + entitled + '</td>' +
+              '<td style="padding:4px 8px;color:#94A3B8;">' + (flags.length ? flags.join(' + ') : '—') + '</td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody></table>' +
+      '</div>';
+    })();
+
+    // ── Recent Filings (last 5) ──
+    const filingsHtml = (function() {
+      const filings = Array.isArray(chd2.recent_filings) ? chd2.recent_filings.slice(0, 5) : [];
+      if (filings.length === 0) return '';
+      const catBg = { mortgage:'rgba(248,113,113,0.08)', accounts:'rgba(56,189,248,0.08)', 'confirmation-statement':'rgba(167,139,250,0.08)', 'officers':'rgba(52,211,153,0.08)' };
+      const catCol = { mortgage:'#F87171', accounts:'#38BDF8', 'confirmation-statement':'#A78BFA', 'officers':'#34D399' };
+      return '<div style="margin-top:12px;">' +
+        '<div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Filings \u2014 last ' + filings.length + '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+          '<thead><tr style="background:rgba(167,139,250,0.04);">' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Date</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Category</th>' +
+            '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Description</th>' +
+          '</tr></thead><tbody>' +
+          filings.map(f => {
+            const col = catCol[f.category] || '#94A3B8';
+            const bg = catBg[f.category] || 'rgba(255,255,255,0.04)';
+            const desc = (f.description || '').replace(/-/g, ' ').replace(/mortgage /, '').replace(/with accounts type group/, '');
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<td style="padding:4px 8px;color:#94A3B8;">' + (f.date ? _fmtDate(f.date) : '—') + '</td>' +
+              '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(f.type || '—') + '</td>' +
+              '<td style="padding:4px 8px;"><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + bg + ';color:' + col + ';text-transform:capitalize;">' + sanitizeHtml(f.category || '—') + '</span></td>' +
+              '<td style="padding:4px 8px;color:#CBD5E1;">' + sanitizeHtml(desc) + '</td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody></table>' +
+      '</div>';
+    })();
+
+    // ── Nested kids with expandable sub-panels ──
+    const nestedKidsHtml = (function() {
+      if (nestedKids.length === 0) return '';
+      let html = '<div style="margin-top:12px;">' +
+        '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Directors &amp; PSCs of ' + sanitizeHtml(bor.full_name || 'this corporate') + ' \u2014 ' + nestedKids.length + '</div>';
+
+      nestedKids.forEach(nk => {
+        const isCorpKid = (nk.borrower_type === 'corporate') ||
+          (nk.full_name && /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group)\b/i.test(nk.full_name));
+        const nRoleCol = nk.role === 'director' ? '#818CF8' : nk.role === 'psc' ? '#38BDF8' : nk.role === 'ubo' ? '#A78BFA' : '#94A3B8';
+        const nRoleBg = nk.role === 'director' ? 'rgba(129,140,248,0.12)' : nk.role === 'psc' ? 'rgba(56,189,248,0.12)' : nk.role === 'ubo' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)';
+        const nType = isCorpKid ? 'Corporate' : 'Individual';
+        const kidChd = nk.ch_match_data || {};
+        const kidBrokerTrace = kidChd.broker_trace_required === true;
+        const subPanelId = 'ncorp-' + nk.id + '-' + nestLevel;
+
+        // Row: clickable ONLY if corporate (to expand sub-panel)
+        const rowStyle = isCorpKid
+          ? 'border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;background:rgba(255,255,255,0.01);'
+          : 'border-bottom:1px solid rgba(255,255,255,0.04);';
+        const rowOnClick = isCorpKid ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"' : '';
+        const arrowCell = isCorpKid
+          ? '<span id="' + subPanelId + '-arrow" style="display:inline-block;width:12px;color:#64748B;font-size:9px;margin-right:4px;">\u25B6</span>'
+          : '<span style="display:inline-block;width:12px;"></span>';
+        const kidBrokerPill = kidBrokerTrace
+          ? ' <span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(251,191,36,0.15);color:#FBBF24;" title="' + sanitizeHtml(kidChd.broker_trace_reason || '') + '">\u26A0 Broker</span>'
+          : '';
+
+        html += '<div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr;padding:6px 8px;font-size:11px;' + rowStyle + '"' + rowOnClick + '>' +
+          '<div style="color:#E2E8F0;">' + arrowCell + sanitizeHtml(nk.full_name || '—') + kidBrokerPill + '</div>' +
+          '<div><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + nRoleBg + ';color:' + nRoleCol + ';text-transform:capitalize;">' + sanitizeHtml(nk.role || '—') + '</span></div>' +
+          '<div style="color:#94A3B8;">' + nType + '</div>' +
+          '<div style="text-align:center;">' + (nk.ch_verified_at ? '<span style="color:#34D399;">\u2713</span>' : '<span style="color:#64748B;">\u2014</span>') + '</div>' +
+        '</div>';
+
+        // Sub-panel (only for corporate kids)
+        if (isCorpKid) {
+          html += '<div id="' + subPanelId + '" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;margin:4px 0 4px 18px;border-left:2px dashed rgba(56,189,248,0.25);padding-left:10px;">' +
+            '<div style="background:rgba(15,23,41,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:10px 12px;">' +
+              window._renderCorporatePanelHtml(nk, deal, canEdit, nestLevel + 1) +
+            '</div>' +
+          '</div>';
+        }
+      });
+
+      html += '</div>';
+      return html;
+    })();
+
+    // ── Recursion advisory ──
+    const recursionHtml = nestedVer
+      ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.18);border-radius:6px;">' +
+          '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Nested CH Verification</div>' +
+          '<div style="font-size:11px;color:#CBD5E1;">Recursed into ' + sanitizeHtml(bor.full_name || 'corporate PSC') + '. ' +
+            (nestedIns ? ('Inserted <strong>' + (nestedIns.officers || 0) + '</strong> officers, <strong>' + (nestedIns.pscs || 0) + '</strong> PSCs.') : '') +
+          '</div>' +
+        '</div>'
+      : '';
+
+    return brokerBanner + headerHtml + topGrid + summaryStrip + chargesHtml + filingsHtml + nestedKidsHtml + recursionHtml;
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
   // TOGGLE BORROWER INLINE DETAIL — expand/collapse below clicked row
   // ═══════════════════════════════════════════════════════════════════
 
@@ -4874,79 +5159,15 @@ export async function renderDealMatrix(deal) {
 
     let innerBody;
     if (_isCorporate) {
-      // Company number: prefer column, fall back to CH match blobs
-      const chd2 = bor.ch_match_data || {};
-      const companyNo = bor.company_number || chd2.psc_own_company_number || '—';
-
-      // ── Registered Address fallback ──
-      // If column is empty, flatten the structured CH object: {line_1,line_2,locality,region,postal_code,country}
-      let regAddr = bor.address || bor.residential_address || null;
-      if (!regAddr && chd2.registered_address && typeof chd2.registered_address === 'object') {
-        const ra = chd2.registered_address;
-        regAddr = [ra.line_1, ra.line_2, ra.locality, ra.region, ra.postal_code, ra.country]
-          .filter(x => x && String(x).trim()).join(', ') || null;
-      }
-
-      // ── Natures of Control fallback ──
-      // For corporate PSC rows, natures describe control over the PARENT company, not self.
-      // They live in parent.ch_match_data.pscs[] keyed by name.
-      // Direct CH re-verify overwrites ch_match_data with the PSC's own profile, wiping self.natures_of_control,
-      // so we look them up on the parent row's PSC list.
-      let natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control.slice() : [];
-      if (natures.length === 0 && Array.isArray(chd2.psc_natures_of_control)) {
-        natures = chd2.psc_natures_of_control.slice();
-      }
-      if (natures.length === 0 && bor.parent_borrower_id) {
-        const parentRow = (deal.borrowers || []).find(b => b.id === bor.parent_borrower_id);
-        const parentPscs = parentRow && parentRow.ch_match_data && Array.isArray(parentRow.ch_match_data.pscs)
-          ? parentRow.ch_match_data.pscs : [];
-        const myNameLc = (bor.full_name || '').trim().toLowerCase();
-        const matchingPsc = parentPscs.find(p => p && p.name && p.name.trim().toLowerCase() === myNameLc);
-        if (matchingPsc && Array.isArray(matchingPsc.natures_of_control)) {
-          natures = matchingPsc.natures_of_control.slice();
-        }
-      }
-
-      const nestedVer = chd2.nested_verification || null;
-      const nestedIns = chd2.nested_inserted || null;
-
-      // Find nested children (officers/PSCs of this corporate) that live in deal.borrowers
-      const nestedKids = (deal.borrowers || []).filter(b => b.parent_borrower_id === bor.id);
-      const nestedKidsTable = nestedKids.length > 0
-        ? '<div style="margin-top:12px;">' +
-            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Directors &amp; PSCs of ' + sanitizeHtml(bor.full_name || 'this corporate') + ' \u2014 ' + nestedKids.length + '</div>' +
-            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
-              '<thead><tr style="background:rgba(56,189,248,0.06);">' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Name</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Role</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
-                '<th style="text-align:center;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">CH</th>' +
-              '</tr></thead><tbody>' +
-              nestedKids.map(nk => {
-                const nRoleCol = nk.role === 'director' ? '#818CF8' : nk.role === 'psc' ? '#38BDF8' : nk.role === 'ubo' ? '#A78BFA' : '#94A3B8';
-                const nRoleBg = nk.role === 'director' ? 'rgba(129,140,248,0.12)' : nk.role === 'psc' ? 'rgba(56,189,248,0.12)' : nk.role === 'ubo' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)';
-                const nType = nk.borrower_type === 'corporate' ? 'Corporate' : 'Individual';
-                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-                  '<td style="padding:4px 8px;color:#E2E8F0;">' + sanitizeHtml(nk.full_name || '—') + '</td>' +
-                  '<td style="padding:4px 8px;"><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + nRoleBg + ';color:' + nRoleCol + ';text-transform:capitalize;">' + (nk.role || '—') + '</span></td>' +
-                  '<td style="padding:4px 8px;color:#94A3B8;">' + nType + '</td>' +
-                  '<td style="padding:4px 8px;text-align:center;">' + (nk.ch_verified_at ? '<span style="color:#34D399;">\u2713</span>' : '<span style="color:#64748B;">\u2014</span>') + '</td>' +
-                '</tr>';
-              }).join('') +
-            '</tbody></table>' +
-          '</div>'
-        : '';
-
-      // Nested-verification advisory (set after recursive CH lookup succeeded)
-      const recursionHtml = nestedVer
-        ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.18);border-radius:6px;">' +
-            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Nested CH Verification</div>' +
-            '<div style="font-size:11px;color:#CBD5E1;">Recursed into ' + sanitizeHtml(bor.full_name || 'corporate PSC') + '. ' +
-              (nestedIns ? ('Inserted <strong>' + (nestedIns.officers || 0) + '</strong> officers, <strong>' + (nestedIns.pscs || 0) + '</strong> PSCs.') : '') +
-            '</div>' +
-          '</div>'
-        : '';
-
+      // G5.3 Part B Commit 2 — delegate to shared renderer.
+      // Renderer handles nested kids with inline expandable sub-panels + broker-trace banner.
+      innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0);
+    } else if (false /* PART_B_DEAD_CORP_BRANCH — see below */) {
+      // Dead branch: original inline corporate rendering preserved as a literal to keep
+      // the file parse-clean. Never executes (condition is `false`).
+      // The expression references nestedKidsTable/recursionHtml that no longer exist,
+      // but ReferenceErrors don't fire because the branch is never entered.
+      // (Refactor note 2026-04-19: Part B moved all corporate rendering into window._renderCorporatePanelHtml.)
       innerBody =
         // ── Header: Corporate Name + Badges ──
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
