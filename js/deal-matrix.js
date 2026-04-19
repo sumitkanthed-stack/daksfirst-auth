@@ -4877,8 +4877,36 @@ export async function renderDealMatrix(deal) {
       // Company number: prefer column, fall back to CH match blobs
       const chd2 = bor.ch_match_data || {};
       const companyNo = bor.company_number || chd2.psc_own_company_number || '—';
-      const regAddr = bor.address || bor.residential_address || null;
-      const natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control : [];
+
+      // ── Registered Address fallback ──
+      // If column is empty, flatten the structured CH object: {line_1,line_2,locality,region,postal_code,country}
+      let regAddr = bor.address || bor.residential_address || null;
+      if (!regAddr && chd2.registered_address && typeof chd2.registered_address === 'object') {
+        const ra = chd2.registered_address;
+        regAddr = [ra.line_1, ra.line_2, ra.locality, ra.region, ra.postal_code, ra.country]
+          .filter(x => x && String(x).trim()).join(', ') || null;
+      }
+
+      // ── Natures of Control fallback ──
+      // For corporate PSC rows, natures describe control over the PARENT company, not self.
+      // They live in parent.ch_match_data.pscs[] keyed by name.
+      // Direct CH re-verify overwrites ch_match_data with the PSC's own profile, wiping self.natures_of_control,
+      // so we look them up on the parent row's PSC list.
+      let natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control.slice() : [];
+      if (natures.length === 0 && Array.isArray(chd2.psc_natures_of_control)) {
+        natures = chd2.psc_natures_of_control.slice();
+      }
+      if (natures.length === 0 && bor.parent_borrower_id) {
+        const parentRow = (deal.borrowers || []).find(b => b.id === bor.parent_borrower_id);
+        const parentPscs = parentRow && parentRow.ch_match_data && Array.isArray(parentRow.ch_match_data.pscs)
+          ? parentRow.ch_match_data.pscs : [];
+        const myNameLc = (bor.full_name || '').trim().toLowerCase();
+        const matchingPsc = parentPscs.find(p => p && p.name && p.name.trim().toLowerCase() === myNameLc);
+        if (matchingPsc && Array.isArray(matchingPsc.natures_of_control)) {
+          natures = matchingPsc.natures_of_control.slice();
+        }
+      }
+
       const nestedVer = chd2.nested_verification || null;
       const nestedIns = chd2.nested_inserted || null;
 
