@@ -8,8 +8,16 @@ module.exports = {
   // Database
   DATABASE_URL: process.env.DATABASE_URL,
 
-  // JWT
-  JWT_SECRET: process.env.JWT_SECRET || 'daksfirst_default_secret',
+  // JWT — fail-fast if missing or weak (audit hardening 2026-04-20)
+  JWT_SECRET: (() => {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('[config] JWT_SECRET env var is required — refusing to start');
+    }
+    if (process.env.JWT_SECRET.length < 32) {
+      throw new Error('[config] JWT_SECRET must be at least 32 characters — refusing to start');
+    }
+    return process.env.JWT_SECRET;
+  })(),
   JWT_EXPIRY: '15m',
   JWT_REFRESH_EXPIRY: '7d',
 
