@@ -231,7 +231,11 @@ router.post('/:submissionId/borrowers/verify-roles', authenticateToken, authenti
 //  number — so ownership chains like "Cohort Capital Ltd ← Cohort Capital
 //  Holdings Ltd ← its own officers" are fully populated.
 // ═══════════════════════════════════════════════════════════════════════════
-const MAX_RECURSION_DEPTH = 2;
+// Bumped 2026-04-19 from 2 → 4 to trace full UBO chain up to 4 levels.
+// Typical worst-case API cost: 1 + 2 + 4 + 8 = 15 CH calls per primary (CH limit 600/5min).
+// Below MAX depth, a corporate PSC WITHOUT a UK registration number (e.g. BVI entity) is
+// flagged with broker_trace_required=true so RM can ask broker for manual UBO chain.
+const MAX_RECURSION_DEPTH = 4;
 
 async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, userId, depth = 0) {
   if (!companyNumber) return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0 };
@@ -313,6 +317,24 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
     // Diagnostic log — tells us exactly why recursion does or doesn't fire
     console.log(`[ch-recurse depth=${depth}] PSC name="${p.name}" kind="${p.kind}" isCorp=${isCorporatePsc} ownCoNum=${pscOwnCompanyNumber || 'NONE'} existed=${existingNames.has(nameKey)} identification=${JSON.stringify(p.identification || null)}`);
 
+    // Broker-trace flag: corporate PSC that we cannot further verify via UK CH
+    // (typically BVI / offshore / other non-UK jurisdiction with no registration number).
+    // Set a flag on the row so UI can render an amber advisory asking broker for manual UBO chain.
+    const _brokerTraceRequired = isCorporatePsc && !pscOwnCompanyNumber;
+    const _brokerTraceReason = _brokerTraceRequired
+      ? (() => {
+          const country = (p.address && p.address.country) || (p.identification && p.identification.country_registered) || null;
+          const legalAuthority = p.identification && p.identification.legal_authority ? p.identification.legal_authority : null;
+          if (country && !/united kingdom|england|wales|scotland|northern ireland/i.test(country)) {
+            return `Non-UK entity (${country}${legalAuthority ? ', ' + legalAuthority : ''}) — CH cannot trace. Broker to provide UBO chain.`;
+          }
+          if (legalAuthority && !/england|wales|scotland|northern ireland/i.test(legalAuthority)) {
+            return `Jurisdiction: ${legalAuthority} — no UK registration. Broker to provide UBO chain.`;
+          }
+          return 'Corporate PSC without registration number — broker to provide UBO chain.';
+        })()
+      : null;
+
     // If existing — skip insert but still queue for recursion if corporate AND not yet recursed
     if (existingNames.has(nameKey)) {
       if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
@@ -331,6 +353,15 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
         }
       } else if (isCorporatePsc) {
         console.log(`[ch-recurse depth=${depth}] Existing corporate PSC "${p.name}" NOT queued — reason: ownCoNum=${pscOwnCompanyNumber || 'missing'}, depth=${depth}/${MAX_RECURSION_DEPTH}`);
+        // If this existing corp PSC cannot be traced further, flag for broker
+        if (_brokerTraceRequired) {
+          const existingChild = existingByName.get(nameKey);
+          await pool.query(
+            `UPDATE deal_borrowers SET ch_match_data = ch_match_data || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify({ broker_trace_required: true, broker_trace_reason: _brokerTraceReason }), existingChild.id]
+          );
+          console.log(`[ch-recurse depth=${depth}] Flagged existing "${p.name}" for broker trace: ${_brokerTraceReason}`);
+        }
       }
       continue;  // skip the insert
     }
@@ -345,8 +376,12 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
       country_of_residence: p.country_of_residence || null,
       natures_of_control: p.natures_of_control || [],
       date_of_birth: p.date_of_birth || null,
-      recursion_depth: depth
+      recursion_depth: depth,
+      ...(_brokerTraceRequired ? { broker_trace_required: true, broker_trace_reason: _brokerTraceReason } : {})
     };
+    if (_brokerTraceRequired) {
+      console.log(`[ch-recurse depth=${depth}] New "${p.name}" flagged for broker trace: ${_brokerTraceReason}`);
+    }
     try {
       const ins = await pool.query(
         `INSERT INTO deal_borrowers
