@@ -446,6 +446,11 @@ async function runMigrations() {
       { col: 'dip_fee_confirmed', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed BOOLEAN DEFAULT FALSE;' },
       { col: 'dip_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_fee_confirmed_at TIMESTAMPTZ;' },
       { col: 'commitment_fee_confirmed_at', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee_confirmed_at TIMESTAMPTZ;' },
+      // Fee percentage columns — saved by matrix UI, referenced by DIP/TS generators (audit fix 2026-04-20)
+      { col: 'arrangement_fee_pct', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS arrangement_fee_pct NUMERIC(6,3);' },
+      { col: 'broker_fee_pct', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_fee_pct NUMERIC(6,3);' },
+      { col: 'commitment_fee', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee NUMERIC(15,2);' },
+      { col: 'retained_interest_months', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS retained_interest_months INTEGER;' },
       { col: 'rm_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_recommendation VARCHAR(20);" },
       { col: 'credit_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_recommendation VARCHAR(20);" },
       { col: 'compliance_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS compliance_recommendation VARCHAR(20);" },
