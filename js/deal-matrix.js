@@ -4782,28 +4782,62 @@ export async function renderDealMatrix(deal) {
     };
 
     const chd2 = bor.ch_match_data || {};
-    const companyNo = bor.company_number || chd2.psc_own_company_number || chd2.company_number || '—';
 
-    // Registered Address: column first, else flatten CH JSON object
+    // Find THIS entity's entry in the parent's PSC list (for name, address, identification,
+    // natures_of_control). Only meaningful when this row was inserted as a PSC of parent.
+    const _parentPscEntry = (function() {
+      if (!bor.parent_borrower_id) return null;
+      const parentRow = (deal.borrowers || []).find(b => b.id === bor.parent_borrower_id);
+      const parentPscs = parentRow && parentRow.ch_match_data && Array.isArray(parentRow.ch_match_data.pscs)
+        ? parentRow.ch_match_data.pscs : [];
+      const myNameLc = (bor.full_name || '').trim().toLowerCase();
+      return parentPscs.find(p => p && p.name && p.name.trim().toLowerCase() === myNameLc) || null;
+    })();
+
+    // Company Number: THIS entity's own regnum only.
+    // NEVER fall back to chd2.company_number (that's the PARENT's, recorded to say where we found the PSC).
+    const companyNo = bor.company_number
+      || chd2.psc_own_company_number
+      || (chd2.psc_identification && chd2.psc_identification.registration_number)
+      || (_parentPscEntry && _parentPscEntry.identification && _parentPscEntry.identification.registration_number)
+      || null;
+
+    // Jurisdiction: prefer human-readable country over technical legal_authority code.
+    // Order: column → self-verified profile → parent PSC address.country → psc_identification country/authority.
+    let jurisdiction = bor.jurisdiction || chd2.jurisdiction || null;
+    if (!jurisdiction && _parentPscEntry && _parentPscEntry.address && _parentPscEntry.address.country) {
+      jurisdiction = _parentPscEntry.address.country;
+    }
+    if (!jurisdiction && chd2.psc_identification) {
+      jurisdiction = chd2.psc_identification.country_registered || chd2.psc_identification.legal_authority || null;
+    }
+    if (!jurisdiction && _parentPscEntry && _parentPscEntry.identification) {
+      const pid = _parentPscEntry.identification;
+      jurisdiction = pid.country_registered || pid.legal_authority || null;
+    }
+    // Default to England and Wales only if we have a UK registration number
+    if (!jurisdiction && companyNo) jurisdiction = 'England and Wales';
+
+    // Registered Address: column → self-verified profile → parent PSC entry address
     let regAddr = bor.address || bor.residential_address || null;
     if (!regAddr && chd2.registered_address && typeof chd2.registered_address === 'object') {
       const ra = chd2.registered_address;
       regAddr = [ra.line_1, ra.line_2, ra.locality, ra.region, ra.postal_code, ra.country]
         .filter(x => x && String(x).trim()).join(', ') || null;
     }
+    if (!regAddr && _parentPscEntry && _parentPscEntry.address && typeof _parentPscEntry.address === 'object') {
+      const pa = _parentPscEntry.address;
+      regAddr = [pa.line_1, pa.line_2, pa.locality, pa.region, pa.postal_code, pa.country]
+        .filter(x => x && String(x).trim()).join(', ') || null;
+    }
 
-    // Nature of Control: self → psc_natures → parent's pscs[] matched by name
+    // Nature of Control: self → psc_natures → parent's pscs[] entry
     let natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control.slice() : [];
     if (natures.length === 0 && Array.isArray(chd2.psc_natures_of_control)) {
       natures = chd2.psc_natures_of_control.slice();
     }
-    if (natures.length === 0 && bor.parent_borrower_id) {
-      const parentRow = (deal.borrowers || []).find(b => b.id === bor.parent_borrower_id);
-      const parentPscs = parentRow && parentRow.ch_match_data && Array.isArray(parentRow.ch_match_data.pscs)
-        ? parentRow.ch_match_data.pscs : [];
-      const myNameLc = (bor.full_name || '').trim().toLowerCase();
-      const matching = parentPscs.find(p => p && p.name && p.name.trim().toLowerCase() === myNameLc);
-      if (matching && Array.isArray(matching.natures_of_control)) natures = matching.natures_of_control.slice();
+    if (natures.length === 0 && _parentPscEntry && Array.isArray(_parentPscEntry.natures_of_control)) {
+      natures = _parentPscEntry.natures_of_control.slice();
     }
 
     const nestedVer = chd2.nested_verification || null;
@@ -4845,7 +4879,7 @@ export async function renderDealMatrix(deal) {
         '<div>' +
           '<div style="font-size:9px;color:' + borderColour + ';font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Corporate Identity</div>' +
           _field('Company Number', companyNo, 'CH') +
-          _field('Jurisdiction', bor.jurisdiction || chd2.jurisdiction || 'England and Wales', 'CH') +
+          _field('Jurisdiction', jurisdiction, 'CH') +
           _field('Registered Address', regAddr, 'CH') +
           (natures.length > 0
             ? '<div style="margin-bottom:8px;">' +
