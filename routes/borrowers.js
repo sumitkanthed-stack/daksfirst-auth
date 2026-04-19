@@ -224,10 +224,151 @@ router.post('/:submissionId/borrowers/verify-roles', authenticateToken, authenti
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  Recursive CH populate helper (G5.3 Part A — 2026-04-20)
+//  Core logic for inserting officers + PSCs as children of a corporate row.
+//  Called by the /ch-verify-populate endpoint at depth=0. Recurses to depth
+//  MAX_RECURSION_DEPTH when a corporate PSC is detected with its own company
+//  number — so ownership chains like "Cohort Capital Ltd ← Cohort Capital
+//  Holdings Ltd ← its own officers" are fully populated.
+// ═══════════════════════════════════════════════════════════════════════════
+const MAX_RECURSION_DEPTH = 2;
+
+async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, userId, depth = 0) {
+  if (!companyNumber) return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0 };
+
+  const companiesHouse = require('../services/companies-house');
+  let verification;
+  try {
+    verification = await companiesHouse.verifyCompany(companyNumber);
+  } catch (chErr) {
+    console.warn(`[ch-recurse depth=${depth}] verifyCompany(${companyNumber}) failed:`, chErr.message);
+    return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0, error: chErr.message };
+  }
+  if (!verification || !verification.found) {
+    console.warn(`[ch-recurse depth=${depth}] company not found: ${companyNumber}`);
+    return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0 };
+  }
+
+  // Load existing children so we don't duplicate
+  const childRows = await pool.query(`SELECT id, full_name FROM deal_borrowers WHERE parent_borrower_id = $1`, [parentRowId]);
+  const existingNames = new Set(childRows.rows.map(c => (c.full_name || '').toLowerCase().trim()));
+
+  let officersInserted = 0;
+  let pscsInserted = 0;
+  const corporatePscsToRecurse = [];
+
+  // Insert directors / secretaries / LLP members as 'director' children
+  const officers = Array.isArray(verification.officers) ? verification.officers : [];
+  for (const o of officers) {
+    const nameKey = (o.name || '').toLowerCase().trim();
+    if (!nameKey || existingNames.has(nameKey)) continue;
+    const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
+    const mappedRole = roleMap[o.officer_role] || 'director';
+    const chData = {
+      source: 'ch_officers_endpoint',
+      company_number: companyNumber,
+      officer_role: o.officer_role,
+      appointed: o.appointed_on || null,
+      nationality: o.nationality || null,
+      country_of_residence: o.country_of_residence || null,
+      occupation: o.occupation || null,
+      date_of_birth: o.date_of_birth || null,
+      recursion_depth: depth
+    };
+    try {
+      const ins = await pool.query(
+        `INSERT INTO deal_borrowers
+          (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, address, kyc_status,
+           ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+         VALUES ($1, $2, $3, $4, 'individual', $5, $6, 'pending',
+           NOW(), $7, $8, 'ch_direct', $9::jsonb)
+         RETURNING id`,
+        [dealId, mappedRole, o.name, o.nationality || null, parentRowId,
+         o.address ? [o.address.line_1, o.address.locality, o.address.postal_code, o.address.country].filter(Boolean).join(', ') : null,
+         userId, o.officer_role || mappedRole, JSON.stringify(chData)]
+      );
+      if (ins.rows.length > 0) {
+        officersInserted++;
+        existingNames.add(nameKey);
+      }
+    } catch (e) { console.warn(`[ch-recurse depth=${depth}] officer insert:`, e.message); }
+  }
+
+  // Insert PSCs as children; queue corporate PSCs for recursion
+  const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
+  for (const p of pscs) {
+    const nameKey = (p.name || '').toLowerCase().trim();
+    if (!nameKey || existingNames.has(nameKey)) continue;
+    const pscKindStr = String(p.kind || '').toLowerCase();
+    const isCorporatePsc = pscKindStr.includes('corporate-entity') || pscKindStr.includes('legal-person');
+    const pscBorrowerType = isCorporatePsc ? 'corporate' : 'individual';
+    const pscOwnCompanyNumber = (isCorporatePsc && p.identification && p.identification.registration_number)
+      ? String(p.identification.registration_number)
+      : null;
+    const chData = {
+      source: 'ch_psc_endpoint',
+      company_number: companyNumber,
+      psc_kind: p.kind || null,
+      psc_own_company_number: pscOwnCompanyNumber,
+      psc_identification: p.identification || null,
+      notified: p.notified_on || null,
+      nationality: p.nationality || null,
+      country_of_residence: p.country_of_residence || null,
+      natures_of_control: p.natures_of_control || [],
+      date_of_birth: p.date_of_birth || null,
+      recursion_depth: depth
+    };
+    try {
+      const ins = await pool.query(
+        `INSERT INTO deal_borrowers
+          (deal_id, role, full_name, nationality, borrower_type, company_number, parent_borrower_id, kyc_status,
+           ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+         VALUES ($1, 'psc', $2, $3, $4, $5, $6, 'pending',
+           NOW(), $7, 'psc', 'ch_direct', $8::jsonb)
+         RETURNING id`,
+        [dealId, p.name, p.nationality || null, pscBorrowerType, pscOwnCompanyNumber, parentRowId, userId, JSON.stringify(chData)]
+      );
+      if (ins.rows.length > 0) {
+        pscsInserted++;
+        existingNames.add(nameKey);
+        if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
+          corporatePscsToRecurse.push({ rowId: ins.rows[0].id, companyNumber: pscOwnCompanyNumber });
+        }
+      }
+    } catch (e) { console.warn(`[ch-recurse depth=${depth}] PSC insert:`, e.message); }
+  }
+
+  // Recurse for each corporate PSC we queued
+  let totalRecursed = corporatePscsToRecurse.length;
+  for (const cp of corporatePscsToRecurse) {
+    try {
+      const sub = await _populateChChildrenRecursive(dealId, cp.rowId, cp.companyNumber, userId, depth + 1);
+      // Stash the sub-verification on the PSC row so frontend can render its detail panel
+      if (sub && sub.verification) {
+        await pool.query(
+          `UPDATE deal_borrowers SET ch_match_data = ch_match_data || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify({ nested_verification: sub.verification, nested_inserted: sub.inserted }), cp.rowId]
+        );
+      }
+    } catch (e) { console.warn(`[ch-recurse depth=${depth + 1}] recurse failed:`, e.message); }
+  }
+
+  return {
+    verification,
+    inserted: { officers: officersInserted, pscs: pscsInserted },
+    recursed: totalRecursed
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  PER-CORPORATE CH VERIFY & POPULATE — Phase G2b
 //  Runs Companies House verification on a specific corporate borrower row
 //  (e.g. a corporate guarantor) and auto-creates its officers & PSCs as child
 //  borrower rows with parent_borrower_id set.
+//  G5.3 Part A (2026-04-20): extended to recursively verify corporate PSCs
+//  up to MAX_RECURSION_DEPTH = 2 levels — so ownership chains like
+//  "Cohort Capital Ltd ← Cohort Capital Holdings Ltd ← its own officers"
+//  are fully populated on a single CH verify action.
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authenticateToken, async (req, res) => {
   try {
@@ -252,104 +393,16 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
     if (!parent.company_number) return res.status(400).json({ error: 'This borrower has no company_number — set it before running CH verify' });
     if (parent.parent_borrower_id) return res.status(400).json({ error: 'CH verify is only supported on top-level corporate parties, not on nested children' });
 
-    // Run CH verification (same service used by /api/companies-house/verify)
-    const companiesHouse = require('../services/companies-house');
-    let verification;
-    try {
-      verification = await companiesHouse.verifyCompany(parent.company_number);
-    } catch (chErr) {
-      console.error('[borrowers/ch-verify-populate] CH API error:', chErr.message);
-      const status = chErr.message && chErr.message.includes('Rate limited') ? 429 : 502;
-      return res.status(status).json({ error: 'Companies House API error: ' + chErr.message });
-    }
+    // Delegate to recursive helper — inserts officers+PSCs, and recurses into corporate PSCs
+    const result = await _populateChChildrenRecursive(dealId, parent.id, parent.company_number, req.user.userId, 0);
 
-    if (!verification || !verification.found) {
+    if (!result.verification) {
       return res.status(404).json({ error: 'Company not found at Companies House', companyNumber: parent.company_number });
     }
-
-    // Load existing children so we don't duplicate
-    const childRows = await pool.query(
-      `SELECT id, full_name FROM deal_borrowers WHERE parent_borrower_id = $1`,
-      [parent.id]
-    );
-    const existingNames = new Set(childRows.rows.map(c => (c.full_name || '').toLowerCase().trim()));
-
-    // Create child rows for officers (directors / secretaries / LLP members).
-    // Each created row is stamped as CH-verified since the source IS Companies House.
-    const created = [];
+    const verification = result.verification;
     const officers = Array.isArray(verification.officers) ? verification.officers : [];
-    for (const o of officers) {
-      const nameKey = (o.name || '').toLowerCase().trim();
-      if (!nameKey || existingNames.has(nameKey)) continue;
-      const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
-      const mappedRole = roleMap[o.officer_role] || 'director';
-      const chData = {
-        source: 'ch_officers_endpoint',
-        company_number: parent.company_number,
-        officer_role: o.officer_role,
-        appointed: o.appointed_on || null,
-        nationality: o.nationality || null,
-        country_of_residence: o.country_of_residence || null,
-        occupation: o.occupation || null,
-        date_of_birth: o.date_of_birth || null,
-      };
-      try {
-        const ins = await pool.query(
-          `INSERT INTO deal_borrowers
-            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, address, kyc_status,
-             ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
-           VALUES ($1, $2, $3, $4, 'individual', $5, $6, 'pending',
-             NOW(), $7, $8, 'ch_direct', $9::jsonb)
-           RETURNING id, full_name, role`,
-          [dealId, mappedRole, o.name, o.nationality || null, parent.id,
-           o.address ? [o.address.line_1, o.address.locality, o.address.postal_code, o.address.country].filter(Boolean).join(', ') : null,
-           req.user.userId, o.officer_role || mappedRole, JSON.stringify(chData)]
-        );
-        if (ins.rows.length > 0) {
-          created.push({ ...ins.rows[0], source: 'officer', raw_role: o.officer_role });
-          existingNames.add(nameKey);
-        }
-      } catch (e) { console.warn('[ch-verify-populate] officer insert:', e.message); }
-    }
-
-    // Create child rows for PSCs — same CH-verified stamp.
     const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
-    for (const p of pscs) {
-      const nameKey = (p.name || '').toLowerCase().trim();
-      if (!nameKey) continue;
-      if (existingNames.has(nameKey)) continue; // already a director, skip dup
-      const chData = {
-        source: 'ch_psc_endpoint',
-        company_number: parent.company_number,
-        psc_kind: p.kind || null,
-        notified: p.notified_on || null,
-        nationality: p.nationality || null,
-        country_of_residence: p.country_of_residence || null,
-        natures_of_control: p.natures_of_control || [],
-        date_of_birth: p.date_of_birth || null,
-      };
-      // G5.3 — derive borrower_type from CH kind so corporate PSCs are properly tagged
-      // 'corporate-entity-...' or 'legal-person-...' → corporate; everything else → individual
-      const pscKindStr = String(p.kind || '').toLowerCase();
-      const pscBorrowerType = (pscKindStr.includes('corporate-entity') || pscKindStr.includes('legal-person'))
-        ? 'corporate'
-        : 'individual';
-      try {
-        const ins = await pool.query(
-          `INSERT INTO deal_borrowers
-            (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, kyc_status,
-             ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
-           VALUES ($1, 'psc', $2, $3, $4, $5, 'pending',
-             NOW(), $6, 'psc', 'ch_direct', $7::jsonb)
-           RETURNING id, full_name, role`,
-          [dealId, p.name, p.nationality || null, pscBorrowerType, parent.id, req.user.userId, JSON.stringify(chData)]
-        );
-        if (ins.rows.length > 0) {
-          created.push({ ...ins.rows[0], source: 'psc', natures_of_control: p.natures_of_control || [] });
-          existingNames.add(nameKey);
-        }
-      } catch (e) { console.warn('[ch-verify-populate] PSC insert:', e.message); }
-    }
+    const created = []; // maintained for response-shape backward compat (summary instead of full rows)
 
     // Mark the parent corporate borrower as CH verified, stash the verification
     await pool.query(
@@ -362,9 +415,11 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
     );
 
     await logAudit(dealId, 'ch_verified_and_populated', null, parent.company_name || parent.full_name,
-      { companyNumber: parent.company_number, created_children: created.length, officers: officers.length, pscs: pscs.length },
+      { companyNumber: parent.company_number, created_children: result.inserted.officers + result.inserted.pscs,
+        officers: result.inserted.officers, pscs: result.inserted.pscs, recursed_corporate_pscs: result.recursed },
       req.user.userId);
 
+    const totalInserted = result.inserted.officers + result.inserted.pscs;
     res.json({
       success: true,
       verification: {
@@ -375,9 +430,13 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
         officer_count: officers.length,
         psc_count: pscs.length,
       },
-      created_children: created,
-      skipped: (officers.length + pscs.length) - created.length,
-      message: `Verified ${verification.company_name} and populated ${created.length} officer(s)/PSC(s)`
+      created_summary: {
+        officers_inserted: result.inserted.officers,
+        pscs_inserted: result.inserted.pscs,
+        corporate_pscs_recursed: result.recursed
+      },
+      skipped: (officers.length + pscs.length) - totalInserted,
+      message: `Verified ${verification.company_name} — added ${totalInserted} officer(s)/PSC(s)${result.recursed > 0 ? ` and auto-verified ${result.recursed} corporate PSC chain(s)` : ''}`
     });
   } catch (error) {
     console.error('[ch-verify-populate] Error:', error);
