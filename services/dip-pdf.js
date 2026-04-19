@@ -74,107 +74,191 @@ function feeLine(raw, loanAmt) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// G5 — Option B party rendering helpers (2026-04-20)
-// Used by both the DIP PDF (here) and the Termsheet PDF (G5.4).
-// Colours mirror the matrix UI per G5 Q4 answer.
+// G5 — Parties to the Facility (card layout) — 2026-04-20 revised
+// Renders Borrowers + Guarantors as paired Corporate+UBO cards or
+// single Individual cards. Colour scheme locked with user:
+//   - Blue (#eaf1fa) = Corporate Entity
+//   - Gold (#fff8e5) = UBO
+//   - Amber (#fff3e0) = Individual Guarantor (UBO-linked to a borrower)
+//   - Teal (#e0f7f5) = Individual Guarantor (Third-party, unconnected)
+//   - Blue+teal-left-border = Corporate Guarantor (distinguishes from Borrower)
+//   - Light-blue (#f0f5ff) = Individual Borrower (rare)
 // ═══════════════════════════════════════════════════════════════════
-
-function _g5RolePill(label, bgColor, fgColor) {
-  return `<span style="display:inline-block;padding:2px 10px;border-radius:3px;background:${bgColor};color:${fgColor};font-size:9.5px;font-weight:700;letter-spacing:0.3px;">${esc(label)}</span>`;
-}
 
 function _g5FormatDate(iso) {
   if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch { return ''; }
+  try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return ''; }
 }
 
-function _g5KycBadge(status) {
-  const s = (status || '').toLowerCase();
-  if (s === 'verified')  return `<span style="color:#166534;font-weight:600;">\u2713 Verified (KYC pack)</span>`;
-  if (s === 'submitted') return `<span style="color:#92400e;">\u23F3 Under review</span>`;
-  if (s === 'rejected')  return `<span style="color:#991b1b;">\u2717 Rejected</span>`;
-  return `<span style="color:#6b7280;">\u2014 KYC pending</span>`;
+function _g5ChVerifiedText(ch_verified_at) {
+  if (!ch_verified_at) return '';
+  return `CH Verified \u2713 ${_g5FormatDate(ch_verified_at)}`;
 }
 
-function _g5ChVerifiedCell(ch_verified_at) {
-  if (!ch_verified_at) return `<span style="color:#6b7280;">\u2014</span>`;
-  return `<span style="color:#166534;font-weight:600;">\u2713 ${_g5FormatDate(ch_verified_at)}</span>`;
+function _g5IdVerifiedText(kyc_status) {
+  const s = (kyc_status || '').toLowerCase();
+  if (s === 'verified')  return 'ID Verified \u2713';
+  if (s === 'submitted') return 'ID Under review';
+  if (s === 'rejected')  return 'ID Rejected';
+  return 'ID Pending Verification';
 }
 
-// Render the "Parties to the Facility" corporate-party table
-function _g5RenderCorporatePartiesTable(corporateParties) {
-  if (!corporateParties || corporateParties.length === 0) return '';
-  const rows = corporateParties.map(p => {
-    const pill = _g5RolePill(p.label, p.bgColor, p.fgColor);
-    return `<tr style="border-bottom:1px solid #f1f5f9;">
-      <td style="padding:7px 10px;font-size:11px;">${pill}</td>
-      <td style="padding:7px 10px;font-size:11.5px;">${esc(p.full_name || '\u2014')}</td>
-      <td style="padding:7px 10px;font-size:11px;">${esc(p.company_number || '\u2014')}</td>
-      <td style="padding:7px 10px;font-size:11px;">${_g5ChVerifiedCell(p.ch_verified_at)}</td>
-    </tr>`;
-  }).join('');
-
-  return `<table style="width:100%;border-collapse:collapse;margin:4px 0 10px;font-family:Arial,Helvetica,sans-serif;">
-    <thead>
-      <tr style="background:#f1f5f9;">
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Role</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Name</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Company No</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">CH Verified</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+// Pick the best UBO for a corporate from its officers — prefer highest-% PSC, fall back to director
+function _g5PickUboForCorporate(officersForThisCorp) {
+  if (!officersForThisCorp || officersForThisCorp.length === 0) return null;
+  const pscs = officersForThisCorp.filter(o => o.is_psc);
+  if (pscs.length > 0) {
+    pscs.sort((a, b) => {
+      const parsePct = (p) => { const m = p ? String(p).match(/\d+/) : null; return m ? parseInt(m[0], 10) : 0; };
+      return parsePct(b.psc_percentage) - parsePct(a.psc_percentage);
+    });
+    return pscs[0];
+  }
+  const directors = officersForThisCorp.filter(o => (o.role_label || '').toLowerCase().includes('director'));
+  return directors[0] || officersForThisCorp[0];
 }
 
-// Render the Individual Guarantors sub-block (separate table per G5 Q2)
-function _g5RenderIndividualGuarantorsBlock(individualGuarantors) {
-  if (!individualGuarantors || individualGuarantors.length === 0) return '';
-  const rows = individualGuarantors.map(g => `<tr style="border-bottom:1px solid #f1f5f9;">
-    <td style="padding:7px 10px;font-size:11.5px;font-weight:600;">${esc(g.full_name || '\u2014')}</td>
-    <td style="padding:7px 10px;font-size:11px;">${esc(g.nationality || '\u2014')}</td>
-    <td style="padding:7px 10px;font-size:11px;">${_g5KycBadge(g.kyc_status)}</td>
-    <td style="padding:7px 10px;font-size:11px;">${esc(g.address || '\u2014')}</td>
-  </tr>`).join('');
-
-  return `<h5 style="margin:14px 0 6px;color:#1e3a5f;font-size:11.5px;text-transform:uppercase;letter-spacing:0.5px;">Individual Guarantors</h5>
-  <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:10.5px;color:#555;font-style:italic;">Natural persons providing a personal guarantee in their own capacity. Full KYC details held in the internal file.</p>
-  <table style="width:100%;border-collapse:collapse;margin:4px 0 10px;font-family:Arial,Helvetica,sans-serif;">
-    <thead>
-      <tr style="background:#f1f5f9;">
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Name</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Citizenship</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">ID Verified</th>
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Address for Service of Notice</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+// Classify an individual guarantor: 'ubolinked' if their name matches a PSC/director of any corporate borrower; else 'thirdparty'
+function _g5ClassifyIndividualGuarantor(guar, allCorporates, officersByParent) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const guarName = norm(guar.full_name);
+  if (!guarName) return { type: 'thirdparty', linkedToCorp: null };
+  for (const corp of allCorporates) {
+    const officers = officersByParent[corp.id] || [];
+    for (const off of officers) {
+      if (norm(off.full_name) === guarName) {
+        return { type: 'ubolinked', linkedToCorp: corp };
+      }
+    }
+  }
+  return { type: 'thirdparty', linkedToCorp: null };
 }
 
-// Top-level: decide between Option B layout (new) vs legacy rendering (backward compat)
+// Render the SR badge (e.g. "B1", "G1")
+function _g5SrBadge(label) {
+  return `<div style="font-size:9.5px;color:#c9a84c;font-weight:700;background:#1a365d;padding:2px 8px;border-radius:2px;display:inline-block;margin-bottom:6px;letter-spacing:0.5px;">${esc(label)}</div>`;
+}
+
+// Render a Corporate + UBO paired card row
+function _g5RenderCorpPair(corp, ubo, srLabel, isGuarantor) {
+  const corpStyle = isGuarantor
+    ? 'background:#eaf1fa;border:1px solid #b8cfe8;border-left:4px solid #0f766e;'
+    : 'background:#eaf1fa;border:1px solid #b8cfe8;';
+  const corpLabel = isGuarantor ? 'Corporate Guarantor' : 'Corporate Entity';
+  const corpLabelColor = isGuarantor ? '#0f5857' : '#1a365d';
+
+  const corpMeta = [];
+  if (corp.company_number) corpMeta.push(`Co. No: ${esc(corp.company_number)}`);
+  const chText = _g5ChVerifiedText(corp.ch_verified_at);
+  if (chText) corpMeta.push(`<span style="color:#166534;font-weight:600;">${chText}</span>`);
+
+  const uboCard = ubo ? `
+    <div style="padding:12px 14px;background:#fff8e5;border:1px solid #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:#7a5c00;margin-bottom:4px;">${isGuarantor ? 'UBO (Provides Personal Guarantee by default)' : 'Ultimate Beneficial Owner (UBO)'}</div>
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;">${esc(ubo.full_name || '\u2014')}</div>
+      <div style="font-size:10.5px;color:#555;margin-top:3px;">${ubo.is_psc ? `PSC${ubo.psc_percentage ? ' \u00B7 ' + esc(ubo.psc_percentage) + '% shares' : ''}` : esc(ubo.role_label || 'Officer')}</div>
+    </div>`
+    : `
+    <div style="padding:12px 14px;background:#fff8e5;border:1px dashed #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:#7a5c00;margin-bottom:4px;">UBO</div>
+      <div style="font-size:11px;color:#999;font-style:italic;">To be identified on Companies House verification</div>
+    </div>`;
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div style="padding:12px 14px;${corpStyle}border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+      ${_g5SrBadge(srLabel)}
+      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:${corpLabelColor};margin-bottom:2px;">${corpLabel}</div>
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;line-height:1.2;">${esc(corp.full_name || '\u2014')}</div>
+      ${corpMeta.length > 0 ? `<div style="font-size:10.5px;color:#555;margin-top:3px;">${corpMeta.join(' \u00B7 ')}</div>` : ''}
+    </div>
+    ${uboCard}
+  </div>`;
+}
+
+// Render a single Individual card (Borrower or Guarantor — style varies)
+function _g5RenderIndividualCard(person, srLabel, variant, extraMeta) {
+  const styles = {
+    borrower:   { bg: '#f0f5ff', border: '#b8d4ff', labelColor: '#1e3a5f', label: 'Individual Borrower' },
+    ubolinked:  { bg: '#fff3e0', border: '#f3c38c', labelColor: '#7a4820', label: 'Individual Guarantor \u2014 UBO-linked' },
+    thirdparty: { bg: '#e0f7f5', border: '#8bcfca', labelColor: '#0f5857', label: 'Individual Guarantor \u2014 Third Party' }
+  };
+  const s = styles[variant] || styles.ubolinked;
+
+  const metaParts = [];
+  if (extraMeta) metaParts.push(extraMeta);
+  if (person.nationality) metaParts.push(esc(person.nationality));
+  metaParts.push(_g5IdVerifiedText(person.kyc_status));
+  const metaLine = metaParts.join(' \u00B7 ');
+
+  return `<div style="margin-bottom:10px;">
+    <div style="padding:12px 14px;background:${s.bg};border:1px solid ${s.border};border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+      ${_g5SrBadge(srLabel)}
+      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:${s.labelColor};margin-bottom:2px;">${s.label}</div>
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;line-height:1.2;">${esc(person.full_name || '\u2014')}</div>
+      <div style="font-size:10.5px;color:#555;margin-top:3px;">${metaLine}</div>
+    </div>
+  </div>`;
+}
+
+// Top-level: render full "Parties to the Facility" section (Borrowers + Guarantors)
 function _g5RenderPartiesSection(dipData) {
   const g = dipData && dipData.parties_grouped;
   if (!g) return null;  // caller falls back to legacy rendering
 
-  // Build corporate parties list with colour-coded role labels per G5 Q4 answer
-  const corporate = [
-    ...g.primary.map(p => ({ ...p, label: 'Primary Borrower',      bgColor: '#fef3c7', fgColor: '#92400e' })),
-    ...g.joint.map(p =>   ({ ...p, label: 'Joint Co-Borrower',     bgColor: '#d1fae5', fgColor: '#065f46' })),
-    ...g.corporate_guarantors.map(p => ({ ...p, label: 'Corporate Guarantor', bgColor: '#e9d8fd', fgColor: '#553c9a' }))
-  ];
+  const allCorpBorrowers = [...(g.primary || []), ...(g.joint || [])];
+  const corpGuarantors = g.corporate_guarantors || [];
+  const indGuarantors = g.individual_guarantors || [];
+  const officersByParent = g.officers_by_parent || {};
 
-  const individuals = g.individual_guarantors || [];
-  const anyParties = corporate.length > 0 || individuals.length > 0;
+  const anyParties = allCorpBorrowers.length > 0 || corpGuarantors.length > 0 || indGuarantors.length > 0;
   if (!anyParties) return null;
 
-  return `<div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
-    <h5 style="margin:0 0 4px;color:#374151;font-size:11.5px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the Facility</h5>
-    <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:10.5px;color:#555;font-style:italic;">Legal parties bound by this indicative facility as at the date of issue.</p>
-    ${_g5RenderCorporatePartiesTable(corporate)}
-    ${_g5RenderIndividualGuarantorsBlock(individuals)}
+  // BORROWERS
+  let borrowersHtml = '';
+  let bIdx = 1;
+  for (const corp of allCorpBorrowers) {
+    const corpIsCorporate = (corp.borrower_type || '').toLowerCase() !== 'individual';
+    if (corpIsCorporate) {
+      const ubo = _g5PickUboForCorporate(officersByParent[corp.id]);
+      borrowersHtml += _g5RenderCorpPair(corp, ubo, `B${bIdx}`, false);
+    } else {
+      borrowersHtml += _g5RenderIndividualCard(corp, `B${bIdx}`, 'borrower', null);
+    }
+    bIdx++;
+  }
+
+  // GUARANTORS
+  let guarantorsHtml = '';
+  let gIdx = 1;
+  // Corporate guarantors first (with UBO paired)
+  for (const corp of corpGuarantors) {
+    const ubo = _g5PickUboForCorporate(officersByParent[corp.id]);
+    guarantorsHtml += _g5RenderCorpPair(corp, ubo, `G${gIdx}`, true);
+    gIdx++;
+  }
+  // Individual guarantors — classify as ubolinked vs thirdparty
+  for (const ind of indGuarantors) {
+    const classified = _g5ClassifyIndividualGuarantor(ind, allCorpBorrowers.concat(corpGuarantors), officersByParent);
+    const variant = classified.type;
+    const extraMeta = classified.linkedToCorp ? `UBO of ${esc(classified.linkedToCorp.full_name)}` : 'Third-party PG provider';
+    guarantorsHtml += _g5RenderIndividualCard(ind, `G${gIdx}`, variant, extraMeta);
+    gIdx++;
+  }
+
+  // Assemble section
+  const borrowersSection = borrowersHtml ? `
+    <div style="color:#1a365d;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:0.8px;margin:8px 0 6px;font-family:Arial,Helvetica,sans-serif;">Borrowers</div>
+    ${borrowersHtml}` : '';
+
+  const guarantorsSection = guarantorsHtml ? `
+    <div style="color:#1a365d;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:0.8px;margin:14px 0 6px;font-family:Arial,Helvetica,sans-serif;">Guarantors</div>
+    ${guarantorsHtml}
+    <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#888;font-style:italic;">By default, the UBO of each corporate Borrower is named as an Individual Guarantor providing a Personal Guarantee. This default may be amended during underwriting.</p>` : '';
+
+  return `<div style="background:#1a365d;color:#fff;padding:8px 16px;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:1px;border-radius:2px 2px 0 0;margin-top:14px;">Parties to the Facility</div>
+  <div style="padding:14px 16px 18px;background:#fafafa;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 2px 2px;">
+    ${borrowersSection}
+    ${guarantorsSection}
   </div>`;
 }
 
