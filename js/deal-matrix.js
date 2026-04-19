@@ -1956,16 +1956,37 @@ export async function renderDealMatrix(deal) {
           <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Personal Guarantees</div>
           <p style="font-size:10.5px;color:#94A3B8;margin:4px 0 8px;font-style:italic;">UBOs of corporate borrowers are auto-listed by default. Status editable in G5.3.2.</p>
           ${(() => {
+            // Detect corporate entities (can't give PGs — they're corporate guarantor candidates)
+            const _isCorpEntity = (person) => {
+              if (!person) return false;
+              if ((person.borrower_type || '').toLowerCase() === 'corporate') return true;
+              const nm = (person.full_name || '').toLowerCase();
+              return /\b(ltd|limited|llp|plc|inc|gmbh|ag|sa|srl|pvt|corporation|corp|company|partnership|s\.a\.|b\.v\.)\b\.?$/i.test(nm.trim())
+                  || /\bholdings?\b/i.test(nm);
+            };
+
             const pgList = [];
+            const corpPscsFound = [];  // PSCs that are corporate entities — flag for RM review
             for (const c of sgCorpBorrowers) {
               const officers = (sgOfficersByParent[c.id] || []).filter(o => o.role === 'psc' || (o.ch_match_data && o.ch_match_data.is_psc));
               for (const o of officers) {
-                pgList.push({ person: o, linkedToCorp: c, source: 'UBO-linked' });
+                if (_isCorpEntity(o)) {
+                  corpPscsFound.push({ psc: o, corp: c });
+                } else {
+                  pgList.push({ person: o, linkedToCorp: c, source: 'UBO-linked' });
+                }
               }
             }
-            for (const i of sgIndividualGuarantors) { pgList.push({ person: i, linkedToCorp: null, source: 'Third-party / Manual' }); }
-            if (pgList.length === 0) return `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No PG providers identified yet. Add corporate borrowers + verify via CH to auto-populate UBOs.</div>`;
-            return `<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:40px 1fr 120px 120px 1fr;gap:10px;padding:4px 0;font-weight:700;">
+            for (const i of sgIndividualGuarantors) {
+              if (_isCorpEntity(i)) { corpPscsFound.push({ psc: i, corp: null }); continue; }
+              pgList.push({ person: i, linkedToCorp: null, source: 'Third-party / Manual' });
+            }
+            const corpAdvisory = corpPscsFound.length > 0 ? `<div style="background:rgba(251,191,36,0.08);border-left:3px solid #FBBF24;padding:8px 12px;margin:6px 0;border-radius:3px;font-size:10.5px;color:#FBBF24;">
+              \u26A0\uFE0F Corporate PSC${corpPscsFound.length > 1 ? 's' : ''} detected: ${corpPscsFound.map(cp => `<strong>${sanitizeHtml(cp.psc.full_name)}</strong>${cp.corp ? ' (PSC of ' + sanitizeHtml(cp.corp.full_name) + ')' : ''}`).join(', ')}. These are corporate entities and cannot provide a Personal Guarantee. RM should assess whether to request a <strong>Corporate Guarantee</strong> deed from them.
+            </div>` : '';
+            if (pgList.length === 0 && corpPscsFound.length === 0) return `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No PG providers identified yet. Add corporate borrowers + verify via CH to auto-populate UBOs.</div>`;
+            if (pgList.length === 0) return corpAdvisory;
+            return corpAdvisory + `<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:40px 1fr 130px 140px 1fr;gap:10px;padding:4px 0;font-weight:700;">
               <div>#</div><div>Guarantor</div><div>Status</div><div>Limit (£)</div><div>Notes</div>
             </div>
             ${pgList.map((pg, i) => {

@@ -328,15 +328,21 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
         natures_of_control: p.natures_of_control || [],
         date_of_birth: p.date_of_birth || null,
       };
+      // G5.3 — derive borrower_type from CH kind so corporate PSCs are properly tagged
+      // 'corporate-entity-...' or 'legal-person-...' → corporate; everything else → individual
+      const pscKindStr = String(p.kind || '').toLowerCase();
+      const pscBorrowerType = (pscKindStr.includes('corporate-entity') || pscKindStr.includes('legal-person'))
+        ? 'corporate'
+        : 'individual';
       try {
         const ins = await pool.query(
           `INSERT INTO deal_borrowers
             (deal_id, role, full_name, nationality, borrower_type, parent_borrower_id, kyc_status,
              ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
-           VALUES ($1, 'psc', $2, $3, 'individual', $4, 'pending',
-             NOW(), $5, 'psc', 'ch_direct', $6::jsonb)
+           VALUES ($1, 'psc', $2, $3, $4, $5, 'pending',
+             NOW(), $6, 'psc', 'ch_direct', $7::jsonb)
            RETURNING id, full_name, role`,
-          [dealId, p.name, p.nationality || null, parent.id, req.user.userId, JSON.stringify(chData)]
+          [dealId, p.name, p.nationality || null, pscBorrowerType, parent.id, req.user.userId, JSON.stringify(chData)]
         );
         if (ins.rows.length > 0) {
           created.push({ ...ins.rows[0], source: 'psc', natures_of_control: p.natures_of_control || [] });

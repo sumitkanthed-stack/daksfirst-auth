@@ -842,6 +842,25 @@ async function runMigrations() {
         RETURNING id, parent_borrower_id
       `);
       console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${uboInsertResult.rows.length} UBO officer row(s)`);
+
+      // Step 3 — Reclassify existing PSCs: if ch_match_data.psc_kind says corporate-entity
+      // or legal-person, set borrower_type='corporate'. Fixes data ingested before the
+      // routes/borrowers.js fix that derives borrower_type from kind.
+      const reclassifyResult = await pool.query(`
+        UPDATE deal_borrowers
+        SET borrower_type = 'corporate', updated_at = NOW()
+        WHERE role = 'psc'
+          AND borrower_type = 'individual'
+          AND ch_match_data IS NOT NULL
+          AND (
+            LOWER(ch_match_data->>'psc_kind') LIKE '%corporate-entity%'
+            OR LOWER(ch_match_data->>'psc_kind') LIKE '%legal-person%'
+          )
+        RETURNING id, full_name
+      `);
+      if (reclassifyResult.rows.length > 0) {
+        console.log(`[migrate] ✓ G5.3 Path 2 Step 3: reclassified ${reclassifyResult.rows.length} corporate PSC(s) to borrower_type='corporate'`);
+      }
     } catch (err) {
       console.error('[migrate] G5.3 Path 2 backfill failed:', err.message);
       // Don't rethrow — a backfill failure shouldn't prevent server start

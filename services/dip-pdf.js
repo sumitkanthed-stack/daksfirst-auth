@@ -319,12 +319,25 @@ function _g5RenderSecuritySection(dipData, deal) {
   // Build PG list from all corporate borrowers' UBOs (Q2: all PSCs auto-listed)
   // G5.3.4: per-UBO status from deal_borrowers.pg_status (required/waived/limited)
   //         and pg_limit_amount / pg_notes when set. Look up by matching name.
+  // Filter out corporate PSCs — they can't give Personal Guarantees (would need Corporate Guarantee deed).
+  const _isCorpEntity = (person) => {
+    if (!person) return false;
+    if ((person.borrower_type || '').toLowerCase() === 'corporate') return true;
+    const nm = (person.full_name || '').toLowerCase().trim();
+    return /\b(ltd|limited|llp|plc|inc|gmbh|ag|sa|srl|pvt|corporation|corp|company|partnership)\b\.?$/i.test(nm)
+        || /\bholdings?\b/i.test(nm);
+  };
   const pgLines = [];
+  const corporatePscsAsGuarantors = [];
   const allBorrowersForLookup = (dipData.parties_grouped && dipData.parties_grouped.individual_guarantors) || [];
   const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
   for (const corp of corpBorrowers) {
     const ubos = _g5GetUbosForCorporate(officersByParent[corp.id]);
     for (const u of ubos) {
+      if (_isCorpEntity(u)) {
+        corporatePscsAsGuarantors.push({ psc: u, corp });
+        continue;  // skip — corporate PSC cannot give PG
+      }
       // Find the matching formal individual_guarantor row for this UBO (by name) to read pg_status
       const uboLower = normName(u.full_name);
       const match = allBorrowersForLookup.find(ig => normName(ig.full_name) === uboLower);
@@ -404,6 +417,18 @@ function _g5RenderSecuritySection(dipData, deal) {
     items.push(`<div style="${rowStyle}">
       <span><strong>Corporate Guarantee</strong> <span style="color:#888;font-size:10px;">(unsecured)</span> from ${corpGuarantorNames}</span>
       ${statusPill('Required', '#d1fae5', '#065f46')}
+    </div>`);
+  }
+
+  // G5.3 — Advisory if corporate PSC detected (cannot give PG, may need Corporate Guarantee)
+  if (corporatePscsAsGuarantors.length > 0) {
+    const list = corporatePscsAsGuarantors.map(cp => `<strong>${esc(cp.psc.full_name)}</strong> (PSC of ${esc(cp.corp.full_name)})`).join('; ');
+    items.push(`<div style="${rowStyle}flex-direction:column;align-items:flex-start;background:#fef3c7;border-left:3px solid #f59e0b;">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <span><strong>Corporate PSC Detected</strong> \u2014 RM to assess Corporate Guarantee</span>
+        ${statusPill('RM Review', '#fef3c7', '#92400e')}
+      </div>
+      <div style="margin-top:4px;font-size:10.5px;color:#7a4820;">${list}. These are corporate entities (PSCs) and cannot provide a Personal Guarantee. RM should determine whether to request a Corporate Guarantee deed.</div>
     </div>`);
   }
 
