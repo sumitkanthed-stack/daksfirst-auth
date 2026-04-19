@@ -1860,7 +1860,9 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       ...clientFields,
       'broker_name', 'broker_company', 'broker_fca',
       'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
-      'retained_interest_months', 'rate_requested'
+      'retained_interest_months', 'rate_requested',
+      // G5.3.2 Security & Guarantee section — deal-level fields
+      'requires_share_charge', 'additional_security_text'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;

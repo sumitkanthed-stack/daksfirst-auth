@@ -1899,8 +1899,23 @@ export async function renderDealMatrix(deal) {
             ${sgProperties.map((p, i) => `<div style="display:grid;grid-template-columns:40px 1fr 200px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
               <div style="background:#374151;color:#D4A853;font-weight:700;font-size:11px;padding:3px 8px;border-radius:3px;text-align:center;">${i + 1}</div>
               <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(p.address || 'Address pending')}</div><div style="color:#94A3B8;font-size:10.5px;">${sanitizeHtml(p.postcode || '')}</div></div>
-              <div><span style="padding:3px 10px;border-radius:3px;background:rgba(212,168,83,0.15);color:#D4A853;font-size:10.5px;font-weight:600;">${chargeLabelMap[p.security_charge_type || 'first_charge'] || 'First Legal Charge'}</span></div>
-              <div style="font-size:10.5px;color:${p.existing_charges_note ? '#E5E7EB' : '#64748B'};">${p.existing_charges_note ? sanitizeHtml(p.existing_charges_note) : '<span style="font-style:italic;">⏳ HMLR integration pending — RM to note any existing charges</span>'}</div>
+              <div>
+                <select id="sg-charge-${p.id}" onchange="window.sgSavePropertyCharge && window.sgSavePropertyCharge('${deal.submission_id}', ${p.id}, this.value)"
+                  style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                  ${!canEdit ? 'disabled' : ''}>
+                  <option value="first_charge" ${(p.security_charge_type || 'first_charge') === 'first_charge' ? 'selected' : ''}>First Legal Charge</option>
+                  <option value="second_charge" ${p.security_charge_type === 'second_charge' ? 'selected' : ''}>Second Charge</option>
+                  <option value="third_charge" ${p.security_charge_type === 'third_charge' ? 'selected' : ''}>Third Charge</option>
+                  <option value="no_charge" ${p.security_charge_type === 'no_charge' ? 'selected' : ''}>No Charge</option>
+                </select>
+              </div>
+              <div>
+                <input type="text" id="sg-encum-${p.id}" value="${sanitizeHtml(p.existing_charges_note || '')}"
+                  placeholder="⏳ HMLR pending — note existing charges"
+                  onblur="window.sgSavePropertyEncumbrance && window.sgSavePropertyEncumbrance('${deal.submission_id}', ${p.id}, this.value)"
+                  style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                  ${!canEdit ? 'disabled' : ''}/>
+              </div>
             </div>`).join('')}
           `}
 
@@ -1956,22 +1971,49 @@ export async function renderDealMatrix(deal) {
             ${pgList.map((pg, i) => {
               const status = pg.person.pg_status || 'required';
               const pill = pgLabelMap[status] || pgLabelMap.required;
-              return `<div style="display:grid;grid-template-columns:40px 1fr 120px 120px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
+              const isSynthetic = String(pg.person.id || '').startsWith('legacy-');
+              const rowSid = deal.submission_id;
+              const rowBid = pg.person.id;
+              return `<div style="display:grid;grid-template-columns:40px 1fr 130px 140px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
                 <div style="background:#fff3e0;color:#7a4820;font-weight:700;font-size:10px;padding:3px 8px;border-radius:3px;text-align:center;">G${i + 1}</div>
-                <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(pg.person.full_name || '—')}</div><div style="color:#94A3B8;font-size:10px;">${pg.linkedToCorp ? 'UBO of ' + sanitizeHtml(pg.linkedToCorp.full_name) : sanitizeHtml(pg.source)}</div></div>
-                <div><span style="padding:3px 10px;border-radius:3px;background:${pill.bg};color:${pill.fg};font-size:10.5px;font-weight:600;">${pill.label}</span></div>
-                <div style="color:#E5E7EB;font-size:11px;">${pg.person.pg_limit_amount ? '£' + Number(pg.person.pg_limit_amount).toLocaleString('en-GB') : '—'}</div>
-                <div style="font-size:10.5px;color:${pg.person.pg_notes ? '#E5E7EB' : '#64748B'};">${pg.person.pg_notes ? sanitizeHtml(pg.person.pg_notes) : '—'}</div>
+                <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(pg.person.full_name || '—')}</div><div style="color:#94A3B8;font-size:10px;">${pg.linkedToCorp ? 'UBO of ' + sanitizeHtml(pg.linkedToCorp.full_name) : sanitizeHtml(pg.source)}${isSynthetic ? ' · <em style="color:#fbbf24;">Add to Borrowers list to edit</em>' : ''}</div></div>
+                <div>
+                  ${isSynthetic
+                    ? `<span style="padding:3px 10px;border-radius:3px;background:${pill.bg};color:${pill.fg};font-size:10.5px;font-weight:600;">${pill.label}</span>`
+                    : `<select id="sg-pg-status-${rowBid}" onchange="window.sgSavePgStatus && window.sgSavePgStatus('${rowSid}', ${rowBid}, this.value)" ${!canEdit ? 'disabled' : ''}
+                      style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;">
+                      <option value="required" ${status === 'required' ? 'selected' : ''}>Required</option>
+                      <option value="waived" ${status === 'waived' ? 'selected' : ''}>Waived</option>
+                      <option value="limited" ${status === 'limited' ? 'selected' : ''}>Limited</option>
+                    </select>`}
+                </div>
+                <div>
+                  ${isSynthetic
+                    ? `<span style="color:#E5E7EB;font-size:11px;">${pg.person.pg_limit_amount ? '£' + Number(pg.person.pg_limit_amount).toLocaleString('en-GB') : '\u2014'}</span>`
+                    : `<input type="text" id="sg-pg-limit-${rowBid}" value="${pg.person.pg_limit_amount ? Number(pg.person.pg_limit_amount).toLocaleString('en-GB') : ''}"
+                      placeholder="£ if Limited" onblur="window.sgSavePgLimit && window.sgSavePgLimit('${rowSid}', ${rowBid}, this.value)" ${!canEdit ? 'disabled' : ''}
+                      style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;" />`}
+                </div>
+                <div>
+                  ${isSynthetic
+                    ? `<span style="font-size:10.5px;color:${pg.person.pg_notes ? '#E5E7EB' : '#64748B'};">${pg.person.pg_notes ? sanitizeHtml(pg.person.pg_notes) : '\u2014'}</span>`
+                    : `<input type="text" id="sg-pg-notes-${rowBid}" value="${sanitizeHtml(pg.person.pg_notes || '')}"
+                      placeholder="Waiver / limit reasoning" onblur="window.sgSavePgNotes && window.sgSavePgNotes('${rowSid}', ${rowBid}, this.value)" ${!canEdit ? 'disabled' : ''}
+                      style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;" />`}
+                </div>
               </div>`;
             }).join('')}`;
           })()}
 
           <!-- Additional Security -->
           <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Additional Security</div>
-          <div style="padding:10px 12px;background:#1f2937;border:1px solid rgba(255,255,255,0.06);border-radius:4px;min-height:40px;font-size:11px;color:${deal.additional_security_text ? '#E5E7EB' : '#64748B'};font-style:${deal.additional_security_text ? 'normal' : 'italic'};">${deal.additional_security_text ? sanitizeHtml(deal.additional_security_text) : 'None noted. Use G5.3.2 editor to add.'}</div>
+          <textarea id="sg-additional-security" placeholder="Any additional security arrangements not captured above — e.g. assignment of rental income, key person insurance, second charge on another asset, etc."
+            onblur="window.sgSaveAdditionalSecurity && window.sgSaveAdditionalSecurity('${deal.submission_id}', this.value)"
+            ${!canEdit ? 'disabled' : ''}
+            style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:8px 10px;border-radius:4px;font-size:11px;width:100%;min-height:60px;font-family:inherit;resize:vertical;">${sanitizeHtml(deal.additional_security_text || '')}</textarea>
 
           <div style="margin-top:14px;padding:8px 12px;background:rgba(251,191,36,0.08);border-left:3px solid #FBBF24;border-radius:3px;font-size:10.5px;color:#FBBF24;">
-            📋 This section is read-only in G5.3.1. Edit controls (per-property charge, per-UBO PG election, CH charges acknowledgement, additional security free-text) arrive in G5.3.2.
+            📋 CH charges display (G5.3.3) and PDF pickup (G5.3.4) still queued. All fields above save on change/blur.
           </div>
         </div>
       </div>
@@ -2737,6 +2779,87 @@ export async function renderDealMatrix(deal) {
       if (el) el.style.borderColor = '#F87171';
       showToast('Connection error saving field', 'error');
     }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // G5.3.2 — Security & Guarantee section save handlers
+  // Each handler flashes a green border on the source element on success,
+  // red on error. Updates in-memory deal object so re-renders show new values.
+  // ═══════════════════════════════════════════════════════════════════
+
+  async function _sgFlashSave(elementId, url, body) {
+    const el = document.getElementById(elementId);
+    try {
+      const resp = await fetchWithAuth(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (resp.ok) {
+        if (el) { el.style.borderColor = '#34D399'; setTimeout(() => { if (el) el.style.borderColor = '#4b5563'; }, 1200); }
+        return true;
+      } else {
+        if (el) el.style.borderColor = '#F87171';
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Save failed', 'error');
+        return false;
+      }
+    } catch (e) {
+      if (el) el.style.borderColor = '#F87171';
+      showToast('Connection error', 'error');
+      return false;
+    }
+  }
+
+  window.sgSavePropertyCharge = async function(submissionId, propertyId, value) {
+    const ok = await _sgFlashSave(`sg-charge-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { security_charge_type: value });
+    if (ok && Array.isArray(deal.properties)) {
+      const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.security_charge_type = value;
+    }
+  };
+
+  window.sgSavePropertyEncumbrance = async function(submissionId, propertyId, value) {
+    const ok = await _sgFlashSave(`sg-encum-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { existing_charges_note: value || null });
+    if (ok && Array.isArray(deal.properties)) {
+      const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.existing_charges_note = value;
+    }
+  };
+
+  window.sgSavePgStatus = async function(submissionId, borrowerId, value) {
+    const ok = await _sgFlashSave(`sg-pg-status-${borrowerId}`, `${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { pg_status: value });
+    if (ok && Array.isArray(deal.borrowers)) {
+      const b = deal.borrowers.find(bb => bb.id === borrowerId); if (b) b.pg_status = value;
+    }
+  };
+
+  window.sgSavePgLimit = async function(submissionId, borrowerId, rawValue) {
+    const cleaned = String(rawValue || '').replace(/[£,\s]/g, '');
+    const numeric = cleaned === '' ? null : parseFloat(cleaned);
+    if (cleaned !== '' && (isNaN(numeric) || numeric < 0)) {
+      const el = document.getElementById(`sg-pg-limit-${borrowerId}`);
+      if (el) el.style.borderColor = '#F87171';
+      showToast('Enter a valid £ amount', 'error');
+      return;
+    }
+    const ok = await _sgFlashSave(`sg-pg-limit-${borrowerId}`, `${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { pg_limit_amount: numeric });
+    if (ok && Array.isArray(deal.borrowers)) {
+      const b = deal.borrowers.find(bb => bb.id === borrowerId); if (b) b.pg_limit_amount = numeric;
+      // Reformat display with commas
+      const el = document.getElementById(`sg-pg-limit-${borrowerId}`);
+      if (el && numeric !== null) el.value = Number(numeric).toLocaleString('en-GB');
+    }
+  };
+
+  window.sgSavePgNotes = async function(submissionId, borrowerId, value) {
+    const ok = await _sgFlashSave(`sg-pg-notes-${borrowerId}`, `${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { pg_notes: value || null });
+    if (ok && Array.isArray(deal.borrowers)) {
+      const b = deal.borrowers.find(bb => bb.id === borrowerId); if (b) b.pg_notes = value;
+    }
+  };
+
+  window.sgSaveAdditionalSecurity = async function(submissionId, value) {
+    const ok = await _sgFlashSave('sg-additional-security', `${API_BASE}/api/deals/${submissionId}/matrix-fields`, { additional_security_text: value || '' });
+    if (ok) deal.additional_security_text = value;
   };
 
   // ── Loan limit indicator — updates dynamically after every save ──

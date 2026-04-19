@@ -92,7 +92,8 @@ router.put('/:submissionId/properties/:propertyId', authenticateToken, async (re
     }
 
     const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
-            gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes } = req.body;
+            gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes,
+            security_charge_type, existing_charges_note } = req.body;
 
     const result = await pool.query(
       `UPDATE deal_properties SET
@@ -103,10 +104,14 @@ router.put('/:submissionId/properties/:propertyId', authenticateToken, async (re
         gdv = COALESCE($9, gdv), reinstatement = COALESCE($10, reinstatement),
         title_number = COALESCE($11, title_number), valuation_date = COALESCE($12, valuation_date),
         insurance_sum = COALESCE($13, insurance_sum), solicitor_firm = COALESCE($14, solicitor_firm),
-        solicitor_ref = COALESCE($15, solicitor_ref), notes = COALESCE($16, notes), updated_at = NOW()
-       WHERE id = $17 RETURNING *`,
+        solicitor_ref = COALESCE($15, solicitor_ref), notes = COALESCE($16, notes),
+        security_charge_type = COALESCE($17, security_charge_type),
+        existing_charges_note = COALESCE($18, existing_charges_note),
+        updated_at = NOW()
+       WHERE id = $19 RETURNING *`,
       [address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
        gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes,
+       security_charge_type, existing_charges_note,
        req.params.propertyId]
     );
 

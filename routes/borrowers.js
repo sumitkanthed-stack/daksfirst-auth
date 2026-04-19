@@ -95,7 +95,8 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
       return res.status(403).json({ error: 'You do not have permission to edit this borrower' });
     }
 
-    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data } = req.body;
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data,
+            pg_status, pg_limit_amount, pg_notes } = req.body;
 
     // Parent hierarchy — handle separately so user can explicitly detach (null) vs "no change" (undefined)
     const parentKeyPresent = Object.prototype.hasOwnProperty.call(req.body, 'parent_borrower_id');
@@ -114,6 +115,7 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
     }
 
     // Build SET clause dynamically so parent_borrower_id can be set to NULL
+    // G5.3.2: pg_status, pg_limit_amount, pg_notes — use IS NULL check so 'waived' / NULL limit works
     const setClauses = [
       'role = COALESCE($1, role)', 'full_name = COALESCE($2, full_name)',
       'date_of_birth = COALESCE($3, date_of_birth)', 'nationality = COALESCE($4, nationality)',
@@ -121,11 +123,18 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
       'phone = COALESCE($7, phone)', 'address = COALESCE($8, address)',
       'borrower_type = COALESCE($9, borrower_type)', 'company_name = COALESCE($10, company_name)',
       'company_number = COALESCE($11, company_number)', 'kyc_status = COALESCE($12, kyc_status)',
-      'kyc_data = COALESCE($13, kyc_data)', 'updated_at = NOW()'
+      'kyc_data = COALESCE($13, kyc_data)',
+      'pg_status = COALESCE($14, pg_status)',
+      'pg_limit_amount = $15',                       // allow explicit NULL clear
+      'pg_notes = COALESCE($16, pg_notes)',
+      'updated_at = NOW()'
     ];
     const params = [
       role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address,
-      borrower_type, company_name, company_number, kyc_status, kyc_data ? JSON.stringify(kyc_data) : null
+      borrower_type, company_name, company_number, kyc_status, kyc_data ? JSON.stringify(kyc_data) : null,
+      pg_status,
+      pg_limit_amount === undefined ? null : (pg_limit_amount === '' || pg_limit_amount === null ? null : parseFloat(pg_limit_amount)),
+      pg_notes
     ];
     if (parentForUpdate !== 'SKIP') {
       setClauses.push(`parent_borrower_id = $${params.length + 1}`);
