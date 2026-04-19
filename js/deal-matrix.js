@@ -1823,6 +1823,132 @@ export async function renderDealMatrix(deal) {
   `;
 
   // ═══════════════════════════════════════════════════════════════════
+  // SECTION sg: SECURITY & GUARANTEE STRUCTURE (G5.3.1 — read-only render)
+  // Inserted between s3 (Property/Security) and s4 (Loan Terms) per user design.
+  // Editable dropdowns + save handlers arrive in G5.3.2.
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    const chargeLabelMap = {
+      'first_charge': 'First Legal Charge',
+      'second_charge': 'Second Charge',
+      'third_charge': 'Third Charge',
+      'no_charge': 'No Charge'
+    };
+    const pgLabelMap = {
+      'required': { label: 'Required', bg: 'rgba(34,197,94,0.15)', fg: '#34D399' },
+      'waived':   { label: 'Waived',   bg: 'rgba(148,163,184,0.15)', fg: '#94A3B8' },
+      'limited':  { label: 'Limited',  bg: 'rgba(251,191,36,0.15)', fg: '#FBBF24' }
+    };
+    const sgProperties = deal.properties || [];
+    const sgBorrowers = deal.borrowers || [];
+    const sgCorpBorrowers = sgBorrowers.filter(b => !b.parent_borrower_id && (b.role === 'primary' || b.role === 'joint') && (b.borrower_type || '').toLowerCase() !== 'individual');
+    const sgCorpGuarantors = sgBorrowers.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && (b.borrower_type || '').toLowerCase() === 'corporate');
+    const sgOfficersByParent = {};
+    sgBorrowers.forEach(b => { if (b.parent_borrower_id) { sgOfficersByParent[b.parent_borrower_id] = sgOfficersByParent[b.parent_borrower_id] || []; sgOfficersByParent[b.parent_borrower_id].push(b); } });
+    const sgIndividualGuarantors = sgBorrowers.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && (b.borrower_type || '').toLowerCase() !== 'corporate');
+
+    html += `
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
+      ${renderSectionHeader('sg', '🛡', 'Security & Guarantee Structure', 'Charges, corporate debentures, personal guarantees', [
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started')
+      ], isInternalUser)}
+
+      <div id="content-sg" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
+        <div style="padding:16px 24px 20px;background:#111827;">
+
+          <!-- Charge over Property -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:4px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Charge over Property</div>
+          ${sgProperties.length === 0 ? `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No properties yet — add in the Property / Security section above.</div>` : `
+            <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:40px 1fr 200px 1fr;gap:12px;padding:4px 0;font-weight:700;">
+              <div>#</div><div>Property</div><div>Charge Type</div><div>Existing encumbrance (manual)</div>
+            </div>
+            ${sgProperties.map((p, i) => `<div style="display:grid;grid-template-columns:40px 1fr 200px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
+              <div style="background:#374151;color:#D4A853;font-weight:700;font-size:11px;padding:3px 8px;border-radius:3px;text-align:center;">${i + 1}</div>
+              <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(p.address || 'Address pending')}</div><div style="color:#94A3B8;font-size:10.5px;">${sanitizeHtml(p.postcode || '')}</div></div>
+              <div><span style="padding:3px 10px;border-radius:3px;background:rgba(212,168,83,0.15);color:#D4A853;font-size:10.5px;font-weight:600;">${chargeLabelMap[p.security_charge_type || 'first_charge'] || 'First Legal Charge'}</span></div>
+              <div style="font-size:10.5px;color:${p.existing_charges_note ? '#E5E7EB' : '#64748B'};">${p.existing_charges_note ? sanitizeHtml(p.existing_charges_note) : '<span style="font-style:italic;">⏳ HMLR integration pending — RM to note any existing charges</span>'}</div>
+            </div>`).join('')}
+          `}
+
+          <!-- Corporate Borrower Security -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Corporate Borrower Security</div>
+          ${sgCorpBorrowers.length === 0 ? `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No corporate borrowers yet.</div>` : sgCorpBorrowers.map(c => `
+            <div style="background:rgba(30,58,138,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:6px;padding:12px 14px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+                <div>
+                  <div style="color:#DBEAFE;font-weight:700;font-size:13px;">${sanitizeHtml(c.full_name || c.company_name || '—')}</div>
+                  <div style="color:#94A3B8;font-size:10.5px;margin-top:2px;">${c.company_number ? 'Co. No: ' + sanitizeHtml(c.company_number) : ''}${c.ch_verified_at ? ' · <span style="color:#34D399;">✓ CH Verified</span>' : ''}</div>
+                </div>
+                <div style="text-align:right;font-size:11px;min-width:240px;">
+                  <div style="margin-bottom:4px;"><span style="color:#94A3B8;font-size:10px;">Fixed &amp; Floating (Debenture):</span> <span style="padding:2px 8px;border-radius:3px;background:rgba(34,197,94,0.15);color:#34D399;font-size:10px;font-weight:700;margin-left:4px;">Required (default)</span></div>
+                  <div><span style="color:#94A3B8;font-size:10px;">Share Charge:</span> <span style="padding:2px 8px;border-radius:3px;background:rgba(251,191,36,0.15);color:#FBBF24;font-size:10px;font-weight:700;margin-left:4px;">${deal.requires_share_charge === 'required' ? 'Required' : deal.requires_share_charge === 'not_required' ? 'Not Required' : 'RM to elect'}</span></div>
+                </div>
+              </div>
+              <div style="margin-top:10px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Existing Companies House Charges</div>
+              <div style="font-size:11px;color:#64748B;padding:6px 0;font-style:italic;">⏳ CH charges display integration pending (G5.3.3)</div>
+            </div>
+          `).join('')}
+
+          <!-- Corporate Guarantee (if applicable) -->
+          ${sgCorpGuarantors.length > 0 ? `
+            <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Corporate Guarantee</div>
+            ${sgCorpGuarantors.map(c => `<div style="background:rgba(15,118,110,0.12);border:1px solid rgba(20,184,166,0.3);border-radius:6px;padding:12px 14px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="color:#A7F3D0;font-weight:700;font-size:13px;">${sanitizeHtml(c.full_name || '—')}</div>
+                  <div style="color:#94A3B8;font-size:10.5px;margin-top:2px;">${c.company_number ? 'Co. No: ' + sanitizeHtml(c.company_number) : ''}${c.ch_verified_at ? ' · <span style="color:#34D399;">✓ CH Verified</span>' : ''}</div>
+                </div>
+                <span style="padding:3px 10px;border-radius:3px;background:rgba(34,197,94,0.15);color:#34D399;font-size:10.5px;font-weight:700;">Unsecured Corporate Guarantee — Required</span>
+              </div>
+            </div>`).join('')}
+          ` : ''}
+
+          <!-- Personal Guarantees -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Personal Guarantees</div>
+          <p style="font-size:10.5px;color:#94A3B8;margin:4px 0 8px;font-style:italic;">UBOs of corporate borrowers are auto-listed by default. Status editable in G5.3.2.</p>
+          ${(() => {
+            const pgList = [];
+            for (const c of sgCorpBorrowers) {
+              const officers = (sgOfficersByParent[c.id] || []).filter(o => o.role === 'psc' || (o.ch_match_data && o.ch_match_data.is_psc));
+              for (const o of officers) {
+                pgList.push({ person: o, linkedToCorp: c, source: 'UBO-linked' });
+              }
+            }
+            for (const i of sgIndividualGuarantors) { pgList.push({ person: i, linkedToCorp: null, source: 'Third-party / Manual' }); }
+            if (pgList.length === 0) return `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No PG providers identified yet. Add corporate borrowers + verify via CH to auto-populate UBOs.</div>`;
+            return `<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:40px 1fr 120px 120px 1fr;gap:10px;padding:4px 0;font-weight:700;">
+              <div>#</div><div>Guarantor</div><div>Status</div><div>Limit (£)</div><div>Notes</div>
+            </div>
+            ${pgList.map((pg, i) => {
+              const status = pg.person.pg_status || 'required';
+              const pill = pgLabelMap[status] || pgLabelMap.required;
+              return `<div style="display:grid;grid-template-columns:40px 1fr 120px 120px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
+                <div style="background:#fff3e0;color:#7a4820;font-weight:700;font-size:10px;padding:3px 8px;border-radius:3px;text-align:center;">G${i + 1}</div>
+                <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(pg.person.full_name || '—')}</div><div style="color:#94A3B8;font-size:10px;">${pg.linkedToCorp ? 'UBO of ' + sanitizeHtml(pg.linkedToCorp.full_name) : sanitizeHtml(pg.source)}</div></div>
+                <div><span style="padding:3px 10px;border-radius:3px;background:${pill.bg};color:${pill.fg};font-size:10.5px;font-weight:600;">${pill.label}</span></div>
+                <div style="color:#E5E7EB;font-size:11px;">${pg.person.pg_limit_amount ? '£' + Number(pg.person.pg_limit_amount).toLocaleString('en-GB') : '—'}</div>
+                <div style="font-size:10.5px;color:${pg.person.pg_notes ? '#E5E7EB' : '#64748B'};">${pg.person.pg_notes ? sanitizeHtml(pg.person.pg_notes) : '—'}</div>
+              </div>`;
+            }).join('')}`;
+          })()}
+
+          <!-- Additional Security -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Additional Security</div>
+          <div style="padding:10px 12px;background:#1f2937;border:1px solid rgba(255,255,255,0.06);border-radius:4px;min-height:40px;font-size:11px;color:${deal.additional_security_text ? '#E5E7EB' : '#64748B'};font-style:${deal.additional_security_text ? 'normal' : 'italic'};">${deal.additional_security_text ? sanitizeHtml(deal.additional_security_text) : 'None noted. Use G5.3.2 editor to add.'}</div>
+
+          <div style="margin-top:14px;padding:8px 12px;background:rgba(251,191,36,0.08);border-left:3px solid #FBBF24;border-radius:3px;font-size:10.5px;color:#FBBF24;">
+            📋 This section is read-only in G5.3.1. Edit controls (per-property charge, per-UBO PG election, CH charges acknowledgement, additional security free-text) arrive in G5.3.2.
+          </div>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // SECTION 4: LOAN TERMS & USE OF FUNDS
   // ═══════════════════════════════════════════════════════════════════
 
