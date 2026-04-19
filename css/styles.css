@@ -855,9 +855,27 @@ select option:checked {
  *   [id^="detail-"]           — any detail-* wrapper (field row expand)
  *   > div > div               — the inner card (wrapper > padding-div > card)
  * ─────────────────────────────────────────────────────── */
+#content-s1 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #60A5FA; /* Borrower / KYC — blue (matches B icon) */
+}
 #content-s2 [id^="detail-"] > div > div[style*="background:#111827"] {
   border-left: 3px solid #D4A853; /* Financials — gold (matches F icon) */
 }
 #content-s3 [id^="detail-"] > div > div[style*="background:#111827"] {
   border-left: 3px solid #34D399; /* Property / Security — green (matches P icon) */
+}
+#content-s4 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #A855F7; /* Loan Terms & Use of Funds — purple (matches L icon) */
+}
+#content-s5 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #FB923C; /* Exit Strategy — orange (matches E icon) */
+}
+#content-s6 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #94A3B8; /* Legal & Insurance — slate (matches LG icon) */
+}
+#content-s7 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #D4A853; /* Commercial — gold (matches C icon) */
+}
+#content-s8 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #60A5FA; /* Documents Issued — blue (matches D icon) */
 }
