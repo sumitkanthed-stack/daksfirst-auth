@@ -582,8 +582,8 @@ export async function renderDealMatrix(deal) {
         <!-- Party Relationships analysis (auto-populated after render when 2+ corporate parties on the deal) -->
         <div style="padding:0 26px;"><div id="party-relationships-panel-placeholder"></div></div>
 
-        <!-- Primary Borrower -->
-        ${renderFieldRow('primary-borrower', 'Primary Borrower', 'Name, DOB, nationality, address, ID',
+        <!-- Borrower (Primary + Joint + Officers) -->
+        ${renderFieldRow('primary-borrower', 'Borrower', 'Primary + joint borrowers, directors, PSCs',
           ['not-started', 'not-started', 'locked', 'locked'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-primary-borrower">
@@ -4086,17 +4086,40 @@ export async function renderDealMatrix(deal) {
           '</div>';
         }).join('');
 
-    return '<div id="party-relationships-panel" style="margin:10px 0 14px 0;background:#111827;border:1px solid ' + borderColor + ';border-radius:10px;padding:14px 16px;">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;">' +
-        '<div>' +
-          '<span style="font-size:10px;color:' + borderColor + ';text-transform:uppercase;font-weight:700;letter-spacing:.4px;">Party Relationships \u00B7 ' + corporateCount + ' corporate parties</span>' +
+    // Default collapsed — severity is conveyed by border colour and header text.
+    // Click the header to expand findings. User explicitly asked for this to reduce visual noise.
+    const findingCount = findings.length;
+    const summaryChip = findingCount > 0
+      ? '<span style="font-size:10px;color:' + borderColor + ';font-weight:700;background:' + (bgColor) + ';padding:2px 8px;border-radius:10px;margin-left:8px;">' + findingCount + ' finding' + (findingCount === 1 ? '' : 's') + '</span>'
+      : '';
+
+    return '<div id="party-relationships-panel" style="margin:10px 0 14px 0;background:#111827;border:1px solid ' + borderColor + ';border-radius:10px;padding:12px 16px;">' +
+      '<div onclick="window._togglePartyRelationships()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;flex-wrap:wrap;gap:6px;">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            '<span style="font-size:10px;color:' + borderColor + ';text-transform:uppercase;font-weight:700;letter-spacing:.4px;">Party Relationships \u00B7 ' + corporateCount + ' corporate parties</span>' +
+            summaryChip +
+          '</div>' +
           '<div style="font-size:13px;color:#F1F5F9;font-weight:700;margin-top:2px;">' + headerText + '</div>' +
         '</div>' +
+        '<span id="party-rel-chevron" style="color:#64748B;font-size:11px;transition:transform .2s;flex-shrink:0;">\u25BC</span>' +
       '</div>' +
-      '<div style="font-size:10px;color:#64748B;margin-bottom:4px;">' + partiesList + '</div>' +
-      findingsHtml +
+      '<div id="party-rel-body" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.04);">' +
+        '<div style="font-size:10px;color:#64748B;margin-bottom:6px;">' + partiesList + '</div>' +
+        findingsHtml +
+      '</div>' +
     '</div>';
   }
+
+  // Toggle the Party Relationships panel expand/collapse (default: collapsed).
+  window._togglePartyRelationships = function() {
+    const body = document.getElementById('party-rel-body');
+    const chevron = document.getElementById('party-rel-chevron');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+  };
 
   // Orchestrator: collect all corporate parties, fetch CH data as needed, analyze, inject panel.
   // Called after deal-matrix HTML is inserted into DOM. Safe to call multiple times.
