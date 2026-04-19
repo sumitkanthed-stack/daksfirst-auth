@@ -15,44 +15,44 @@ import { showDealDetail } from './deal-detail.js';
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
 // Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
 // AND legacy deal-sections state (body-* + collapsed class). Also restores scroll position.
-// Falls back to window.location.reload() if showDealDetail can't resolve (defensive).
+//
+// IMPORTANT: the matrix is rendered via dynamic `import('./deal-matrix.js').then(...)` inside
+// deal-detail.js — that's fire-and-forget, so `await showDealDetail()` resolves BEFORE the
+// matrix finishes rendering. We poll for the NEW matrix element to appear before restoring.
 async function _refreshDealInPlace(submissionId) {
   try {
     if (typeof showDealDetail === 'function' && submissionId) {
-      // ── Capture matrix main sections (content-s1, content-s2, ...) that are open ──
-      // The matrix uses inline style `max-height` set to '8000px' when open, '0px' when closed.
+      // ── Capture matrix main sections open (content-sN with maxHeight !== '0px') ──
       const openMatrixSections = [];
       document.querySelectorAll('[id^="content-s"]').forEach(el => {
         const mh = el.style.maxHeight;
-        if (mh && mh !== '0px' && mh !== '') {
-          openMatrixSections.push(el.id.replace(/^content-/, ''));
-        }
+        if (mh && mh !== '0px' && mh !== '') openMatrixSections.push(el.id.replace(/^content-/, ''));
       });
 
-      // ── Capture matrix detail sub-rows (detail-primary-borrower, detail-property-details, ...) ──
+      // ── Capture matrix detail sub-rows open ──
       const openMatrixDetails = [];
       document.querySelectorAll('[id^="detail-"]').forEach(el => {
         const mh = el.style.maxHeight;
-        if (mh && mh !== '0px' && mh !== '') {
-          openMatrixDetails.push(el.id); // keep full id so we can pass to matrixToggleDetail
-        }
+        if (mh && mh !== '0px' && mh !== '') openMatrixDetails.push(el.id);
       });
 
-      // ── Capture legacy deal-sections (body-* + collapsed class) for any non-matrix screens ──
+      // ── Capture legacy deal-sections state ──
       const expandedLegacySections = [];
       document.querySelectorAll('[id^="body-"]').forEach(el => {
-        if (!el.classList.contains('collapsed')) {
-          expandedLegacySections.push(el.id.replace(/^body-/, ''));
-        }
+        if (!el.classList.contains('collapsed')) expandedLegacySections.push(el.id.replace(/^body-/, ''));
       });
 
       const scrollY = window.scrollY || window.pageYOffset || 0;
 
+      // Keep a reference to the OLD matrix element so we can detect when it's been replaced.
+      const oldSectionRef = document.getElementById('content-s1');
+
       await showDealDetail(submissionId);
 
-      // Restore after render — wait longer than matrix's 350ms transition so toggles don't glitch
-      setTimeout(() => {
-        // Restore matrix sections via the canonical toggle (handles chevron, header highlight, etc)
+      // Poll for the NEW matrix to be in place (detected when content-s1 element reference
+      // changes, OR 2 seconds have passed as a safety net). The matrix loads asynchronously.
+      const doRestore = () => {
+        // Restore matrix sections
         if (typeof window.matrixToggleSection === 'function') {
           for (const sid of openMatrixSections) {
             const content = document.getElementById('content-' + sid);
@@ -70,7 +70,7 @@ async function _refreshDealInPlace(submissionId) {
             }
           }
         }
-        // Restore legacy deal-sections state
+        // Restore legacy deal-sections
         for (const id of expandedLegacySections) {
           const body = document.getElementById('body-' + id);
           const chevron = document.getElementById('chev-' + id);
@@ -80,7 +80,24 @@ async function _refreshDealInPlace(submissionId) {
           }
         }
         if (scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
-      }, 150);
+      };
+
+      // Poll up to 20 × 100ms = 2s for the new matrix to mount
+      let attempts = 20;
+      const poll = () => {
+        const current = document.getElementById('content-s1');
+        // Matrix has remounted when element reference changed, OR (defensive) when the old ref
+        // is gone and a new one exists. Also finish if we run out of attempts.
+        const remounted = !current || current !== oldSectionRef;
+        if (remounted || attempts <= 0) {
+          // Give the DOM one more frame to settle, then restore
+          setTimeout(doRestore, 80);
+          return;
+        }
+        attempts--;
+        setTimeout(poll, 100);
+      };
+      poll();
       return;
     }
   } catch (err) {
