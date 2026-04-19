@@ -13,25 +13,65 @@ import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
 
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
-// Preserves section expand state and scroll position.
+// Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
+// AND legacy deal-sections state (body-* + collapsed class). Also restores scroll position.
 // Falls back to window.location.reload() if showDealDetail can't resolve (defensive).
 async function _refreshDealInPlace(submissionId) {
   try {
     if (typeof showDealDetail === 'function' && submissionId) {
-      // Capture which sections are currently expanded (body-{id} without .collapsed class)
-      const expandedSections = [];
-      document.querySelectorAll('[id^="body-"]').forEach(el => {
-        if (!el.classList.contains('collapsed')) {
-          expandedSections.push(el.id.replace(/^body-/, ''));
+      // ── Capture matrix main sections (content-s1, content-s2, ...) that are open ──
+      // The matrix uses inline style `max-height` set to '8000px' when open, '0px' when closed.
+      const openMatrixSections = [];
+      document.querySelectorAll('[id^="content-s"]').forEach(el => {
+        const mh = el.style.maxHeight;
+        if (mh && mh !== '0px' && mh !== '') {
+          openMatrixSections.push(el.id.replace(/^content-/, ''));
         }
       });
+
+      // ── Capture matrix detail sub-rows (detail-primary-borrower, detail-property-details, ...) ──
+      const openMatrixDetails = [];
+      document.querySelectorAll('[id^="detail-"]').forEach(el => {
+        const mh = el.style.maxHeight;
+        if (mh && mh !== '0px' && mh !== '') {
+          openMatrixDetails.push(el.id); // keep full id so we can pass to matrixToggleDetail
+        }
+      });
+
+      // ── Capture legacy deal-sections (body-* + collapsed class) for any non-matrix screens ──
+      const expandedLegacySections = [];
+      document.querySelectorAll('[id^="body-"]').forEach(el => {
+        if (!el.classList.contains('collapsed')) {
+          expandedLegacySections.push(el.id.replace(/^body-/, ''));
+        }
+      });
+
       const scrollY = window.scrollY || window.pageYOffset || 0;
 
       await showDealDetail(submissionId);
 
-      // Restore expand state + scroll after the new DOM settles
+      // Restore after render — wait longer than matrix's 350ms transition so toggles don't glitch
       setTimeout(() => {
-        for (const id of expandedSections) {
+        // Restore matrix sections via the canonical toggle (handles chevron, header highlight, etc)
+        if (typeof window.matrixToggleSection === 'function') {
+          for (const sid of openMatrixSections) {
+            const content = document.getElementById('content-' + sid);
+            if (content && (content.style.maxHeight === '0px' || content.style.maxHeight === '')) {
+              try { window.matrixToggleSection(sid); } catch (_) {}
+            }
+          }
+        }
+        // Restore matrix detail sub-rows
+        if (typeof window.matrixToggleDetail === 'function') {
+          for (const did of openMatrixDetails) {
+            const detail = document.getElementById(did);
+            if (detail && (detail.style.maxHeight === '0px' || detail.style.maxHeight === '')) {
+              try { window.matrixToggleDetail(did); } catch (_) {}
+            }
+          }
+        }
+        // Restore legacy deal-sections state
+        for (const id of expandedLegacySections) {
           const body = document.getElementById('body-' + id);
           const chevron = document.getElementById('chev-' + id);
           if (body && body.classList.contains('collapsed')) {
@@ -40,7 +80,7 @@ async function _refreshDealInPlace(submissionId) {
           }
         }
         if (scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
-      }, 60);
+      }, 150);
       return;
     }
   } catch (err) {
