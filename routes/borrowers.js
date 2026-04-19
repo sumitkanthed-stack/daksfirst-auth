@@ -412,9 +412,11 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
     if (borResult.rows.length === 0) return res.status(404).json({ error: 'Borrower not found on this deal' });
     const parent = borResult.rows[0];
 
-    // Must be a corporate party with a company number, and be top-level
+    // Must be a corporate party with a company number. Top-level OR nested corporate PSC both allowed.
     if (!parent.company_number) return res.status(400).json({ error: 'This borrower has no company_number — set it before running CH verify' });
-    if (parent.parent_borrower_id) return res.status(400).json({ error: 'CH verify is only supported on top-level corporate parties, not on nested children' });
+    if (parent.parent_borrower_id && (parent.borrower_type || '').toLowerCase() !== 'corporate') {
+      return res.status(400).json({ error: 'CH verify is only supported on corporate parties (top-level or corporate PSC children)' });
+    }
 
     // Delegate to recursive helper — inserts officers+PSCs, and recurses into corporate PSCs
     const result = await _populateChChildrenRecursive(dealId, parent.id, parent.company_number, req.user.userId, 0);

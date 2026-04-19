@@ -834,6 +834,10 @@ export async function renderDealMatrix(deal) {
                                 '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (k.kyc_status || 'pending') + '</span></td>' +
                                 '<td style="padding:6px 8px;text-align:center;">' + (k.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
                                 (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                                  // G5.3 Part A — If this is a corporate PSC with a company_number, expose CH verify button
+                                  ((k.borrower_type === 'corporate' && k.company_number)
+                                    ? '<button onclick="window._chVerifyCorporateParty(' + k.id + ', \'' + subId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;" title="' + (k.ch_verified_at ? 'Re-verify corporate PSC at Companies House (includes its directors &amp; PSCs)' : 'Verify this corporate PSC at Companies House') + '">' + (k.ch_verified_at ? '&#8635;' : '\u2713') + ' CH</button>'
+                                    : '') +
                                   '<button onclick="window.editBorrowerRow(' + k.id + ', \'' + subId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
                                   '<button onclick="window.deleteBorrowerRow(' + k.id + ', \'' + subId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
                                 '</td>' : '') +
@@ -1087,6 +1091,10 @@ export async function renderDealMatrix(deal) {
                             '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (k.kyc_status || 'pending') + '</span></td>' +
                             '<td style="padding:6px 8px;text-align:center;">' + (k.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
                             (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+                              // G5.3 Part A — Corporate PSC gets a CH verify button
+                              ((k.borrower_type === 'corporate' && k.company_number)
+                                ? '<button onclick="window._chVerifyCorporateParty(' + k.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;" title="' + (k.ch_verified_at ? 'Re-verify corporate PSC at CH' : 'Verify corporate PSC at CH') + '">' + (k.ch_verified_at ? '&#8635;' : '\u2713') + ' CH</button>'
+                                : '') +
                               '<button onclick="window.editBorrowerRow(' + k.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
                               '<button onclick="window.deleteBorrowerRow(' + k.id + ', \'' + deal.submission_id + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
                             '</td>' : '') +
