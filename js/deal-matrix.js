@@ -588,7 +588,7 @@ export async function renderDealMatrix(deal) {
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-primary-borrower">
           <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #D4A853;border-radius:10px;padding:14px 16px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
 
               ${(() => {
                 const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
@@ -619,8 +619,12 @@ export async function renderDealMatrix(deal) {
                 if (isCorporate && deal.company_name) {
                   // ══════════════════════════════════════════════════════════
                   // CORPORATE BORROWER FLOW
+                  // Wraps Identity + CH Verify + Directors in a gold-bordered block.
+                  // Joint Borrowers (section D) sit OUTSIDE this block so they don't inherit
+                  // the gold border (they have their own green-bordered cards).
                   // ══════════════════════════════════════════════════════════
                   return `
+                    <div style="border-left:3px solid #D4A853;padding-left:10px;margin-bottom:14px;">
                     <!-- ── A. Corporate Borrower Identity ── -->
                     <div style="background:rgba(212,168,83,0.06);border:1px solid rgba(212,168,83,0.15);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
                       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -713,6 +717,7 @@ export async function renderDealMatrix(deal) {
                       </table>
                       ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification to populate automatically.</p>'}
                     </div>
+                    </div> <!-- close gold-bordered primary-borrower block; D. Joint Borrowers below is outside this block -->
 
                     <!-- ── D. Joint Borrowers — other top-level parties on this deal, rendered as cards ── -->
                     ${(() => {
