@@ -82,9 +82,13 @@ function buildDipHtml(deal, dipData, options) {
   const bType = (deal.borrower_type || 'individual').toLowerCase();
   const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
   const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
-  // Fix field name mappings: issueDip saves arrangement_fee_pct / broker_fee_pct
-  const arrFee = parseFloat(dipData.arrangement_fee_pct || dipData.arrangement_fee || deal.arrangement_fee || 2);
-  const brkFee = parseFloat(dipData.broker_fee_pct || dipData.broker_fee || 0);
+  // Fee resolution order (single-source-of-truth pass 2026-04-20):
+  // 1. dipData.*_pct — explicit override from the DIP issue form
+  // 2. deal.*_pct — native columns on deal_submissions, written by matrix inline edit
+  // 3. dipData.arrangement_fee / broker_fee / deal.arrangement_fee — legacy JSONB / legacy columns
+  // 4. default (2% arrangement, 0% broker)
+  const arrFee = parseFloat(dipData.arrangement_fee_pct || deal.arrangement_fee_pct || dipData.arrangement_fee || deal.arrangement_fee || 2);
+  const brkFee = parseFloat(dipData.broker_fee_pct || deal.broker_fee_pct || dipData.broker_fee || 0);
   const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
 
   const issueDate = options.issuedAt
