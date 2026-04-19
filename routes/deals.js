@@ -719,7 +719,8 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       updateValues.push(JSON.stringify(dip_data));
       paramIdx++;
 
-      // Also update core deal fields from DIP data
+      // Also update core deal fields from DIP data — these are the single source of truth
+      // that the matrix and other views read from (SSOT pass 2, 2026-04-20)
       const fieldMap = {
         loan_amount: 'loan_amount',
         ltv: 'ltv_requested',
@@ -727,7 +728,12 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
         rate_monthly: 'rate_requested',
         property_value: 'current_value',
         exit_strategy: 'exit_strategy',
-        interest_servicing: 'interest_servicing'
+        interest_servicing: 'interest_servicing',
+        // Fee fields — keep matrix in sync with whatever was finally issued on the DIP
+        arrangement_fee_pct: 'arrangement_fee_pct',
+        broker_fee_pct: 'broker_fee_pct',
+        retained_months: 'retained_interest_months',
+        fee_commitment: 'commitment_fee'
       };
       for (const [dipKey, dbCol] of Object.entries(fieldMap)) {
         if (dip_data[dipKey] !== undefined) {
