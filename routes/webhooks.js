@@ -9,6 +9,24 @@ const { deduplicateProperties } = require('../services/claude-parser');
 const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  INBOUND WEBHOOK AUTH (audit hardening 2026-04-20)
+//  Rejects POSTs to /analysis-complete that don't carry the shared secret.
+// ═══════════════════════════════════════════════════════════════════════════
+function verifyWebhookSecret(req, res, next) {
+  const provided = req.headers['x-webhook-secret'];
+  const expected = process.env.WEBHOOK_SECRET;
+  if (!expected) {
+    console.error('[webhooks] WEBHOOK_SECRET env var not set — refusing to accept callbacks');
+    return res.status(503).json({ error: 'Service misconfigured' });
+  }
+  if (!provided || provided !== expected) {
+    console.warn('[webhooks] Rejected /analysis-complete — invalid or missing secret. IP:', req.ip);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  WEBHOOK FIRE HELPER (with retry logic)
 // ═══════════════════════════════════════════════════════════════════════════
 async function fireWebhook(dealId, submissionId, dealData, userData) {
@@ -108,7 +126,7 @@ async function fireWebhook(dealId, submissionId, dealData, userData) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  ANALYSIS WEBHOOK CALLBACK (from n8n)
 // ═══════════════════════════════════════════════════════════════════════════
-router.post('/analysis-complete', async (req, res) => {
+router.post('/analysis-complete', verifyWebhookSecret, async (req, res) => {
   try {
     const { submissionId, creditMemoUrl, termsheetUrl, gbbMemoUrl, analysisJson,
             batch_number, total_batches } = req.body;
