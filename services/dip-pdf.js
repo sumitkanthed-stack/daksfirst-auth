@@ -317,11 +317,29 @@ function _g5RenderSecuritySection(dipData, deal) {
   const corpGuarantorNames = corpGuarantors.map(c => esc(c.full_name)).join(', ');
 
   // Build PG list from all corporate borrowers' UBOs (Q2: all PSCs auto-listed)
+  // G5.3.4: per-UBO status from deal_borrowers.pg_status (required/waived/limited)
+  //         and pg_limit_amount / pg_notes when set. Look up by matching name.
   const pgLines = [];
+  const allBorrowersForLookup = (dipData.parties_grouped && dipData.parties_grouped.individual_guarantors) || [];
+  const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
   for (const corp of corpBorrowers) {
     const ubos = _g5GetUbosForCorporate(officersByParent[corp.id]);
     for (const u of ubos) {
-      pgLines.push(`${esc(u.full_name)} <span style="color:#666;">(UBO of ${esc(corp.full_name)}${u.is_psc && u.psc_percentage ? ', PSC ' + esc(u.psc_percentage) + '%' : ''})</span>`);
+      // Find the matching formal individual_guarantor row for this UBO (by name) to read pg_status
+      const uboLower = normName(u.full_name);
+      const match = allBorrowersForLookup.find(ig => normName(ig.full_name) === uboLower);
+      const status = (match && match.pg_status) || u.pg_status || 'required';
+      const limitAmt = (match && match.pg_limit_amount) || u.pg_limit_amount;
+      const notes = (match && match.pg_notes) || u.pg_notes;
+
+      const statusBadge = status === 'waived'
+        ? ' <span style="color:#6b7280;font-weight:600;">(Waived)</span>'
+        : status === 'limited'
+        ? ` <span style="color:#92400e;font-weight:600;">(Limited${limitAmt ? ' to £' + Number(limitAmt).toLocaleString('en-GB') : ''})</span>`
+        : '';
+      const notesBit = notes ? ` <span style="color:#777;font-style:italic;">— ${esc(notes)}</span>` : '';
+
+      pgLines.push(`${esc(u.full_name)}${statusBadge} <span style="color:#666;">(UBO of ${esc(corp.full_name)}${u.is_psc && u.psc_percentage ? ', PSC ' + esc(u.psc_percentage) + '%' : ''})</span>${notesBit}`);
     }
   }
 
@@ -338,10 +356,35 @@ function _g5RenderSecuritySection(dipData, deal) {
 
   const items = [];
 
-  items.push(`<div style="${rowStyle}">
-    <span><strong>First Legal Charge</strong> over ${propLabel}</span>
-    ${statusPill('Required', '#d1fae5', '#065f46')}
-  </div>`);
+  // G5.3.4 — read per-property charge type from deal_properties; fall back to "First Legal Charge"
+  const chargeTypeMap = {
+    'first_charge': 'First Legal Charge',
+    'second_charge': 'Second Charge',
+    'third_charge': 'Third Charge',
+    'no_charge': 'No Charge'
+  };
+  const propsByCharge = {};
+  for (const p of (dipData.properties || [])) {
+    const ct = p.security_charge_type || 'first_charge';
+    if (!propsByCharge[ct]) propsByCharge[ct] = [];
+    propsByCharge[ct].push(p);
+  }
+  // Render one row per distinct charge type (so mixed-charge deals show explicitly)
+  const chargeOrder = ['first_charge', 'second_charge', 'third_charge', 'no_charge'];
+  for (const ct of chargeOrder) {
+    const group = propsByCharge[ct];
+    if (!group || group.length === 0) continue;
+    const label = chargeTypeMap[ct];
+    const suffix = group.length === (dipData.properties || []).length ? propLabel : `${group.length} Propert${group.length === 1 ? 'y' : 'ies'}`;
+    const addressList = group.length <= 2 ? ' <span style="color:#666;font-size:10px;">(' + group.map(p => esc(p.address || p.postcode || '')).join(', ') + ')</span>' : '';
+    const pill = ct === 'no_charge'
+      ? statusPill('Not Applicable', '#f3f4f6', '#6b7280')
+      : statusPill('Required', '#d1fae5', '#065f46');
+    items.push(`<div style="${rowStyle}">
+      <span><strong>${label}</strong> over ${suffix}${addressList}</span>
+      ${pill}
+    </div>`);
+  }
 
   if (corpBorrowers.length > 0) {
     items.push(`<div style="${rowStyle}">
@@ -373,6 +416,18 @@ function _g5RenderSecuritySection(dipData, deal) {
       <ul style="margin:6px 0 0;padding-left:20px;font-size:11px;color:#333;">
         ${pgLines.map(l => `<li style="padding:2px 0;"><strong>${l.split('<span')[0]}</strong>${l.includes('<span') ? '<span' + l.split('<span')[1] : ''}</li>`).join('')}
       </ul>
+    </div>`);
+  }
+
+  // G5.3.4 — Additional Security (free text, only render if set)
+  const addlSec = (dipData.additional_security_text || (deal && deal.additional_security_text) || '').trim();
+  if (addlSec) {
+    items.push(`<div style="${rowStyle}flex-direction:column;align-items:flex-start;">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <span><strong>Additional Security</strong></span>
+        ${statusPill('Required', '#d1fae5', '#065f46')}
+      </div>
+      <div style="margin-top:4px;font-size:11px;color:#333;line-height:1.4;">${esc(addlSec)}</div>
     </div>`);
   }
 
