@@ -843,3 +843,21 @@ select option:checked {
   color: #111 !important;
   font-weight: 600;
 }
+
+/* ───────────────────────────────────────────────────────
+ * Matrix section colour coding — left borders on inner cards
+ * Each section's expanded-content cards get a left border matching
+ * the section's letter-icon colour, so analyst can visually identify
+ * section/sub-section at a glance.
+ *
+ * Target selector explanation:
+ *   #content-sN               — section N's expanded area
+ *   [id^="detail-"]           — any detail-* wrapper (field row expand)
+ *   > div > div               — the inner card (wrapper > padding-div > card)
+ * ─────────────────────────────────────────────────────── */
+#content-s2 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #D4A853; /* Financials — gold (matches F icon) */
+}
+#content-s3 [id^="detail-"] > div > div[style*="background:#111827"] {
+  border-left: 3px solid #34D399; /* Property / Security — green (matches P icon) */
+}
