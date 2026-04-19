@@ -28,11 +28,13 @@ function groupBorrowersForDip(rows, deal) {
 
   // Legacy backfill: synthesize a primary borrower from deal_submissions fields
   // if no row in deal_borrowers carries role='primary' but the deal has borrower_company.
+  // Also synthesize a UBO officer row for this primary so the card pair has both sides.
   const hasPrimary = rows.some(r => r.role === 'primary' && !r.parent_borrower_id);
   if (!hasPrimary && deal && (deal.borrower_company || deal.borrower_name)) {
     const isLegacyCorp = !!(deal.borrower_company || deal.company_number);
+    const syntheticPrimaryId = `legacy-primary-${deal.id || 'x'}`;
     rows.unshift({
-      id: `legacy-primary-${deal.id || 'x'}`,
+      id: syntheticPrimaryId,
       role: 'primary',
       parent_borrower_id: null,
       full_name: deal.borrower_company || deal.borrower_name,
@@ -47,6 +49,27 @@ function groupBorrowersForDip(rows, deal) {
       ch_match_confidence: null,
       ch_match_data: null
     });
+
+    // If corporate AND we have a separate UBO name on the deal, synthesize an officer row
+    // so the new card layout can pair the corporate with its UBO.
+    if (isLegacyCorp && deal.borrower_name && deal.borrower_name !== deal.borrower_company) {
+      rows.push({
+        id: `legacy-ubo-${deal.id || 'x'}`,
+        role: 'psc',
+        parent_borrower_id: syntheticPrimaryId,
+        full_name: deal.borrower_name,
+        borrower_type: 'individual',
+        company_number: null,
+        nationality: deal.borrower_nationality || null,
+        email: deal.borrower_email || null,
+        address: null,
+        kyc_status: deal.kyc_status || 'pending',
+        ch_verified_at: null,
+        ch_matched_role: 'UBO',
+        ch_match_confidence: null,
+        ch_match_data: { is_psc: true, officer_role: 'Ultimate Beneficial Owner' }
+      });
+    }
   }
 
   if (rows.length === 0) {
@@ -88,15 +111,18 @@ function groupBorrowersForDip(rows, deal) {
   // Format a child officer — caller filters out resigned_on ≠ null per G5 Q3
   const formatOfficer = (o) => {
     const chData = o.ch_match_data || {};
+    // role='psc' (a DB role value) OR ch_match_data.is_psc=true both indicate PSC
+    const isPsc = !!chData.is_psc || o.role === 'psc';
     return {
       id: o.id,
       parent_borrower_id: o.parent_borrower_id,
       full_name: o.full_name,
-      role_label: chData.officer_role || o.ch_matched_role || 'Director',
+      role: o.role,    // raw DB role — needed by downstream pickers
+      role_label: chData.officer_role || o.ch_matched_role || (o.role === 'psc' ? 'PSC' : 'Director'),
       appointed_on: chData.appointed_on,
       resigned_on: chData.resigned_on,
       nationality: o.nationality || chData.nationality,
-      is_psc: !!chData.is_psc,
+      is_psc: isPsc,
       psc_percentage: chData.psc_percentage
     };
   };
