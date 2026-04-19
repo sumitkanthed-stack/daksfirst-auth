@@ -831,9 +831,12 @@ export function renderInternalWorkflowControls(deal) {
         </div>
         ` : ''}
 
-        <!-- Security & Guarantee Structure -->
+        <!-- Security & Guarantee Structure — DEPRECATED in favour of Matrix Security & Guarantee (G5.3.5) -->
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
           <h5 style="margin:0 0 8px;color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security & Guarantee Structure ${rmLabel}</h5>
+          <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;margin:0 0 10px;border-radius:3px;font-size:11px;color:#92400e;">
+            <strong>Matrix is now canonical for Security &amp; Guarantee.</strong> Edit per-property charges, per-UBO personal guarantees, and additional security in the <em>Security &amp; Guarantee Structure</em> matrix section above. The fields here are retained for backward compatibility and will be removed in a future release.
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <div>
               <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Security Charge</label>
