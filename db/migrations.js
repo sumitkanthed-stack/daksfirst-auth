@@ -748,6 +748,89 @@ async function runMigrations() {
     }
     console.log('[migrate] ✓ deal_properties property search columns added');
 
+    // ═══════════════════════════════════════════════════════════════════
+    // G5.3 Path 2 — Backfill legacy deals into deal_borrowers (2026-04-20)
+    // For each deal_submissions row that has borrower_company (or borrower_name)
+    // but no matching role='primary' in deal_borrowers, create:
+    //   1. A primary borrower row (corporate if company_number, else individual)
+    //   2. A child PSC officer row for the UBO if borrower_name is present + distinct
+    //      (so the matrix Security section renders Alessandra etc. as real editable rows)
+    // Idempotent via WHERE NOT EXISTS / LEFT JOIN IS NULL — safe to re-run.
+    // ═══════════════════════════════════════════════════════════════════
+    try {
+      // Step 1 — Insert primary borrower for legacy deals that don't have one yet
+      const primaryInsertResult = await pool.query(`
+        INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, company_name, company_number,
+                                    email, phone, nationality, address, kyc_status, created_at, updated_at)
+        SELECT
+          ds.id,
+          'primary',
+          COALESCE(ds.borrower_company, ds.borrower_name),
+          CASE WHEN COALESCE(ds.borrower_company, ds.company_number) IS NOT NULL THEN 'corporate' ELSE 'individual' END,
+          ds.borrower_company,
+          ds.company_number,
+          ds.borrower_email,
+          ds.borrower_phone,
+          ds.borrower_nationality,
+          NULL,
+          'pending',
+          NOW(),
+          NOW()
+        FROM deal_submissions ds
+        LEFT JOIN deal_borrowers db
+          ON db.deal_id = ds.id AND db.role = 'primary' AND db.parent_borrower_id IS NULL
+        WHERE db.id IS NULL
+          AND (ds.borrower_company IS NOT NULL OR ds.borrower_name IS NOT NULL)
+          AND ds.id IS NOT NULL
+        RETURNING id, deal_id
+      `);
+      const newPrimariesCount = primaryInsertResult.rows.length;
+      console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${newPrimariesCount} legacy primary borrower row(s)`);
+
+      // Step 2 — For each new corporate primary with a distinct borrower_name, insert the UBO as child PSC
+      // (so it renders in the Security section as an UBO-linked Individual Guarantor)
+      if (newPrimariesCount > 0) {
+        const uboInsertResult = await pool.query(`
+          INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, nationality, email,
+                                      parent_borrower_id, ch_match_data, ch_matched_role, kyc_status,
+                                      pg_status, created_at, updated_at)
+          SELECT
+            ds.id,
+            'psc',
+            ds.borrower_name,
+            'individual',
+            ds.borrower_nationality,
+            ds.borrower_email,
+            db_primary.id,
+            '{"is_psc": true, "officer_role": "Ultimate Beneficial Owner"}'::jsonb,
+            'UBO',
+            'pending',
+            'required',
+            NOW(),
+            NOW()
+          FROM deal_submissions ds
+          INNER JOIN deal_borrowers db_primary
+            ON db_primary.deal_id = ds.id
+            AND db_primary.role = 'primary'
+            AND db_primary.parent_borrower_id IS NULL
+            AND db_primary.borrower_type = 'corporate'
+          WHERE ds.borrower_name IS NOT NULL
+            AND ds.borrower_name <> ''
+            AND ds.borrower_name <> COALESCE(ds.borrower_company, '')
+            AND NOT EXISTS (
+              SELECT 1 FROM deal_borrowers db2
+              WHERE db2.parent_borrower_id = db_primary.id
+                AND LOWER(TRIM(db2.full_name)) = LOWER(TRIM(ds.borrower_name))
+            )
+          RETURNING id, parent_borrower_id
+        `);
+        console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${uboInsertResult.rows.length} UBO officer row(s)`);
+      }
+    } catch (err) {
+      console.error('[migrate] G5.3 Path 2 backfill failed:', err.message);
+      // Don't rethrow — a backfill failure shouldn't prevent server start
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
