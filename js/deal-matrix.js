@@ -1840,7 +1840,38 @@ export async function renderDealMatrix(deal) {
       'limited':  { label: 'Limited',  bg: 'rgba(251,191,36,0.15)', fg: '#FBBF24' }
     };
     const sgProperties = deal.properties || [];
-    const sgBorrowers = deal.borrowers || [];
+    const sgBorrowersRaw = deal.borrowers || [];
+
+    // Mirror the backend's groupBorrowersForDip() synthesis: if no row has role='primary'
+    // but deal.borrower_company is set (legacy), synthesize a primary corp + UBO officer.
+    const sgBorrowers = sgBorrowersRaw.slice();
+    const sgHasPrimary = sgBorrowers.some(r => r.role === 'primary' && !r.parent_borrower_id);
+    if (!sgHasPrimary && deal && (deal.borrower_company || deal.borrower_name)) {
+      const isLegacyCorp = !!(deal.borrower_company || deal.company_number);
+      const syntheticPrimaryId = 'legacy-primary-' + (deal.id || 'x');
+      sgBorrowers.unshift({
+        id: syntheticPrimaryId,
+        role: 'primary',
+        parent_borrower_id: null,
+        full_name: deal.borrower_company || deal.borrower_name,
+        borrower_type: isLegacyCorp ? 'corporate' : 'individual',
+        company_number: deal.company_number || null,
+        nationality: deal.borrower_nationality || null,
+        ch_verified_at: null
+      });
+      if (isLegacyCorp && deal.borrower_name && deal.borrower_name !== deal.borrower_company) {
+        sgBorrowers.push({
+          id: 'legacy-ubo-' + (deal.id || 'x'),
+          role: 'psc',
+          parent_borrower_id: syntheticPrimaryId,
+          full_name: deal.borrower_name,
+          borrower_type: 'individual',
+          nationality: deal.borrower_nationality || null,
+          ch_match_data: { is_psc: true, officer_role: 'Ultimate Beneficial Owner' }
+        });
+      }
+    }
+
     const sgCorpBorrowers = sgBorrowers.filter(b => !b.parent_borrower_id && (b.role === 'primary' || b.role === 'joint') && (b.borrower_type || '').toLowerCase() !== 'individual');
     const sgCorpGuarantors = sgBorrowers.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && (b.borrower_type || '').toLowerCase() === 'corporate');
     const sgOfficersByParent = {};
