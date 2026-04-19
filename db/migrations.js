@@ -621,6 +621,29 @@ async function runMigrations() {
       console.log('[migrate] Note on borrower unique constraint:', err.message.substring(0, 80));
     }
 
+    // ── 2026-04-19: Split unique name constraint to allow same person under different parents ──
+    // The old single index blocked legitimate cases like Sohal Balbinder Singh being director
+    // of BOTH Cohort Capital Ltd AND Cohort Capital Holdings Ltd in the same deal.
+    // Replace with two partial indexes:
+    //   (a) top-level parties (parent_borrower_id IS NULL): name unique per deal
+    //   (b) children: name unique per (deal, parent) — same person under different parents allowed
+    try {
+      await pool.query(`DROP INDEX IF EXISTS idx_deal_borrowers_unique_name`);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_deal_borrowers_unique_name_toplevel
+        ON deal_borrowers(deal_id, LOWER(TRIM(full_name)))
+        WHERE parent_borrower_id IS NULL
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_deal_borrowers_unique_name_child
+        ON deal_borrowers(deal_id, parent_borrower_id, LOWER(TRIM(full_name)))
+        WHERE parent_borrower_id IS NOT NULL
+      `);
+      console.log('[migrate] ✓ deal_borrowers unique name split (toplevel + child-by-parent)');
+    } catch (err) {
+      console.log('[migrate] Note on split unique name index:', err.message.substring(0, 120));
+    }
+
     // ── Expand borrower role options: add ubo, psc, shareholder ──
     try {
       await pool.query(`ALTER TABLE deal_borrowers DROP CONSTRAINT IF EXISTS deal_borrowers_role_check`);
