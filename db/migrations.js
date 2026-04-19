@@ -758,7 +758,10 @@ async function runMigrations() {
     // Idempotent via WHERE NOT EXISTS / LEFT JOIN IS NULL — safe to re-run.
     // ═══════════════════════════════════════════════════════════════════
     try {
-      // Step 1 — Insert primary borrower for legacy deals that don't have one yet
+      // Step 1 — Insert primary borrower for legacy deals that don't have one yet.
+      // Guards against duplicates: skip if ANY top-level row already matches by company_number
+      // OR by full_name (case-insensitive). Prevents creating a second Gold Medal when it
+      // already exists as role='joint' or under a different full_name spelling.
       const primaryInsertResult = await pool.query(`
         INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, company_name, company_number,
                                     email, phone, nationality, address, kyc_status, created_at, updated_at)
@@ -777,55 +780,68 @@ async function runMigrations() {
           NOW(),
           NOW()
         FROM deal_submissions ds
-        LEFT JOIN deal_borrowers db
-          ON db.deal_id = ds.id AND db.role = 'primary' AND db.parent_borrower_id IS NULL
-        WHERE db.id IS NULL
-          AND (ds.borrower_company IS NOT NULL OR ds.borrower_name IS NOT NULL)
+        WHERE (ds.borrower_company IS NOT NULL OR ds.borrower_name IS NOT NULL)
           AND ds.id IS NOT NULL
+          AND NOT EXISTS (
+            -- Skip if ANY existing top-level row matches by company_number OR by full_name
+            SELECT 1 FROM deal_borrowers db
+            WHERE db.deal_id = ds.id
+              AND db.parent_borrower_id IS NULL
+              AND (
+                (db.company_number IS NOT NULL AND db.company_number = ds.company_number)
+                OR LOWER(TRIM(db.full_name)) = LOWER(TRIM(COALESCE(ds.borrower_company, ds.borrower_name)))
+                OR LOWER(TRIM(db.company_name)) = LOWER(TRIM(COALESCE(ds.borrower_company, '')))
+              )
+          )
         RETURNING id, deal_id
       `);
       const newPrimariesCount = primaryInsertResult.rows.length;
       console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${newPrimariesCount} legacy primary borrower row(s)`);
 
-      // Step 2 — For each new corporate primary with a distinct borrower_name, insert the UBO as child PSC
-      // (so it renders in the Security section as an UBO-linked Individual Guarantor)
-      if (newPrimariesCount > 0) {
-        const uboInsertResult = await pool.query(`
-          INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, nationality, email,
-                                      parent_borrower_id, ch_match_data, ch_matched_role, kyc_status,
-                                      pg_status, created_at, updated_at)
-          SELECT
-            ds.id,
-            'psc',
-            ds.borrower_name,
-            'individual',
-            ds.borrower_nationality,
-            ds.borrower_email,
-            db_primary.id,
-            '{"is_psc": true, "officer_role": "Ultimate Beneficial Owner"}'::jsonb,
-            'UBO',
-            'pending',
-            'required',
-            NOW(),
-            NOW()
-          FROM deal_submissions ds
-          INNER JOIN deal_borrowers db_primary
-            ON db_primary.deal_id = ds.id
-            AND db_primary.role = 'primary'
-            AND db_primary.parent_borrower_id IS NULL
-            AND db_primary.borrower_type = 'corporate'
-          WHERE ds.borrower_name IS NOT NULL
-            AND ds.borrower_name <> ''
-            AND ds.borrower_name <> COALESCE(ds.borrower_company, '')
-            AND NOT EXISTS (
-              SELECT 1 FROM deal_borrowers db2
-              WHERE db2.parent_borrower_id = db_primary.id
-                AND LOWER(TRIM(db2.full_name)) = LOWER(TRIM(ds.borrower_name))
-            )
-          RETURNING id, parent_borrower_id
-        `);
-        console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${uboInsertResult.rows.length} UBO officer row(s)`);
-      }
+      // Step 2 — Insert UBO child PSC for ANY corporate top-level row (primary OR joint)
+      // that matches the deal's borrower_company/company_number, if no matching UBO exists yet.
+      // Runs regardless of whether Step 1 inserted anything — handles the case where
+      // corporate row was created manually (e.g. as role='joint') without its UBO.
+      const uboInsertResult = await pool.query(`
+        INSERT INTO deal_borrowers (deal_id, role, full_name, borrower_type, nationality, email,
+                                    parent_borrower_id, ch_match_data, ch_matched_role, kyc_status,
+                                    pg_status, created_at, updated_at)
+        SELECT
+          ds.id,
+          'psc',
+          ds.borrower_name,
+          'individual',
+          ds.borrower_nationality,
+          ds.borrower_email,
+          db_corp.id,
+          '{"is_psc": true, "officer_role": "Ultimate Beneficial Owner"}'::jsonb,
+          'UBO',
+          'pending',
+          'required',
+          NOW(),
+          NOW()
+        FROM deal_submissions ds
+        INNER JOIN deal_borrowers db_corp
+          ON db_corp.deal_id = ds.id
+          AND db_corp.parent_borrower_id IS NULL
+          AND db_corp.borrower_type = 'corporate'
+          AND (
+            (db_corp.company_number IS NOT NULL AND db_corp.company_number = ds.company_number)
+            OR LOWER(TRIM(db_corp.full_name)) = LOWER(TRIM(COALESCE(ds.borrower_company, '')))
+          )
+          AND db_corp.role IN ('primary', 'joint')
+        WHERE ds.borrower_name IS NOT NULL
+          AND ds.borrower_name <> ''
+          AND ds.borrower_name <> COALESCE(ds.borrower_company, '')
+          AND NOT EXISTS (
+            -- Skip if ANY child of this corporate already has a matching name
+            SELECT 1 FROM deal_borrowers db2
+            WHERE db2.parent_borrower_id = db_corp.id
+              AND LOWER(TRIM(db2.full_name)) = LOWER(TRIM(ds.borrower_name))
+          )
+        RETURNING id, parent_borrower_id
+      `);
+      console.log(`[migrate] ✓ G5.3 Path 2: backfilled ${uboInsertResult.rows.length} UBO officer row(s)`);
     } catch (err) {
       console.error('[migrate] G5.3 Path 2 backfill failed:', err.message);
       // Don't rethrow — a backfill failure shouldn't prevent server start
