@@ -274,11 +274,16 @@ async function lookupPricePaid(postcode, address) {
       return { success: false, error: `No price paid records for ${canonicalPostcode}` };
     }
 
-    // Parse transactions
+    // Parse transactions, preserving saon/paon separately so we can do unit-number matching.
+    // Land Registry convention: for flats, saon = flat number (e.g. "FLAT 82"), paon = building number.
+    //                           for houses, paon = house number (e.g. "129"), saon is empty.
     const transactions = items.map(item => {
       const addr = item.propertyAddress || {};
       return {
         address: [addr.saon, addr.paon, addr.street, addr.town, addr.county].filter(Boolean).join(', '),
+        address_saon: addr.saon || null,
+        address_paon: addr.paon || null,
+        address_street: addr.street || null,
         postcode: addr.postcode || canonicalPostcode,
         price: item.pricePaid,
         date: item.transactionDate,
@@ -288,39 +293,64 @@ async function lookupPricePaid(postcode, address) {
       };
     });
 
-    // Try to match by address
+    // ── Unit-number-first matching (prevents studio-at-same-postcode mixing with 4-bed at same postcode) ──
+    // Same pattern as EPC matcher: extract primary unit number from our address, filter transactions
+    // where saon or paon has the same unit number. Fall back to token scoring only if no number match.
+    const ourUnitNumber = _extractPrimaryNumber(address);
     let matched = transactions;
-    if (address) {
+    let matchNote = '';
+
+    if (ourUnitNumber) {
+      // Preferred match: saon contains the unit number (flats), OR paon contains it (houses).
+      const byUnit = transactions.filter(tx => {
+        const saonNum = _extractPrimaryNumber(tx.address_saon);
+        const paonNum = _extractPrimaryNumber(tx.address_paon);
+        return saonNum === ourUnitNumber || paonNum === ourUnitNumber;
+      });
+      if (byUnit.length > 0) {
+        matched = byUnit;
+        matchNote = `Matched on unit number "${ourUnitNumber}" (${byUnit.length} transaction${byUnit.length === 1 ? '' : 's'})`;
+      } else {
+        // Number extracted but no LR records match — this property likely has no recorded sales.
+        // Don't fall back to token matching (would return wrong flats); return nothing.
+        console.log(`[property-search] Land Registry: no transactions match unit "${ourUnitNumber}" at ${canonicalPostcode} (postcode had ${transactions.length} total)`);
+        return {
+          success: false,
+          error: `No Land Registry sales found for unit "${ourUnitNumber}" at ${canonicalPostcode}. ${transactions.length} other transactions at this postcode but not for this specific unit.`,
+          total_postcode_results: transactions.length
+        };
+      }
+    } else if (address) {
+      // No extractable number — use token-based fallback (for addresses like "Rose Cottage")
       const addrLower = address.toLowerCase().replace(/[,.\-]/g, ' ').replace(/\s+/g, ' ').trim();
       const pcNoSpace = canonicalPostcode.replace(/\s+/g, '').toLowerCase();
       const tokens = addrLower.split(' ').filter(t => t.length > 2 && !pcNoSpace.includes(t));
-
       if (tokens.length > 0) {
         const scored = transactions.map(tx => {
           const txAddr = tx.address.toLowerCase();
-          let score = 0;
-          for (const t of tokens) {
-            if (txAddr.includes(t)) score++;
-          }
+          const score = tokens.filter(t => txAddr.includes(t)).length;
           return { ...tx, _score: score };
         });
         const maxScore = Math.max(...scored.map(s => s._score));
         if (maxScore > 0) {
           matched = scored.filter(s => s._score === maxScore).map(({ _score, ...rest }) => rest);
+          matchNote = `Token-only match (score ${maxScore})`;
         }
       }
     }
 
-    // Summary stats
+    // Summary stats — matched is already sorted by date DESC via the ORDER BY in the LR query
     const prices = matched.map(t => t.price).filter(Boolean);
     const latest = matched[0] || null;
 
     return {
       success: true,
       data: {
-        transactions: matched.slice(0, 10),   // Most recent 10 for this address
+        transactions: matched.slice(0, 10),   // Most recent 10 for this unit
         total_postcode_results: transactions.length,
         address_matched_results: matched.length,
+        match_note: matchNote,
+        our_unit_number: ourUnitNumber || null,
         latest_price: latest?.price || null,
         latest_date: latest?.date || null,
         latest_type: latest?.property_type || null,
