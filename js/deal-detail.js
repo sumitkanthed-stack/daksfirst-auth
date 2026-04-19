@@ -858,10 +858,21 @@ export function renderInternalWorkflowControls(deal) {
               <span style="font-size:10px;color:#6b7280;">RM to add if applicable</span>
             </div>
           </div>
-          <div style="margin-top:8px;">
-            <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
-            <input type="text" id="dip-ubo-names" placeholder="Full legal name(s) of UBO / guarantor(s)" value="${sanitizeHtml(deal.borrower_name || '')}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
-            <span style="font-size:10px;color:#6b7280;">Must match title holder(s) on the property</span>
+          <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">UBO / Guarantor Name(s)</label>
+              <input type="text" id="dip-ubo-names" placeholder="Full legal name(s) of UBO / guarantor(s)" value="${sanitizeHtml(deal.borrower_name || '')}" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+              <span style="font-size:10px;color:#6b7280;">Must match title holder(s) on the property</span>
+            </div>
+            <div>
+              <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">Share Charge over Corporate Borrower</label>
+              <select id="dip-requires-share-charge" style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;">
+                <option value="" ${!deal.requires_share_charge ? 'selected' : ''}>RM to elect (pending review)</option>
+                <option value="required" ${deal.requires_share_charge === 'required' ? 'selected' : ''}>Required (thin-cap protection)</option>
+                <option value="not_required" ${deal.requires_share_charge === 'not_required' ? 'selected' : ''}>Not Required</option>
+              </select>
+              <span style="font-size:10px;color:#6b7280;">Set if borrower is thinly capitalised</span>
+            </div>
           </div>
         </div>
       </div>

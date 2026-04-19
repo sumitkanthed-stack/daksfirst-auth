@@ -270,6 +270,7 @@ export async function issueDip() {
   const pgUbo = document.getElementById('dip-pg-ubo')?.value || null;
   const fixedCharge = document.getElementById('dip-fixed-charge')?.value || 'first_charge';
   const uboNames = document.getElementById('dip-ubo-names')?.value || '';
+  const requiresShareCharge = document.getElementById('dip-requires-share-charge')?.value || null;
 
   // Fee schedule
   const feeSchedule = {
@@ -316,6 +317,7 @@ export async function issueDip() {
           pg_from_ubo: pgUbo,
           fixed_charge: fixedCharge,
           ubo_guarantor_names: uboNames,
+          requires_share_charge: requiresShareCharge,  // G5: 'required' | 'not_required' | null (RM to elect)
           // Fee schedule
           fee_schedule: feeSchedule,
           exit_strategy: exitStrategy,

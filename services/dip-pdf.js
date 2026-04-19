@@ -325,10 +325,11 @@ function _g5RenderSecuritySection(dipData, deal) {
     }
   }
 
-  // Share charge state — driven by dip_data flag if set
-  const shareChargeState = (dipData.share_charge_required === true || dipData.share_charge_required === 'required')
+  // Share charge state — prefer dip_data override, fall back to native column on deal
+  const shareChargeVal = dipData.requires_share_charge || (deal && deal.requires_share_charge) || null;
+  const shareChargeState = (shareChargeVal === 'required' || shareChargeVal === true)
     ? { label: 'Required', bg: '#d1fae5', fg: '#065f46' }
-    : (dipData.share_charge_required === false || dipData.share_charge_required === 'not_required')
+    : (shareChargeVal === 'not_required' || shareChargeVal === false)
     ? { label: 'Not Required', bg: '#f3f4f6', fg: '#6b7280' }
     : { label: 'RM to elect', bg: '#fef3c7', fg: '#92400e' };
 

@@ -886,7 +886,9 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
         arrangement_fee_pct: 'arrangement_fee_pct',
         broker_fee_pct: 'broker_fee_pct',
         retained_months: 'retained_interest_months',
-        fee_commitment: 'commitment_fee'
+        fee_commitment: 'commitment_fee',
+        // G5: Share Charge election from DIP form mirrors to matrix column
+        requires_share_charge: 'requires_share_charge'
       };
       for (const [dipKey, dbCol] of Object.entries(fieldMap)) {
         if (dip_data[dipKey] !== undefined) {

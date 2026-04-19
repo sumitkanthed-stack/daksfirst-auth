@@ -451,6 +451,9 @@ async function runMigrations() {
       { col: 'broker_fee_pct', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_fee_pct NUMERIC(6,3);' },
       { col: 'commitment_fee', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS commitment_fee NUMERIC(15,2);' },
       { col: 'retained_interest_months', sql: 'ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS retained_interest_months INTEGER;' },
+      // Share charge election — RM sets this when thin-cap protection is needed (G5, 2026-04-20)
+      // null = RM to elect, 'required', 'not_required'
+      { col: 'requires_share_charge', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS requires_share_charge VARCHAR(20);" },
       { col: 'rm_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_recommendation VARCHAR(20);" },
       { col: 'credit_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_recommendation VARCHAR(20);" },
       { col: 'compliance_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS compliance_recommendation VARCHAR(20);" },
