@@ -4990,6 +4990,94 @@ export async function renderDealMatrix(deal) {
           '</div>' +
         '</div>' +
 
+        // ── CH Summary strip: status, age, risk, charges, accounts ──
+        (function() {
+          const riskCol = chd2.risk_score === 'low' ? '#34D399' : chd2.risk_score === 'medium' ? '#FBBF24' : chd2.risk_score === 'high' ? '#F87171' : '#94A3B8';
+          const riskBg = riskCol === '#34D399' ? 'rgba(52,211,153,0.1)' : riskCol === '#FBBF24' ? 'rgba(251,191,36,0.1)' : riskCol === '#F87171' ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.04)';
+          const statusCol = chd2.company_status === 'active' ? '#34D399' : '#F87171';
+          const statusBg = chd2.company_status === 'active' ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
+          const pills = [];
+          if (chd2.company_status) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + statusBg + ';color:' + statusCol + ';text-transform:capitalize;">' + sanitizeHtml(chd2.company_status) + '</span>');
+          if (chd2.age_months != null) {
+            const yrs = Math.floor(chd2.age_months / 12);
+            const mos = chd2.age_months % 12;
+            const ageStr = yrs > 0 ? (yrs + 'y ' + mos + 'm') : (mos + 'm');
+            pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Age: ' + ageStr + '</span>');
+          }
+          if (chd2.risk_score) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + riskBg + ';color:' + riskCol + ';text-transform:capitalize;">Risk: ' + sanitizeHtml(chd2.risk_score) + '</span>');
+          if (chd2.charges_total != null) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Charges: ' + chd2.charges_total + ' total / ' + ((chd2.charges_outstanding || []).length) + ' outstanding</span>');
+          if (chd2.has_insolvency_history === true) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(248,113,113,0.15);color:#F87171;">\u26A0 Insolvency history</span>');
+          if (Array.isArray(chd2.sic_codes) && chd2.sic_codes.length > 0) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">SIC: ' + chd2.sic_codes.join(', ') + '</span>');
+          if (chd2.accounts && chd2.accounts.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Accounts due: ' + fmtDate(chd2.accounts.next_due) + (chd2.accounts.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
+          if (chd2.confirmation_statement && chd2.confirmation_statement.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Conf stmt due: ' + fmtDate(chd2.confirmation_statement.next_due) + (chd2.confirmation_statement.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
+          if (pills.length === 0) return '';
+          return '<div style="margin-top:12px;padding:10px 12px;background:rgba(56,189,248,0.04);border:1px solid rgba(56,189,248,0.15);border-radius:6px;">' +
+            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">CH Summary</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + pills.join('') + '</div>' +
+          '</div>';
+        })() +
+
+        // ── Outstanding Charges table ──
+        (function() {
+          const charges = Array.isArray(chd2.charges_outstanding) ? chd2.charges_outstanding : [];
+          if (charges.length === 0) return '';
+          return '<div style="margin-top:12px;">' +
+            '<div style="font-size:9px;color:#F87171;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Outstanding Charges \u2014 ' + charges.length + '</div>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+              '<thead><tr style="background:rgba(248,113,113,0.06);">' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Charge Code</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Created</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Entitled</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
+              '</tr></thead><tbody>' +
+              charges.map(c => {
+                const entitled = Array.isArray(c.persons_entitled) && c.persons_entitled.length > 0
+                  ? c.persons_entitled.map(p => sanitizeHtml(p.name || '')).join('; ') : '—';
+                const flags = [];
+                if (c.particulars && c.particulars.contains_fixed_charge) flags.push('Fixed');
+                if (c.particulars && c.particulars.contains_floating_charge) flags.push('Floating');
+                if (c.particulars && c.particulars.floating_charge_covers_all) flags.push('All assets');
+                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                  '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(c.charge_code || '—') + '</td>' +
+                  '<td style="padding:4px 8px;color:#94A3B8;">' + (c.created_on ? fmtDate(c.created_on) : '—') + '</td>' +
+                  '<td style="padding:4px 8px;color:#E2E8F0;">' + entitled + '</td>' +
+                  '<td style="padding:4px 8px;color:#94A3B8;">' + (flags.length ? flags.join(' + ') : '—') + '</td>' +
+                '</tr>';
+              }).join('') +
+            '</tbody></table>' +
+          '</div>';
+        })() +
+
+        // ── Recent Filings (last 5) ──
+        (function() {
+          const filings = Array.isArray(chd2.recent_filings) ? chd2.recent_filings.slice(0, 5) : [];
+          if (filings.length === 0) return '';
+          const catBg = { mortgage:'rgba(248,113,113,0.08)', accounts:'rgba(56,189,248,0.08)', 'confirmation-statement':'rgba(167,139,250,0.08)', 'officers':'rgba(52,211,153,0.08)' };
+          const catCol = { mortgage:'#F87171', accounts:'#38BDF8', 'confirmation-statement':'#A78BFA', 'officers':'#34D399' };
+          return '<div style="margin-top:12px;">' +
+            '<div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Filings \u2014 last ' + filings.length + '</div>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+              '<thead><tr style="background:rgba(167,139,250,0.04);">' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Date</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Category</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Description</th>' +
+              '</tr></thead><tbody>' +
+              filings.map(f => {
+                const col = catCol[f.category] || '#94A3B8';
+                const bg = catBg[f.category] || 'rgba(255,255,255,0.04)';
+                const desc = (f.description || '').replace(/-/g, ' ').replace(/mortgage /, '').replace(/with accounts type group/, '');
+                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                  '<td style="padding:4px 8px;color:#94A3B8;">' + (f.date ? fmtDate(f.date) : '—') + '</td>' +
+                  '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(f.type || '—') + '</td>' +
+                  '<td style="padding:4px 8px;"><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + bg + ';color:' + col + ';text-transform:capitalize;">' + sanitizeHtml(f.category || '—') + '</span></td>' +
+                  '<td style="padding:4px 8px;color:#CBD5E1;">' + sanitizeHtml(desc) + '</td>' +
+                '</tr>';
+              }).join('') +
+            '</tbody></table>' +
+          '</div>';
+        })() +
+
         // ── Nested kids + recursion advisory ──
         nestedKidsTable +
         recursionHtml +
@@ -5061,7 +5149,8 @@ export async function renderDealMatrix(deal) {
     requestAnimationFrame(() => {
       const inner = document.getElementById('borrower-detail-inner-' + borrowerId);
       if (inner) {
-        inner.style.maxHeight = '600px';
+        // Corporate panel is much taller (CH summary + charges + filings + nested kids) — give it headroom
+        inner.style.maxHeight = _isCorporate ? '2400px' : '600px';
         inner.style.opacity = '1';
       }
     });
