@@ -1118,12 +1118,35 @@ export async function renderDealMatrix(deal) {
                     '</div>'
                   ) : '';
 
+                  // G5.3 Part C — Detect elected-from provenance
+                  const gChm = g.ch_match_data || {};
+                  const electedFromId = gChm.elected_from_borrower_id || null;
+                  const electedFromName = gChm.elected_from_name || null;
+                  const electedFromRole = gChm.elected_from_role || null;
+                  const electedAtIso = gChm.elected_at || null;
+                  const electedBrokerTrace = gChm.broker_trace_required === true;
+
+                  const electedBanner = electedFromId
+                    ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.3);border-left:3px solid #A78BFA;border-radius:6px;">' +
+                        '<div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u2696 Elected as Corporate Guarantor</div>' +
+                        '<div style="font-size:11px;color:#CBD5E1;line-height:1.5;">' +
+                          'Elected from <strong style="color:#E2E8F0;">' + sanitizeHtml(electedFromName || 'source entity') + '</strong>' +
+                          (electedFromRole ? ' (was: <span style="text-transform:capitalize;">' + sanitizeHtml(electedFromRole) + '</span>)' : '') +
+                          (electedAtIso ? ' \u00B7 <span style="color:#94A3B8;">' + fmtDate(electedAtIso) + '</span>' : '') +
+                        '</div>' +
+                        (electedBrokerTrace
+                          ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:4px;font-size:10px;color:#FBBF24;">\u26A0 Cross-border entity \u2014 guarantee may require foreign legal opinion / local counsel</div>'
+                          : '') +
+                      '</div>'
+                    : '';
+
                   return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #818CF8;border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
+                    electedBanner +
                     // Identity card
                     '<div style="background:rgba(129,140,248,0.05);border:1px solid rgba(129,140,248,0.18);border-radius:6px;padding:10px 14px;margin-bottom:10px;">' +
                       '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
                         '<div>' +
-                          '<div style="font-size:10px;color:#818CF8;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate Guarantor</div>' +
+                          '<div style="font-size:10px;color:#818CF8;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate Guarantor' + (electedFromId ? ' \u00B7 Elected' : '') + '</div>' +
                           '<div style="font-size:15px;font-weight:700;color:#F1F5F9;margin-top:3px;">' + sanitizeHtml(g.company_name || g.full_name || 'Unnamed') + '</div>' +
                           '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:11px;color:#94A3B8;">' +
                             '<span>Co. No: <strong style="color:#E2E8F0;">' + sanitizeHtml(g.company_number || '—') + '</strong></span>' +
@@ -1138,7 +1161,7 @@ export async function renderDealMatrix(deal) {
                               ? '<button onclick="window._chVerifyCorporateParty(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:#818CF8;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Verify at Companies House</button>'
                               : '<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.1);color:#FBBF24;">' + (g.company_number ? 'UNVERIFIED' : 'NO CO. NUMBER') + '</span>')) +
                           (canEdit ? '<button onclick="window.editBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Edit</button>' : '') +
-                          (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove guarantor">\u2715</button>' : '') +
+                          (canEdit ? '<button onclick="window.deleteBorrowerRow(' + g.id + ', \'' + deal.submission_id + '\')" style="padding:3px 8px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="' + (electedFromId ? 'Unelect (remove this corporate guarantor row; source PSC row stays intact)' : 'Remove guarantor') + '">\u2715</button>' : '') +
                         '</div>' +
                       '</div>' +
                     '</div>' +
