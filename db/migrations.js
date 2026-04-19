@@ -454,6 +454,9 @@ async function runMigrations() {
       // Share charge election — RM sets this when thin-cap protection is needed (G5, 2026-04-20)
       // null = RM to elect, 'required', 'not_required'
       { col: 'requires_share_charge', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS requires_share_charge VARCHAR(20);" },
+      // G5.3 — Matrix Security & Guarantee section: per-property charge election + free-text encumbrance notes
+      // Default 'first_charge'; values: 'first_charge' | 'second_charge' | 'third_charge' | 'no_charge'
+      { col: 'additional_security_text', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS additional_security_text TEXT;" },
       { col: 'rm_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS rm_recommendation VARCHAR(20);" },
       { col: 'credit_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS credit_recommendation VARCHAR(20);" },
       { col: 'compliance_recommendation', sql: "ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS compliance_recommendation VARCHAR(20);" },
@@ -661,12 +664,26 @@ async function runMigrations() {
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pep_status VARCHAR(20) DEFAULT 'not_screened'`, // not_screened, clear, flagged
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS sanctions_status VARCHAR(20) DEFAULT 'not_screened'`, // not_screened, clear, flagged
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_wealth TEXT`,
-      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_funds TEXT`
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_funds TEXT`,
+      // G5.3 — Personal Guarantee election per guarantor (2026-04-20)
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_status VARCHAR(20) DEFAULT 'required'`, // 'required' | 'waived' | 'limited'
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_limit_amount NUMERIC(15,2)`,             // set when pg_status='limited'
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_notes TEXT`                              // reasoning for waive/limit
     ];
     for (const sql of personColumns) {
       try { await pool.query(sql); } catch (e) { /* column may already exist */ }
     }
     console.log('[migrate] ✓ deal_borrowers individual person columns added');
+
+    // G5.3 — Per-property security charge + existing encumbrance notes (2026-04-20)
+    const propertySecurityColumns = [
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS security_charge_type VARCHAR(30) DEFAULT 'first_charge'`, // 'first_charge' | 'second_charge' | 'third_charge' | 'no_charge'
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS existing_charges_note TEXT`                                 // free text until HMLR integration lands
+    ];
+    for (const sql of propertySecurityColumns) {
+      try { await pool.query(sql); } catch (e) { /* column may already exist */ }
+    }
+    console.log('[migrate] ✓ deal_properties security columns added');
 
     // ── Hierarchical parent linkage on deal_borrowers (Phase G: Borrower+Guarantor architecture) ──
     // parent_borrower_id points to the top-level party this person belongs to.
