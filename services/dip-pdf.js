@@ -103,19 +103,20 @@ function _g5IdVerifiedText(kyc_status) {
   return 'ID Pending Verification';
 }
 
-// Pick the best UBO for a corporate from its officers — prefer highest-% PSC, fall back to director
-function _g5PickUboForCorporate(officersForThisCorp) {
-  if (!officersForThisCorp || officersForThisCorp.length === 0) return null;
+// Get ALL UBOs for a corporate — every PSC. Falls back to single director if no PSCs.
+// Returns sorted array (highest % first), so first item is the primary UBO.
+function _g5GetUbosForCorporate(officersForThisCorp) {
+  if (!officersForThisCorp || officersForThisCorp.length === 0) return [];
   const pscs = officersForThisCorp.filter(o => o.is_psc);
   if (pscs.length > 0) {
-    pscs.sort((a, b) => {
+    return pscs.slice().sort((a, b) => {
       const parsePct = (p) => { const m = p ? String(p).match(/\d+/) : null; return m ? parseInt(m[0], 10) : 0; };
       return parsePct(b.psc_percentage) - parsePct(a.psc_percentage);
     });
-    return pscs[0];
   }
+  // No PSCs — fall back to first director
   const directors = officersForThisCorp.filter(o => (o.role_label || '').toLowerCase().includes('director'));
-  return directors[0] || officersForThisCorp[0];
+  return directors.length > 0 ? [directors[0]] : [officersForThisCorp[0]];
 }
 
 // Classify an individual guarantor: 'ubolinked' if their name matches a PSC/director of any corporate borrower; else 'thirdparty'
@@ -139,8 +140,21 @@ function _g5SrBadge(label) {
   return `<div style="font-size:9.5px;color:#c9a84c;font-weight:700;background:#1a365d;padding:2px 8px;border-radius:2px;display:inline-block;margin-bottom:6px;letter-spacing:0.5px;">${esc(label)}</div>`;
 }
 
-// Render a Corporate + UBO paired card row
-function _g5RenderCorpPair(corp, ubo, srLabel, isGuarantor) {
+// Render a single UBO card (gold)
+function _g5RenderUboCard(ubo, isGuarantorCorp) {
+  const label = isGuarantorCorp ? 'UBO (Provides Personal Guarantee by default)' : 'Ultimate Beneficial Owner (UBO)';
+  const meta = ubo.is_psc
+    ? `PSC${ubo.psc_percentage ? ' \u00B7 ' + esc(ubo.psc_percentage) + '% shares' : ''}`
+    : esc(ubo.role_label || 'Officer');
+  return `<div style="padding:12px 14px;background:#fff8e5;border:1px solid #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+    <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:#7a5c00;margin-bottom:4px;">${label}</div>
+    <div style="font-size:13px;font-weight:700;color:#1a1a2e;">${esc(ubo.full_name || '\u2014')}</div>
+    <div style="font-size:10.5px;color:#555;margin-top:3px;">${meta}</div>
+  </div>`;
+}
+
+// Render a Corporate + multiple UBOs paired row. UBOs stacked in the right column.
+function _g5RenderCorpPair(corp, ubos, srLabel, isGuarantor) {
   const corpStyle = isGuarantor
     ? 'background:#eaf1fa;border:1px solid #b8cfe8;border-left:4px solid #0f766e;'
     : 'background:#eaf1fa;border:1px solid #b8cfe8;';
@@ -152,26 +166,27 @@ function _g5RenderCorpPair(corp, ubo, srLabel, isGuarantor) {
   const chText = _g5ChVerifiedText(corp.ch_verified_at);
   if (chText) corpMeta.push(`<span style="color:#166534;font-weight:600;">${chText}</span>`);
 
-  const uboCard = ubo ? `
-    <div style="padding:12px 14px;background:#fff8e5;border:1px solid #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
-      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:#7a5c00;margin-bottom:4px;">${isGuarantor ? 'UBO (Provides Personal Guarantee by default)' : 'Ultimate Beneficial Owner (UBO)'}</div>
-      <div style="font-size:13px;font-weight:700;color:#1a1a2e;">${esc(ubo.full_name || '\u2014')}</div>
-      <div style="font-size:10.5px;color:#555;margin-top:3px;">${ubo.is_psc ? `PSC${ubo.psc_percentage ? ' \u00B7 ' + esc(ubo.psc_percentage) + '% shares' : ''}` : esc(ubo.role_label || 'Officer')}</div>
-    </div>`
-    : `
-    <div style="padding:12px 14px;background:#fff8e5;border:1px dashed #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
+  // Right column: stack of UBO cards, or placeholder if none
+  let uboColumnHtml;
+  if (Array.isArray(ubos) && ubos.length > 0) {
+    uboColumnHtml = `<div style="display:flex;flex-direction:column;gap:6px;">
+      ${ubos.map(u => _g5RenderUboCard(u, isGuarantor)).join('')}
+    </div>`;
+  } else {
+    uboColumnHtml = `<div style="padding:12px 14px;background:#fff8e5;border:1px dashed #e8d29d;border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
       <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:#7a5c00;margin-bottom:4px;">UBO</div>
       <div style="font-size:11px;color:#999;font-style:italic;">To be identified on Companies House verification</div>
     </div>`;
+  }
 
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start;">
     <div style="padding:12px 14px;${corpStyle}border-radius:4px;font-family:Arial,Helvetica,sans-serif;">
       ${_g5SrBadge(srLabel)}
       <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:${corpLabelColor};margin-bottom:2px;">${corpLabel}</div>
       <div style="font-size:13px;font-weight:700;color:#1a1a2e;line-height:1.2;">${esc(corp.full_name || '\u2014')}</div>
       ${corpMeta.length > 0 ? `<div style="font-size:10.5px;color:#555;margin-top:3px;">${corpMeta.join(' \u00B7 ')}</div>` : ''}
     </div>
-    ${uboCard}
+    ${uboColumnHtml}
   </div>`;
 }
 
@@ -213,14 +228,16 @@ function _g5RenderPartiesSection(dipData) {
   const anyParties = allCorpBorrowers.length > 0 || corpGuarantors.length > 0 || indGuarantors.length > 0;
   if (!anyParties) return null;
 
-  // BORROWERS
+  // BORROWERS — stack all UBOs next to each corporate (Q1.a per user)
+  const borrowerUbosByCorpId = {};  // track UBOs to auto-list as Individual Guarantors
   let borrowersHtml = '';
   let bIdx = 1;
   for (const corp of allCorpBorrowers) {
     const corpIsCorporate = (corp.borrower_type || '').toLowerCase() !== 'individual';
     if (corpIsCorporate) {
-      const ubo = _g5PickUboForCorporate(officersByParent[corp.id]);
-      borrowersHtml += _g5RenderCorpPair(corp, ubo, `B${bIdx}`, false);
+      const ubos = _g5GetUbosForCorporate(officersByParent[corp.id]);
+      borrowerUbosByCorpId[corp.id] = { corp, ubos };
+      borrowersHtml += _g5RenderCorpPair(corp, ubos, `B${bIdx}`, false);
     } else {
       borrowersHtml += _g5RenderIndividualCard(corp, `B${bIdx}`, 'borrower', null);
     }
@@ -230,13 +247,37 @@ function _g5RenderPartiesSection(dipData) {
   // GUARANTORS
   let guarantorsHtml = '';
   let gIdx = 1;
-  // Corporate guarantors first (with UBO paired)
+  // Corporate guarantors first (with their UBOs paired)
   for (const corp of corpGuarantors) {
-    const ubo = _g5PickUboForCorporate(officersByParent[corp.id]);
-    guarantorsHtml += _g5RenderCorpPair(corp, ubo, `G${gIdx}`, true);
+    const ubos = _g5GetUbosForCorporate(officersByParent[corp.id]);
+    guarantorsHtml += _g5RenderCorpPair(corp, ubos, `G${gIdx}`, true);
     gIdx++;
   }
-  // Individual guarantors — classify as ubolinked vs thirdparty
+
+  // Auto-add each borrower's UBOs as Individual Guarantors (Q2 per user: default all PSCs
+  // become PG providers; RM can drop post-discussion).
+  // Deduplicate against any manual individual_guarantors to avoid double-listing.
+  const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const manualGuarantorNames = new Set(indGuarantors.map(g => normName(g.full_name)));
+
+  for (const corpId of Object.keys(borrowerUbosByCorpId)) {
+    const { corp, ubos } = borrowerUbosByCorpId[corpId];
+    for (const ubo of ubos) {
+      if (manualGuarantorNames.has(normName(ubo.full_name))) continue; // skip dupes
+      // Build a pseudo-guarantor record from the UBO officer row
+      const pseudoGuarantor = {
+        id: `auto-ubo-guar-${ubo.id}`,
+        full_name: ubo.full_name,
+        nationality: ubo.nationality,
+        kyc_status: 'pending'  // KYC on UBOs is checked during underwriting
+      };
+      guarantorsHtml += _g5RenderIndividualCard(pseudoGuarantor, `G${gIdx}`, 'ubolinked',
+        `UBO of ${esc(corp.full_name)}${ubo.is_psc && ubo.psc_percentage ? ' \u00B7 PSC ' + esc(ubo.psc_percentage) + '%' : ''}`);
+      gIdx++;
+    }
+  }
+
+  // Then any manually-added individual guarantors — classify as ubolinked vs thirdparty
   for (const ind of indGuarantors) {
     const classified = _g5ClassifyIndividualGuarantor(ind, allCorpBorrowers.concat(corpGuarantors), officersByParent);
     const variant = classified.type;
@@ -259,6 +300,84 @@ function _g5RenderPartiesSection(dipData) {
   <div style="padding:14px 16px 18px;background:#fafafa;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 2px 2px;">
     ${borrowersSection}
     ${guarantorsSection}
+  </div>`;
+}
+
+// Render the Security and Guarantee Structure section (blue header, bulleted list)
+function _g5RenderSecuritySection(dipData, deal) {
+  const g = dipData && dipData.parties_grouped;
+  const propCount = (dipData.properties || []).length || 1;
+  const propLabel = propCount === 1 ? 'Property' : `${propCount} Properties`;
+
+  const corpBorrowers = g ? [...(g.primary || []), ...(g.joint || [])].filter(b => (b.borrower_type || '').toLowerCase() !== 'individual') : [];
+  const corpGuarantors = g ? (g.corporate_guarantors || []) : [];
+  const officersByParent = g ? (g.officers_by_parent || {}) : {};
+
+  const corpBorrowerNames = corpBorrowers.map(c => esc(c.full_name)).join(', ') || '\u2014';
+  const corpGuarantorNames = corpGuarantors.map(c => esc(c.full_name)).join(', ');
+
+  // Build PG list from all corporate borrowers' UBOs (Q2: all PSCs auto-listed)
+  const pgLines = [];
+  for (const corp of corpBorrowers) {
+    const ubos = _g5GetUbosForCorporate(officersByParent[corp.id]);
+    for (const u of ubos) {
+      pgLines.push(`${esc(u.full_name)} <span style="color:#666;">(UBO of ${esc(corp.full_name)}${u.is_psc && u.psc_percentage ? ', PSC ' + esc(u.psc_percentage) + '%' : ''})</span>`);
+    }
+  }
+
+  // Share charge state — driven by dip_data flag if set
+  const shareChargeState = (dipData.share_charge_required === true || dipData.share_charge_required === 'required')
+    ? { label: 'Required', bg: '#d1fae5', fg: '#065f46' }
+    : (dipData.share_charge_required === false || dipData.share_charge_required === 'not_required')
+    ? { label: 'Not Required', bg: '#f3f4f6', fg: '#6b7280' }
+    : { label: 'RM to elect', bg: '#fef3c7', fg: '#92400e' };
+
+  const rowStyle = 'padding:8px 12px;margin-bottom:5px;background:#fff;border-left:3px solid #1a365d;border-radius:2px;font-family:Arial,Helvetica,sans-serif;font-size:11.5px;display:flex;justify-content:space-between;align-items:center;';
+  const statusPill = (label, bg, fg) => `<span style="font-size:10px;padding:2px 8px;border-radius:3px;font-weight:700;letter-spacing:0.3px;background:${bg};color:${fg};">${label}</span>`;
+
+  const items = [];
+
+  items.push(`<div style="${rowStyle}">
+    <span><strong>First Legal Charge</strong> over ${propLabel}</span>
+    ${statusPill('Required', '#d1fae5', '#065f46')}
+  </div>`);
+
+  if (corpBorrowers.length > 0) {
+    items.push(`<div style="${rowStyle}">
+      <span><strong>Fixed &amp; Floating Charge</strong> over Corporate Borrower${corpBorrowers.length > 1 ? 's' : ''} <span style="color:#666;font-size:10px;">(${corpBorrowerNames})</span></span>
+      ${statusPill('Required', '#d1fae5', '#065f46')}
+    </div>`);
+  }
+
+  if (corpBorrowers.length > 0) {
+    items.push(`<div style="${rowStyle}">
+      <span><strong>Share Charge</strong> over Corporate Borrower${corpBorrowers.length > 1 ? 's' : ''} <span style="color:#888;font-size:10px;">(if elected by RM)</span></span>
+      ${statusPill(shareChargeState.label, shareChargeState.bg, shareChargeState.fg)}
+    </div>`);
+  }
+
+  if (corpGuarantors.length > 0) {
+    items.push(`<div style="${rowStyle}">
+      <span><strong>Corporate Guarantee</strong> <span style="color:#888;font-size:10px;">(unsecured)</span> from ${corpGuarantorNames}</span>
+      ${statusPill('Required', '#d1fae5', '#065f46')}
+    </div>`);
+  }
+
+  if (pgLines.length > 0) {
+    items.push(`<div style="${rowStyle}flex-direction:column;align-items:flex-start;">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <span><strong>Personal Guarantee</strong> from respective UBOs</span>
+        ${statusPill('Required', '#d1fae5', '#065f46')}
+      </div>
+      <ul style="margin:6px 0 0;padding-left:20px;font-size:11px;color:#333;">
+        ${pgLines.map(l => `<li style="padding:2px 0;"><strong>${l.split('<span')[0]}</strong>${l.includes('<span') ? '<span' + l.split('<span')[1] : ''}</li>`).join('')}
+      </ul>
+    </div>`);
+  }
+
+  return `<div style="background:#1a365d;color:#fff;padding:8px 16px;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:1px;border-radius:2px 2px 0 0;margin-top:14px;">Security and Guarantee Structure</div>
+  <div style="padding:14px 16px;background:#fafafa;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 2px 2px;">
+    ${items.join('')}
   </div>`;
 }
 
@@ -743,29 +862,7 @@ function buildDipHtml(deal, dipData, options) {
       `}
 
       ${partiesHtml}
-
-      <!-- Security & Guarantee Structure -->
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-        <h5 style="margin:0 0 8px;color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Security &amp; Guarantee Structure</h5>
-        <div class="grid-3">
-          <div class="field-box">
-            <span class="field-label navy">Security Charge</span>
-            <div class="field-value" style="font-size:13px;">${securityCharge}</div>
-          </div>
-          <div class="field-box">
-            <span class="field-label navy">Personal Guarantee</span>
-            <div class="field-value" style="font-size:13px;">${esc(personalGuarantee)}</div>
-          </div>
-          <div class="field-box">
-            <span class="field-label navy">Additional Security</span>
-            <div class="field-value" style="font-size:13px;">${esc(clean(dipData.additional_security || '\u2014'))}</div>
-          </div>
-        </div>
-        ${isCorp ? `<div class="field-box" style="margin-top:8px;">
-          <span class="field-label navy">UBO / Guarantor Name(s)</span>
-          <div class="field-value" style="font-size:13px;">${esc(clean(dipData.ubo_guarantor_names || deal.borrower_name))}</div>
-        </div>` : ''}
-      </div>
+      ${_g5RenderSecuritySection(dipData, deal)}
     </div>
 
     <!-- ═══ SECURITY SCHEDULE ═══ -->
