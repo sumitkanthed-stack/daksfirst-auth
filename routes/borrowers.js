@@ -510,4 +510,140 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  G5.3 Part C — Elect corporate PSC as Corporate Guarantor (2026-04-20)
+//
+//  Converts an informational corporate-PSC row into a structural decision:
+//  this entity IS a corporate guarantor on the deal. Creates a NEW top-level
+//  row with role='guarantor', borrower_type='corporate', pre-filled from the
+//  source PSC's identity (name, company_number, address, jurisdiction).
+//  Links back via ch_match_data.elected_from_borrower_id so the guarantor
+//  row remembers its provenance.
+//
+//  Idempotent: if already elected (by source id OR company_number OR name),
+//  returns 409 with the existing guarantor row id.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/:submissionId/borrowers/:borrowerId/elect-as-corporate-guarantor', authenticateToken, async (req, res) => {
+  try {
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission for this deal' });
+    }
+
+    const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    // Load the source corporate row
+    const srcResult = await pool.query(
+      `SELECT id, role, full_name, borrower_type, company_number, nationality, jurisdiction, address,
+              ch_verified_at, ch_matched_role, ch_match_confidence, ch_match_data, parent_borrower_id
+       FROM deal_borrowers WHERE id = $1 AND deal_id = $2`,
+      [req.params.borrowerId, dealId]
+    );
+    if (srcResult.rows.length === 0) return res.status(404).json({ error: 'Source borrower not found on this deal' });
+    const src = srcResult.rows[0];
+
+    if ((src.borrower_type || '').toLowerCase() !== 'corporate') {
+      return res.status(400).json({ error: 'Only corporate entities can be elected as Corporate Guarantor. This row is not corporate.' });
+    }
+    if (src.role === 'guarantor') {
+      return res.status(400).json({ error: 'This row is already a guarantor.' });
+    }
+
+    // Idempotency: look for existing guarantor already elected from this source,
+    // OR an existing corporate guarantor in the same deal with matching company_number / name.
+    // All conditions parameterised (defense in depth even though company_number is CH-controlled).
+    const dupCheck = await pool.query(
+      `SELECT id, full_name, company_number, ch_match_data FROM deal_borrowers
+       WHERE deal_id = $1 AND role = 'guarantor' AND borrower_type = 'corporate' AND (
+         (ch_match_data->>'elected_from_borrower_id')::int = $2
+         OR ($3::text IS NOT NULL AND company_number = $3)
+         OR LOWER(TRIM(full_name)) = LOWER(TRIM($4))
+       )`,
+      [dealId, src.id, src.company_number || null, src.full_name || '']
+    );
+    if (dupCheck.rows.length > 0) {
+      const existing = dupCheck.rows[0];
+      return res.status(409).json({
+        error: 'Already elected as corporate guarantor on this deal',
+        existing_guarantor_id: existing.id,
+        existing_guarantor_name: existing.full_name,
+        message: `${src.full_name} is already a corporate guarantor on this deal (row #${existing.id}).`
+      });
+    }
+
+    // Build elected ch_match_data: preserve useful source fields + provenance trail
+    const srcCm = src.ch_match_data || {};
+    const electedChMatch = {
+      elected_from_borrower_id: src.id,
+      elected_from_role: src.role,
+      elected_from_name: src.full_name,
+      elected_at: new Date().toISOString(),
+      elected_by_user_id: req.user.userId,
+      // Preserve source identity fields that inform the guarantor card
+      company_number: src.company_number || srcCm.psc_own_company_number || null,
+      registered_address: srcCm.registered_address || null,
+      psc_identification: srcCm.psc_identification || null,
+      jurisdiction: src.jurisdiction || srcCm.jurisdiction || null,
+      natures_of_control_at_borrower: Array.isArray(srcCm.natures_of_control) ? srcCm.natures_of_control : null,
+      // Mirror broker-trace flag if source had it (non-UK entity)
+      ...(srcCm.broker_trace_required === true
+        ? { broker_trace_required: true, broker_trace_reason: srcCm.broker_trace_reason }
+        : {})
+    };
+
+    // Flatten a registered-address string if the source row's address column is empty
+    let addr = src.address;
+    if (!addr && srcCm.registered_address && typeof srcCm.registered_address === 'object') {
+      const ra = srcCm.registered_address;
+      addr = [ra.line_1, ra.line_2, ra.locality, ra.region, ra.postal_code, ra.country]
+        .filter(x => x && String(x).trim()).join(', ') || null;
+    }
+
+    const ins = await pool.query(
+      `INSERT INTO deal_borrowers
+        (deal_id, role, full_name, nationality, jurisdiction, borrower_type, company_number, parent_borrower_id,
+         address, kyc_status, ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+       VALUES ($1, 'guarantor', $2, $3, $4, 'corporate', $5, NULL,
+         $6, 'pending', $7, $8, 'corporate_guarantor_elected', 'elected', $9::jsonb)
+       RETURNING id, role, full_name, borrower_type, company_number, ch_match_data`,
+      [
+        dealId,
+        src.full_name,
+        src.nationality || null,
+        src.jurisdiction || electedChMatch.jurisdiction || null,
+        src.company_number || null,
+        addr,
+        src.ch_verified_at || null,  // inherit CH verified status from source
+        req.user.userId,
+        JSON.stringify(electedChMatch)
+      ]
+    );
+
+    const newRow = ins.rows[0];
+
+    // Also stamp the SOURCE row so future requests know it's been elected (saves a lookup)
+    await pool.query(
+      `UPDATE deal_borrowers
+       SET ch_match_data = ch_match_data || $1::jsonb, updated_at = NOW()
+       WHERE id = $2`,
+      [JSON.stringify({ elected_as_corporate_guarantor_id: newRow.id, elected_at: new Date().toISOString() }), src.id]
+    );
+
+    await logAudit(dealId, 'elected_as_corporate_guarantor', null, src.full_name,
+      { source_borrower_id: src.id, new_guarantor_id: newRow.id, company_number: src.company_number },
+      req.user.userId);
+
+    res.json({
+      success: true,
+      guarantor: newRow,
+      source_borrower_id: src.id,
+      message: `${src.full_name} elected as Corporate Guarantor. Row added to Guarantors section.`
+    });
+  } catch (error) {
+    console.error('[elect-as-corporate-guarantor] Error:', error);
+    res.status(500).json({ error: 'Election failed: ' + error.message });
+  }
+});
+
 module.exports = router;
