@@ -4658,6 +4658,48 @@ export async function renderDealMatrix(deal) {
     if (arrow) arrow.style.transform = 'rotate(180deg)';
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // G5.3 Part C — Elect corporate PSC as Corporate Guarantor
+  // Posts to /elect-as-corporate-guarantor; handles 409 already-elected.
+  // ═══════════════════════════════════════════════════════════════════
+  window._electAsCorporateGuarantor = async function(borrowerId, submissionId, entityName) {
+    if (event && event.stopPropagation) event.stopPropagation();
+    const confirmMsg = 'Elect "' + (entityName || 'this entity') + '" as Corporate Guarantor on this deal?\n\n' +
+      'A new guarantor row will be created in the Guarantors section, pre-filled with the entity\'s ' +
+      'name, company number, and registered address. The source PSC row stays intact.';
+    if (!confirm(confirmMsg)) return;
+
+    const btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = 'Electing...'; btn.style.opacity = '0.6'; }
+
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}/elect-as-corporate-guarantor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const text = await res.text();
+      let data = {}; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+
+      if (res.status === 409) {
+        // Already elected — informational, not an error
+        showToast(data.message || 'Already elected as corporate guarantor on this deal', 'info');
+        setTimeout(() => _refreshDealInPlace(submissionId), 400);
+        return;
+      }
+      if (!res.ok) {
+        alert('Election failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+        if (btn) { btn.disabled = false; btn.textContent = 'Elect as Corporate Guarantor'; btn.style.opacity = '1'; }
+        return;
+      }
+      showToast(data.message || 'Elected as Corporate Guarantor', 'success');
+      setTimeout(() => _refreshDealInPlace(submissionId), 400);
+    } catch (err) {
+      console.error('[elect-as-corporate-guarantor]', err);
+      alert('Election error: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Elect as Corporate Guarantor'; btn.style.opacity = '1'; }
+    }
+  };
+
   // Per-corporate-guarantor CH verify — fetches company + officers + PSCs from Companies House,
   // creates child borrower rows under this guarantor, and marks it verified.
   window._chVerifyCorporateParty = async function(borrowerId, submissionId) {
@@ -4893,11 +4935,48 @@ export async function renderDealMatrix(deal) {
           _field('CH Verified At', bor.ch_verified_at ? _fmtDate(bor.ch_verified_at) : null, 'Broker') +
           _field('Matched Role', bor.ch_matched_role || null, 'CH') +
           _field('Match Confidence', bor.ch_match_confidence || null, 'CH') +
-          (bor.company_number && canEdit
-            ? '<div style="margin-top:10px;">' +
-                '<button onclick="event.stopPropagation(); window._chVerifyCorporateParty(' + bor.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u21BB Re-verify at CH</button>' +
-              '</div>'
-            : '') +
+
+          // ── Action buttons ──
+          (function() {
+            const actions = [];
+            if (bor.company_number && canEdit) {
+              actions.push('<button onclick="event.stopPropagation(); window._chVerifyCorporateParty(' + bor.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u21BB Re-verify at CH</button>');
+            }
+
+            // ── G5.3 Part C — Elect as Corporate Guarantor ──
+            // Eligible: corporate entity, not already a guarantor, not the primary/joint borrower itself,
+            // and is a control/ownership relationship (psc/ubo/shareholder) or a recursed corporate.
+            const isEligibleRoleForElection = ['psc', 'ubo', 'shareholder'].includes(bor.role);
+            const isAlreadyElectedFromThis = !!(chd2.elected_as_corporate_guarantor_id) ||
+              (deal.borrowers || []).some(b => b.role === 'guarantor' && b.borrower_type === 'corporate' &&
+                b.ch_match_data && b.ch_match_data.elected_from_borrower_id === bor.id);
+
+            if (canEdit && isEligibleRoleForElection && bor.borrower_type === 'corporate') {
+              if (isAlreadyElectedFromThis) {
+                // Elected pill (not clickable — informational)
+                const electedId = chd2.elected_as_corporate_guarantor_id ||
+                  ((deal.borrowers || []).find(b => b.role === 'guarantor' && b.borrower_type === 'corporate' &&
+                    b.ch_match_data && b.ch_match_data.elected_from_borrower_id === bor.id) || {}).id;
+                actions.push('<span style="padding:4px 12px;background:rgba(167,139,250,0.15);color:#A78BFA;border:1px solid rgba(167,139,250,0.35);border-radius:4px;font-size:10px;font-weight:700;" title="Row #' + (electedId || '?') + ' in Guarantors section">\u2713 Elected as Corporate Guarantor</span>');
+              } else {
+                // Election button with contextual warning
+                const warn = [];
+                if (nestLevel >= 3) warn.push('Deep ownership chain (level ' + nestLevel + ') — enforcement may need multi-entity legal review');
+                if (brokerTrace) warn.push('Cross-border entity — foreign legal opinion may be required');
+                const warnHtml = warn.length > 0
+                  ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);border-radius:4px;font-size:10px;color:#FBBF24;">\u26A0 ' + warn.map(w => sanitizeHtml(w)).join('<br/>\u26A0 ') + '</div>'
+                  : '';
+                const entityNameEscaped = String(bor.full_name || 'this entity').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                actions.push(
+                  '<button onclick="window._electAsCorporateGuarantor(' + bor.id + ', \'' + deal.submission_id + '\', \'' + entityNameEscaped + '\')" style="padding:4px 12px;background:rgba(167,139,250,0.12);color:#A78BFA;border:1px solid rgba(167,139,250,0.35);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u2696 Elect as Corporate Guarantor</button>' +
+                  warnHtml
+                );
+              }
+            }
+
+            if (actions.length === 0) return '';
+            return '<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;">' + actions.join('') + '</div>';
+          })() +
         '</div>' +
       '</div>';
 
