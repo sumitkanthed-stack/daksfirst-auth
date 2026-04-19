@@ -310,12 +310,16 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
       ? String(p.identification.registration_number)
       : null;
 
+    // Diagnostic log — tells us exactly why recursion does or doesn't fire
+    console.log(`[ch-recurse depth=${depth}] PSC name="${p.name}" kind="${p.kind}" isCorp=${isCorporatePsc} ownCoNum=${pscOwnCompanyNumber || 'NONE'} existed=${existingNames.has(nameKey)} identification=${JSON.stringify(p.identification || null)}`);
+
     // If existing — skip insert but still queue for recursion if corporate AND not yet recursed
     if (existingNames.has(nameKey)) {
       if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
         const existingChild = existingByName.get(nameKey);
         const existingChMatch = existingChild.ch_match_data || {};
         const alreadyRecursed = !!(existingChMatch.nested_verification);
+        console.log(`[ch-recurse depth=${depth}] Existing corporate PSC detected: ${p.name} — alreadyRecursed=${alreadyRecursed}, will${alreadyRecursed ? ' NOT' : ''} queue for recursion`);
         if (!alreadyRecursed) {
           // Backfill the company_number on the existing row so future runs know
           await pool.query(
@@ -325,6 +329,8 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
           );
           corporatePscsToRecurse.push({ rowId: existingChild.id, companyNumber: pscOwnCompanyNumber });
         }
+      } else if (isCorporatePsc) {
+        console.log(`[ch-recurse depth=${depth}] Existing corporate PSC "${p.name}" NOT queued — reason: ownCoNum=${pscOwnCompanyNumber || 'missing'}, depth=${depth}/${MAX_RECURSION_DEPTH}`);
       }
       continue;  // skip the insert
     }
