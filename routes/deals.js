@@ -19,9 +19,37 @@ const { syncDealProperties } = require('../services/property-parser');
 //  Phase G model: parent_borrower_id NULL = top-level party; officers point to parent.
 //  Role + borrower_type combined to derive logical categories (role 'guarantor' + borrower_type
 //  distinguishes corporate vs individual guarantor).
+//  Optional `deal` second argument: if no row has role='primary' but deal.borrower_company
+//  is set (legacy single-borrower data), synthesize a primary entry from deal_submissions
+//  fields so the Parties table is complete.
 // ═══════════════════════════════════════════════════════════════════════════
-function groupBorrowersForDip(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) {
+function groupBorrowersForDip(rows, deal) {
+  rows = Array.isArray(rows) ? rows.slice() : [];
+
+  // Legacy backfill: synthesize a primary borrower from deal_submissions fields
+  // if no row in deal_borrowers carries role='primary' but the deal has borrower_company.
+  const hasPrimary = rows.some(r => r.role === 'primary' && !r.parent_borrower_id);
+  if (!hasPrimary && deal && (deal.borrower_company || deal.borrower_name)) {
+    const isLegacyCorp = !!(deal.borrower_company || deal.company_number);
+    rows.unshift({
+      id: `legacy-primary-${deal.id || 'x'}`,
+      role: 'primary',
+      parent_borrower_id: null,
+      full_name: deal.borrower_company || deal.borrower_name,
+      borrower_type: isLegacyCorp ? 'corporate' : 'individual',
+      company_number: deal.company_number || null,
+      nationality: deal.borrower_nationality || null,
+      email: deal.borrower_email || null,
+      address: deal.borrower_address || deal.security_postcode || null,
+      kyc_status: deal.kyc_status || 'pending',
+      ch_verified_at: null,
+      ch_matched_role: null,
+      ch_match_confidence: null,
+      ch_match_data: null
+    });
+  }
+
+  if (rows.length === 0) {
     return {
       primary: [],
       joint: [],
@@ -763,7 +791,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       email: b.email,
       kyc_verified: b.kyc_status === 'verified'
     }));
-    const partiesGrouped = groupBorrowersForDip(borrowersResult.rows);
+    const partiesGrouped = groupBorrowersForDip(borrowersResult.rows, deal);
 
     const dipDataWithBorrowers = {
       ...dip_data,
@@ -951,7 +979,7 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
     const flatBorrowersPreview = borrowersResult.rows.map(b => ({
       name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified'
     }));
-    const partiesGroupedPreview = groupBorrowersForDip(borrowersResult.rows);
+    const partiesGroupedPreview = groupBorrowersForDip(borrowersResult.rows, deal);
 
     const dipDataWithBorrowers = {
       ...dipData,
