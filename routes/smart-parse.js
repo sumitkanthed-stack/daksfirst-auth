@@ -513,7 +513,7 @@ router.post('/parse-confirmed', authenticateToken, async (req, res) => {
 
         const parseResp = await fetch(N8N_PARSE_WEBHOOK_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026' },
+          headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': config.WEBHOOK_SECRET },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(120000)
         });

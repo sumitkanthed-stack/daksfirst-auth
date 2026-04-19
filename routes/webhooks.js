@@ -14,12 +14,7 @@ const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
 // ═══════════════════════════════════════════════════════════════════════════
 function verifyWebhookSecret(req, res, next) {
   const provided = req.headers['x-webhook-secret'];
-  const expected = process.env.WEBHOOK_SECRET;
-  if (!expected) {
-    console.error('[webhooks] WEBHOOK_SECRET env var not set — refusing to accept callbacks');
-    return res.status(503).json({ error: 'Service misconfigured' });
-  }
-  if (!provided || provided !== expected) {
+  if (!provided || provided !== config.WEBHOOK_SECRET) {
     console.warn('[webhooks] Rejected /analysis-complete — invalid or missing secret. IP:', req.ip);
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -84,7 +79,7 @@ async function fireWebhook(dealId, submissionId, dealData, userData) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Webhook-Secret': config.WEBHOOK_SECRET || 'daksfirst_webhook_2026'
+          'X-Webhook-Secret': config.WEBHOOK_SECRET
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(30000)

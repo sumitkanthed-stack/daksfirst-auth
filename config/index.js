@@ -21,6 +21,17 @@ module.exports = {
   JWT_EXPIRY: '15m',
   JWT_REFRESH_EXPIRY: '7d',
 
+  // Webhook shared secret — fail-fast if missing or weak (audit hardening 2026-04-20)
+  WEBHOOK_SECRET: (() => {
+    if (!process.env.WEBHOOK_SECRET) {
+      throw new Error('[config] WEBHOOK_SECRET env var is required — refusing to start');
+    }
+    if (process.env.WEBHOOK_SECRET.length < 32) {
+      throw new Error('[config] WEBHOOK_SECRET must be at least 32 characters — refusing to start');
+    }
+    return process.env.WEBHOOK_SECRET;
+  })(),
+
   // CORS
   CORS_ORIGINS: [
     'https://apply.daksfirst.com',
