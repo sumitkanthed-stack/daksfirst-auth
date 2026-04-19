@@ -1934,7 +1934,7 @@ export async function renderDealMatrix(deal) {
                 </div>
               </div>
               <div style="margin-top:10px;font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Existing Companies House Charges</div>
-              <div style="font-size:11px;color:#64748B;padding:6px 0;font-style:italic;">⏳ CH charges display integration pending (G5.3.3)</div>
+              <div id="sg-charges-${c.id}" data-company-number="${sanitizeHtml(c.company_number || '')}" style="font-size:11px;padding:6px 0;color:#64748B;font-style:italic;">${c.company_number ? '\u23F3 Loading from Companies House\u2026' : 'No company number — cannot check CH charges'}</div>
             </div>
           `).join('')}
 
@@ -2861,6 +2861,49 @@ export async function renderDealMatrix(deal) {
     const ok = await _sgFlashSave('sg-additional-security', `${API_BASE}/api/deals/${submissionId}/matrix-fields`, { additional_security_text: value || '' });
     if (ok) deal.additional_security_text = value;
   };
+
+  // ── G5.3.3 — Lazy-load CH existing charges per corporate in Security section ──
+  window.sgLoadCharges = async function() {
+    const nodes = document.querySelectorAll('[id^="sg-charges-"][data-company-number]');
+    for (const node of nodes) {
+      const companyNumber = node.getAttribute('data-company-number');
+      if (!companyNumber) { node.innerHTML = `<span style="color:#64748B;">No CH company number</span>`; continue; }
+      try {
+        const resp = await fetchWithAuth(`${API_BASE}/api/companies-house/charges/${companyNumber}`);
+        if (!resp.ok) { node.innerHTML = `<span style="color:#F87171;">Failed to load CH charges (${resp.status})</span>`; continue; }
+        const data = await resp.json();
+        const charges = (data.charges || []).slice().sort((a, b) => (b.created_on || '').localeCompare(a.created_on || ''));
+        if (charges.length === 0) {
+          node.innerHTML = `<div style="padding:8px;color:#34D399;background:rgba(34,197,94,0.05);border-radius:3px;text-align:center;">\u2713 No charges registered at Companies House</div>`;
+          continue;
+        }
+        const outstanding = charges.filter(c => c.status === 'outstanding');
+        node.innerHTML = charges.map(c => {
+          const isOutstanding = c.status === 'outstanding';
+          const color = isOutstanding ? '#ef4444' : '#22c55e';
+          const bg = isOutstanding ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.08)';
+          const lender = (c.persons_entitled && c.persons_entitled[0] && c.persons_entitled[0].name) || 'Lender unspecified';
+          const created = c.created_on ? new Date(c.created_on).toLocaleDateString('en-GB') : '\u2014';
+          const satisfied = c.satisfied_on ? new Date(c.satisfied_on).toLocaleDateString('en-GB') : null;
+          const badge = isOutstanding
+            ? '<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:3px;font-size:9.5px;font-weight:700;">Credit to Review</span>'
+            : '<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:3px;font-size:9.5px;font-weight:700;">\u2713 Satisfied</span>';
+          return `<div style="background:${bg};border-left:3px solid ${color};padding:7px 12px;margin-top:5px;border-radius:2px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="color:#E5E7EB;font-weight:600;font-size:11px;">${sanitizeHtml(lender)}</div>
+              <div style="color:#94A3B8;font-size:10px;margin-top:1px;">Charge ${sanitizeHtml(c.charge_number || c.charge_code || '')} \u00B7 Created ${created}${satisfied ? ' \u00B7 Satisfied ' + satisfied : ' \u00B7 Outstanding'}</div>
+            </div>
+            ${badge}
+          </div>`;
+        }).join('') + (outstanding.length > 0 ? `<div style="margin-top:6px;font-size:10px;color:#FBBF24;font-style:italic;">${outstanding.length} outstanding charge${outstanding.length > 1 ? 's' : ''} — Credit should review before Termsheet issue.</div>` : '');
+      } catch (err) {
+        node.innerHTML = `<span style="color:#F87171;">Error loading CH charges: ${sanitizeHtml(err.message || 'network')}</span>`;
+      }
+    }
+  };
+
+  // Fire the charges loader after matrix renders (defer to next tick so DOM is in place)
+  setTimeout(() => { try { window.sgLoadCharges(); } catch (_) {} }, 150);
 
   // ── Loan limit indicator — updates dynamically after every save ──
   function updateLoanLimitIndicator() {
