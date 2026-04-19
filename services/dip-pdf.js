@@ -74,6 +74,112 @@ function feeLine(raw, loanAmt) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// G5 — Option B party rendering helpers (2026-04-20)
+// Used by both the DIP PDF (here) and the Termsheet PDF (G5.4).
+// Colours mirror the matrix UI per G5 Q4 answer.
+// ═══════════════════════════════════════════════════════════════════
+
+function _g5RolePill(label, bgColor, fgColor) {
+  return `<span style="display:inline-block;padding:2px 10px;border-radius:3px;background:${bgColor};color:${fgColor};font-size:9.5px;font-weight:700;letter-spacing:0.3px;">${esc(label)}</span>`;
+}
+
+function _g5FormatDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch { return ''; }
+}
+
+function _g5KycBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'verified')  return `<span style="color:#166534;font-weight:600;">\u2713 Verified (KYC pack)</span>`;
+  if (s === 'submitted') return `<span style="color:#92400e;">\u23F3 Under review</span>`;
+  if (s === 'rejected')  return `<span style="color:#991b1b;">\u2717 Rejected</span>`;
+  return `<span style="color:#6b7280;">\u2014 KYC pending</span>`;
+}
+
+function _g5ChVerifiedCell(ch_verified_at) {
+  if (!ch_verified_at) return `<span style="color:#6b7280;">\u2014</span>`;
+  return `<span style="color:#166534;font-weight:600;">\u2713 ${_g5FormatDate(ch_verified_at)}</span>`;
+}
+
+// Render the "Parties to the Facility" corporate-party table
+function _g5RenderCorporatePartiesTable(corporateParties) {
+  if (!corporateParties || corporateParties.length === 0) return '';
+  const rows = corporateParties.map(p => {
+    const pill = _g5RolePill(p.label, p.bgColor, p.fgColor);
+    return `<tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:7px 10px;font-size:11px;">${pill}</td>
+      <td style="padding:7px 10px;font-size:11.5px;">${esc(p.full_name || '\u2014')}</td>
+      <td style="padding:7px 10px;font-size:11px;">${esc(p.company_number || '\u2014')}</td>
+      <td style="padding:7px 10px;font-size:11px;">${_g5ChVerifiedCell(p.ch_verified_at)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<table style="width:100%;border-collapse:collapse;margin:4px 0 10px;font-family:Arial,Helvetica,sans-serif;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Role</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Name</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Company No</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">CH Verified</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// Render the Individual Guarantors sub-block (separate table per G5 Q2)
+function _g5RenderIndividualGuarantorsBlock(individualGuarantors) {
+  if (!individualGuarantors || individualGuarantors.length === 0) return '';
+  const rows = individualGuarantors.map(g => `<tr style="border-bottom:1px solid #f1f5f9;">
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:600;">${esc(g.full_name || '\u2014')}</td>
+    <td style="padding:7px 10px;font-size:11px;">${esc(g.nationality || '\u2014')}</td>
+    <td style="padding:7px 10px;font-size:11px;">${_g5KycBadge(g.kyc_status)}</td>
+    <td style="padding:7px 10px;font-size:11px;">${esc(g.address || '\u2014')}</td>
+  </tr>`).join('');
+
+  return `<h5 style="margin:14px 0 6px;color:#1e3a5f;font-size:11.5px;text-transform:uppercase;letter-spacing:0.5px;">Individual Guarantors</h5>
+  <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:10.5px;color:#555;font-style:italic;">Natural persons providing a personal guarantee in their own capacity. Full KYC details held in the internal file.</p>
+  <table style="width:100%;border-collapse:collapse;margin:4px 0 10px;font-family:Arial,Helvetica,sans-serif;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Name</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Citizenship</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">ID Verified</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;color:#475569;text-transform:uppercase;letter-spacing:0.4px;">Address for Service of Notice</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// Top-level: decide between Option B layout (new) vs legacy rendering (backward compat)
+function _g5RenderPartiesSection(dipData) {
+  const g = dipData && dipData.parties_grouped;
+  if (!g) return null;  // caller falls back to legacy rendering
+
+  // Build corporate parties list with colour-coded role labels per G5 Q4 answer
+  const corporate = [
+    ...g.primary.map(p => ({ ...p, label: 'Primary Borrower',      bgColor: '#fef3c7', fgColor: '#92400e' })),
+    ...g.joint.map(p =>   ({ ...p, label: 'Joint Co-Borrower',     bgColor: '#d1fae5', fgColor: '#065f46' })),
+    ...g.corporate_guarantors.map(p => ({ ...p, label: 'Corporate Guarantor', bgColor: '#e9d8fd', fgColor: '#553c9a' }))
+  ];
+
+  const individuals = g.individual_guarantors || [];
+  const anyParties = corporate.length > 0 || individuals.length > 0;
+  if (!anyParties) return null;
+
+  return `<div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
+    <h5 style="margin:0 0 4px;color:#374151;font-size:11.5px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the Facility</h5>
+    <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:10.5px;color:#555;font-style:italic;">Legal parties bound by this indicative facility as at the date of issue.</p>
+    ${_g5RenderCorporatePartiesTable(corporate)}
+    ${_g5RenderIndividualGuarantorsBlock(individuals)}
+  </div>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // BUILD HTML
 // ═══════════════════════════════════════════════════════════════════
 
@@ -131,9 +237,10 @@ function buildDipHtml(deal, dipData, options) {
     ? `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dbeafe;color:#1e3a5f;">${esc(bType.toUpperCase())}</span>`
     : `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;">INDIVIDUAL</span>`;
 
-  // Parties table
-  let partiesHtml = '';
-  if (dipData.borrowers && dipData.borrowers.length > 0) {
+  // Parties table — G5 Option B (parties_grouped) with legacy fallback
+  let partiesHtml = _g5RenderPartiesSection(dipData);
+  if (partiesHtml === null && dipData.borrowers && dipData.borrowers.length > 0) {
+    // Legacy fallback rendering — used only if parties_grouped is missing (shouldn't happen post-G5.1)
     partiesHtml = `
     <div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
       <h5 style="margin:0 0 8px;color:#374151;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the DIP (${dipData.borrowers.length})</h5>
@@ -156,6 +263,7 @@ function buildDipHtml(deal, dipData, options) {
       </table>
     </div>`;
   }
+  if (partiesHtml === null) partiesHtml = '';
 
   // Security items — issueDip saves fixed_charge / pg_from_ubo
   const securityCharge = esc(humanize(dipData.fixed_charge || dipData.security_charge || 'first_and_debenture'));
