@@ -4865,57 +4865,162 @@ export async function renderDealMatrix(deal) {
       '</div>';
     }
 
+    // ── G5.3 Part B: corporate detail panel ──
+    // If this borrower is a corporate entity (e.g. corporate PSC like "Cohort Capital Holdings Ltd"),
+    // render a corporate-shaped card (Company No, Registered Address, CH verified, PSC nature,
+    // nested officers/PSCs from recursion) INSTEAD of the individual Personal Identity layout.
+    const _isCorporate = (bor.borrower_type === 'corporate') ||
+      (bor.full_name && /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group)\b/i.test(bor.full_name));
+
+    let innerBody;
+    if (_isCorporate) {
+      // Company number: prefer column, fall back to CH match blobs
+      const chd2 = bor.ch_match_data || {};
+      const companyNo = bor.company_number || chd2.psc_own_company_number || '—';
+      const regAddr = bor.address || bor.residential_address || null;
+      const natures = Array.isArray(chd2.natures_of_control) ? chd2.natures_of_control : [];
+      const nestedVer = chd2.nested_verification || null;
+      const nestedIns = chd2.nested_inserted || null;
+
+      // Find nested children (officers/PSCs of this corporate) that live in deal.borrowers
+      const nestedKids = (deal.borrowers || []).filter(b => b.parent_borrower_id === bor.id);
+      const nestedKidsTable = nestedKids.length > 0
+        ? '<div style="margin-top:12px;">' +
+            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Directors &amp; PSCs of ' + sanitizeHtml(bor.full_name || 'this corporate') + ' \u2014 ' + nestedKids.length + '</div>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+              '<thead><tr style="background:rgba(56,189,248,0.06);">' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Name</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Role</th>' +
+                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
+                '<th style="text-align:center;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">CH</th>' +
+              '</tr></thead><tbody>' +
+              nestedKids.map(nk => {
+                const nRoleCol = nk.role === 'director' ? '#818CF8' : nk.role === 'psc' ? '#38BDF8' : nk.role === 'ubo' ? '#A78BFA' : '#94A3B8';
+                const nRoleBg = nk.role === 'director' ? 'rgba(129,140,248,0.12)' : nk.role === 'psc' ? 'rgba(56,189,248,0.12)' : nk.role === 'ubo' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)';
+                const nType = nk.borrower_type === 'corporate' ? 'Corporate' : 'Individual';
+                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+                  '<td style="padding:4px 8px;color:#E2E8F0;">' + sanitizeHtml(nk.full_name || '—') + '</td>' +
+                  '<td style="padding:4px 8px;"><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + nRoleBg + ';color:' + nRoleCol + ';text-transform:capitalize;">' + (nk.role || '—') + '</span></td>' +
+                  '<td style="padding:4px 8px;color:#94A3B8;">' + nType + '</td>' +
+                  '<td style="padding:4px 8px;text-align:center;">' + (nk.ch_verified_at ? '<span style="color:#34D399;">\u2713</span>' : '<span style="color:#64748B;">\u2014</span>') + '</td>' +
+                '</tr>';
+              }).join('') +
+            '</tbody></table>' +
+          '</div>'
+        : '';
+
+      // Nested-verification advisory (set after recursive CH lookup succeeded)
+      const recursionHtml = nestedVer
+        ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.18);border-radius:6px;">' +
+            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Nested CH Verification</div>' +
+            '<div style="font-size:11px;color:#CBD5E1;">Recursed into ' + sanitizeHtml(bor.full_name || 'corporate PSC') + '. ' +
+              (nestedIns ? ('Inserted <strong>' + (nestedIns.officers || 0) + '</strong> officers, <strong>' + (nestedIns.pscs || 0) + '</strong> PSCs.') : '') +
+            '</div>' +
+          '</div>'
+        : '';
+
+      innerBody =
+        // ── Header: Corporate Name + Badges ──
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+          '<div>' +
+            '<div style="font-size:10px;color:#38BDF8;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate ' + (bor.role === 'psc' ? 'PSC' : (bor.role || '').toUpperCase()) + '</div>' +
+            '<div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-top:2px;">' + sanitizeHtml(bor.full_name || 'Unknown Company') + '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:6px;align-items:center;">' +
+            chBadge +
+            '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:#38BDF8;background:rgba(56,189,248,0.1);text-transform:capitalize;">' + (bor.role || 'psc') + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        // ── Two-column layout: Corporate Identity + CH Details ──
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+          // LEFT: Corporate Identity
+          '<div>' +
+            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Corporate Identity</div>' +
+            field('Company Number', companyNo, 'CH') +
+            field('Jurisdiction', bor.jurisdiction || chd2.jurisdiction || 'England and Wales', 'CH') +
+            field('Registered Address', regAddr, 'CH') +
+            (natures.length > 0
+              ? '<div style="margin-bottom:8px;">' +
+                  '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nature of Control</div>' +
+                  '<div style="font-size:11px;color:#F1F5F9;line-height:1.5;">' + natures.map(n => sanitizeHtml(String(n).replace(/-/g, ' '))).join('<br/>') + '</div>' +
+                '</div>'
+              : field('Nature of Control', null, 'CH')) +
+          '</div>' +
+
+          // RIGHT: CH Verification
+          '<div>' +
+            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Companies House Verification</div>' +
+            field('CH Verified At', bor.ch_verified_at ? fmtDate(bor.ch_verified_at) : null, 'Broker') +
+            field('Matched Role', bor.ch_matched_role || null, 'CH') +
+            field('Match Confidence', bor.ch_match_confidence || null, 'CH') +
+            (bor.company_number && canEdit
+              ? '<div style="margin-top:10px;">' +
+                  '<button onclick="window._chVerifyCorporateParty(' + bor.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u21BB Re-verify at CH</button>' +
+                '</div>'
+              : '') +
+          '</div>' +
+        '</div>' +
+
+        // ── Nested kids + recursion advisory ──
+        nestedKidsTable +
+        recursionHtml +
+        chMatchHtml;
+    } else {
+      // Individual detail (unchanged legacy layout)
+      innerBody =
+        // ── Header: Name + Badges ──
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+          '<div style="font-size:14px;font-weight:700;color:#F1F5F9;">' + sanitizeHtml(bor.full_name || 'Unknown') + '</div>' +
+          '<div style="display:flex;gap:6px;align-items:center;">' +
+            chBadge +
+            '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:' + roleColor + ';background:rgba(255,255,255,0.05);text-transform:capitalize;">' + (bor.role || 'primary') + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        // ── Two-column layout ──
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
+
+          // ── LEFT COLUMN: Personal Identity ──
+          '<div>' +
+            '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Personal Identity</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+              field('Date of Birth', fmtDate(bor.date_of_birth), 'DIP') +
+              field('Gender', bor.gender, 'DIP') +
+              field('Nationality', bor.nationality, 'DIP') +
+              field('Email', bor.email, 'DIP') +
+              field('Phone', bor.phone, 'DIP') +
+            '</div>' +
+            idDocHtml +
+            field('Residential Address', bor.residential_address || bor.address, 'DIP') +
+            statusPill('Address Proof', bor.address_proof_status || 'not_obtained') +
+          '</div>' +
+
+          // ── RIGHT COLUMN: Compliance & Verification ──
+          '<div>' +
+            '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Compliance & Verification</div>' +
+            creditHtml +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+              statusPill('CCJs', bor.ccj_count > 0 ? bor.ccj_count + ' found' : (bor.ccj_count === 0 ? 'None' : 'not_screened'), { None:'#34D399', 'not_screened':'#64748B' }) +
+              statusPill('Bankruptcy', bor.bankruptcy_status || 'none') +
+              statusPill('PEP Screening', bor.pep_status || 'not_screened') +
+              statusPill('Sanctions', bor.sanctions_status || 'not_screened') +
+            '</div>' +
+            field('Source of Wealth', bor.source_of_wealth, 'Underwriting') +
+            field('Source of Funds', bor.source_of_funds, 'Underwriting') +
+          '</div>' +
+
+        '</div>' +
+
+        // ── CH Match Data (bottom) ──
+        chMatchHtml;
+    }
+
     const detailHtml = '<tr id="borrower-detail-' + borrowerId + '">' +
       '<td colspan="' + colCount + '" style="padding:0;border-bottom:1px solid rgba(212,168,83,0.15);">' +
-        '<div style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;background:rgba(15,23,41,0.6);border-left:3px solid #D4A853;" id="borrower-detail-inner-' + borrowerId + '">' +
+        '<div style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;background:rgba(15,23,41,0.6);border-left:3px solid ' + (_isCorporate ? '#38BDF8' : '#D4A853') + ';" id="borrower-detail-inner-' + borrowerId + '">' +
           '<div style="padding:14px 16px;">' +
-
-            // ── Header: Name + Badges ──
-            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
-              '<div style="font-size:14px;font-weight:700;color:#F1F5F9;">' + sanitizeHtml(bor.full_name || 'Unknown') + '</div>' +
-              '<div style="display:flex;gap:6px;align-items:center;">' +
-                chBadge +
-                '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:' + roleColor + ';background:rgba(255,255,255,0.05);text-transform:capitalize;">' + (bor.role || 'primary') + '</span>' +
-              '</div>' +
-            '</div>' +
-
-            // ── Two-column layout ──
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
-
-              // ── LEFT COLUMN: Personal Identity ──
-              '<div>' +
-                '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Personal Identity</div>' +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
-                  field('Date of Birth', fmtDate(bor.date_of_birth), 'DIP') +
-                  field('Gender', bor.gender, 'DIP') +
-                  field('Nationality', bor.nationality, 'DIP') +
-                  field('Email', bor.email, 'DIP') +
-                  field('Phone', bor.phone, 'DIP') +
-                '</div>' +
-                idDocHtml +
-                field('Residential Address', bor.residential_address || bor.address, 'DIP') +
-                statusPill('Address Proof', bor.address_proof_status || 'not_obtained') +
-              '</div>' +
-
-              // ── RIGHT COLUMN: Compliance & Verification ──
-              '<div>' +
-                '<div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Compliance & Verification</div>' +
-                creditHtml +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
-                  statusPill('CCJs', bor.ccj_count > 0 ? bor.ccj_count + ' found' : (bor.ccj_count === 0 ? 'None' : 'not_screened'), { None:'#34D399', 'not_screened':'#64748B' }) +
-                  statusPill('Bankruptcy', bor.bankruptcy_status || 'none') +
-                  statusPill('PEP Screening', bor.pep_status || 'not_screened') +
-                  statusPill('Sanctions', bor.sanctions_status || 'not_screened') +
-                '</div>' +
-                field('Source of Wealth', bor.source_of_wealth, 'Underwriting') +
-                field('Source of Funds', bor.source_of_funds, 'Underwriting') +
-              '</div>' +
-
-            '</div>' +
-
-            // ── CH Match Data (bottom) ──
-            chMatchHtml +
-
+            innerBody +
           '</div>' +
         '</div>' +
       '</td>' +
