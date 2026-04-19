@@ -256,6 +256,8 @@ async function getPSCs(companyNumber) {
         year: p.date_of_birth.year
       } : null,
       natures_of_control: p.natures_of_control || [],  // e.g. ["ownership-of-shares-25-to-50-percent"]
+      // G5.3 Part A — preserve identification block for corporate PSCs (needed to recurse into the PSC's own CH record)
+      identification: p.identification || null,
       address: p.address ? {
         line_1: p.address.address_line_1 || '',
         locality: p.address.locality || '',
