@@ -1126,12 +1126,20 @@ export async function renderDealMatrix(deal) {
                   const electedAtIso = gChm.elected_at || null;
                   const electedBrokerTrace = gChm.broker_trace_required === true;
 
+                  // Acronym roles (PSC / UBO / LLP) should display uppercase, not title-case
+                  const _fmtRole = (r) => {
+                    if (!r) return '';
+                    const lr = String(r).toLowerCase();
+                    if (['psc','ubo','llp','plc'].includes(lr)) return lr.toUpperCase();
+                    return lr.charAt(0).toUpperCase() + lr.slice(1);
+                  };
+
                   const electedBanner = electedFromId
                     ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.3);border-left:3px solid #A78BFA;border-radius:6px;">' +
                         '<div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u2696 Elected as Corporate Guarantor</div>' +
                         '<div style="font-size:11px;color:#CBD5E1;line-height:1.5;">' +
                           'Elected from <strong style="color:#E2E8F0;">' + sanitizeHtml(electedFromName || 'source entity') + '</strong>' +
-                          (electedFromRole ? ' (was: <span style="text-transform:capitalize;">' + sanitizeHtml(electedFromRole) + '</span>)' : '') +
+                          (electedFromRole ? ' (was: ' + sanitizeHtml(_fmtRole(electedFromRole)) + ')' : '') +
                           (electedAtIso ? ' \u00B7 <span style="color:#94A3B8;">' + fmtDate(electedAtIso) + '</span>' : '') +
                         '</div>' +
                         (electedBrokerTrace
@@ -1973,15 +1981,31 @@ export async function renderDealMatrix(deal) {
           <!-- Corporate Guarantee (if applicable) -->
           ${sgCorpGuarantors.length > 0 ? `
             <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Corporate Guarantee</div>
-            ${sgCorpGuarantors.map(c => `<div style="background:rgba(15,118,110,0.12);border:1px solid rgba(20,184,166,0.3);border-radius:6px;padding:12px 14px;margin-bottom:10px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div style="color:#A7F3D0;font-weight:700;font-size:13px;">${sanitizeHtml(c.full_name || '—')}</div>
-                  <div style="color:#94A3B8;font-size:10.5px;margin-top:2px;">${c.company_number ? 'Co. No: ' + sanitizeHtml(c.company_number) : ''}${c.ch_verified_at ? ' · <span style="color:#34D399;">✓ CH Verified</span>' : ''}</div>
+            ${sgCorpGuarantors.map(c => {
+              const cChm = c.ch_match_data || {};
+              const electedFromName = cChm.elected_from_name || null;
+              const electedFromRole = cChm.elected_from_role || null;
+              const electedAtIso = cChm.elected_at || null;
+              const crossBorder = cChm.broker_trace_required === true;
+              const roleDisplay = electedFromRole ? String(electedFromRole).toUpperCase() : null;
+              const electedLine = electedFromName
+                ? `<div style="color:#A78BFA;font-size:10px;margin-top:4px;font-weight:600;">\u2696 Elected from <strong>${sanitizeHtml(electedFromName)}</strong>${roleDisplay ? ` <span style="color:#94A3B8;font-weight:400;">(was: ${sanitizeHtml(roleDisplay)})</span>` : ''}${electedAtIso ? ` <span style="color:#64748B;font-weight:400;">\u00B7 ${fmtDate(electedAtIso)}</span>` : ''}</div>`
+                : '';
+              const crossBorderPill = crossBorder
+                ? `<div style="margin-top:6px;padding:5px 8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:4px;font-size:10px;color:#FBBF24;line-height:1.4;">\u26A0 Cross-border entity \u2014 foreign legal opinion / local counsel likely required for this guarantee</div>`
+                : '';
+              return `<div style="background:rgba(15,118,110,0.12);border:1px solid rgba(20,184,166,0.3);border-radius:6px;padding:12px 14px;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div style="color:#A7F3D0;font-weight:700;font-size:13px;">${sanitizeHtml(c.full_name || '—')}</div>
+                    <div style="color:#94A3B8;font-size:10.5px;margin-top:2px;">${c.company_number ? 'Co. No: ' + sanitizeHtml(c.company_number) : ''}${c.ch_verified_at ? ' · <span style="color:#34D399;">✓ CH Verified</span>' : ''}${electedFromName ? ' · <span style="color:#A78BFA;font-weight:600;">Elected</span>' : ''}</div>
+                    ${electedLine}
+                  </div>
+                  <span style="padding:3px 10px;border-radius:3px;background:rgba(34,197,94,0.15);color:#34D399;font-size:10.5px;font-weight:700;">Unsecured Corporate Guarantee — Required</span>
                 </div>
-                <span style="padding:3px 10px;border-radius:3px;background:rgba(34,197,94,0.15);color:#34D399;font-size:10.5px;font-weight:700;">Unsecured Corporate Guarantee — Required</span>
-              </div>
-            </div>`).join('')}
+                ${crossBorderPill}
+              </div>`;
+            }).join('')}
           ` : ''}
 
           <!-- Personal Guarantees -->
