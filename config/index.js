@@ -90,9 +90,6 @@ module.exports = {
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || '',
 
-  // Seed secret (for admin creation - remove after first use)
-  SEED_SECRET: 'daksfirst-seed-2026',
-
   // Email templates
   BRAND_NAME: 'Daksfirst Limited',
   BRAND_COLOR_PRIMARY: '#1a365d', // Navy
