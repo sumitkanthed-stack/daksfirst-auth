@@ -23,6 +23,12 @@ async function canEditDeal(req, submissionId) {
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/properties', authenticateToken, async (req, res) => {
   try {
+    // H2 (2026-04-20): add canEditDeal check — was missing, any authenticated
+    // user could add properties to any deal by guessing submissionId.
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to add properties to this deal' });
+    }
+
     const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
             gdv, reinstatement, title_number, solicitor_firm, solicitor_ref, notes } = req.body;
     if (!address) return res.status(400).json({ error: 'Property address is required' });

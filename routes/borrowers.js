@@ -39,6 +39,12 @@ async function _validateParentBorrower(parentId, dealId) {
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
   try {
+    // H1 (2026-04-20): add canEditDeal check — was missing, any authenticated
+    // user could add borrowers to any deal by guessing submissionId.
+    if (!(await canEditDeal(req, req.params.submissionId))) {
+      return res.status(403).json({ error: 'You do not have permission to add borrowers to this deal' });
+    }
+
     const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, parent_borrower_id } = req.body;
     if (!full_name) return res.status(400).json({ error: 'Full name is required' });
 
@@ -630,15 +636,53 @@ router.post('/:submissionId/borrowers/:borrowerId/elect-as-corporate-guarantor',
       [JSON.stringify({ elected_as_corporate_guarantor_id: newRow.id, elected_at: new Date().toISOString() }), src.id]
     );
 
+    // ── Auto-populate guarantor's own directors/PSCs (2026-04-20, Overnight 2) ─────────
+    // Avoids the "0 directors/PSCs" quirk on newly-elected guarantors. Re-uses the same
+    // recursive helper used by direct CH verify; populates as children of the NEW guarantor row.
+    // Idempotent: children with matching names will be deduped by the unique index.
+    // Skipped if source was never CH-verified or has no company_number.
+    let autoPopulate = { officers: 0, pscs: 0, recursed: 0, skipped: false, reason: null };
+    if (src.company_number && src.ch_verified_at) {
+      try {
+        console.log(`[elect] Auto-populating CH children for new guarantor #${newRow.id} (${src.company_number})`);
+        const chResult = await _populateChChildrenRecursive(dealId, newRow.id, src.company_number, req.user.userId, 0);
+        autoPopulate.officers = chResult.inserted.officers;
+        autoPopulate.pscs = chResult.inserted.pscs;
+        autoPopulate.recursed = chResult.recursed;
+        // Merge the full CH verification blob onto the guarantor row for rich panel rendering
+        if (chResult.verification) {
+          await pool.query(
+            `UPDATE deal_borrowers SET ch_match_data = ch_match_data || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(chResult.verification), newRow.id]
+          );
+        }
+      } catch (autoErr) {
+        console.warn(`[elect] Auto-populate failed for new guarantor #${newRow.id}:`, autoErr.message);
+        autoPopulate.skipped = true;
+        autoPopulate.reason = 'auto_populate_error';
+        autoPopulate.error = autoErr.message;
+      }
+    } else {
+      autoPopulate.skipped = true;
+      autoPopulate.reason = !src.company_number ? 'no_company_number' : 'source_not_ch_verified';
+    }
+
     await logAudit(dealId, 'elected_as_corporate_guarantor', null, src.full_name,
-      { source_borrower_id: src.id, new_guarantor_id: newRow.id, company_number: src.company_number },
+      { source_borrower_id: src.id, new_guarantor_id: newRow.id, company_number: src.company_number,
+        auto_populated: autoPopulate },
       req.user.userId);
+
+    // Message reflects whether children were auto-populated
+    const populateSuffix = autoPopulate.skipped
+      ? ''
+      : ` Auto-populated ${autoPopulate.officers} officer(s) and ${autoPopulate.pscs} PSC(s)${autoPopulate.recursed > 0 ? ` (recursed into ${autoPopulate.recursed} sub-corporate${autoPopulate.recursed > 1 ? 's' : ''})` : ''}.`;
 
     res.json({
       success: true,
       guarantor: newRow,
       source_borrower_id: src.id,
-      message: `${src.full_name} elected as Corporate Guarantor. Row added to Guarantors section.`
+      auto_populated: autoPopulate,
+      message: `${src.full_name} elected as Corporate Guarantor. Row added to Guarantors section.${populateSuffix}`
     });
   } catch (error) {
     console.error('[elect-as-corporate-guarantor] Error:', error);
