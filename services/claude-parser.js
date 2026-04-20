@@ -1304,7 +1304,8 @@ async function parseDealForCandidates(docs, options) {
   }
   if (currentBatch.length > 0) batches.push(currentBatch);
   console.log(`[claude-parser] parseDealForCandidates: ${batches.length} batch(es)`);
-  if (onProgress) await onProgress({ stage: 'batches_prepared', totalBatches: batches.length, batchesDone: 0, totalDocs: allFiles.length, message: `Prepared ${batches.length} batch(es) from ${allFiles.length} documents` }).catch(() => {});
+  // Fire-and-forget so a slow DB write can't stall the parser kick-off.
+  if (onProgress) Promise.resolve().then(() => onProgress({ stage: 'batches_prepared', totalBatches: batches.length, batchesDone: 0, totalDocs: allFiles.length, message: `Prepared ${batches.length} batch(es) from ${allFiles.length} documents` })).catch(() => {});
 
   // ── Candidate extraction prompt ──
   const CANDIDATES_PROMPT = `You are analysing a UK bridging-loan broker pack for a lender. Your job is to extract every entity you find as a CANDIDATE. Do NOT decide who the Primary Borrower or Guarantor is — the lender's RM will assign roles from the UI.
@@ -1401,7 +1402,22 @@ JSON schema:
     confidence: 0
   };
 
-  for (let i = 0; i < batches.length; i++) {
+  // Fire-and-forget progress emit — never await so DB slowness can't block the parser.
+  const emit = (payload) => {
+    if (!onProgress) return;
+    // Do not await
+    Promise.resolve().then(() => onProgress(payload)).catch(() => {});
+  };
+
+  // Per-batch hard timeout. If Claude hangs on one batch, abort after BATCH_TIMEOUT_MS
+  // and record failure. Other batches continue independently.
+  const BATCH_TIMEOUT_MS = 120000; // 2 minutes
+
+  const runBatch = async (i) => {
+    const batchStart = Date.now();
+    emit({ stage: 'batch_start', totalBatches: batches.length, batchesDone: i, totalDocs: allFiles.length, message: `Batch ${i+1} of ${batches.length} starting…` });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS);
     try {
       const contentParts = buildContentBlocks(batches[i], null, null);
       const body = {
@@ -1418,8 +1434,11 @@ JSON schema:
           'x-api-key': config.ANTHROPIC_API_KEY,
           'anthropic-version': '2023-06-01'
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => 'no body');
@@ -1430,45 +1449,65 @@ JSON schema:
       const textContent = data.content?.find(c => c.type === 'text')?.text || '';
       const parsed = parseClaudeResponse(textContent);
 
-      // Merge candidates (dedup by id if present, otherwise append)
-      if (parsed.corporate_entities && Array.isArray(parsed.corporate_entities)) {
-        mergedCandidates.corporate_entities.push(...parsed.corporate_entities);
-      }
-      if (parsed.individuals && Array.isArray(parsed.individuals)) {
-        mergedCandidates.individuals.push(...parsed.individuals);
-      }
-      if (parsed.properties && Array.isArray(parsed.properties)) {
-        mergedCandidates.properties.push(...parsed.properties);
-      }
-      if (parsed.loan_facts && typeof parsed.loan_facts === 'object') {
-        mergedCandidates.loan_facts = { ...mergedCandidates.loan_facts, ...parsed.loan_facts };
-      }
-      if (parsed.broker && typeof parsed.broker === 'object') {
-        mergedCandidates.broker = { ...mergedCandidates.broker, ...parsed.broker };
-      }
-      if (parsed.confidence && parsed.confidence > mergedCandidates.confidence) {
-        mergedCandidates.confidence = parsed.confidence;
-      }
+      if (parsed.corporate_entities && Array.isArray(parsed.corporate_entities)) mergedCandidates.corporate_entities.push(...parsed.corporate_entities);
+      if (parsed.individuals && Array.isArray(parsed.individuals)) mergedCandidates.individuals.push(...parsed.individuals);
+      if (parsed.properties && Array.isArray(parsed.properties)) mergedCandidates.properties.push(...parsed.properties);
+      if (parsed.loan_facts && typeof parsed.loan_facts === 'object') mergedCandidates.loan_facts = { ...mergedCandidates.loan_facts, ...parsed.loan_facts };
+      if (parsed.broker && typeof parsed.broker === 'object') mergedCandidates.broker = { ...mergedCandidates.broker, ...parsed.broker };
+      if (parsed.confidence && parsed.confidence > mergedCandidates.confidence) mergedCandidates.confidence = parsed.confidence;
 
-      console.log(`[claude-parser] parseDealForCandidates: batch ${i+1} done — ${parsed.corporate_entities?.length || 0} corporates, ${parsed.individuals?.length || 0} individuals, ${parsed.properties?.length || 0} properties`);
-      if (onProgress) await onProgress({
+      const elapsed = ((Date.now() - batchStart) / 1000).toFixed(1);
+      console.log(`[claude-parser] parseDealForCandidates: batch ${i+1} done in ${elapsed}s — ${parsed.corporate_entities?.length || 0} corp, ${parsed.individuals?.length || 0} ind, ${parsed.properties?.length || 0} prop`);
+      emit({
         stage: 'batch_done',
         totalBatches: batches.length,
-        batchesDone: i + 1,
+        batchesDone: undefined,  // computed by caller via counter
         totalDocs: allFiles.length,
         running: {
           corporates: mergedCandidates.corporate_entities.length,
           individuals: mergedCandidates.individuals.length,
           properties: mergedCandidates.properties.length
         },
-        message: `Batch ${i+1} of ${batches.length} done — running total: ${mergedCandidates.corporate_entities.length} corp, ${mergedCandidates.individuals.length} ind, ${mergedCandidates.properties.length} prop`
-      }).catch(() => {});
+        message: `Batch ${i+1} done in ${elapsed}s — ${mergedCandidates.corporate_entities.length} corp, ${mergedCandidates.individuals.length} ind, ${mergedCandidates.properties.length} prop`,
+        batchIndex: i
+      });
+      return true;
     } catch (err) {
-      console.error(`[claude-parser] parseDealForCandidates: batch ${i+1} failed:`, err.message);
-      if (onProgress) await onProgress({ stage: 'batch_failed', totalBatches: batches.length, batchesDone: i + 1, totalDocs: allFiles.length, message: `Batch ${i+1} failed: ${err.message}` }).catch(() => {});
+      clearTimeout(timeoutId);
+      const aborted = err.name === 'AbortError';
+      const msg = aborted ? `timed out after ${BATCH_TIMEOUT_MS/1000}s` : err.message;
+      console.error(`[claude-parser] parseDealForCandidates: batch ${i+1} ${aborted ? 'TIMEOUT' : 'FAILED'}:`, msg);
+      emit({ stage: 'batch_failed', totalBatches: batches.length, totalDocs: allFiles.length, message: `Batch ${i+1} ${aborted ? 'timed out' : 'failed'}: ${msg}`, batchIndex: i });
+      return false;
     }
+  };
+
+  // Run batches with bounded concurrency (2 in parallel). Halves wall-clock for
+  // 4-batch packs (~30-40s instead of ~60-80s). Still safe for rate limits.
+  const CONCURRENCY = 2;
+  let completed = 0;
+  for (let start = 0; start < batches.length; start += CONCURRENCY) {
+    const slice = [];
+    for (let k = 0; k < CONCURRENCY && start + k < batches.length; k++) slice.push(start + k);
+    await Promise.all(slice.map(async (i) => {
+      await runBatch(i);
+      completed++;
+      emit({
+        stage: 'batch_done',
+        totalBatches: batches.length,
+        batchesDone: completed,
+        totalDocs: allFiles.length,
+        running: {
+          corporates: mergedCandidates.corporate_entities.length,
+          individuals: mergedCandidates.individuals.length,
+          properties: mergedCandidates.properties.length
+        },
+        message: `Batch ${i+1} of ${batches.length} done (${completed}/${batches.length} complete)`
+      });
+    }));
   }
-  if (onProgress) await onProgress({ stage: 'deduping', totalBatches: batches.length, batchesDone: batches.length, totalDocs: allFiles.length, message: 'Deduplicating candidates…' }).catch(() => {});
+
+  emit({ stage: 'deduping', totalBatches: batches.length, batchesDone: batches.length, totalDocs: allFiles.length, message: 'Deduplicating candidates…' });
 
   // ── Intelligent dedup across all candidate types ──
   const beforeCorps = mergedCandidates.corporate_entities.length;
