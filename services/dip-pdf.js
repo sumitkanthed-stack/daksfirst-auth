@@ -336,6 +336,191 @@ function _g5RenderIndividualCard(person, srLabel, variant, extraMeta) {
 }
 
 // Top-level: render full "Parties to the Facility" section (Borrowers + Guarantors)
+// ═══════════════════════════════════════════════════════════════════════════
+//  v5 parties renderer — matches the mockup (DIP-redesign-mockup.html) exactly.
+//  Two-column grid: B1/B2/.. Borrowers on navy-bordered cards + G1/G2/..
+//  Guarantors on gold-bordered cards. UBO details nested inside each Corporate
+//  Borrower card (dashed divider). Italic note below the grid.
+//
+//  Data shape from dipData.parties_grouped is identical to what _g5RenderPartiesSection
+//  consumes — primary + joint borrowers, corporate_guarantors, individual_guarantors,
+//  officers_by_parent map.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _v5FmtMeta(parts) {
+  return parts.filter(Boolean).map(esc).join(' \u00B7 ');
+}
+
+function _v5RenderBorrowerCard(corp, ubos, label) {
+  const isCorporate = (corp.borrower_type || '').toLowerCase() !== 'individual';
+
+  if (!isCorporate) {
+    // Individual borrower — rare but handled
+    const meta = _v5FmtMeta([corp.nationality, _g5IdVerifiedText(corp.kyc_status)]);
+    return `<div class="party-card">
+      <span class="party-tag">${esc(label)} — BORROWER</span>
+      <div class="party-role">Individual Borrower</div>
+      <div class="party-name">${esc(corp.full_name || '\u2014')}</div>
+      ${meta ? `<div class="party-meta">${meta}</div>` : ''}
+    </div>`;
+  }
+
+  // Corporate borrower with nested UBO sub-block
+  const corpName = corp.full_name || '\u2014';
+  const coNo = corp.company_number ? `Companies House No: <strong>${esc(corp.company_number)}</strong>` : '';
+
+  let uboBlock;
+  if (Array.isArray(ubos) && ubos.length > 0) {
+    const uboItems = ubos.map(u => {
+      const pscTag = u.is_psc ? 'PSC' : null;
+      const pscPct = u.is_psc && u.psc_percentage ? esc(u.psc_percentage) + '%' : null;
+      const primaryMeta = _v5FmtMeta([pscTag, pscPct, u.nationality]);
+      const contactBits = [];
+      if (u.email) contactBits.push(u.email);
+      if (u.phone) contactBits.push(u.phone);
+      const contactMeta = contactBits.join(' \u00B7 ');
+      return `
+        <div class="party-meta"><strong>${esc(u.full_name || '\u2014')}</strong>${primaryMeta ? ' \u00B7 ' + primaryMeta : ''}</div>
+        ${contactMeta ? `<div class="party-meta" style="color:#666;">${esc(contactMeta)}</div>` : ''}`;
+    }).join('');
+    uboBlock = `<div class="party-ubo">
+      <div class="party-role">Ultimate Beneficial Owner</div>
+      ${uboItems}
+    </div>`;
+  } else {
+    uboBlock = `<div class="party-ubo">
+      <div class="party-role">Ultimate Beneficial Owner</div>
+      <div class="party-meta" style="color:#888;font-style:italic;">To be identified on Companies House verification</div>
+    </div>`;
+  }
+
+  return `<div class="party-card">
+    <span class="party-tag">${esc(label)} — BORROWER</span>
+    <div class="party-role">Corporate Entity</div>
+    <div class="party-name">${esc(corpName)}</div>
+    ${coNo ? `<div class="party-meta">${coNo}</div>` : ''}
+    ${uboBlock}
+  </div>`;
+}
+
+function _v5RenderCorporateGuarantorCard(corp, ubos, label) {
+  const corpName = corp.full_name || '\u2014';
+  const coNo = corp.company_number ? `Companies House No: <strong>${esc(corp.company_number)}</strong>` : '';
+
+  let uboBlock = '';
+  if (Array.isArray(ubos) && ubos.length > 0) {
+    const uboItems = ubos.map(u => {
+      const primaryMeta = _v5FmtMeta([u.is_psc ? 'PSC' : null, u.nationality]);
+      return `<div class="party-meta"><strong>${esc(u.full_name || '\u2014')}</strong>${primaryMeta ? ' \u00B7 ' + primaryMeta : ''}</div>`;
+    }).join('');
+    uboBlock = `<div class="party-ubo">
+      <div class="party-role">Ultimate Beneficial Owner</div>
+      ${uboItems}
+    </div>`;
+  }
+
+  return `<div class="party-card guarantor">
+    <span class="party-tag g">${esc(label)} — GUARANTOR</span>
+    <div class="party-role">Corporate Guarantor</div>
+    <div class="party-name">${esc(corpName)}</div>
+    ${coNo ? `<div class="party-meta">${coNo}</div>` : ''}
+    ${uboBlock}
+  </div>`;
+}
+
+function _v5RenderIndividualGuarantorCard(person, label, variant, linkedToCorpName) {
+  const roleText = variant === 'thirdparty' ? 'Individual — Third-party' : 'Individual — UBO-linked';
+  const linkLine = variant === 'thirdparty'
+    ? 'Third-party Personal Guarantor'
+    : `UBO of <strong>${esc(linkedToCorpName || '\u2014')}</strong>`;
+  const tailMeta = _v5FmtMeta([person.nationality, _g5IdVerifiedText(person.kyc_status)]);
+
+  return `<div class="party-card guarantor">
+    <span class="party-tag g">${esc(label)} — GUARANTOR</span>
+    <div class="party-role">${esc(roleText)}</div>
+    <div class="party-name">${esc(person.full_name || '\u2014')}</div>
+    <div class="party-meta">${linkLine}</div>
+    ${tailMeta ? `<div class="party-meta" style="color:#666;">${tailMeta}</div>` : ''}
+  </div>`;
+}
+
+function _v5RenderPartiesSection(dipData) {
+  const g = dipData && dipData.parties_grouped;
+  if (!g) return null;
+
+  const allCorpBorrowers = [...(g.primary || []), ...(g.joint || [])];
+  const corpGuarantors = g.corporate_guarantors || [];
+  const indGuarantors = g.individual_guarantors || [];
+  const officersByParent = g.officers_by_parent || {};
+
+  const anyParties = allCorpBorrowers.length > 0 || corpGuarantors.length > 0 || indGuarantors.length > 0;
+  if (!anyParties) return null;
+
+  // BORROWERS — collect UBOs by corp so we can auto-insert them as guarantors
+  const borrowerUbosByCorpId = {};
+  const borrowerCards = [];
+  let bIdx = 1;
+  for (const corp of allCorpBorrowers) {
+    const ubos = _g5GetUbosForCorporate(officersByParent[corp.id] || []);
+    borrowerUbosByCorpId[corp.id] = { corp, ubos };
+    borrowerCards.push(_v5RenderBorrowerCard(corp, ubos, 'B' + bIdx));
+    bIdx++;
+  }
+
+  // GUARANTORS
+  const guarantorCards = [];
+  let gIdx = 1;
+
+  // Corporate guarantors first
+  for (const corp of corpGuarantors) {
+    const ubos = _g5GetUbosForCorporate(officersByParent[corp.id] || []);
+    guarantorCards.push(_v5RenderCorporateGuarantorCard(corp, ubos, 'G' + gIdx));
+    gIdx++;
+  }
+
+  // Auto-add each borrower's UBOs as Individual Guarantors (default PG path)
+  const normName = s => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const manualGuarantorNames = new Set(indGuarantors.map(g => normName(g.full_name)));
+
+  for (const corpId of Object.keys(borrowerUbosByCorpId)) {
+    const { corp, ubos } = borrowerUbosByCorpId[corpId];
+    for (const ubo of ubos) {
+      if (manualGuarantorNames.has(normName(ubo.full_name))) continue;
+      const pseudoGuarantor = {
+        id: 'auto-ubo-guar-' + ubo.id,
+        full_name: ubo.full_name,
+        nationality: ubo.nationality,
+        kyc_status: ubo.kyc_status || 'pending'
+      };
+      guarantorCards.push(_v5RenderIndividualGuarantorCard(pseudoGuarantor, 'G' + gIdx, 'ubolinked', corp.full_name));
+      gIdx++;
+    }
+  }
+
+  // Then any manually-added individual guarantors
+  for (const ind of indGuarantors) {
+    const classified = _g5ClassifyIndividualGuarantor(ind, allCorpBorrowers.concat(corpGuarantors), officersByParent);
+    const variant = classified.type;
+    const linkedCorpName = classified.linkedToCorp ? classified.linkedToCorp.full_name : null;
+    guarantorCards.push(_v5RenderIndividualGuarantorCard(ind, 'G' + gIdx, variant, linkedCorpName));
+    gIdx++;
+  }
+
+  const allCards = [...borrowerCards, ...guarantorCards];
+
+  return `<div class="section-bar">PARTIES TO THE FACILITY</div>
+<div class="section-body">
+  <div class="parties-row">
+    ${allCards.join('')}
+  </div>
+  <div class="parties-note">By default, the UBO of each corporate Borrower is named as an Individual Guarantor providing a Personal Guarantee. This default may be amended during underwriting.</div>
+</div>`;
+}
+// ═══════════════════════════════════════════════════════════════════════════
+//  End v5 parties renderer.
+// ═══════════════════════════════════════════════════════════════════════════
+
+
 function _g5RenderPartiesSection(dipData) {
   const g = dipData && dipData.parties_grouped;
   if (!g) return null;  // caller falls back to legacy rendering
@@ -629,8 +814,9 @@ function buildDipHtml(deal, dipData, options) {
   const ltv = totalPortfolioValue > 0 ? (grossLoan / totalPortfolioValue * 100) : 0;
   const interestServicing = retainedMonths > 0 ? `Retained (${retainedMonths} mo)` : 'Serviced Monthly';
 
-  // Parties rendering via G5
-  const partiesHtml = _g5RenderPartiesSection(dipData);
+  // Parties rendering — v5 renderer matches the mockup (2-col B1/G1 grid with
+  // UBO nested in borrower card). Falls back to legacy G5 if v5 returns null.
+  const partiesHtml = _v5RenderPartiesSection(dipData) || _g5RenderPartiesSection(dipData);
 
   // Issue date
   const issueDate = options.issuedAt
@@ -775,8 +961,10 @@ function buildDipHtml(deal, dipData, options) {
   }
   .party-tag.g { background: #c9a456; }
   .party-role { font-size: 8px; color: #6b7280; letter-spacing: 0.6px; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
-  .party-name { font-weight: 700; font-size: 11.5px; color: #0f2a4a; margin-bottom: 2px; }
-  .party-meta { font-size: 9px; color: #444; margin-bottom: 1px; }
+  .party-name { font-weight: 700; font-size: 11.5px; color: #0f2a4a; margin-bottom: 2px; line-height: 1.25; }
+  .party-meta { font-size: 9px; color: #444; margin-bottom: 1px; line-height: 1.35; }
+  .party-ubo { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e7ec; }
+  .parties-note { font-size: 8.5px; font-style: italic; color: #6b7280; margin-top: 8px; }
 
   /* Security rows */
   .sec-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #e5e7ec; font-size: 9.5px; }
@@ -1279,12 +1467,18 @@ function buildDipHtml(deal, dipData, options) {
         <tbody>
           <tr class="highlight"><td><strong>Onboarding / DIP Fee</strong></td><td class="amt">${fmtGBP(dipFee)}</td><td>On DIP acceptance</td><td>Required before Credit Review</td></tr>
           <tr><td><strong>Commitment Fee</strong></td><td class="amt">${fmtGBP(commitmentFee)}</td><td>On Termsheet acceptance</td><td>Required before Underwriting</td></tr>
-          <tr><td><strong>Arrangement Fee</strong></td><td class="amt">${fmtGBP(grossLoan * arrangementFeePct / 100)} (${arrangementFeePct.toFixed(2)}%)</td><td>On completion</td><td>Deducted from advance</td></tr>
-          ${brokerFeePct > 0 && deal.broker_id ? `<tr class="sub-row"><td>↳ of which Broker Fee</td><td>—</td><td>On completion</td><td>From arrangement fee</td></tr>` : ''}
+          <tr><td><strong>Arrangement Fee</strong></td><td class="amt">${fmtGBP(grossLoan * arrangementFeePct / 100)} (${arrangementFeePct.toFixed(2)}%)</td><td>On completion</td><td>Deducted from the gross loan</td></tr>
+          ${brokerFeePct > 0 && deal.broker_id ? `
+          <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ of which paid to Introducing Broker</td><td class="amt">${fmtGBP(grossLoan * brokerFeePct / 100)} (${brokerFeePct.toFixed(2)}%)</td><td>On completion</td><td>Paid to Broker from within the Arrangement Fee &mdash; NOT additional to Borrower</td></tr>
+          <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ retained by Lender (net arrangement fee)</td><td class="amt">${fmtGBP(grossLoan * (arrangementFeePct - brokerFeePct) / 100)} (${(arrangementFeePct - brokerFeePct).toFixed(2)}%)</td><td>On completion</td><td>Lender's share of the Arrangement Fee</td></tr>` : ''}
           <tr><td><strong>Exit Fee</strong></td><td class="amt">1.00% of loan</td><td>On redemption</td><td>Payable at exit</td></tr>
           <tr><td><strong>Extension Fee</strong></td><td class="amt">1.00% of loan</td><td>If term extended</td><td>Per extension period agreed</td></tr>
         </tbody>
       </table>
+      ${brokerFeePct > 0 && deal.broker_id ? `
+      <div class="fee-note" style="background:#eef4ff; border-left: 3px solid #0f2a4a; padding:6px 10px; border-radius:0 3px 3px 0; font-style:normal;">
+        <strong>Arrangement Fee split.</strong> The Arrangement Fee of ${arrangementFeePct.toFixed(2)}% is borne by the Borrower as a single deduction from the gross loan. Of this, ${brokerFeePct.toFixed(2)}% is paid by the Lender to the Introducing Broker on completion; the balance of ${(arrangementFeePct - brokerFeePct).toFixed(2)}% is retained by the Lender. <em>The Broker Fee is not an additional charge to the Borrower.</em>
+      </div>` : ''}
       <div class="cf-treatment">
         <div class="cf-title">COMMITMENT FEE — TREATMENT ON DEAL OUTCOME</div>
         ${adminConfig.cf_treatment_clause_html || FALLBACK_CF}
