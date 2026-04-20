@@ -21,7 +21,7 @@ router.get('/deals/:dealId/documents', authenticateToken, async (req, res) => {
   try {
     // Verify ownership — dealId param is UUID submission_id
     const dealResult = await pool.query(
-      'SELECT id FROM deal_submissions WHERE submission_id = $1 AND user_id = $2',
+      'SELECT id, dip_broker_notified_at FROM deal_submissions WHERE submission_id = $1 AND user_id = $2',
       [req.params.dealId, req.user.userId]
     );
 
@@ -29,9 +29,14 @@ router.get('/deals/:dealId/documents', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
+    // M5 post-scope: hide 'issued' DIP PDFs from broker until formally notified.
+    // Prevents the broker downloading the DIP via the repo before Credit approves.
+    const brokerNotifiedAt = dealResult.rows[0].dip_broker_notified_at;
+    const issuedFilter = brokerNotifiedAt ? '' : " AND (doc_category IS NULL OR doc_category <> 'issued')";
+
     const result = await pool.query(
       `SELECT id, filename, file_type, file_size, onedrive_download_url, uploaded_at
-       FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at DESC`,
+       FROM deal_documents WHERE deal_id = $1${issuedFilter} ORDER BY uploaded_at DESC`,
       [dealResult.rows[0].id]
     );
 
@@ -234,16 +239,17 @@ router.get('/deals/:submissionId/documents/:docId/download', authenticateToken, 
     const config = require('../config');
     const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
 
-    // Verify deal access: owner or internal staff
+    // Verify deal access: owner or internal staff.
+    // M5 post-scope: also fetch dip_broker_notified_at for the 'issued' doc gate below.
     let dealResult;
     if (isInternal) {
       dealResult = await pool.query(
-        `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+        `SELECT id, dip_broker_notified_at FROM deal_submissions WHERE submission_id = $1`,
         [submissionId]
       );
     } else {
       dealResult = await pool.query(
-        `SELECT id FROM deal_submissions WHERE submission_id = $1 AND (user_id = $2 OR borrower_user_id = $2)`,
+        `SELECT id, dip_broker_notified_at FROM deal_submissions WHERE submission_id = $1 AND (user_id = $2 OR borrower_user_id = $2)`,
         [submissionId, req.user.userId]
       );
     }
@@ -253,10 +259,11 @@ router.get('/deals/:submissionId/documents/:docId/download', authenticateToken, 
     }
 
     const dealId = dealResult.rows[0].id;
+    const brokerNotifiedAt = dealResult.rows[0].dip_broker_notified_at;
 
-    // Get document
+    // Get document — also fetch doc_category for the broker-issued gate
     const docResult = await pool.query(
-      `SELECT id, filename, file_type, file_content FROM deal_documents WHERE id = $1 AND deal_id = $2`,
+      `SELECT id, filename, file_type, file_content, doc_category FROM deal_documents WHERE id = $1 AND deal_id = $2`,
       [docId, dealId]
     );
 
@@ -265,6 +272,12 @@ router.get('/deals/:submissionId/documents/:docId/download', authenticateToken, 
     }
 
     const doc = docResult.rows[0];
+
+    // M5 post-scope: broker cannot download 'issued' category docs until notified.
+    // Internal users always can. Belt-and-braces alongside the list-filter.
+    if (!isInternal && doc.doc_category === 'issued' && !brokerNotifiedAt) {
+      return res.status(403).json({ error: 'This document is not yet available. The DIP will be released once Credit approves.' });
+    }
 
     if (!doc.file_content) {
       return res.status(400).json({ error: 'Document content not available' });

@@ -3309,19 +3309,34 @@ router.delete('/:submissionId/clear-documents', authenticateToken, async (req, r
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/:submissionId/documents-by-category', authenticateToken, async (req, res) => {
   try {
+    // M5 post-scope (2026-04-20): broker cannot see 'issued' docs until the DIP
+    // has been released to them (dip_broker_notified_at IS NOT NULL). Prevents
+    // broker from downloading the DIP PDF via the repo before Credit approves.
+    const isInternal = config.INTERNAL_ROLES.includes(req.user.role);
     const dealResult = await pool.query(
-      `SELECT id FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, dip_broker_notified_at FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const dealId = dealResult.rows[0].id;
+    const brokerNotifiedAt = dealResult.rows[0].dip_broker_notified_at;
+    const hideIssuedFromBroker = !isInternal && !brokerNotifiedAt;
 
     // Try with doc_category column; fall back to without if column doesn't exist yet
     let result;
     try {
       const { category } = req.query;
       let query, params;
+      // M5: build the issued-filter clause only when needed
+      const issuedFilter = hideIssuedFromBroker
+        ? " AND (doc_category IS NULL OR doc_category <> 'issued')"
+        : '';
       if (category) {
+        // If broker is asking specifically for the 'issued' category and they can't see it,
+        // return an empty list cleanly rather than leaking existence via 403.
+        if (hideIssuedFromBroker && category === 'issued') {
+          return res.json({ documents: [] });
+        }
         query = `SELECT id, filename, file_type, file_size, doc_category, uploaded_by, uploaded_at,
                         onedrive_download_url,
                         category_confirmed_by, category_confirmed_at, category_confirmed_name,
@@ -3337,7 +3352,7 @@ router.get('/:submissionId/documents-by-category', authenticateToken, async (req
                         accepted_at, accepted_by, accepted_name,
                         doc_expiry_date, doc_issue_date,
                         parsed_at, parsed_data
-                 FROM deal_documents WHERE deal_id = $1 ORDER BY doc_category, uploaded_at DESC`;
+                 FROM deal_documents WHERE deal_id = $1${issuedFilter} ORDER BY doc_category, uploaded_at DESC`;
         params = [dealId];
       }
       result = await pool.query(query, params);

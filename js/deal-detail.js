@@ -1386,8 +1386,9 @@ export function renderInternalWorkflowControls(deal) {
             'dip_conditions_approved', 'dip_conditions_approved_by', 'dip_conditions_approved_at',
             'dip_credit_decision', 'dip_credit_decided_by', 'dip_credit_decided_at', 'dip_credit_notes',
             'dip_notes', 'additional_notes',
-            // M4c: auto-route state + dip_issued_at — drives Credit Decision block visibility
+            // M4c + M5-2: auto-route state + dip_issued_at + broker notification
             'auto_routed', 'auto_route_reason', 'auto_route_decision_at', 'dip_issued_at',
+            'dip_broker_notified_at',
             // UoF + Exit approval stamps (M4d)
             'dip_use_of_funds_approved', 'dip_use_of_funds_approved_by', 'dip_use_of_funds_approved_at',
             'dip_exit_strategy_approved', 'dip_exit_strategy_approved_by', 'dip_exit_strategy_approved_at'
@@ -1611,11 +1612,27 @@ export function renderInternalWorkflowControls(deal) {
         const stampLabel = decisionText === 'approved' ? '\u2713 Credit Approved'
           : decisionText === 'declined' ? '\u2717 Credit Declined'
           : '\u21B5 More Info Requested';
+
+        // M5 post-scope: show "Email broker now" button when decision is approved
+        // but broker hasn't been notified yet (edge case: decision made before M5-2
+        // deployed, or original email bounced/failed).
+        const approvedButUnnotified = decisionText === 'approved' && !deal.dip_broker_notified_at;
+        const notifiedAt = deal.dip_broker_notified_at;
+        const notifyBlockHtml = decisionText === 'approved'
+          ? (notifiedAt
+            ? '<div style="font-size:11px;color:#166534;margin-top:8px;">\u2709 Broker notified: ' + new Date(notifiedAt).toLocaleString('en-GB') + '</div>'
+            : '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;background:#fff7ed;border:1px solid #fb923c;border-radius:5px;">' +
+                '<div style="font-size:11px;color:#9a3412;"><strong>\u26A0 Broker not yet notified.</strong> Click to send the DIP email now.</div>' +
+                (canDecide ? '<button onclick="window._creditResendBroker(\'' + deal.submission_id + '\')" style="padding:5px 12px;background:#fb923c;color:white;border:none;border-radius:4px;font-weight:600;font-size:11px;cursor:pointer;white-space:nowrap;">\u2709 Email Broker Now</button>' : '') +
+              '</div>')
+          : '';
+
         const stampHtml = alreadyDecided
           ? '<div style="padding:10px 14px;background:' + stampBg + ';border:1px solid ' + stampColor + '33;border-radius:6px;margin-bottom:12px;">' +
               '<div style="font-size:14px;font-weight:700;color:' + stampColor + ';">' + stampLabel + '</div>' +
               (decisionAt ? '<div style="font-size:11px;color:#4b5563;margin-top:2px;">' + new Date(decisionAt).toLocaleString('en-GB') + '</div>' : '') +
               (existingNotes ? '<div style="font-size:12px;color:#374151;margin-top:6px;white-space:pre-wrap;background:#ffffff;padding:8px;border-radius:4px;border:1px solid #e5e7eb;">' + sanitizeHtml(existingNotes) + '</div>' : '') +
+              notifyBlockHtml +
             '</div>'
           : '';
 
@@ -1715,6 +1732,34 @@ export function renderInternalWorkflowControls(deal) {
           await refreshDealFromServer();
           renderCreditDecision();
           if (typeof validateDipChecklist === 'function') validateDipChecklist();
+        } catch (err) {
+          showToast('Network error: ' + err.message, 'error');
+        }
+      };
+
+      // M5 post-scope: Resend broker notification for already-approved deals where
+      // the email never fired (decision made pre-M5-2 or bounce). Backend's idempotency
+      // guard prevents double-send; this just re-hits approve to trigger the fire.
+      window._creditResendBroker = async (submissionId) => {
+        if (!confirm("Send the DIP email to the broker now? This only fires if they haven't already been notified.")) return;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-credit-decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: 'approved', notes: deal.dip_credit_notes || '(resending broker notification)' })
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            showToast(body.error || 'Failed to resend', 'error');
+            return;
+          }
+          if (body.broker_notified) {
+            showToast('Broker notification sent.', 'success');
+          } else {
+            showToast('Broker was already notified — no second email sent.', 'info');
+          }
+          await refreshDealFromServer();
+          renderCreditDecision();
         } catch (err) {
           showToast('Network error: ' + err.message, 'error');
         }
