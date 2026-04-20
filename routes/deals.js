@@ -1972,7 +1972,15 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
       'retained_interest_months', 'rate_requested',
       // G5.3.2 Security & Guarantee section — deal-level fields
-      'requires_share_charge', 'additional_security_text'
+      'requires_share_charge', 'additional_security_text',
+      // M2a (Matrix-SSOT 2026-04-20): Approved columns — what we offer, editable by RM/Credit
+      'loan_amount_approved', 'ltv_approved', 'rate_approved',
+      'term_months_approved', 'interest_servicing_approved', 'exit_strategy_approved',
+      // M2a: Additional requested columns (RM may need to correct these occasionally)
+      'loan_amount_requested', 'term_months_requested', 'interest_servicing_requested',
+      'exit_strategy_requested',
+      // M2a: New fee columns
+      'dip_fee', 'exit_fee_pct', 'extension_fee_pct'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;
@@ -1982,13 +1990,39 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'current_value', 'loan_amount', 'ltv_requested', 'term_months',
       'rate_requested', 'purchase_price', 'refurb_cost',
       'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee', 'retained_interest_months',
-      'estimated_net_worth'
+      'estimated_net_worth',
+      // M2a: Approved numerics
+      'loan_amount_approved', 'ltv_approved', 'rate_approved', 'term_months_approved',
+      'loan_amount_requested', 'term_months_requested',
+      'dip_fee', 'exit_fee_pct', 'extension_fee_pct'
     ];
+
+    // M2c (Matrix-SSOT auto-revoke): editing any field in an approval section's
+    // referenced set clears that section's DIP approval stamp. Forces re-approval.
+    const AUTO_REVOKE_MAP = {
+      dip_loan_terms_approved: [
+        'loan_amount_approved', 'ltv_approved', 'rate_approved', 'term_months_approved',
+        'interest_servicing_approved', 'exit_strategy_approved',
+        // Requested-side changes also invalidate since display shows both
+        'loan_amount_requested', 'term_months_requested'
+      ],
+      dip_fees_approved: [
+        'dip_fee', 'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
+        'exit_fee_pct', 'extension_fee_pct', 'retained_interest_months'
+      ],
+      dip_security_approved: [
+        'security_address', 'security_postcode', 'asset_type', 'current_value',
+        'requires_share_charge', 'additional_security_text'
+      ],
+      dip_conditions_approved: ['additional_notes', 'exit_strategy_approved']
+      // dip_borrower_approved revoked only by borrower CRUD endpoints, not matrix-fields
+    };
 
     // Build SET clause
     const setClauses = [];
     const values = [];
     let paramIdx = 1;
+    const editedFields = [];
 
     for (const [key, val] of Object.entries(updates)) {
       if (!allowedFields.includes(key)) continue;
@@ -2000,10 +2034,26 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
         values.push(val === '' ? null : val);
       }
       paramIdx++;
+      editedFields.push(key);
     }
 
     if (setClauses.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // M2c: Auto-revoke — if any edited field belongs to an approval section's
+    // referenced set, clear that section's DIP approval stamp. Surfaces the
+    // "re-approve" state to the RM without silently letting changed data slip
+    // through an old approval.
+    const revokedSections = [];
+    for (const [approvalCol, watchedFields] of Object.entries(AUTO_REVOKE_MAP)) {
+      const changed = editedFields.some(f => watchedFields.includes(f));
+      if (changed) {
+        setClauses.push(`${approvalCol} = FALSE`);
+        setClauses.push(`${approvalCol}_by = NULL`);
+        setClauses.push(`${approvalCol}_at = NULL`);
+        revokedSections.push(approvalCol);
+      }
     }
 
     setClauses.push(`updated_at = NOW()`);
@@ -2085,8 +2135,13 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       }
     }
 
-    console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', setClauses.length - 1, 'fields');
-    res.json({ success: true, fields_updated: setClauses.length - 1 });
+    console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', editedFields.length, 'fields' +
+      (revokedSections.length > 0 ? ` (auto-revoked: ${revokedSections.join(', ')})` : ''));
+    res.json({
+      success: true,
+      fields_updated: editedFields.length,
+      revoked_approvals: revokedSections
+    });
   } catch (error) {
     console.error('[matrix-fields] Error:', error);
     res.status(500).json({ error: 'Failed to update matrix fields' });
