@@ -211,6 +211,70 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// M2b (Matrix-SSOT 2026-04-20) — Requested vs Approved paired field
+//
+// Each negotiable DIP term has TWO values: what broker asked (requested,
+// read-only pill) and what we offer (approved, editable). This helper
+// renders both side-by-side with an "Adjusted" badge when they differ.
+//
+// The Approved field writes to <baseField>_approved via matrixValidateAndSave.
+// Requested field is display-only in the matrix (captured at submission).
+// ═══════════════════════════════════════════════════════════════════
+function renderRequestedApprovedField(baseField, label, requestedVal, approvedVal, inputType, canEdit, options) {
+  const requestedField = baseField + '_requested';
+  const approvedField = baseField + '_approved';
+
+  // Format helper — money/percent/number all get £/% prefixes
+  const formatDisplay = (v) => {
+    if (v == null || v === '') return '—';
+    const s = String(v);
+    if (inputType === 'money') return '£' + formatWithCommas(s);
+    if (inputType === 'percent') return s + '%';
+    return s;
+  };
+
+  // Requested pill — grey, read-only, always displayed
+  const requestedDisplay = (() => {
+    if (inputType === 'select' && options && requestedVal != null) {
+      const match = options.find(o => o.value === requestedVal);
+      return match ? match.label : String(requestedVal);
+    }
+    return formatDisplay(requestedVal);
+  })();
+
+  // Adjusted badge — shown when approved differs from requested (non-null on both sides)
+  const isAdjusted = (requestedVal != null && requestedVal !== '' &&
+    approvedVal != null && approvedVal !== '' &&
+    String(requestedVal).trim() !== String(approvedVal).trim());
+  const adjustedBadge = isAdjusted
+    ? '<span style="font-size:8px;color:#FBBF24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);padding:1px 5px;border-radius:8px;margin-left:6px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">Adjusted</span>'
+    : '';
+
+  // Approved input — reuse renderEditableField but with the approved column name
+  const approvedInput = renderEditableField(approvedField, '', approvedVal, inputType, canEdit, options)
+    .replace(/<label[^>]*>.*?<\/label>/, '')  // strip the inner label (we have our own above)
+    .replace(/margin-bottom:12px/, 'margin-bottom:0'); // remove outer margin
+
+  return `<div style="margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <label style="${labelStyle}margin:0;">${sanitizeHtml(label)}</label>
+      ${adjustedBadge}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr auto 1.2fr;gap:10px;align-items:center;">
+      <div>
+        <div style="font-size:8px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:600;">Requested</div>
+        <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;">${sanitizeHtml(requestedDisplay)}</div>
+      </div>
+      <div style="color:#475569;font-size:14px;padding-top:16px;">→</div>
+      <div>
+        <div style="font-size:8px;color:#34D399;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:700;">Approved</div>
+        ${approvedInput}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS - Pill Rendering
 // ═══════════════════════════════════════════════════════════════════
 
@@ -2146,30 +2210,55 @@ export async function renderDealMatrix(deal) {
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-loan-terms">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                 <div style="font-size:14px;font-weight:700;color:#F1F5F9">Loan Structure</div>
                 ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('loan_amount', 'Loan Amount (£)', deal.loan_amount, 'money', canEdit)}
-                <div style="margin-bottom:12px">
-                  <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <label style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;" for="mf-ltv_requested">LTV Requested (%)</label>
-                    ${canEdit ? '<button onclick="window.matrixApplyMaxLoan()" style="font-size:8px;font-weight:600;color:#60A5FA;background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.25);border-radius:4px;padding:1px 6px;cursor:pointer;margin-bottom:4px;" title="Set loan amount to max allowable (75% val / 90% PP)">Max LTV</button>' : ''}
-                  </div>
-                  ${canEdit
-                    ? '<input id="mf-ltv_requested" type="text" data-field="ltv_requested" data-type="text" style="width:100%;padding:8px 12px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#F1F5F9;font-size:13px;" value="' + (deal.ltv_requested || '') + '" placeholder="Auto-calculated" onblur="window.matrixValidateAndSave(\'ltv_requested\', this.value, \'text\')" />'
-                    : '<input type="hidden" id="mf-ltv_requested" value="' + (deal.ltv_requested || '') + '"><div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);border-radius:8px;color:#CBD5E1;font-size:13px;">' + (deal.ltv_requested || '—') + '</div>'
-                  }
-                  <div id="err-ltv_requested" style="font-size:10px;color:#F87171;margin-top:2px;display:none;"></div>
-                </div>
-                ${renderEditableField('term_months', 'Term (months)', deal.term_months || '12', 'text', canEdit)}
-                ${renderEditableField('rate_requested', 'Rate (%/month)', deal.rate_requested, 'text', isInternalUser && canEdit)}
-                ${renderEditableField('interest_servicing', 'Interest Servicing', deal.interest_servicing || 'retained', 'select', canEdit, [
+              <!-- M2b Matrix-SSOT 2026-04-20: Requested (broker asked) vs Approved (what we offer) per negotiable term.
+                   Approved is the canonical value — PDFs/term sheets render Approved only.
+                   Editing any Approved value auto-revokes dip_loan_terms_approved (handled server-side). -->
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 12px 0;font-style:italic;">
+                Broker's ask vs Daksfirst's offer. Edits to the Approved column will revoke the DIP Loan Terms approval stamp and require re-approval.
+              </p>
+
+              ${renderRequestedApprovedField(
+                'loan_amount', 'Loan Amount (£)',
+                deal.loan_amount_requested ?? deal.loan_amount,
+                deal.loan_amount_approved ?? deal.loan_amount,
+                'money', canEdit
+              )}
+              ${renderRequestedApprovedField(
+                'ltv', 'LTV (%)',
+                deal.ltv_requested,
+                deal.ltv_approved ?? deal.ltv_requested,
+                'text', canEdit
+              )}
+              ${renderRequestedApprovedField(
+                'term_months', 'Term (months)',
+                deal.term_months_requested ?? deal.term_months,
+                deal.term_months_approved ?? deal.term_months,
+                'text', canEdit
+              )}
+              ${renderRequestedApprovedField(
+                'rate', 'Rate (%/month)',
+                deal.rate_requested,
+                deal.rate_approved ?? deal.rate_requested,
+                'text', isInternalUser && canEdit
+              )}
+              ${renderRequestedApprovedField(
+                'interest_servicing', 'Interest Servicing',
+                deal.interest_servicing_requested ?? deal.interest_servicing,
+                deal.interest_servicing_approved ?? deal.interest_servicing,
+                'select', canEdit,
+                [
                   { value: 'retained', label: 'Retained (deducted upfront)' },
                   { value: 'serviced', label: 'Serviced (monthly payments)' },
                   { value: 'rolled', label: 'Rolled Up' }
-                ])}
+                ]
+              )}
+
+              <!-- Operational date — not negotiable, single value -->
+              <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.04);">
                 ${renderEditableField('drawdown_date', 'Target Drawdown', deal.drawdown_date, 'date', canEdit)}
               </div>
               <div id="loan-limit-indicator"></div>
