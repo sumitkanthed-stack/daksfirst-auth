@@ -1135,6 +1135,12 @@ export function renderInternalWorkflowControls(deal) {
            Hidden placeholder kept so legacy validateDipChecklist() references don't 500. -->
       <div id="dip-checklist" style="display:none;"></div>
 
+      <!-- ═══ M4c (Matrix-SSOT 2026-04-20): Credit Decision — conditional block ═══
+           Shown for DIPs where auto-route flagged credit_review (deal.auto_routed === false).
+           All internal users can see; only Credit / Admin can interact.
+           Mounts into #dip-credit-decision-container, populated by renderCreditDecision(). -->
+      ${isInternal ? `<div id="dip-credit-decision-container" style="margin-bottom:16px;"></div>` : ''}
+
       <div style="display:flex;gap:12px;align-items:center;">
         ${stage !== 'dip_issued' ? `<button id="btn-issue-dip" onclick="window.showIssueDipPreflight && window.showIssueDipPreflight()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;" title="Shows pre-flight auto-route check before issuing">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>` : ''}
         ${stage === 'dip_issued' ? `<button onclick="window.downloadDipPdf && window.downloadDipPdf('${deal.submission_id}')" style="padding:10px 24px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:14px;">Download PDF</button>` : ''}
@@ -1331,6 +1337,9 @@ export function renderInternalWorkflowControls(deal) {
         // Pre-Issue Checklist removed — approval gates enforce completeness.
         const approvalsComplete = renderDipApprovalGates();
 
+        // M4c: Credit Decision block — only renders if deal.auto_routed === false
+        try { renderCreditDecision(); } catch (e) { console.warn('[M4c] renderCreditDecision:', e.message); }
+
         const btn = document.getElementById('btn-issue-dip');
         if (btn) {
           if (approvalsComplete) {
@@ -1376,7 +1385,12 @@ export function renderInternalWorkflowControls(deal) {
             'dip_fees_approved', 'dip_fees_approved_by', 'dip_fees_approved_at',
             'dip_conditions_approved', 'dip_conditions_approved_by', 'dip_conditions_approved_at',
             'dip_credit_decision', 'dip_credit_decided_by', 'dip_credit_decided_at', 'dip_credit_notes',
-            'dip_notes', 'additional_notes'
+            'dip_notes', 'additional_notes',
+            // M4c: auto-route state — drives Credit Decision block visibility
+            'auto_routed', 'auto_route_reason', 'auto_route_decision_at',
+            // UoF + Exit approval stamps (M4d)
+            'dip_use_of_funds_approved', 'dip_use_of_funds_approved_by', 'dip_use_of_funds_approved_at',
+            'dip_exit_strategy_approved', 'dip_exit_strategy_approved_by', 'dip_exit_strategy_approved_at'
           ];
           for (const k of KEYS_TO_REFRESH) {
             if (k in fresh) deal[k] = fresh[k];
@@ -1551,6 +1565,154 @@ export function renderInternalWorkflowControls(deal) {
         }
 
         return approvedCount === SECTIONS.length;
+      };
+
+      // ═══════════════════════════════════════════════════════════════════
+      // M4c (Matrix-SSOT 2026-04-20): Credit Decision section
+      // Visible when deal.auto_routed === false (auto-router flagged credit_review).
+      // All internal users see; only Credit/Admin can record a decision.
+      // If already decided, section locks and shows the stamp.
+      // ═══════════════════════════════════════════════════════════════════
+      const renderCreditDecision = () => {
+        const container = document.getElementById('dip-credit-decision-container');
+        if (!container) return;
+
+        // Visibility: only for deals held for credit review, post-issue
+        const needsCreditReview = deal.auto_routed === false;
+        if (!needsCreditReview) { container.innerHTML = ''; return; }
+
+        const currentRole = getCurrentRole();
+        const canDecide = ['credit', 'admin'].includes(currentRole);
+        const alreadyDecided = !!deal.dip_credit_decision;
+        const decisionText = deal.dip_credit_decision;
+        const decisionAt = deal.dip_credit_decided_at;
+        const existingNotes = deal.dip_credit_notes || '';
+
+        // Build the auto-route reason display from stored JSONB
+        let flaggedReasons = '';
+        const arr = deal.auto_route_reason;
+        if (arr) {
+          const reasons = typeof arr === 'string' ? JSON.parse(arr) : arr;
+          if (reasons && reasons.failed_rules && Array.isArray(reasons.failed_rules)) {
+            flaggedReasons = reasons.failed_rules.map(r =>
+              '<div style="font-size:11px;color:#78350f;padding:2px 0;">\u2717 <strong>' + sanitizeHtml(r.rule.replace(/_/g, ' ')) + ':</strong> ' + sanitizeHtml(r.message || '—') + '</div>'
+            ).join('');
+          }
+        }
+
+        // Decision stamp HTML (visible once decided)
+        const stampColor = decisionText === 'approved' ? '#166534' : decisionText === 'declined' ? '#991b1b' : '#b45309';
+        const stampBg = decisionText === 'approved' ? '#dcfce7' : decisionText === 'declined' ? '#fee2e2' : '#fef3c7';
+        const stampLabel = decisionText === 'approved' ? '\u2713 Credit Approved'
+          : decisionText === 'declined' ? '\u2717 Credit Declined'
+          : '\u21B5 More Info Requested';
+        const stampHtml = alreadyDecided
+          ? '<div style="padding:10px 14px;background:' + stampBg + ';border:1px solid ' + stampColor + '33;border-radius:6px;margin-bottom:12px;">' +
+              '<div style="font-size:14px;font-weight:700;color:' + stampColor + ';">' + stampLabel + '</div>' +
+              (decisionAt ? '<div style="font-size:11px;color:#4b5563;margin-top:2px;">' + new Date(decisionAt).toLocaleString('en-GB') + '</div>' : '') +
+              (existingNotes ? '<div style="font-size:12px;color:#374151;margin-top:6px;white-space:pre-wrap;background:#ffffff;padding:8px;border-radius:4px;border:1px solid #e5e7eb;">' + sanitizeHtml(existingNotes) + '</div>' : '') +
+            '</div>'
+          : '';
+
+        // Override inputs — only editable when not yet decided and user can decide
+        const canEditOverrides = !alreadyDecided && canDecide;
+        const overrideSectionHtml = '<div style="padding:10px 12px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:6px;margin-bottom:12px;">' +
+          '<div style="font-size:10px;color:#b45309;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Optional Credit Overrides (write through to matrix)</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">' +
+            '<div><label style="font-size:10px;color:#6b7280;font-weight:600;">Rate Override (%/mo)</label>' +
+              '<input id="credit-override-rate" type="text" placeholder="' + (deal.rate_approved != null ? Number(deal.rate_approved).toFixed(3) : '—') + '" ' + (canEditOverrides ? '' : 'disabled') + ' style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;' + (canEditOverrides ? '' : 'background:#f3f4f6;') + '"></div>' +
+            '<div><label style="font-size:10px;color:#6b7280;font-weight:600;">LTV Override (%)</label>' +
+              '<input id="credit-override-ltv" type="text" placeholder="' + (deal.ltv_approved != null ? Number(deal.ltv_approved).toFixed(2) : '—') + '" ' + (canEditOverrides ? '' : 'disabled') + ' style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;' + (canEditOverrides ? '' : 'background:#f3f4f6;') + '"></div>' +
+            '<div><label style="font-size:10px;color:#6b7280;font-weight:600;">Arrangement Fee (%)</label>' +
+              '<input id="credit-override-arr-fee" type="text" placeholder="' + (deal.arrangement_fee_pct != null ? Number(deal.arrangement_fee_pct).toFixed(2) : '—') + '" ' + (canEditOverrides ? '' : 'disabled') + ' style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;' + (canEditOverrides ? '' : 'background:#f3f4f6;') + '"></div>' +
+          '</div>' +
+          '<div style="font-size:10px;color:#78350f;margin-top:6px;font-style:italic;">Leave blank to keep current matrix values. Any override revokes dependent approvals and needs RM re-approve.</div>' +
+        '</div>';
+
+        // Notes textarea
+        const notesHtml = alreadyDecided ? ''
+          : '<div style="margin-bottom:12px;">' +
+              '<label style="font-size:11px;color:#374151;font-weight:700;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px;">Credit Notes *</label>' +
+              '<textarea id="credit-decision-notes" placeholder="Risk assessment, conditions precedent, override rationale, or reason for decline..." style="width:100%;min-height:80px;padding:8px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:12px;resize:vertical;' + (canDecide ? '' : 'background:#f3f4f6;') + '"' + (canDecide ? '' : ' disabled') + '></textarea>' +
+              '<div style="font-size:10px;color:#6b7280;margin-top:4px;">Required when declining or requesting more info. Recommended for approvals with overrides.</div>' +
+            '</div>';
+
+        // Action buttons
+        const actionButtonsHtml = alreadyDecided ? ''
+          : '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+              (canDecide
+                ? '<button onclick="window._creditDecision(\'approved\', \'' + deal.submission_id + '\')" style="padding:8px 18px;background:#16a34a;color:white;border:none;border-radius:5px;font-weight:700;font-size:13px;cursor:pointer;">\u2713 Credit Approve</button>' +
+                  '<button onclick="window._creditDecision(\'more_info\', \'' + deal.submission_id + '\')" style="padding:8px 18px;background:#f59e0b;color:white;border:none;border-radius:5px;font-weight:700;font-size:13px;cursor:pointer;">\u21B5 Request More Info</button>' +
+                  '<button onclick="window._creditDecision(\'declined\', \'' + deal.submission_id + '\')" style="padding:8px 18px;background:#dc2626;color:white;border:none;border-radius:5px;font-weight:700;font-size:13px;cursor:pointer;">\u2717 Decline</button>'
+                : '<span style="font-size:11px;color:#6b7280;font-style:italic;">Only Credit or Admin can record a decision.</span>') +
+            '</div>';
+
+        container.innerHTML =
+          '<div style="background:#fefce8;padding:14px;border-radius:6px;border:2px solid #fde047;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+              '<h5 style="margin:0;color:#713f12;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">\u2696 Credit Decision \u2014 Required</h5>' +
+              (alreadyDecided ? '<span style="font-size:10px;color:' + stampColor + ';font-weight:700;">Decided</span>' : '<span style="font-size:10px;color:#b45309;font-weight:700;">Pending</span>') +
+            '</div>' +
+            '<p style="margin:0 0 10px;font-size:11px;color:#713f12;">This DIP was flagged by auto-routing for Credit review. Broker has NOT been emailed yet — they only receive the DIP once Credit approves.</p>' +
+            (flaggedReasons ? '<div style="margin-bottom:12px;padding:8px 10px;background:#fef3c7;border-radius:4px;border:1px dashed #fcd34d;"><div style="font-size:10px;color:#78350f;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Why flagged:</div>' + flaggedReasons + '</div>' : '') +
+            stampHtml +
+            overrideSectionHtml +
+            notesHtml +
+            actionButtonsHtml +
+          '</div>';
+      };
+
+      // Action handler — POST to the M4c-1 endpoint
+      window._creditDecision = async (decision, submissionId) => {
+        const notesEl = document.getElementById('credit-decision-notes');
+        const notes = notesEl ? notesEl.value.trim() : '';
+        if (decision !== 'approved' && !notes) {
+          showToast('Credit notes are required when declining or requesting more info.', 'error');
+          notesEl?.focus();
+          return;
+        }
+        const prompt = decision === 'approved' ? 'Approve Credit for this DIP? The broker will be emailed.'
+          : decision === 'declined' ? 'Decline this deal? This is typically a final decision.'
+          : 'Request more info from the RM? The DIP stays held and the RM is notified.';
+        if (!confirm(prompt)) return;
+
+        // Collect overrides
+        const overrides = {};
+        const rateEl = document.getElementById('credit-override-rate');
+        const ltvEl = document.getElementById('credit-override-ltv');
+        const arrFeeEl = document.getElementById('credit-override-arr-fee');
+        if (rateEl?.value.trim()) overrides.rate_approved = parseFloat(rateEl.value);
+        if (ltvEl?.value.trim()) overrides.ltv_approved = parseFloat(ltvEl.value);
+        if (arrFeeEl?.value.trim()) overrides.arrangement_fee_pct = parseFloat(arrFeeEl.value);
+
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-credit-decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision, notes, overrides: Object.keys(overrides).length ? overrides : undefined })
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            showToast(body.error || 'Credit Decision failed', 'error');
+            return;
+          }
+          showToast(body.message || 'Credit Decision recorded', 'success');
+          // Update local deal state + re-render
+          deal.dip_credit_decision = decision;
+          deal.dip_credit_decided_by = body.decided_by;
+          deal.dip_credit_decided_at = body.decided_at;
+          deal.dip_credit_notes = notes;
+          if (body.row) {
+            if (body.row.rate_approved != null) deal.rate_approved = body.row.rate_approved;
+            if (body.row.ltv_approved != null) deal.ltv_approved = body.row.ltv_approved;
+            if (body.row.arrangement_fee_pct != null) deal.arrangement_fee_pct = body.row.arrangement_fee_pct;
+          }
+          await refreshDealFromServer();
+          renderCreditDecision();
+          if (typeof validateDipChecklist === 'function') validateDipChecklist();
+        } catch (err) {
+          showToast('Network error: ' + err.message, 'error');
+        }
       };
 
       // Manual refresh button handler — pull latest matrix state and re-validate
