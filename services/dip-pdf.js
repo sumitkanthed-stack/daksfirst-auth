@@ -614,11 +614,18 @@ function buildDipHtml(deal, dipData, options) {
     address: p.address || '',
     postcode: p.postcode || '',
     tenure: p.tenure || '\u2014',
-    value: parseFloat(p.market_value || 0)
+    value: parseFloat(p.market_value || 0),
+    purchasePrice: parseFloat(p.purchase_price || 0)
   }));
   const totalPortfolioValue = properties.reduce((sum, p) => sum + p.value, 0);
+  const totalPurchasePrice = properties.reduce((sum, p) => sum + p.purchasePrice, 0);
 
-  // Loan Terms grid data
+  // Loan Terms — source from deal / dipData (never hardcode). Humanise underscored values.
+  const loanPurpose = humanize(deal.loan_purpose || dipData.loan_purpose || deal.loan_intent || 'Not specified');
+  const exitStrategy = clean(deal.exit_strategy || dipData.exit_strategy || 'Not specified');
+  const isPurchaseDeal = /purchase|acqu/i.test(deal.loan_purpose || dipData.loan_purpose || '');
+  const showPurchasePrice = isPurchaseDeal && totalPurchasePrice > 0;
+
   const ltv = totalPortfolioValue > 0 ? (grossLoan / totalPortfolioValue * 100) : 0;
   const interestServicing = retainedMonths > 0 ? `Retained (${retainedMonths} mo)` : 'Serviced Monthly';
 
@@ -1128,7 +1135,6 @@ function buildDipHtml(deal, dipData, options) {
 
   <div class="title-bar">
     <h1>Decision In Principle (DIP)</h1>
-    <div class="sub">Indicative terms — subject to full underwriting, valuation &amp; credit approval <span class="ver">[v5.0]</span></div>
   </div>
 
   <div class="ref-strip">
@@ -1170,33 +1176,12 @@ function buildDipHtml(deal, dipData, options) {
         </tbody>
       </table>
       <div class="sched-footer">
-        <div>Asset Type: <strong>Residential</strong></div>
-        <div>Purchase Price: <strong>${fmtGBP(0)}</strong></div>
+        <div>Asset Type: <strong>${esc(humanize(deal.asset_type || 'Residential'))}</strong></div>
+        ${showPurchasePrice ? `<div>Purchase Price: <strong>${fmtGBP(totalPurchasePrice)}</strong></div>` : ''}
         <div>LTV (on supplied value): <strong>${ltv.toFixed(2)}%</strong></div>
       </div>
       <div class="omv-note">
         <strong>Note on valuation:</strong> Values shown are <em>as supplied by the broker / borrower</em>. Final lending decision and LTV will be based on the <strong>180-day Open Market Value (180-day OMV)</strong> from an independent RICS valuer instructed by Daksfirst.
-      </div>
-    </div>
-  </div>
-
-  <!-- LOAN TERMS -->
-  <div class="section">
-    <div class="section-bar">INDICATIVE LOAN TERMS</div>
-    <div class="section-body">
-      <div class="lt-grid">
-        <div class="lt-cell"><div class="lt-label">Loan Amount</div><div class="lt-value">${fmtGBP(grossLoan)}</div></div>
-        <div class="lt-cell"><div class="lt-label">Term</div><div class="lt-value">${loanTerm} months</div><div class="lt-hint">Min ${minLoanTerm} months</div></div>
-        <div class="lt-cell"><div class="lt-label">Rate</div><div class="lt-value">${(ratePerMonth * 100).toFixed(2)}% p.m.</div><div class="lt-hint">Min 0.85% · 360-day basis</div></div>
-        <div class="lt-cell lt-default"><div class="lt-label">Default Rate</div><div class="lt-value">${defaultRate.toFixed(2)}% p.m.</div><div class="lt-hint">Rate + 2%</div></div>
-
-        <div class="lt-cell"><div class="lt-label">Gross LTV</div><div class="lt-value">${ltv.toFixed(2)}%</div><div class="lt-hint">Max 75%</div></div>
-        <div class="lt-cell"><div class="lt-label">Min Value Covenant</div><div class="lt-value">${fmtGBP(minValueCovenant || totalPortfolioValue)}</div><div class="lt-hint">Portfolio floor</div></div>
-        <div class="lt-cell"><div class="lt-label">Interest Servicing</div><div class="lt-value" style="font-size:10.5px;">${interestServicing}</div></div>
-        <div class="lt-cell"><div class="lt-label">Arrangement Fee</div><div class="lt-value">${arrangementFeePct.toFixed(2)}%</div></div>
-
-        <div class="lt-cell"><div class="lt-label">Loan Purpose</div><div class="lt-value" style="font-size:10.5px;">Purchase</div></div>
-        <div class="lt-cell" style="grid-column: span 3;"><div class="lt-label">Exit Strategy</div><div class="lt-value" style="font-size:10.5px;">Refinance</div></div>
       </div>
     </div>
   </div>
@@ -1230,13 +1215,34 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
+  <!-- LOAN TERMS — moved from page 1 to leave room for Parties + Security + Schedule -->
+  <div class="section">
+    <div class="section-bar">INDICATIVE LOAN TERMS</div>
+    <div class="section-body">
+      <div class="lt-grid">
+        <div class="lt-cell"><div class="lt-label">Loan Amount</div><div class="lt-value">${fmtGBP(grossLoan)}</div></div>
+        <div class="lt-cell"><div class="lt-label">Term</div><div class="lt-value">${loanTerm} months</div><div class="lt-hint">Min ${minLoanTerm} months</div></div>
+        <div class="lt-cell"><div class="lt-label">Rate</div><div class="lt-value">${ratePerMonth.toFixed(2)}% p.m.</div><div class="lt-hint">Min 0.85% · 360-day basis</div></div>
+        <div class="lt-cell lt-default"><div class="lt-label">Default Rate</div><div class="lt-value">${defaultRate.toFixed(2)}% p.m.</div><div class="lt-hint">Rate + 2%</div></div>
+
+        <div class="lt-cell"><div class="lt-label">Gross LTV</div><div class="lt-value">${ltv.toFixed(2)}%</div><div class="lt-hint">Max 75%</div></div>
+        <div class="lt-cell"><div class="lt-label">Min Value Covenant</div><div class="lt-value">${fmtGBP(minValueCovenant || totalPortfolioValue)}</div><div class="lt-hint">Portfolio floor</div></div>
+        <div class="lt-cell"><div class="lt-label">Interest Servicing</div><div class="lt-value" style="font-size:10.5px;">${interestServicing}</div></div>
+        <div class="lt-cell"><div class="lt-label">Arrangement Fee</div><div class="lt-value">${arrangementFeePct.toFixed(2)}%</div></div>
+
+        <div class="lt-cell"><div class="lt-label">Loan Purpose</div><div class="lt-value" style="font-size:10.5px;">${esc(loanPurpose)}</div></div>
+        <div class="lt-cell" style="grid-column: span 3;"><div class="lt-label">Exit Strategy</div><div class="lt-value" style="font-size:10.5px;">${esc(exitStrategy)}</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- DAY ZERO WATERFALL -->
   <div class="section">
     <div class="section-bar">DAY ZERO — NET ADVANCE ON COMPLETION</div>
     <div class="section-body" style="padding: 0;">
       <div class="waterfall" style="margin: 0; border-radius: 0; border: 0;">
         <div class="waterfall-row"><div>Gross Loan</div><div class="amount">${fmtGBP(waterfallCalc.gross)}</div></div>
-        <div class="waterfall-row deduction"><div>Less: Retained Interest (${retainedMonths} months × ${(ratePerMonth*100).toFixed(2)}%, ${dayCountBasis}-day basis)</div><div class="amount">${fmtGBPParen(-waterfallCalc.retainedInterest)}</div></div>
+        <div class="waterfall-row deduction"><div>Less: Retained Interest (${retainedMonths} months × ${ratePerMonth.toFixed(2)}%, ${dayCountBasis}-day basis)</div><div class="amount">${fmtGBPParen(-waterfallCalc.retainedInterest)}</div></div>
         <div class="waterfall-row deduction">
           <div>Less: Arrangement Fee <span style="font-weight:400;font-size:9px;">(${arrangementFeePct.toFixed(2)}% = ${fmtGBP(grossLoan * arrangementFeePct / 100)}${commitmentFee > 0 ? ', net of ' + fmtGBP(commitmentFee) + ' Commitment Fee credit' : ''})</span></div>
           <div class="amount">${fmtGBPParen(-waterfallCalc.afNet)}</div>
