@@ -823,6 +823,121 @@ router.post('/:submissionId/dip-approve-section', authenticateToken, authenticat
 router.post('/:submissionId/dip-unapprove-section', authenticateToken, authenticateInternal,
   (req, res) => _handleDipApproval(req, res, false));
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Credit Decision on DIP (M4c, 2026-04-20) — Hybrid model
+//  Shown on DIPs where auto-route flagged credit_review. Credit can:
+//    - Approve: greenlights the DIP; broker email fires downstream
+//    - Decline: kills the deal
+//    - More Info: bounces back to RM with notes, no broker email
+//  Credit can ALSO override the following matrix fields at decision time:
+//    - rate_approved, ltv_approved, arrangement_fee_pct
+//  Overrides write through to matrix (SSOT preserved). Matrix auto-revoke
+//  then fires on dip_loan_terms_approved / dip_fees_approved so RM sees the
+//  re-approval demand if they look back at the form.
+//
+//  Access: 'credit' or 'admin' roles only. RM cannot set Credit Decision.
+// ═══════════════════════════════════════════════════════════════════════════
+const VALID_CREDIT_DECISIONS = ['approved', 'declined', 'more_info'];
+
+router.post('/:submissionId/dip-credit-decision', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    // Role gate — only Credit + Admin can set this (not RM)
+    if (!['credit', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Credit or Admin can record a Credit Decision.' });
+    }
+
+    const { decision, notes, overrides } = req.body || {};
+    if (!decision || !VALID_CREDIT_DECISIONS.includes(decision)) {
+      return res.status(400).json({
+        error: 'Invalid decision. Must be one of: ' + VALID_CREDIT_DECISIONS.join(', ')
+      });
+    }
+
+    const dealRes = await pool.query(
+      `SELECT id, deal_stage, auto_routed FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealRes.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealRes.rows[0].id;
+
+    // Apply matrix overrides first (if provided) — these revoke dependent approvals
+    // via the existing matrix-fields PUT pattern (audit consistency + auto-revoke).
+    const allowedOverrides = ['rate_approved', 'ltv_approved', 'arrangement_fee_pct'];
+    const overrideFields = [];
+    const overrideValues = [];
+    let i = 1;
+    if (overrides && typeof overrides === 'object') {
+      for (const key of allowedOverrides) {
+        if (overrides[key] != null && overrides[key] !== '') {
+          const n = parseFloat(String(overrides[key]).replace(/,/g, ''));
+          if (isFinite(n)) {
+            overrideFields.push(`${key} = $${i++}`);
+            overrideValues.push(n);
+          }
+        }
+      }
+    }
+
+    // Build the decision SQL
+    const setParts = ['dip_credit_decision = $' + (i++), 'dip_credit_decided_by = $' + (i++),
+      'dip_credit_decided_at = NOW()', 'dip_credit_notes = $' + (i++), 'updated_at = NOW()'];
+    const params = [...overrideValues, decision, req.user.userId, notes || null];
+
+    // Combine overrides + decision into a single UPDATE
+    const allSet = [...overrideFields, ...setParts].join(', ');
+
+    // If Credit overrode any matrix field, also revoke the dependent approval stamps
+    // (loan_terms and/or fees) so RM sees the change and re-approves if still on the form.
+    if (overrideFields.length > 0) {
+      const touchedLoan = overrideFields.some(f => f.startsWith('rate_approved') || f.startsWith('ltv_approved'));
+      const touchedFees = overrideFields.some(f => f.startsWith('arrangement_fee_pct'));
+      if (touchedLoan) setParts.push('dip_loan_terms_approved = FALSE', 'dip_loan_terms_approved_by = NULL', 'dip_loan_terms_approved_at = NULL');
+      if (touchedFees) setParts.push('dip_fees_approved = FALSE', 'dip_fees_approved_by = NULL', 'dip_fees_approved_at = NULL');
+    }
+
+    params.push(dealId);
+    const sql = `UPDATE deal_submissions
+                 SET ${[...overrideFields, ...setParts].join(', ')}
+                 WHERE id = $${i}
+                 RETURNING dip_credit_decision, dip_credit_decided_by, dip_credit_decided_at, dip_credit_notes,
+                           rate_approved, ltv_approved, arrangement_fee_pct, auto_routed`;
+
+    const r = await pool.query(sql, params);
+
+    await logAudit(
+      dealId, 'dip_credit_decision', null, decision,
+      {
+        decision,
+        notes: notes ? notes.substring(0, 200) : null,
+        overrides_applied: overrideFields.length > 0 ? Object.keys(overrides).filter(k => allowedOverrides.includes(k)) : [],
+        role: req.user.role
+      },
+      req.user.userId
+    );
+
+    res.json({
+      success: true,
+      decision,
+      decided_by: r.rows[0].dip_credit_decided_by,
+      decided_at: r.rows[0].dip_credit_decided_at,
+      overrides_applied: overrideFields.length > 0,
+      row: r.rows[0],
+      message: decision === 'approved'
+        ? 'Credit approved — DIP will release to broker.'
+        : decision === 'declined'
+          ? 'Credit declined — deal will not proceed.'
+          : 'More info requested — RM will be notified.'
+    });
+  } catch (error) {
+    console.error('[dip-credit-decision] Error:', error);
+    res.status(500).json({
+      error: 'Failed to record Credit Decision',
+      detail: error.message,
+      code: error.code || null
+    });
+  }
+});
+
 router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateInternal, async (req, res) => {
   try {
     const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
