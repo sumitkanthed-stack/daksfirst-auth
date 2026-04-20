@@ -1,22 +1,91 @@
 const { sendDealEmail } = require('./email');
 const { sendDealSms } = require('./sms');
 const config = require('../config');
+const pool = require('../db/pool');
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  notifyDealEvent — flexible signature
-//  Accepts recipients as:
-//    - String:     'foo@bar'                    → treated as email
-//    - Array:      ['foo@bar', 'baz@qux']       → all treated as emails
-//    - Object:     { email: '...', phone: '...' } → explicit routing
+//  enrichDealPayload — hydrate deal object from DB so email templates always
+//  see canonical, lending-critical fields regardless of what the call site
+//  happened to pass in. Matrix-SSOT: prefers *_approved columns, falls back
+//  to requested. Also fetches deal_properties (multi-property deals) so the
+//  email template can render the full security portfolio.
 //
-//  Pre-2026-04-20 bug: function only handled the object form. Entire codebase
-//  was calling with arrays — all email sends were silently no-op'ing. Fixed so
-//  every call signature in use now actually fires the email.
+//  Returns the original `deal` object if enrichment fails (non-blocking).
 // ═══════════════════════════════════════════════════════════════════════════
+async function enrichDealPayload(deal) {
+  if (!deal) return deal;
+  const key = deal.submission_id || null;
+  const intId = Number(deal.id);
+  try {
+    let row = null;
+    if (key) {
+      const r = await pool.query(
+        `SELECT id, submission_id, status, borrower_name, borrower_company,
+                security_address, security_postcode, asset_type,
+                loan_amount, loan_amount_approved, ltv_requested, ltv_approved,
+                rate_requested, rate_approved, term_months, arrangement_fee_pct,
+                commitment_fee, dip_fee, current_value
+           FROM deal_submissions WHERE submission_id = $1`,
+        [key]
+      );
+      if (r.rows.length > 0) row = r.rows[0];
+    } else if (Number.isFinite(intId) && intId > 0) {
+      const r = await pool.query(
+        `SELECT id, submission_id, status, borrower_name, borrower_company,
+                security_address, security_postcode, asset_type,
+                loan_amount, loan_amount_approved, ltv_requested, ltv_approved,
+                rate_requested, rate_approved, term_months, arrangement_fee_pct,
+                commitment_fee, dip_fee, current_value
+           FROM deal_submissions WHERE id = $1`,
+        [intId]
+      );
+      if (r.rows.length > 0) row = r.rows[0];
+    }
+
+    if (!row) return deal;
+
+    // Approved-first merge (Matrix-SSOT): approved takes precedence if set,
+    // otherwise use requested. Keeps original deal object as fallback floor.
+    const approvedOr = (approved, requested) =>
+      (approved != null && approved !== '' ? approved : requested);
+
+    const enriched = Object.assign({}, deal, row, {
+      loan_amount: approvedOr(row.loan_amount_approved, row.loan_amount),
+      ltv: approvedOr(row.ltv_approved, row.ltv_requested),
+      rate: approvedOr(row.rate_approved, row.rate_requested)
+    });
+
+    // Attach properties (multi-property deals)
+    try {
+      const props = await pool.query(
+        `SELECT address, postcode, property_type, market_value
+           FROM deal_properties
+          WHERE deal_id = $1
+          ORDER BY id ASC`,
+        [row.id]
+      );
+      enriched.properties = props.rows || [];
+    } catch (pErr) {
+      console.warn('[notifications] properties enrichment skipped:', pErr.message);
+      enriched.properties = [];
+    }
+
+    return enriched;
+  } catch (err) {
+    console.warn('[notifications] enrichDealPayload failed, using original deal:', err.message);
+    return deal;
+  }
+}
+
 async function notifyDealEvent(eventType, deal, recipients = {}) {
   try {
     const dealId = deal && (deal.submission_id || deal.id);
     console.log(`[notifications] Triggering ${eventType} for deal ${dealId} (recipients type: ${Array.isArray(recipients) ? 'array' : typeof recipients})`);
+
+    // Hydrate deal with canonical DB data before rendering any template.
+    // Non-blocking: if enrichment fails we still fire the email with the
+    // partial data the caller passed.
+    deal = await enrichDealPayload(deal);
 
     // Normalise recipients into { email: [...], phone: [...] }
     let emails = [];

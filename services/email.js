@@ -1,29 +1,72 @@
 const config = require('../config');
 const { getGraphToken } = require('./graph');
 
+// ── Formatting helpers shared across templates ─────────────────────────────
+function fmtGBP(n) {
+  const v = Number(n);
+  if (!isFinite(v)) return '£0';
+  return '£' + Math.round(v).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+}
+
+function fmtPropertyList(dealData) {
+  // Prefer multi-property payload (deal_properties) over legacy single field
+  const props = Array.isArray(dealData && dealData.properties) ? dealData.properties : [];
+  if (props.length > 0) {
+    return props
+      .map(p => {
+        const addr = (p.address || '').trim();
+        const pc = (p.postcode || '').trim();
+        if (!addr && !pc) return null;
+        return pc && !addr.includes(pc) ? `${addr}, ${pc}` : (addr || pc);
+      })
+      .filter(Boolean)
+      .join('<br>');
+  }
+  const legacy = (dealData && dealData.security_address) ? String(dealData.security_address).trim() : '';
+  if (legacy) {
+    const pc = (dealData && dealData.security_postcode) ? String(dealData.security_postcode).trim() : '';
+    return pc && !legacy.includes(pc) ? `${legacy}, ${pc}` : legacy;
+  }
+  return 'Not provided';
+}
+
 // Email template utilities
 function getEmailTemplate(eventType, dealData = {}) {
   const brandColor = config.BRAND_COLOR_PRIMARY;
   const accentColor = config.BRAND_COLOR_ACCENT;
+  const portalUrl = 'https://apply.daksfirst.com';
 
   const templates = {
     [config.EMAIL_EVENTS.DIP_ISSUED]: {
-      subject: 'DIP Issued - Your Daksfirst Application',
+      subject: 'Decision in Principle Issued - Daksfirst',
       body: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
           <div style="background:${brandColor};color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
-            <h1 style="margin:0;">DIP Issued</h1>
+            <h1 style="margin:0;">Decision in Principle Issued</h1>
           </div>
           <div style="padding:30px;background:#f9f9f9;border:1px solid #e0e0e0;border-top:none;">
             <p>Dear ${dealData.borrower_name || 'Applicant'},</p>
-            <p>Great news! Your Daksfirst application has been approved and we are pleased to issue your Discreet Interest in Principle (DIP).</p>
+            <p>Great news — your application has been approved in principle and we are pleased to issue your <strong>Decision in Principle (DIP)</strong>.</p>
             <p><strong>DIP Details:</strong></p>
-            <ul>
-              <li>Deal Ref: ${dealData.submission_id || 'N/A'}</li>
-              <li>Property: ${dealData.security_address || 'N/A'}</li>
-              <li>Loan Amount: £${(dealData.loan_amount || 0).toLocaleString('en-GB')}</li>
-            </ul>
-            <p>Your relationship manager will be in touch shortly with the next steps.</p>
+            <table style="width:100%;border-collapse:collapse;margin:12px 0 20px 0;">
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:8px 10px;font-weight:bold;color:#666;width:38%;vertical-align:top;">Deal Ref</td>
+                <td style="padding:8px 10px;">${dealData.submission_id || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e0e0e0;">
+                <td style="padding:8px 10px;font-weight:bold;color:#666;vertical-align:top;">Property</td>
+                <td style="padding:8px 10px;">${fmtPropertyList(dealData)}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 10px;font-weight:bold;color:#666;vertical-align:top;">Loan Amount</td>
+                <td style="padding:8px 10px;">${fmtGBP(dealData.loan_amount)}</td>
+              </tr>
+            </table>
+            <p><strong>Next step:</strong> Please login to the Daksfirst Portal to view and sign the DIP, then proceed to the next stage.</p>
+            <p style="text-align:center;margin:24px 0;">
+              <a href="${portalUrl}" style="background:${accentColor};color:white;padding:14px 35px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold;font-size:15px;">Login to Portal</a>
+            </p>
+            <p style="color:#666;font-size:13px;">If the button above does not work, copy and paste this link into your browser:<br><a href="${portalUrl}" style="color:${accentColor};">${portalUrl}</a></p>
             <hr style="margin:30px 0;border:none;border-top:1px solid #e0e0e0;">
             <p style="color:#666;font-size:13px;">
               Daksfirst Limited | Bridging Finance, Built for Professionals<br>
@@ -66,7 +109,7 @@ function getEmailTemplate(eventType, dealData = {}) {
           <div style="padding:30px;background:#f9f9f9;border:1px solid #e0e0e0;border-top:none;">
             <p>Dear ${dealData.borrower_name || 'Borrower'},</p>
             <p>We are writing to request payment of the agreed fee to progress your application.</p>
-            <p><strong>Fee Amount: £${(dealData.fee_amount || 0).toLocaleString('en-GB')}</strong></p>
+            <p><strong>Fee Amount: ${fmtGBP(dealData.fee_amount)}</strong></p>
             <p>Please arrange payment at your earliest convenience. Bank details and payment reference will be provided separately.</p>
             <p style="text-align:center;margin-top:30px;">
               <a href="https://apply.daksfirst.com" style="background:${accentColor};color:white;padding:12px 30px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold;">View Your Application</a>
@@ -167,12 +210,12 @@ function getEmailTemplate(eventType, dealData = {}) {
                 <td style="padding:10px;">${dealData.borrower_name || 'N/A'}</td>
               </tr>
               <tr style="border-bottom:1px solid #e0e0e0;">
-                <td style="padding:10px;font-weight:bold;color:#666;">Property</td>
-                <td style="padding:10px;">${dealData.security_address || 'N/A'}</td>
+                <td style="padding:10px;font-weight:bold;color:#666;vertical-align:top;">Property</td>
+                <td style="padding:10px;">${fmtPropertyList(dealData)}</td>
               </tr>
               <tr style="border-bottom:1px solid #e0e0e0;">
                 <td style="padding:10px;font-weight:bold;color:#666;">Loan Amount</td>
-                <td style="padding:10px;">&pound;${(dealData.loan_amount || 0).toLocaleString('en-GB')}</td>
+                <td style="padding:10px;">${fmtGBP(dealData.loan_amount)}</td>
               </tr>
               <tr style="border-bottom:1px solid #e0e0e0;">
                 <td style="padding:10px;font-weight:bold;color:#666;">LTV</td>
