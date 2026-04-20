@@ -1262,8 +1262,9 @@ function mapAnalysisToFormFields(analysis) {
  * @param {Array} docs - Array of { filename, file_type, file_content, doc_category }
  * @returns {Object} - { success, candidates { corporate_entities, individuals, properties, loan_facts, broker }, confidence, analysis_raw }
  */
-async function parseDealForCandidates(docs) {
+async function parseDealForCandidates(docs, options) {
   if (!docs || docs.length === 0) return { success: false, reason: 'no_documents' };
+  const onProgress = (options && typeof options.onProgress === 'function') ? options.onProgress : null;
 
   console.log(`[claude-parser] parseDealForCandidates: ${docs.length} documents`);
 
@@ -1303,6 +1304,7 @@ async function parseDealForCandidates(docs) {
   }
   if (currentBatch.length > 0) batches.push(currentBatch);
   console.log(`[claude-parser] parseDealForCandidates: ${batches.length} batch(es)`);
+  if (onProgress) await onProgress({ stage: 'batches_prepared', totalBatches: batches.length, batchesDone: 0, totalDocs: allFiles.length, message: `Prepared ${batches.length} batch(es) from ${allFiles.length} documents` }).catch(() => {});
 
   // ── Candidate extraction prompt ──
   const CANDIDATES_PROMPT = `You are analysing a UK bridging-loan broker pack for a lender. Your job is to extract every entity you find as a CANDIDATE. Do NOT decide who the Primary Borrower or Guarantor is — the lender's RM will assign roles from the UI.
@@ -1449,10 +1451,24 @@ JSON schema:
       }
 
       console.log(`[claude-parser] parseDealForCandidates: batch ${i+1} done — ${parsed.corporate_entities?.length || 0} corporates, ${parsed.individuals?.length || 0} individuals, ${parsed.properties?.length || 0} properties`);
+      if (onProgress) await onProgress({
+        stage: 'batch_done',
+        totalBatches: batches.length,
+        batchesDone: i + 1,
+        totalDocs: allFiles.length,
+        running: {
+          corporates: mergedCandidates.corporate_entities.length,
+          individuals: mergedCandidates.individuals.length,
+          properties: mergedCandidates.properties.length
+        },
+        message: `Batch ${i+1} of ${batches.length} done — running total: ${mergedCandidates.corporate_entities.length} corp, ${mergedCandidates.individuals.length} ind, ${mergedCandidates.properties.length} prop`
+      }).catch(() => {});
     } catch (err) {
       console.error(`[claude-parser] parseDealForCandidates: batch ${i+1} failed:`, err.message);
+      if (onProgress) await onProgress({ stage: 'batch_failed', totalBatches: batches.length, batchesDone: i + 1, totalDocs: allFiles.length, message: `Batch ${i+1} failed: ${err.message}` }).catch(() => {});
     }
   }
+  if (onProgress) await onProgress({ stage: 'deduping', totalBatches: batches.length, batchesDone: batches.length, totalDocs: allFiles.length, message: 'Deduplicating candidates…' }).catch(() => {});
 
   // ── Intelligent dedup across all candidate types ──
   const beforeCorps = mergedCandidates.corporate_entities.length;

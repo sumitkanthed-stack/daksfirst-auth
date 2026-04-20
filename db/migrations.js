@@ -1087,7 +1087,8 @@ async function runMigrations() {
     try {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS candidates_payload JSONB`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS candidates_parsed_at TIMESTAMPTZ`);
-      console.log('[migrate] ✓ deal_submissions candidates columns (candidates_payload + candidates_parsed_at)');
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS candidates_progress JSONB`);
+      console.log('[migrate] ✓ deal_submissions candidates columns (candidates_payload + candidates_parsed_at + candidates_progress)');
     } catch (err) {
       console.log('[migrate] Note on candidates columns:', err.message.substring(0, 120));
     }

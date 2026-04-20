@@ -6340,7 +6340,49 @@ export async function renderDealMatrix(deal) {
       return;
     }
 
-    showParseProgress('Parsing documents for candidate review...');
+    showParseProgress('Parsing documents for candidate review…');
+
+    // ── Poll /parse-progress every 2 seconds while the parse runs ──
+    let stopPolling = false;
+    const progressPoll = (async () => {
+      const startedAt = Date.now();
+      while (!stopPolling) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (stopPolling) break;
+        try {
+          const pr = await fetchWithAuth(`${API_BASE}/api/smart-parse/deals/${subId}/parse-progress`, { method: 'GET' });
+          if (!pr.ok) continue;
+          const pdata = await pr.json();
+          if (!pdata.success || !pdata.progress) continue;
+          const p = pdata.progress;
+          // Format a status line
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          let msg;
+          if (p.stage === 'started') {
+            msg = `Reading ${p.totalDocs || '?'} documents (${elapsed}s elapsed)…`;
+          } else if (p.stage === 'batches_prepared') {
+            msg = `Prepared ${p.totalBatches} batch${p.totalBatches === 1 ? '' : 'es'} · Claude starting…`;
+          } else if (p.stage === 'batch_done' || p.stage === 'batch_failed') {
+            const pct = Math.round((p.batchesDone / p.totalBatches) * 100);
+            const r = p.running || {};
+            msg = `Batch ${p.batchesDone} of ${p.totalBatches} (${pct}%) — ${r.corporates || 0} corporate, ${r.individuals || 0} individuals, ${r.properties || 0} properties so far`;
+            if (window.floatingProgress && typeof window.floatingProgress.updateBar === 'function') {
+              window.floatingProgress.updateBar(pct);
+            }
+          } else if (p.stage === 'deduping') {
+            msg = 'Deduplicating candidates…';
+          } else if (p.stage === 'complete') {
+            const t = p.totals || {};
+            msg = `✓ Done — ${t.corporates || 0} corp, ${t.individuals || 0} ind, ${t.properties || 0} prop`;
+          } else {
+            msg = p.message || 'Parsing…';
+          }
+          if (window.floatingProgress && typeof window.floatingProgress.updateMessage === 'function') {
+            window.floatingProgress.updateMessage(msg);
+          }
+        } catch (e) { /* swallow — network blip, next poll will retry */ }
+      }
+    })();
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/deals/${subId}/parse-for-review`, {
@@ -6349,6 +6391,7 @@ export async function renderDealMatrix(deal) {
         body: JSON.stringify({})
       });
 
+      stopPolling = true;
       hideParseProgress();
 
       if (!resp.ok) {
@@ -6364,6 +6407,7 @@ export async function renderDealMatrix(deal) {
         showToast(data.error || 'No candidates found', 'error');
       }
     } catch (err) {
+      stopPolling = true;
       hideParseProgress();
       console.error('[matrix-parse-for-review]', err);
       showToast('Failed to parse for review: ' + err.message, 'error');

@@ -798,19 +798,52 @@ router.post('/deals/:submissionId/parse-for-review', authenticateToken, async (r
 
     console.log(`[parse-for-review] Parsing ${docsResult.rows.length} documents for deal ${submissionId}...`);
 
-    // Call parseDealForCandidates
-    const parseResult = await parseDealForCandidates(docsResult.rows);
+    // Seed initial progress — UI polling picks this up right away
+    await pool.query(
+      `UPDATE deal_submissions SET candidates_progress = $1 WHERE id = $2`,
+      [JSON.stringify({ stage: 'started', startedAt: new Date().toISOString(), totalDocs: docsResult.rows.length, message: `Reading ${docsResult.rows.length} document(s)…` }), deal.id]
+    );
+
+    // Progress writer — called after each batch. Fire-and-forget so slow DB
+    // writes never block the parser itself.
+    const onProgress = async (progress) => {
+      try {
+        await pool.query(
+          `UPDATE deal_submissions SET candidates_progress = $1 WHERE id = $2`,
+          [JSON.stringify({ ...progress, updatedAt: new Date().toISOString() }), deal.id]
+        );
+      } catch (e) {
+        console.warn('[parse-for-review] progress write failed:', e.message);
+      }
+    };
+
+    // Call parseDealForCandidates with progress callback
+    const parseResult = await parseDealForCandidates(docsResult.rows, { onProgress });
 
     if (!parseResult.success) {
       return res.status(400).json({ error: 'Failed to parse documents', reason: parseResult.reason });
     }
 
-    // Store result in candidates_payload JSONB
+    // Store result in candidates_payload JSONB + mark progress as complete
     await pool.query(
       `UPDATE deal_submissions
-       SET candidates_payload = $1, candidates_parsed_at = NOW()
+       SET candidates_payload = $1, candidates_parsed_at = NOW(),
+           candidates_progress = $3
        WHERE id = $2`,
-      [JSON.stringify(parseResult.candidates), deal.id]
+      [
+        JSON.stringify(parseResult.candidates),
+        deal.id,
+        JSON.stringify({
+          stage: 'complete',
+          completedAt: new Date().toISOString(),
+          totals: {
+            corporates: (parseResult.candidates.corporate_entities || []).length,
+            individuals: (parseResult.candidates.individuals || []).length,
+            properties: (parseResult.candidates.properties || []).length
+          },
+          message: 'Extraction complete'
+        })
+      ]
     );
 
     // Audit log
@@ -834,6 +867,36 @@ router.post('/deals/:submissionId/parse-for-review', authenticateToken, async (r
   } catch (error) {
     console.error('[parse-for-review] Error:', error);
     res.status(500).json({ error: 'Failed to parse for review', message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /deals/:submissionId/parse-progress
+// Frontend polls this every 2 seconds while parse-for-review is running.
+// Returns the latest progress JSON from deal_submissions.candidates_progress.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/deals/:submissionId/parse-progress', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const r = await pool.query(
+      `SELECT id, user_id, borrower_user_id, candidates_progress, candidates_parsed_at
+         FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = r.rows[0];
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const isInternal = INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) return res.status(403).json({ error: 'Access denied' });
+
+    return res.json({
+      success: true,
+      progress: deal.candidates_progress || null,
+      parsed_at: deal.candidates_parsed_at || null
+    });
+  } catch (error) {
+    console.error('[parse-progress] Error:', error);
+    res.status(500).json({ error: 'Failed to read progress' });
   }
 });
 
