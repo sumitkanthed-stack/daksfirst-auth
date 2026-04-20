@@ -6395,7 +6395,7 @@ export async function renderDealMatrix(deal) {
         corporateHtml += `
           <div style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px;margin-bottom:12px;">
             <div style="display:flex;gap:12px;margin-bottom:10px;">
-              <div style="flex-shrink:0;width:32px;height:32px;background:rgba(212,168,83,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#D4A853;">${corporateLabel}</div>
+              <div style="flex-shrink:0;width:32px;height:32px;background:rgba(212,168,83,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#D4A853;">${corpLabel}</div>
               <div style="flex:1;">
                 <div style="font-size:13px;font-weight:600;color:#F1F5F9;">${sanitizeHtml(corp.name || 'Unknown')}</div>
                 <div style="font-size:10px;color:#94A3B8;margin-top:1px;">Co. No: ${sanitizeHtml(corp.company_number || 'N/A')} · ${sanitizeHtml(corp.jurisdiction || 'Unknown')}</div>
