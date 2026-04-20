@@ -936,6 +936,15 @@ async function runMigrations() {
         'ADD COLUMN IF NOT EXISTS dip_conditions_approved BOOLEAN DEFAULT FALSE',
         'ADD COLUMN IF NOT EXISTS dip_conditions_approved_by INT REFERENCES users(id)',
         'ADD COLUMN IF NOT EXISTS dip_conditions_approved_at TIMESTAMPTZ',
+        // M4d (Matrix-SSOT 2026-04-20): Use of Funds + Exit Strategy become their
+        // own approval gates. Rationale: RM must understand purpose + exit BEFORE
+        // pricing loan terms. Commercially correct ordering.
+        'ADD COLUMN IF NOT EXISTS dip_use_of_funds_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_use_of_funds_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_use_of_funds_approved_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_exit_strategy_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_exit_strategy_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_exit_strategy_approved_at TIMESTAMPTZ',
         // Credit Decision gate (hybrid — Credit approves on same DIP form when required)
         'ADD COLUMN IF NOT EXISTS dip_credit_decision VARCHAR(20)', // approved | declined | more_info | null
         'ADD COLUMN IF NOT EXISTS dip_credit_decided_by INT REFERENCES users(id)',
