@@ -8,24 +8,48 @@ function fmtGBP(n) {
   return '£' + Math.round(v).toLocaleString('en-GB', { maximumFractionDigits: 0 });
 }
 
+function _fmtOneAddress(p) {
+  const addr = (p && p.address ? String(p.address) : '').trim();
+  const pc = (p && p.postcode ? String(p.postcode) : '').trim();
+  if (!addr && !pc) return null;
+  return pc && !addr.toUpperCase().includes(pc.toUpperCase()) ? `${addr}, ${pc}` : (addr || pc);
+}
+
 function fmtPropertyList(dealData) {
-  // Prefer multi-property payload (deal_properties) over legacy single field
-  const props = Array.isArray(dealData && dealData.properties) ? dealData.properties : [];
-  if (props.length > 0) {
-    return props
-      .map(p => {
-        const addr = (p.address || '').trim();
-        const pc = (p.postcode || '').trim();
-        if (!addr && !pc) return null;
-        return pc && !addr.includes(pc) ? `${addr}, ${pc}` : (addr || pc);
-      })
-      .filter(Boolean)
-      .join('<br>');
+  // Prefer multi-property payload (deal_properties) over legacy single field.
+  // Portfolio rules:
+  //   1 property  → inline address
+  //   2–3 props   → bulleted list (all shown)
+  //   4+ props    → "Portfolio of N assets" + first 2 + "…and X more. Full
+  //                  schedule available in the Portal."
+  const raw = Array.isArray(dealData && dealData.properties) ? dealData.properties : [];
+  const cleaned = raw.map(_fmtOneAddress).filter(Boolean);
+
+  if (cleaned.length === 1) {
+    return cleaned[0];
   }
+
+  if (cleaned.length >= 2 && cleaned.length <= 3) {
+    return '<ul style="margin:4px 0 0 0;padding-left:18px;">' +
+      cleaned.map(a => `<li style="margin-bottom:4px;">${a}</li>`).join('') +
+      '</ul>';
+  }
+
+  if (cleaned.length >= 4) {
+    const shown = cleaned.slice(0, 2);
+    const remaining = cleaned.length - shown.length;
+    return `<strong>Portfolio of ${cleaned.length} assets</strong>` +
+      '<ul style="margin:4px 0 0 0;padding-left:18px;">' +
+      shown.map(a => `<li style="margin-bottom:4px;">${a}</li>`).join('') +
+      `<li style="margin-bottom:4px;color:#666;font-style:italic;">…and ${remaining} more — full schedule available in the Portal.</li>` +
+      '</ul>';
+  }
+
+  // Fallback: legacy single-property fields on deal_submissions
   const legacy = (dealData && dealData.security_address) ? String(dealData.security_address).trim() : '';
   if (legacy) {
     const pc = (dealData && dealData.security_postcode) ? String(dealData.security_postcode).trim() : '';
-    return pc && !legacy.includes(pc) ? `${legacy}, ${pc}` : legacy;
+    return pc && !legacy.toUpperCase().includes(pc.toUpperCase()) ? `${legacy}, ${pc}` : legacy;
   }
   return 'Not provided';
 }
