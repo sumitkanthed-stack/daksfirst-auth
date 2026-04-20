@@ -735,6 +735,63 @@ router.post('/:submissionId/recommendation', authenticateToken, authenticateInte
 // ═══════════════════════════════════════════════════════════════════════════
 //  ISSUE DIP — Generates PDF, uploads to OneDrive, borrower accepts in-portal
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  AUTO-ROUTE PREVIEW (DA Session 2d, 2026-04-20)
+//  Read-only: returns how the deal WOULD route if Issue DIP was clicked now.
+//  No DB writes, no PDF, no email. Feeds the matrix pre-flight modal so the
+//  RM can see the rule-by-rule verdict before committing.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    const [borrowersResult, propertiesResult, cfgResult] = await Promise.all([
+      pool.query(
+        `SELECT id, full_name, role, borrower_type, company_number, parent_borrower_id,
+                ch_match_data, pep_status, sanctions_status
+         FROM deal_borrowers WHERE deal_id = $1`,
+        [dealId]
+      ),
+      pool.query(
+        `SELECT id, address, postcode, market_value, property_type, asset_type, country
+         FROM deal_properties WHERE deal_id = $1`,
+        [dealId]
+      ),
+      pool.query(`SELECT * FROM admin_config WHERE id = 1`)
+    ]);
+
+    const dealForEval = Object.assign({}, deal, {
+      borrowers: borrowersResult.rows,
+      properties: propertiesResult.rows
+    });
+    const cfg = cfgResult.rows[0] || null;
+
+    const result = evaluateAutoRoute(dealForEval, cfg);
+
+    res.json({
+      success: true,
+      preview: {
+        eligible: result.eligible,
+        decision: result.decision,
+        summary: result.summary,
+        rules: result.rules,
+        config_snapshot: cfg ? {
+          enabled: cfg.auto_approve_enabled,
+          max_loan: cfg.auto_approve_max_loan,
+          max_ltv_pct: cfg.auto_approve_max_ltv_pct,
+          asset_types: cfg.auto_approve_asset_types
+        } : null
+      }
+    });
+  } catch (error) {
+    console.error('[auto-route-preview] Error:', error);
+    res.status(500).json({ error: 'Failed to evaluate auto-route preview' });
+  }
+});
+
 router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal, validate('issueDip'), async (req, res) => {
   try {
     const { notes, dip_data } = req.validated;

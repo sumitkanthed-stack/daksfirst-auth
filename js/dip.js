@@ -244,6 +244,111 @@ export function calcDipLtv() {
 }
 
 /**
+ * Pre-flight modal — shows auto-route verdict BEFORE issuing DIP.
+ * DA Session 2d, 2026-04-20. Calls GET /auto-route-preview and renders
+ * the rule-by-rule evaluation. User confirms → issueDip() fires.
+ */
+export async function showIssueDipPreflight() {
+  const dealId = getCurrentDealId();
+  if (!dealId) { showToast('No deal selected', true); return; }
+
+  // Remove any stray modal from a previous click
+  const old = document.getElementById('dkf-preflight-modal');
+  if (old) old.remove();
+
+  // Show modal shell immediately with loading state
+  const modal = document.createElement('div');
+  modal.id = 'dkf-preflight-modal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#1E293B;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:0;width:94%;max-width:600px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:16px 22px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:11px;color:#60A5FA;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Pre-flight Check</div>
+          <div style="font-size:17px;font-weight:700;color:#F1F5F9;margin-top:2px;">Delegated Authority — Auto-Routing</div>
+        </div>
+        <button onclick="document.getElementById('dkf-preflight-modal').remove()" style="background:transparent;color:#94A3B8;border:none;font-size:22px;cursor:pointer;padding:0 4px;line-height:1;">&times;</button>
+      </div>
+      <div id="preflight-body" style="padding:20px 22px;overflow-y:auto;flex:1;">
+        <div style="text-align:center;color:#94A3B8;padding:30px 0;font-size:13px;">Evaluating rules…</div>
+      </div>
+      <div id="preflight-actions" style="padding:14px 22px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="document.getElementById('dkf-preflight-modal').remove()" style="padding:9px 18px;background:transparent;color:#94A3B8;border:1px solid rgba(255,255,255,0.12);border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Fetch preview
+  let preview;
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/auto-route-preview`, { method: 'GET' });
+    const body = await res.json();
+    if (!res.ok) {
+      document.getElementById('preflight-body').innerHTML = `<div style="color:#F87171;padding:20px 0;">Failed to evaluate: ${sanitizeHtml(body.error || res.statusText)}</div>`;
+      return;
+    }
+    preview = body.preview;
+  } catch (err) {
+    document.getElementById('preflight-body').innerHTML = `<div style="color:#F87171;padding:20px 0;">Network error: ${sanitizeHtml(err.message)}</div>`;
+    return;
+  }
+
+  // Render verdict + rules
+  const cfg = preview.config_snapshot || {};
+  const verdictBg = preview.eligible ? 'rgba(52,211,153,0.1)' : 'rgba(251,191,36,0.1)';
+  const verdictBorder = preview.eligible ? 'rgba(52,211,153,0.35)' : 'rgba(251,191,36,0.35)';
+  const verdictColor = preview.eligible ? '#34D399' : '#FBBF24';
+  const verdictIcon = preview.eligible ? '\u2713' : '\u26A0';
+  const verdictTitle = preview.eligible
+    ? 'This DIP will AUTO-ISSUE to broker'
+    : 'This DIP will go to CREDIT review';
+  const verdictSubtitle = preview.eligible
+    ? 'Broker will receive DIP email. No Credit review required.'
+    : `Broker will NOT be emailed. Credit to review. Reasons: ${sanitizeHtml(preview.summary)}`;
+
+  const rulePillHtml = (r) => {
+    const bg = r.pass ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)';
+    const col = r.pass ? '#34D399' : '#F87171';
+    const icon = r.pass ? '\u2713' : '\u2717';
+    const label = r.rule.replace(/_/g, ' ');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${bg};border-radius:6px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="color:${col};font-weight:700;font-size:13px;">${icon}</span>
+        <span style="font-size:12px;color:#E2E8F0;text-transform:capitalize;font-weight:600;">${sanitizeHtml(label)}</span>
+      </div>
+      <div style="font-size:11px;color:#94A3B8;text-align:right;flex:1;padding-left:14px;">${sanitizeHtml(r.message || '—')}</div>
+    </div>`;
+  };
+
+  const cfgLine = cfg.enabled === false
+    ? '<div style="padding:10px 14px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);border-radius:6px;margin-bottom:14px;font-size:12px;color:#FCA5A5;"><strong>Auto-routing is DISABLED system-wide.</strong> All DIPs route to Credit regardless of rules.</div>'
+    : `<div style="font-size:11px;color:#64748B;margin-bottom:14px;">Config: max £${Number(cfg.max_loan || 0).toLocaleString()} \u00B7 max ${cfg.max_ltv_pct}% LTV \u00B7 allowed: ${(cfg.asset_types || []).join(', ')}</div>`;
+
+  document.getElementById('preflight-body').innerHTML = `
+    ${cfgLine}
+    <div style="padding:14px 16px;background:${verdictBg};border:1px solid ${verdictBorder};border-radius:8px;margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:700;color:${verdictColor};margin-bottom:3px;">${verdictIcon} ${verdictTitle}</div>
+      <div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;">${verdictSubtitle}</div>
+    </div>
+    <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:8px;">Rules evaluated</div>
+    ${(preview.rules || []).map(rulePillHtml).join('')}
+  `;
+
+  // Build the proceed button — label + colour depends on verdict
+  const proceedLabel = preview.eligible ? 'Issue DIP to Broker' : 'Issue DIP (route to Credit)';
+  const proceedColor = preview.eligible ? '#34D399' : '#FBBF24';
+  const proceedBg = preview.eligible ? 'rgba(52,211,153,0.15)' : 'rgba(251,191,36,0.15)';
+  document.getElementById('preflight-actions').insertAdjacentHTML('beforeend', `
+    <button id="preflight-proceed" style="padding:9px 18px;background:${proceedBg};color:${proceedColor};border:1px solid ${proceedColor}66;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">${proceedLabel}</button>
+  `);
+  document.getElementById('preflight-proceed').addEventListener('click', () => {
+    document.getElementById('dkf-preflight-modal').remove();
+    issueDip();
+  });
+}
+
+/**
  * Issue DIP to broker
  */
 export async function issueDip() {
