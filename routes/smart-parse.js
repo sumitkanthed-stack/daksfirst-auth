@@ -904,17 +904,40 @@ router.get('/deals/:submissionId/parse-progress', authenticateToken, async (req,
 // Helper: Apply confirmed candidates to deal (transaction)
 // ─────────────────────────────────────────────────────────────────────────────
 async function applyConfirmedCandidates(client, dealId, candidates, assignments) {
-  // Write corporates first
+  // Defensive dedup + guard rails on the assignments themselves, in case the
+  // broker accidentally assigned two variants of the same entity to different
+  // roles (e.g. two Gold Medal candidates pre-dedup, one as Primary, one as
+  // Co-Borrower → produced duplicate top-level parties). 2026-04-20 hardening.
+
+  // ── Corporates: collapse by (company_number OR normalised name) ──
+  const corpByKey = new Map();  // key → { assignment, candidate, count }
+  for (const a of assignments.corporate_entities || []) {
+    if (!a || a.role === 'ignore') continue;
+    const cand = (candidates.corporate_entities || []).find(c => c.id === a.candidate_id);
+    if (!cand) continue;
+    const coNo = (cand.company_number || '').replace(/\s/g, '').toLowerCase();
+    const nameKey = (cand.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(ltd|limited|llp|plc|inc)$/, '');
+    const key = coNo || nameKey || a.candidate_id;
+    const existing = corpByKey.get(key);
+    if (!existing) {
+      corpByKey.set(key, { assignment: a, candidate: cand, count: 1 });
+    } else {
+      existing.count++;
+      // Prefer more-specific roles over 'ignore', and keep first non-ignore role
+      if (existing.assignment.role === 'ignore' && a.role !== 'ignore') {
+        existing.assignment = a;
+        existing.candidate = cand;
+      }
+    }
+  }
+  if (corpByKey.size !== (assignments.corporate_entities || []).filter(a => a && a.role !== 'ignore').length) {
+    console.log(`[confirm-candidates] dedup: collapsed ${(assignments.corporate_entities || []).length} corporate assignments → ${corpByKey.size} unique`);
+  }
+
+  // ── Write deduped corporates ──
   const corpIdMap = {};
-
-  for (const corpAssignment of assignments.corporate_entities || []) {
-    const candidate = candidates.corporate_entities.find(c => c.id === corpAssignment.candidate_id);
-    if (!candidate) continue;
-
-    const { role } = corpAssignment;
-    if (role === 'ignore') continue;
-
-    // Map role to DB role
+  for (const { assignment, candidate } of corpByKey.values()) {
+    const { role } = assignment;
     let dbRole = 'primary';
     if (role === 'co_borrower') dbRole = 'joint';
     else if (role === 'corporate_guarantor') dbRole = 'guarantor';
@@ -935,41 +958,83 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
       ]
     );
 
-    corpIdMap[corpAssignment.candidate_id] = result.rows[0].id;
+    const newId = result.rows[0].id;
+    // Map EVERY assignment candidate_id that collapsed into this entity so
+    // individuals that linked to any variant still resolve correctly.
+    for (const a of (assignments.corporate_entities || [])) {
+      if (!a) continue;
+      const aCand = (candidates.corporate_entities || []).find(c => c.id === a.candidate_id);
+      if (!aCand) continue;
+      const aCoNo = (aCand.company_number || '').replace(/\s/g, '').toLowerCase();
+      const aNameKey = (aCand.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(ltd|limited|llp|plc|inc)$/, '');
+      const aKey = aCoNo || aNameKey || a.candidate_id;
+      const candCoNo = (candidate.company_number || '').replace(/\s/g, '').toLowerCase();
+      const candNameKey = (candidate.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(ltd|limited|llp|plc|inc)$/, '');
+      const candKey = candCoNo || candNameKey || candidate.id;
+      if (aKey === candKey) corpIdMap[a.candidate_id] = newId;
+    }
+    console.log(`[confirm-candidates] wrote corporate ${candidate.name} (${candidate.company_number || 'no-co-no'}) as ${dbRole}, id=${newId}`);
   }
 
-  // Write individuals
-  for (const indAssignment of assignments.individuals || []) {
-    const candidate = candidates.individuals.find(c => c.id === indAssignment.candidate_id);
-    if (!candidate) continue;
+  // ── Individuals: collapse by (DOB OR normalised name) ──
+  const indByKey = new Map();
+  for (const a of assignments.individuals || []) {
+    if (!a || a.role === 'ignore') continue;
+    const cand = (candidates.individuals || []).find(c => c.id === a.candidate_id);
+    if (!cand) continue;
+    const dob = (cand.date_of_birth || '').substring(0, 10);
+    const nameKey = (cand.name || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+    const key = dob ? `dob:${dob}` : (nameKey ? `name:${nameKey}` : a.candidate_id);
+    const existing = indByKey.get(key);
+    if (!existing) {
+      indByKey.set(key, { assignment: a, candidate: cand });
+    } else {
+      // If the duplicate carries a link and the existing doesn't, keep the link
+      if (!existing.assignment.linked_to_corporate_candidate_id && a.linked_to_corporate_candidate_id) {
+        existing.assignment.linked_to_corporate_candidate_id = a.linked_to_corporate_candidate_id;
+      }
+    }
+  }
 
-    const { role } = indAssignment;
-    if (role === 'ignore') continue;
-
-    // Get parent ID if linked
+  // ── Write individuals ──
+  for (const { assignment, candidate } of indByKey.values()) {
+    const { role } = assignment;
     let parentBorrowerId = null;
-    if (indAssignment.linked_to_corporate_candidate_id) {
-      parentBorrowerId = corpIdMap[indAssignment.linked_to_corporate_candidate_id] || null;
+    if (assignment.linked_to_corporate_candidate_id) {
+      parentBorrowerId = corpIdMap[assignment.linked_to_corporate_candidate_id] || null;
+    }
+    // Fallback: if no link provided but we wrote exactly one corporate,
+    // parent to that corporate. Common case for simple corporate + UBO deals.
+    if (!parentBorrowerId && Object.keys(corpIdMap).length > 0) {
+      const uniqueIds = Array.from(new Set(Object.values(corpIdMap)));
+      if (uniqueIds.length === 1 && (role === 'ubo' || role === 'director' || role === 'pg_from_ubo')) {
+        parentBorrowerId = uniqueIds[0];
+        console.log(`[confirm-candidates] auto-linked individual ${candidate.name} to sole corporate id=${parentBorrowerId} (no explicit link set)`);
+      }
     }
 
-    // Map role to DB role
     let dbRole = 'primary';
     if (role === 'ubo' || role === 'director' || role === 'pg_from_ubo') {
-      dbRole = role; // 'ubo', 'director', 'pg_from_ubo' map directly
+      dbRole = role;
     } else if (role === 'third_party_guarantor') {
       dbRole = 'guarantor';
     } else if (role === 'kyc_only') {
-      dbRole = 'primary'; // treat as primary but KYC-focused
+      dbRole = 'primary';
     }
 
-    const kycData = {
-      pg_required: role === 'pg_from_ubo'
-    };
+    const kycData = { pg_required: role === 'pg_from_ubo' };
+
+    // Mirror UBO-style records into ch_match_data so the DIP + Matrix Parties
+    // grouping (which keys off is_psc + officer_role) renders Alessandra as an
+    // actual UBO card, not just a bare child row.
+    const chMatchData = (role === 'ubo' || role === 'pg_from_ubo')
+      ? { is_psc: true, officer_role: 'Ultimate Beneficial Owner', psc_percentage: candidate.psc_percentage || null, appointed_on: null, resigned_on: null, nationality: candidate.nationality || null }
+      : (role === 'director' ? { is_psc: false, officer_role: 'Director' } : null);
 
     await client.query(
       `INSERT INTO deal_borrowers (
-        deal_id, full_name, borrower_type, role, date_of_birth, nationality, email, phone, parent_borrower_id, kyc_status, kyc_data, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
+        deal_id, full_name, borrower_type, role, date_of_birth, nationality, email, phone, parent_borrower_id, kyc_status, kyc_data, ch_match_data, ch_matched_role, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())`,
       [
         dealId,
         candidate.name || '',
@@ -981,9 +1046,12 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
         candidate.phone || null,
         parentBorrowerId,
         'pending',
-        JSON.stringify(kycData)
+        JSON.stringify(kycData),
+        chMatchData ? JSON.stringify(chMatchData) : null,
+        (role === 'ubo' || role === 'pg_from_ubo') ? 'UBO' : (role === 'director' ? 'Director' : null)
       ]
     );
+    console.log(`[confirm-candidates] wrote individual ${candidate.name} as ${dbRole}, parent=${parentBorrowerId || 'TOP-LEVEL'}`);
   }
 
   // Write properties (wipe and rewrite)
