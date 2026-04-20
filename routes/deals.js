@@ -774,14 +774,16 @@ async function _handleDipApproval(req, res, approve) {
     if (dealRes.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
     const dealId = dealRes.rows[0].id;
 
+    // Placeholders numbered starting at $1 in each branch. Approve needs userId;
+    // unapprove only needs dealId (NULL is set as SQL literal, not a param).
     const sql = approve
       ? `UPDATE deal_submissions SET ${col} = TRUE, ${byCol} = $1, ${atCol} = NOW(), updated_at = NOW()
          WHERE id = $2
          RETURNING ${col}, ${byCol}, ${atCol}`
       : `UPDATE deal_submissions SET ${col} = FALSE, ${byCol} = NULL, ${atCol} = NULL, updated_at = NOW()
-         WHERE id = $2
+         WHERE id = $1
          RETURNING ${col}, ${byCol}, ${atCol}`;
-    const params = approve ? [req.user.userId, dealId] : [null, dealId];
+    const params = approve ? [req.user.userId, dealId] : [dealId];
     const r = await pool.query(sql, params);
 
     await logAudit(
@@ -801,7 +803,11 @@ async function _handleDipApproval(req, res, approve) {
     });
   } catch (error) {
     console.error('[dip-section-approval] Error:', error);
-    res.status(500).json({ error: 'Failed to update DIP section approval' });
+    res.status(500).json({
+      error: 'Failed to update DIP section approval',
+      detail: error.message,
+      code: error.code || null
+    });
   }
 }
 
