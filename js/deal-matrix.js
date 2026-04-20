@@ -6392,9 +6392,11 @@ export async function renderDealMatrix(deal) {
       });
 
       stopPolling = true;
-      hideParseProgress();
 
       if (!resp.ok) {
+        if (window.floatingProgress && typeof window.floatingProgress.error === 'function') {
+          window.floatingProgress.error({ label: 'Parsing Failed', message: 'Could not parse documents for candidates' });
+        }
         const err = await resp.json().catch(() => ({}));
         showToast(err.error || 'Parse for review failed', 'error');
         return;
@@ -6402,13 +6404,27 @@ export async function renderDealMatrix(deal) {
 
       const data = await resp.json();
       if (data.success && data.candidates) {
+        const c = data.candidates;
+        const counts = `${(c.corporate_entities||[]).length} corp · ${(c.individuals||[]).length} ind · ${(c.properties||[]).length} prop`;
+        if (window.floatingProgress && typeof window.floatingProgress.complete === 'function') {
+          window.floatingProgress.complete({ label: 'Parsing Complete', message: 'Extracted ' + counts + '. Review below.' });
+          // Auto-dismiss after 2 seconds so the success state shows briefly
+          setTimeout(() => { if (window._fpDismiss) window._fpDismiss(); }, 2000);
+        } else {
+          hideParseProgress();
+        }
         showCandidateReview(data.candidates, data.confidence);
       } else {
+        if (window.floatingProgress && typeof window.floatingProgress.error === 'function') {
+          window.floatingProgress.error({ label: 'No Candidates', message: 'Parser returned no candidates' });
+        }
         showToast(data.error || 'No candidates found', 'error');
       }
     } catch (err) {
       stopPolling = true;
-      hideParseProgress();
+      if (window.floatingProgress && typeof window.floatingProgress.error === 'function') {
+        window.floatingProgress.error({ label: 'Parse Error', message: err.message });
+      }
       console.error('[matrix-parse-for-review]', err);
       showToast('Failed to parse for review: ' + err.message, 'error');
     }

@@ -301,19 +301,19 @@ function deduplicateProperties(properties) {
 
   const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-  // Extract unit/flat/apartment identifier from an address
-  // "Apartment No.82, 2 Bedroom..." → "apartmentno82"
-  // "Flat 1 King Henrys Reach..." → "flat1"
-  // "129 Rannoch Road, 4 Bedroom..." → "129"
+  // Extract unit/flat/apartment NUMBER from an address. Return just the number
+  // so variations ("Apartment 82", "Apt 82", "Apartment No.82", "Apartment No. 82",
+  // "Flat 82") all produce the same key "82". Combined with postcode this is the
+  // canonical identity of a flat.
   const extractUnitKey = (addr) => {
     if (!addr) return '';
     const clean = addr.toLowerCase().trim();
-    // Match: apartment/flat/unit + number patterns
+    // Match: apartment/flat/unit + optional "no./no" + NUMBER — capture just the number
     const unitMatch = clean.match(/(?:apartment|apt|flat|unit|suite|room)\s*(?:no\.?\s*)?(\d+\w?)/i);
-    if (unitMatch) return normalize(unitMatch[0]);
+    if (unitMatch) return normalize(unitMatch[1]);   // just the number, e.g. "82"
     // Match: leading number (house number) e.g. "129 Rannoch Road"
     const houseMatch = clean.match(/^(\d+\w?)\s/);
-    if (houseMatch) return houseMatch[1];
+    if (houseMatch) return normalize(houseMatch[1]);
     return '';
   };
 
