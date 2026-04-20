@@ -12,6 +12,8 @@ const { generateDipPdf } = require('../services/dip-pdf');
 // const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
+// Delegated Authority (2026-04-20, DA Session 2c)
+const { evaluateAutoRoute, compactReason } = require('../services/delegated-authority');
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  G5 — Group borrowers hierarchically for DIP / TS party rendering (2026-04-20)
@@ -853,7 +855,34 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       console.error('[issue-dip] OneDrive upload failed (non-blocking):', uploadErr.message);
     }
 
+    // ── 4.5: Delegated Authority evaluation (2026-04-20, Session 2c) ──
+    // Evaluate whether this DIP auto-routes to broker or holds for Credit review.
+    // Decision stored on the deal row; broker email gated downstream.
+    let autoRouteDecision = { eligible: false, decision: 'credit_review', summary: 'not_evaluated', rules: [] };
+    let autoRouted = false;
+    try {
+      const cfgResult = await pool.query(`SELECT * FROM admin_config WHERE id = 1`);
+      const cfg = cfgResult.rows[0] || null;
+      // Build evaluation-time deal with latest dip overrides + loaded borrowers/properties
+      const dealForEval = Object.assign({}, deal, {
+        loan_amount: dipLoan || deal.loan_amount,
+        borrowers: borrowersResult.rows,
+        properties: propertiesResult.rows
+      });
+      autoRouteDecision = evaluateAutoRoute(dealForEval, cfg);
+      autoRouted = autoRouteDecision.eligible === true;
+      console.log(`[issue-dip] Auto-route decision for ${req.params.submissionId}: ${autoRouteDecision.decision} (${autoRouteDecision.summary})`);
+    } catch (evalErr) {
+      // On evaluator failure, fall back to Credit review (safe default)
+      console.warn('[issue-dip] Auto-route evaluation failed, defaulting to credit_review:', evalErr.message);
+      autoRouteDecision = { eligible: false, decision: 'credit_review', summary: 'evaluator_error', rules: [], error: evalErr.message };
+      autoRouted = false;
+    }
+
     // 5. Update deal in database
+    // Stage stays 'dip_issued' regardless of routing — auto_routed carries the decision.
+    // (Introducing 'pending_credit' as a new stage was deferred to avoid UI breakage;
+    //  Credit dashboard filters on auto_routed=false to surface deals needing review.)
     const updateFields = [
       `status = 'dip_issued'`,
       `deal_stage = 'dip_issued'`,
@@ -862,10 +891,16 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       `dip_notes = $2`,
       `dip_pdf_url = $3`,
       `dip_signed = false`,
+      `auto_routed = $4`,
+      `auto_route_reason = $5::jsonb`,
+      `auto_route_decision_at = NOW()`,
       `updated_at = NOW()`
     ];
-    const updateValues = [req.user.userId, notes || null, dipPdfUrl || null];
-    let paramIdx = 4;
+    const updateValues = [
+      req.user.userId, notes || null, dipPdfUrl || null,
+      autoRouted, JSON.stringify(compactReason(autoRouteDecision))
+    ];
+    let paramIdx = 6;
 
     // Store structured DIP data
     if (dip_data) {
@@ -927,19 +962,33 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       issued_by: req.user.userId,
       dip_data_stored: !!dip_data,
       pdf_generated: !!pdfBuffer,
-      pdf_uploaded: !!dipPdfUrl
+      pdf_uploaded: !!dipPdfUrl,
+      // DA Session 2c — capture routing outcome in audit log
+      auto_routed: autoRouted,
+      auto_route_summary: autoRouteDecision.summary
     }, req.user.userId);
 
-    // Notify broker via email
-    const brokerEmailResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [userId]);
-    if (brokerEmailResult.rows.length > 0) {
-      await notifyDealEvent('dip_issued', result.rows[0], [brokerEmailResult.rows[0].email]);
+    // Notify broker via email — only if auto-routed (Credit review deals hold)
+    if (autoRouted) {
+      const brokerEmailResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [userId]);
+      if (brokerEmailResult.rows.length > 0) {
+        await notifyDealEvent('dip_issued', result.rows[0], [brokerEmailResult.rows[0].email]);
+        console.log(`[issue-dip] Broker notified (auto-routed) for ${req.params.submissionId}`);
+      }
+    } else {
+      console.log(`[issue-dip] Broker NOT notified — deal ${req.params.submissionId} held for Credit review. Reason: ${autoRouteDecision.summary}`);
     }
 
     res.json({
       success: true,
       deal: result.rows[0],
-      pdf_url: dipPdfUrl
+      pdf_url: dipPdfUrl,
+      // DA Session 2c — surface the routing decision so the matrix pre-flight
+      // and RM feedback can reflect what happened
+      auto_routed: autoRouted,
+      decision: autoRouteDecision.decision,
+      summary: autoRouteDecision.summary,
+      rules: autoRouteDecision.rules
     });
   } catch (error) {
     console.error('[issue-dip] Error:', error);
