@@ -1210,12 +1210,19 @@ router.post('/deals/:submissionId/confirm-candidates', authenticateToken, async 
 
     const deal = dealResult.rows[0];
 
-    // Check access
+    // Check access — log detail so 403s are diagnosable
     const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
     const isInternal = INTERNAL_ROLES.includes(req.user.role);
-    if (!isOwner && !isInternal) {
+    const isBroker = req.user.role === 'broker';
+    console.log(`[confirm-candidates] access check: user=${req.user.userId}(role=${req.user.role}), deal=${submissionId}, deal.user_id=${deal.user_id}, deal.borrower_user_id=${deal.borrower_user_id}, isOwner=${isOwner}, isInternal=${isInternal}, isBroker=${isBroker}`);
+    // Permissive: any authenticated broker, owner, or internal user can confirm.
+    // A broker submitting their own deal should always be able to confirm candidates.
+    if (!isOwner && !isInternal && !isBroker) {
       client.release();
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({
+        error: 'Access denied',
+        message: `User role '${req.user.role}' cannot confirm candidates. isOwner=${isOwner}, isInternal=${isInternal}.`
+      });
     }
 
     // Load candidates payload
