@@ -755,8 +755,6 @@ router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateI
          FROM deal_borrowers WHERE deal_id = $1`,
         [dealId]
       ),
-      // deal_properties has property_type but NOT asset_type or country.
-      // We enrich per-property with deal-level asset_type and a postcode-derived country.
       pool.query(
         `SELECT id, address, postcode, market_value, property_type
          FROM deal_properties WHERE deal_id = $1`,
@@ -767,7 +765,6 @@ router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateI
 
     const dealForEval = Object.assign({}, deal, {
       borrowers: borrowersResult.rows,
-      // deal_properties has no asset_type/country — shared helper enriches from deal + postcode
       properties: enrichPropertiesForEvaluator(propertiesResult.rows, deal)
     });
     const cfg = cfgResult.rows[0] || null;

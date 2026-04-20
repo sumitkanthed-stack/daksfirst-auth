@@ -279,7 +279,9 @@ export async function showIssueDipPreflight() {
   `;
   document.body.appendChild(modal);
 
-  // Fetch preview
+  // Preview reads persisted (matrix-canonical) state. Per SSOT principle
+  // locked 2026-04-20, the DIP form will become review-only — RM edits are
+  // made in the matrix and persisted before reaching this point.
   let preview;
   try {
     const res = await fetchWithAuth(`${API_BASE}/api/deals/${dealId}/auto-route-preview`, { method: 'GET' });

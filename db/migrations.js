@@ -890,6 +890,84 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  Matrix-SSOT for DIP — 2026-04-20 (Session M1)
+    //  Locks Matrix as the canonical data surface. DIP form becomes approval-gates only.
+    //  New columns on deal_submissions:
+    //    - Requested/Approved pairs for negotiable terms (broker asks vs what we offer)
+    //    - New fee columns: dip_fee (flat £1k default), exit_fee_pct, extension_fee_pct
+    //    - Per-section DIP approval stamps (5 sections) so Issue DIP is gated on
+    //      RM ✓ of each section, with auto-revoke on matrix edit
+    //  Backfill: existing deals copy loan_amount→loan_amount_approved etc. so no deal
+    //    is left with NULL approved values on rollout.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const ssotCols = [
+        // Requested/Approved pairs — "approved" columns are what the matrix edits and
+        // what generators read. "Requested" is captured at submission for audit and
+        // the Matrix "Requested vs Approved" display.
+        'ADD COLUMN IF NOT EXISTS loan_amount_requested NUMERIC(15,2)',
+        'ADD COLUMN IF NOT EXISTS loan_amount_approved NUMERIC(15,2)',
+        'ADD COLUMN IF NOT EXISTS ltv_approved NUMERIC(5,2)',
+        'ADD COLUMN IF NOT EXISTS rate_approved NUMERIC(5,3)',
+        'ADD COLUMN IF NOT EXISTS term_months_requested INT',
+        'ADD COLUMN IF NOT EXISTS term_months_approved INT',
+        'ADD COLUMN IF NOT EXISTS interest_servicing_requested VARCHAR(30)',
+        'ADD COLUMN IF NOT EXISTS interest_servicing_approved VARCHAR(30)',
+        'ADD COLUMN IF NOT EXISTS exit_strategy_requested TEXT',
+        'ADD COLUMN IF NOT EXISTS exit_strategy_approved TEXT',
+        // New fee columns
+        'ADD COLUMN IF NOT EXISTS dip_fee NUMERIC(10,2) DEFAULT 1000',
+        'ADD COLUMN IF NOT EXISTS exit_fee_pct NUMERIC(5,2) DEFAULT 1.00',
+        'ADD COLUMN IF NOT EXISTS extension_fee_pct NUMERIC(5,2) DEFAULT 1.00',
+        // Per-section DIP approval state — each section has {approved, by, at}
+        // Auto-revoke triggered when any referenced matrix field changes (app-layer logic).
+        'ADD COLUMN IF NOT EXISTS dip_borrower_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_borrower_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_borrower_approved_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_security_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_security_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_security_approved_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_loan_terms_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_loan_terms_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_loan_terms_approved_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_fees_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_fees_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_fees_approved_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_conditions_approved BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS dip_conditions_approved_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_conditions_approved_at TIMESTAMPTZ',
+        // Credit Decision gate (hybrid — Credit approves on same DIP form when required)
+        'ADD COLUMN IF NOT EXISTS dip_credit_decision VARCHAR(20)', // approved | declined | more_info | null
+        'ADD COLUMN IF NOT EXISTS dip_credit_decided_by INT REFERENCES users(id)',
+        'ADD COLUMN IF NOT EXISTS dip_credit_decided_at TIMESTAMPTZ',
+        'ADD COLUMN IF NOT EXISTS dip_credit_notes TEXT'
+      ];
+      for (const frag of ssotCols) {
+        await pool.query(`ALTER TABLE deal_submissions ${frag}`);
+      }
+      console.log('[migrate] ✓ Matrix-SSOT columns on deal_submissions');
+
+      // Backfill approved columns from existing values so legacy deals have non-null data
+      await pool.query(`
+        UPDATE deal_submissions
+        SET loan_amount_approved = COALESCE(loan_amount_approved, loan_amount),
+            loan_amount_requested = COALESCE(loan_amount_requested, loan_amount),
+            ltv_approved = COALESCE(ltv_approved, ltv_requested),
+            rate_approved = COALESCE(rate_approved, rate_requested),
+            term_months_approved = COALESCE(term_months_approved, term_months),
+            term_months_requested = COALESCE(term_months_requested, term_months),
+            interest_servicing_approved = COALESCE(interest_servicing_approved, interest_servicing),
+            interest_servicing_requested = COALESCE(interest_servicing_requested, interest_servicing),
+            exit_strategy_approved = COALESCE(exit_strategy_approved, exit_strategy),
+            exit_strategy_requested = COALESCE(exit_strategy_requested, exit_strategy)
+        WHERE loan_amount_approved IS NULL OR ltv_approved IS NULL OR rate_approved IS NULL
+      `);
+      console.log('[migrate] ✓ Matrix-SSOT backfill — existing deals have approved values set');
+    } catch (err) {
+      console.log('[migrate] Note on Matrix-SSOT columns:', err.message.substring(0, 120));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  Delegated Authority — 2026-04-20 (Session 1a)
     //  admin_config: single-row config table for auto-routing thresholds + toggles
     //  deal_submissions: 3 columns to record the auto-route decision
