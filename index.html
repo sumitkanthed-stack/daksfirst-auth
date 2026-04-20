@@ -1249,6 +1249,7 @@
           <button class="admin-nav-item" onclick="switchAdminTab('clients')">Clients</button>
           <button class="admin-nav-item" onclick="switchAdminTab('analytics')">Analytics</button>
           <button class="admin-nav-item" onclick="switchAdminTab('create-user')">Create User</button>
+          <button class="admin-nav-item" onclick="switchAdminTab('delegated-authority')">Auto-Routing</button>
         </div>
 
         <div class="admin-content">
@@ -1433,6 +1434,97 @@
               <div id="recent-activity" class="activity-list"></div>
             </div>
           </div>
+
+          <!-- Delegated Authority / Auto-Routing Tab -->
+          <div id="admin-delegated-authority" class="admin-tab">
+            <div style="max-width:720px;padding:0 4px;">
+              <h2 style="margin:0 0 8px;color:#F1F5F9;font-size:1.3rem;font-weight:700;">Delegated Authority &mdash; Auto-Routing</h2>
+              <p style="color:#94A3B8;margin:0 0 24px;font-size:0.9rem;line-height:1.6;">
+                Small, standard, single-security residential deals can skip Credit review and auto-issue directly to broker.
+                Configure the thresholds here. Hard rules (UK only, single borrower, single security, no adverse flags) are policy and not configurable.
+              </p>
+
+              <div style="background:#0F172A;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:22px 24px;margin-bottom:20px;">
+
+                <!-- Enable toggle -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.2);border-radius:8px;margin-bottom:20px;">
+                  <div>
+                    <div style="font-size:14px;font-weight:700;color:#F1F5F9;">Auto-routing enabled</div>
+                    <div style="font-size:11px;color:#94A3B8;margin-top:2px;">When OFF, every DIP goes to Credit queue regardless of rules</div>
+                  </div>
+                  <label class="toggle" style="position:relative;display:inline-block;width:48px;height:26px;">
+                    <input type="checkbox" id="da-enabled" style="opacity:0;width:0;height:0;">
+                    <span id="da-enabled-slider" style="position:absolute;cursor:pointer;inset:0;background:#334155;border-radius:26px;transition:.2s;">
+                      <span style="position:absolute;content:'';height:20px;width:20px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.2s;"></span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Loan threshold -->
+                <div style="margin-bottom:20px;">
+                  <label style="display:block;font-size:13px;font-weight:600;color:#CBD5E1;margin-bottom:6px;">Maximum auto-approve loan (£)</label>
+                  <input type="number" id="da-max-loan" min="1" max="100000000" step="1000" style="width:240px;padding:8px 12px;background:#1E293B;color:#F1F5F9;border:1px solid rgba(255,255,255,0.12);border-radius:6px;font-size:14px;">
+                  <div style="font-size:11px;color:#64748B;margin-top:4px;">Deals above this cap go to Credit.</div>
+                </div>
+
+                <!-- LTV threshold -->
+                <div style="margin-bottom:20px;">
+                  <label style="display:block;font-size:13px;font-weight:600;color:#CBD5E1;margin-bottom:6px;">Maximum auto-approve Day-1 LTV (%)</label>
+                  <input type="number" id="da-max-ltv" min="1" max="100" step="0.5" style="width:120px;padding:8px 12px;background:#1E293B;color:#F1F5F9;border:1px solid rgba(255,255,255,0.12);border-radius:6px;font-size:14px;">
+                  <div style="font-size:11px;color:#64748B;margin-top:4px;">Deals above this cap go to Credit.</div>
+                </div>
+
+                <!-- Asset types -->
+                <div style="margin-bottom:20px;">
+                  <label style="display:block;font-size:13px;font-weight:600;color:#CBD5E1;margin-bottom:8px;">Eligible asset types</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                    <label style="display:flex;align-items:center;gap:6px;background:#1E293B;padding:8px 14px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;">
+                      <input type="checkbox" class="da-asset-type" value="residential">
+                      <span style="font-size:13px;color:#F1F5F9;">Residential</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;background:#1E293B;padding:8px 14px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;">
+                      <input type="checkbox" class="da-asset-type" value="mixed-use">
+                      <span style="font-size:13px;color:#F1F5F9;">Mixed-use</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;background:#1E293B;padding:8px 14px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;">
+                      <input type="checkbox" class="da-asset-type" value="commercial">
+                      <span style="font-size:13px;color:#F1F5F9;">Commercial</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;background:#1E293B;padding:8px 14px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;">
+                      <input type="checkbox" class="da-asset-type" value="land-with-planning">
+                      <span style="font-size:13px;color:#F1F5F9;">Land with planning</span>
+                    </label>
+                  </div>
+                  <div style="font-size:11px;color:#64748B;margin-top:6px;">
+                    Other asset types go to Credit review. Mixed-use requires Credit sign-off before enabling.
+                  </div>
+                </div>
+
+                <!-- Hard rules display (read-only) -->
+                <div style="margin:24px 0 20px;padding:14px 16px;background:rgba(212,168,83,0.05);border:1px solid rgba(212,168,83,0.2);border-radius:8px;">
+                  <div style="font-size:11px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Hard rules (policy — not configurable)</div>
+                  <ul style="margin:0;padding-left:18px;color:#CBD5E1;font-size:12px;line-height:1.7;">
+                    <li>Security property must be in England or Wales</li>
+                    <li>Single primary borrower, zero joint borrowers</li>
+                    <li>Single security property (no portfolio deals)</li>
+                    <li>No adverse flags: insolvency history, dissolved CH status, PEP, sanctions</li>
+                  </ul>
+                </div>
+
+                <!-- Action buttons -->
+                <div style="display:flex;gap:10px;align-items:center;margin-top:24px;">
+                  <button onclick="window.saveDelegatedAuthority()" style="padding:10px 20px;background:#60A5FA;color:#0B1120;border:none;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer;">Save Changes</button>
+                  <button onclick="window.loadDelegatedAuthority()" style="padding:10px 16px;background:transparent;color:#94A3B8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;">Reload</button>
+                  <span id="da-save-status" style="margin-left:12px;font-size:12px;"></span>
+                </div>
+
+                <div id="da-last-updated" style="margin-top:16px;font-size:11px;color:#64748B;"></div>
+
+              </div>
+
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

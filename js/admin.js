@@ -46,6 +46,132 @@ export function switchAdminTab(tabName) {
 
   // Load data for specific tabs
   if (tabName === 'clients') loadAdminUsers();
+  if (tabName === 'delegated-authority') loadDelegatedAuthority();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Delegated Authority admin config (2026-04-20, DA Session 2b)
+//  Reads from GET /api/admin/config/delegated-authority and fills the form.
+//  Save reads the form and PUTs the delta back.
+// ═══════════════════════════════════════════════════════════════════════════
+export async function loadDelegatedAuthority() {
+  const status = document.getElementById('da-save-status');
+  if (status) { status.textContent = 'Loading...'; status.style.color = '#94A3B8'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/config/delegated-authority`, { method: 'GET' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showToast('Failed to load config: ' + (body.error || res.statusText), 'error');
+      if (status) { status.textContent = ''; }
+      return;
+    }
+    const data = await res.json();
+    const c = data.config || {};
+
+    // Populate form
+    const enabledEl = document.getElementById('da-enabled');
+    if (enabledEl) enabledEl.checked = !!c.auto_approve_enabled;
+    _updateEnabledSlider();
+    const maxLoanEl = document.getElementById('da-max-loan');
+    if (maxLoanEl) maxLoanEl.value = c.auto_approve_max_loan != null ? Number(c.auto_approve_max_loan) : '';
+    const maxLtvEl = document.getElementById('da-max-ltv');
+    if (maxLtvEl) maxLtvEl.value = c.auto_approve_max_ltv_pct != null ? Number(c.auto_approve_max_ltv_pct) : '';
+
+    const assetTypes = Array.isArray(c.auto_approve_asset_types) ? c.auto_approve_asset_types.map(t => String(t).toLowerCase()) : [];
+    document.querySelectorAll('.da-asset-type').forEach(cb => {
+      cb.checked = assetTypes.includes(cb.value.toLowerCase());
+    });
+
+    const lastUpd = document.getElementById('da-last-updated');
+    if (lastUpd) {
+      const when = c.updated_at ? new Date(c.updated_at).toLocaleString('en-GB') : '—';
+      lastUpd.textContent = `Last updated: ${when}${c.updated_by ? ` by user #${c.updated_by}` : ''}`;
+    }
+
+    if (status) { status.textContent = ''; }
+  } catch (err) {
+    showToast('Failed to load config: ' + err.message, 'error');
+    if (status) { status.textContent = ''; }
+  }
+}
+
+// Simple visual feedback for the toggle (click on the slider span)
+function _updateEnabledSlider() {
+  const cb = document.getElementById('da-enabled');
+  const slider = document.getElementById('da-enabled-slider');
+  if (!cb || !slider) return;
+  const inner = slider.querySelector('span');
+  if (cb.checked) {
+    slider.style.background = '#34D399';
+    if (inner) inner.style.left = '25px';
+  } else {
+    slider.style.background = '#334155';
+    if (inner) inner.style.left = '3px';
+  }
+  // Hook a click handler on the slider (once)
+  if (!slider.__hooked) {
+    slider.addEventListener('click', () => {
+      cb.checked = !cb.checked;
+      _updateEnabledSlider();
+    });
+    slider.__hooked = true;
+  }
+}
+
+export async function saveDelegatedAuthority() {
+  const status = document.getElementById('da-save-status');
+  if (status) { status.textContent = 'Saving...'; status.style.color = '#D4A853'; }
+
+  const enabledEl = document.getElementById('da-enabled');
+  const maxLoanEl = document.getElementById('da-max-loan');
+  const maxLtvEl = document.getElementById('da-max-ltv');
+  const assetCheckboxes = Array.from(document.querySelectorAll('.da-asset-type'));
+
+  const body = {
+    auto_approve_enabled: !!enabledEl?.checked,
+    auto_approve_max_loan: Number(maxLoanEl?.value),
+    auto_approve_max_ltv_pct: Number(maxLtvEl?.value),
+    auto_approve_asset_types: assetCheckboxes.filter(cb => cb.checked).map(cb => cb.value)
+  };
+
+  // Client-side sanity — match server validation so the user gets faster feedback
+  if (!isFinite(body.auto_approve_max_loan) || body.auto_approve_max_loan <= 0) {
+    if (status) { status.textContent = '✗ Max loan must be a positive number'; status.style.color = '#F87171'; }
+    return;
+  }
+  if (!isFinite(body.auto_approve_max_ltv_pct) || body.auto_approve_max_ltv_pct <= 0 || body.auto_approve_max_ltv_pct > 100) {
+    if (status) { status.textContent = '✗ Max LTV must be between 0 and 100'; status.style.color = '#F87171'; }
+    return;
+  }
+  if (body.auto_approve_enabled && body.auto_approve_asset_types.length === 0) {
+    if (status) { status.textContent = '✗ Select at least one asset type (or disable auto-routing)'; status.style.color = '#F87171'; }
+    return;
+  }
+
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/config/delegated-authority`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (status) { status.textContent = '✗ ' + (data.error || 'Save failed'); status.style.color = '#F87171'; }
+      return;
+    }
+    showToast('Auto-routing config saved', 'success');
+    if (status) { status.textContent = '✓ Saved'; status.style.color = '#34D399'; }
+    // Refresh to pick up server-side updated_at
+    await loadDelegatedAuthority();
+  } catch (err) {
+    if (status) { status.textContent = '✗ ' + err.message; status.style.color = '#F87171'; }
+  }
+}
+
+// Register as globals so onclick handlers in index.html can reach them
+if (typeof window !== 'undefined') {
+  window.loadDelegatedAuthority = loadDelegatedAuthority;
+  window.saveDelegatedAuthority = saveDelegatedAuthority;
 }
 
 /**
