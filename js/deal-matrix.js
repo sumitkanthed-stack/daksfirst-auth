@@ -374,6 +374,7 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
     'B': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
     'F': { bg: 'rgba(212,168,83,0.15)', color: '#D4A853' },
     'P': { bg: 'rgba(52,211,153,0.1)', color: '#34D399' },
+    'U': { bg: 'rgba(20,184,166,0.12)', color: '#14B8A6' }, // M4d: Use of Funds — teal
     'L': { bg: 'rgba(168,85,247,0.1)', color: '#A855F7' },
     'E': { bg: 'rgba(251,146,60,0.1)', color: '#FB923C' },
     'LG': { bg: 'rgba(148,163,184,0.1)', color: '#94A3B8' },
@@ -2245,12 +2246,18 @@ export async function renderDealMatrix(deal) {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // SECTION 4: LOAN TERMS & USE OF FUNDS
+  // M4d 2026-04-20 — Section reorder:
+  // Sections 4 (Loan Terms) and 5 (Exit Strategy) are buffered here and
+  // emitted further down in a NEW order: [Use of Funds] → [Exit Strategy]
+  // → [Loan Terms & Economics]. Rationale: RM must understand purpose and
+  // exit BEFORE pricing loan terms. Section IDs (s4, s5) kept as-is so all
+  // downstream references (dip-sec-s4, content-s5, etc.) still work.
   // ═══════════════════════════════════════════════════════════════════
 
-  html += `
+  // ── Buffer: Section 4 (Loan Terms & Economics) — emitted later ──
+  const _section4LoanTermsHtml = `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s4', 'L', 'Loan Terms & Economics', 'Loan structure, fees, Day Zero, use of funds', [
+      ${renderSectionHeader('s4', 'L', 'Loan Terms & Economics', 'Loan structure, fees, Day Zero', [
         renderStatusDot(0, 'not-started', 'dip-sec-s4'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -2398,36 +2405,14 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
-        <!-- Use of Funds -->
-        ${renderFieldRow('use-of-funds', 'Use of Funds', 'Refinance, purchase, renovation, other',
-          ['not-started', 'not-started', 'not-started', 'not-started'])}
-
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-use-of-funds">
-          <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:12px">Purpose & Use of Funds</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
-                  { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
-                  { value: 'refurbishment', label: 'Refurbishment' }, { value: 'capital_raise', label: 'Capital Raise' },
-                  { value: 'auction', label: 'Auction Purchase' }, { value: 'other', label: 'Other' }
-                ])}
-                ${renderEditableField('use_of_funds', 'Use of Funds Detail', deal.use_of_funds, 'textarea', canEdit)}
-                ${renderEditableField('refurb_scope', 'Refurb Scope', deal.refurb_scope, 'textarea', canEdit)}
-                ${renderEditableField('refurb_cost', 'Refurb Cost (£)', deal.refurb_cost, 'money', canEdit)}
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- M4d 2026-04-20: Use of Funds extracted to its own section (rendered before Loan Terms).
+             Rationale: RM needs purpose + exit understood BEFORE pricing loan terms. -->
       </div>
     </div>
   `;
 
-  // ═══════════════════════════════════════════════════════════════════
-  // SECTION 5: EXIT STRATEGY
-  // ═══════════════════════════════════════════════════════════════════
-
-  html += `
+  // ── Buffer: Section 5 (Exit Strategy) — emitted later ──
+  const _section5ExitStrategyHtml = `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s5', 'E', 'Exit Strategy', 'Refinance or sale plan', [
         renderStatusDot(0, 'not-started', 'dip-sec-s5'),
@@ -2471,6 +2456,61 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
   `;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTION 3b (NEW 2026-04-20): USE OF FUNDS & PURPOSE
+  // Extracted from the old Section 4; now its own approval gate.
+  // DOM id = 'uof' to avoid renumbering existing s4..s8 IDs.
+  // ═══════════════════════════════════════════════════════════════════
+
+  const _sectionUofHtml = `
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
+      ${renderSectionHeader('uof', 'U', 'Use of Funds & Purpose', 'What the loan is for — drives the credit narrative', [
+        renderStatusDot(0, 'not-started', 'dip-sec-uof'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started')
+      ], isInternalUser)}
+
+      <div id="content-uof" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
+        ${renderFieldRow('use-of-funds', 'Use of Funds', 'Purpose, deposit source, refurb scope',
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-use-of-funds">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Purpose & Use of Funds</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 12px 0;font-style:italic;">Approve purpose + use of funds BEFORE moving to Loan Terms. Loan pricing depends on the money story.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
+                  { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
+                  { value: 'refurbishment', label: 'Refurbishment' }, { value: 'capital_raise', label: 'Capital Raise' },
+                  { value: 'auction', label: 'Auction Purchase' }, { value: 'other', label: 'Other' }
+                ])}
+                ${renderEditableField('deposit_source', 'Deposit Source', deal.deposit_source, 'text', canEdit)}
+                ${renderEditableField('use_of_funds', 'Use of Funds Detail', deal.use_of_funds, 'textarea', canEdit)}
+                ${renderEditableField('refurb_scope', 'Refurb Scope', deal.refurb_scope, 'textarea', canEdit)}
+                ${renderEditableField('refurb_cost', 'Refurb Cost (£)', deal.refurb_cost, 'money', canEdit)}
+                ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // EMIT buffered sections in the NEW commercial order:
+  //   Use of Funds  →  Exit Strategy  →  Loan Terms & Economics
+  // Then Section 6+ continue normally.
+  // ═══════════════════════════════════════════════════════════════════
+  html += _sectionUofHtml;
+  html += _section5ExitStrategyHtml;
+  html += _section4LoanTermsHtml;
 
   // ═══════════════════════════════════════════════════════════════════
   // SECTION 6: LEGAL & INSURANCE
@@ -2831,12 +2871,15 @@ export async function renderDealMatrix(deal) {
       'Loan Terms': 's4',
       'Exit Strategy': 's5',
       'Fees': 's4',
+      'Use of Funds': 'uof',
+      'Use of Funds & Purpose': 'uof',
       'AML & Source of Funds': 's2'
     };
-    // First close all sections
-    for (let i = 1; i <= 8; i++) {
-      const content = document.getElementById(`content-s${i}`);
-      const chevron = document.getElementById(`chevron-s${i}`);
+    // First close all sections — includes M4d 'uof' slot
+    const _allSectionIds = ['s1','s2','s3','s4','s5','s6','s7','s8','uof'];
+    for (const sid of _allSectionIds) {
+      const content = document.getElementById(`content-${sid}`);
+      const chevron = document.getElementById(`chevron-${sid}`);
       if (content) {
         content.style.maxHeight = '0px';
         content.style.overflow = 'hidden';
@@ -6295,8 +6338,9 @@ export async function renderDealMatrix(deal) {
     's1': 'Borrower / KYC',
     's2': 'Borrower Financials & AML',
     's3': 'Property / Security',
-    's4': 'Loan Terms & Economics',
+    'uof': 'Use of Funds & Purpose',
     's5': 'Exit Strategy',
+    's4': 'Loan Terms & Economics',
     's6': 'Legal & Insurance',
     's7': 'Credit Approval',
     's8': 'Documents Issued',
