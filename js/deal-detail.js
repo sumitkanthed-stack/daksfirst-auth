@@ -1119,10 +1119,13 @@ export function renderInternalWorkflowControls(deal) {
       ${stage !== 'dip_issued' && isInternal ? `<div style="background:#f0f9ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7dd3fc;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
           <h5 style="margin:0;color:#0c4a6e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">\u2696 DIP Section Approvals</h5>
-          <span id="dip-approval-progress" style="font-size:11px;color:#0c4a6e;font-weight:600;"></span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="dip-approval-progress" style="font-size:11px;color:#0c4a6e;font-weight:600;"></span>
+            <button onclick="window._refreshDipApprovals && window._refreshDipApprovals()" style="padding:4px 10px;background:#ffffff;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;" title="Pull the latest matrix state from the server">\u21BB Refresh</button>
+          </div>
         </div>
         <p style="margin:0 0 12px;font-size:11px;color:#475569;">
-          Matrix is canonical. Each section must be approved before Issue DIP fires. Any edit to matrix fields auto-revokes the relevant approval.
+          Matrix is canonical. Each section must be approved before Issue DIP fires. Any edit to matrix fields auto-revokes the relevant approval. Click Refresh if you just edited matrix values in another tab.
         </p>
         <div id="dip-section-approvals-grid" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
       </div>` : ''}
@@ -1343,6 +1346,46 @@ export function renderInternalWorkflowControls(deal) {
         }
       };
 
+      // M4b: Pull fresh deal data before rendering approvals.
+      // The `deal` object is from page load; matrix edits update the DB but not
+      // this in-memory copy. Re-fetching ensures approval stamps + approved
+      // column values reflect reality (especially after auto-revoke from matrix edits).
+      const refreshDealFromServer = async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}`, { method: 'GET' });
+          if (!res.ok) return false;
+          const body = await res.json();
+          const fresh = body.deal || body;
+          // Copy only the matrix-canonical fields + approval stamps, leaving
+          // the rest of the deal object (properties, borrowers) alone — those
+          // are populated through their own endpoints.
+          const KEYS_TO_REFRESH = [
+            'loan_amount', 'loan_amount_requested', 'loan_amount_approved',
+            'ltv_requested', 'ltv_approved',
+            'rate_requested', 'rate_approved',
+            'term_months', 'term_months_requested', 'term_months_approved',
+            'interest_servicing', 'interest_servicing_requested', 'interest_servicing_approved',
+            'exit_strategy', 'exit_strategy_requested', 'exit_strategy_approved',
+            'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
+            'dip_fee', 'exit_fee_pct', 'extension_fee_pct', 'retained_interest_months',
+            'dip_borrower_approved', 'dip_borrower_approved_by', 'dip_borrower_approved_at',
+            'dip_security_approved', 'dip_security_approved_by', 'dip_security_approved_at',
+            'dip_loan_terms_approved', 'dip_loan_terms_approved_by', 'dip_loan_terms_approved_at',
+            'dip_fees_approved', 'dip_fees_approved_by', 'dip_fees_approved_at',
+            'dip_conditions_approved', 'dip_conditions_approved_by', 'dip_conditions_approved_at',
+            'dip_credit_decision', 'dip_credit_decided_by', 'dip_credit_decided_at', 'dip_credit_notes',
+            'dip_notes', 'additional_notes'
+          ];
+          for (const k of KEYS_TO_REFRESH) {
+            if (k in fresh) deal[k] = fresh[k];
+          }
+          return true;
+        } catch (e) {
+          console.warn('[M4b] Failed to refresh deal from server:', e.message);
+          return false;
+        }
+      };
+
       // M4b: Render the 5 DIP Section Approval cards.
       // Returns true if all 5 are approved (used by Issue DIP gate above).
       const renderDipApprovalGates = () => {
@@ -1418,6 +1461,15 @@ export function renderInternalWorkflowControls(deal) {
         }
 
         return approvedCount === SECTIONS.length;
+      };
+
+      // Manual refresh button handler — pull latest matrix state and re-validate
+      window._refreshDipApprovals = async () => {
+        const btn = event && event.target;
+        if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
+        await refreshDealFromServer();
+        if (typeof validateDipChecklist === 'function') validateDipChecklist();
+        if (btn) { btn.disabled = false; btn.innerHTML = '\u21BB Refresh'; }
       };
 
       // Register approve/unapprove globally so onclick handlers can reach them
@@ -1496,8 +1548,9 @@ export function renderInternalWorkflowControls(deal) {
         updatePropValTotal();
       }
 
-      // Run initial checklist validation
-      validateDipChecklist();
+      // Run initial checklist validation — refresh deal from server first so
+      // approval stamps + matrix-canonical fields reflect the latest state.
+      refreshDealFromServer().then(() => validateDipChecklist());
     }, 100);
   }
 
