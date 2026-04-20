@@ -1013,16 +1013,30 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
       }
     }
 
-    let dbRole = 'primary';
-    if (role === 'ubo' || role === 'director' || role === 'pg_from_ubo') {
-      dbRole = role;
+    // CRITICAL: map UI-level roles to DB-allowed role values.
+    // CHECK constraint (migrations.js:650) accepts ONLY:
+    //   'primary','joint','guarantor','director','ubo','psc','shareholder'
+    // 'pg_from_ubo' is NOT valid — map to 'ubo' + set pg_status='required'.
+    // 'kyc_only' → 'primary' (as applicant).
+    let dbRole;
+    let pgStatus = null;
+    if (role === 'ubo') {
+      dbRole = 'ubo';
+    } else if (role === 'director') {
+      dbRole = 'director';
+    } else if (role === 'pg_from_ubo') {
+      dbRole = 'ubo';
+      pgStatus = 'required';
     } else if (role === 'third_party_guarantor') {
       dbRole = 'guarantor';
+      pgStatus = 'required';
     } else if (role === 'kyc_only') {
       dbRole = 'primary';
+    } else {
+      dbRole = 'primary';  // safe default
     }
 
-    const kycData = { pg_required: role === 'pg_from_ubo' };
+    const kycData = { pg_required: pgStatus === 'required' };
 
     // Mirror UBO-style records into ch_match_data so the DIP + Matrix Parties
     // grouping (which keys off is_psc + officer_role) renders Alessandra as an
@@ -1033,8 +1047,8 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
 
     await client.query(
       `INSERT INTO deal_borrowers (
-        deal_id, full_name, borrower_type, role, date_of_birth, nationality, email, phone, parent_borrower_id, kyc_status, kyc_data, ch_match_data, ch_matched_role, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())`,
+        deal_id, full_name, borrower_type, role, date_of_birth, nationality, email, phone, parent_borrower_id, kyc_status, kyc_data, ch_match_data, ch_matched_role, pg_status, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
       [
         dealId,
         candidate.name || '',
@@ -1048,10 +1062,11 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
         'pending',
         JSON.stringify(kycData),
         chMatchData ? JSON.stringify(chMatchData) : null,
-        (role === 'ubo' || role === 'pg_from_ubo') ? 'UBO' : (role === 'director' ? 'Director' : null)
+        (role === 'ubo' || role === 'pg_from_ubo') ? 'UBO' : (role === 'director' ? 'Director' : null),
+        pgStatus
       ]
     );
-    console.log(`[confirm-candidates] wrote individual ${candidate.name} as ${dbRole}, parent=${parentBorrowerId || 'TOP-LEVEL'}`);
+    console.log(`[confirm-candidates] wrote individual ${candidate.name} as role=${dbRole}, pg_status=${pgStatus || 'NULL'}, parent=${parentBorrowerId || 'TOP-LEVEL'}`);
   }
 
   // Write properties (wipe and rewrite)
