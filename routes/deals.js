@@ -13,7 +13,7 @@ const { generateDipPdf } = require('../services/dip-pdf');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
 // Delegated Authority (2026-04-20, DA Session 2c)
-const { evaluateAutoRoute, compactReason } = require('../services/delegated-authority');
+const { evaluateAutoRoute, compactReason, enrichPropertiesForEvaluator } = require('../services/delegated-authority');
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  G5 — Group borrowers hierarchically for DIP / TS party rendering (2026-04-20)
@@ -755,8 +755,10 @@ router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateI
          FROM deal_borrowers WHERE deal_id = $1`,
         [dealId]
       ),
+      // deal_properties has property_type but NOT asset_type or country.
+      // We enrich per-property with deal-level asset_type and a postcode-derived country.
       pool.query(
-        `SELECT id, address, postcode, market_value, property_type, asset_type, country
+        `SELECT id, address, postcode, market_value, property_type
          FROM deal_properties WHERE deal_id = $1`,
         [dealId]
       ),
@@ -765,7 +767,8 @@ router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateI
 
     const dealForEval = Object.assign({}, deal, {
       borrowers: borrowersResult.rows,
-      properties: propertiesResult.rows
+      // deal_properties has no asset_type/country — shared helper enriches from deal + postcode
+      properties: enrichPropertiesForEvaluator(propertiesResult.rows, deal)
     });
     const cfg = cfgResult.rows[0] || null;
 
@@ -921,10 +924,12 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       const cfgResult = await pool.query(`SELECT * FROM admin_config WHERE id = 1`);
       const cfg = cfgResult.rows[0] || null;
       // Build evaluation-time deal with latest dip overrides + loaded borrowers/properties
+      // Properties need enrichment (asset_type + country) since deal_properties has neither column
       const dealForEval = Object.assign({}, deal, {
         loan_amount: dipLoan || deal.loan_amount,
+        asset_type: assetType || deal.asset_type,  // dip form override takes precedence
         borrowers: borrowersResult.rows,
-        properties: propertiesResult.rows
+        properties: enrichPropertiesForEvaluator(propertiesResult.rows, { asset_type: assetType || deal.asset_type })
       });
       autoRouteDecision = evaluateAutoRoute(dealForEval, cfg);
       autoRouted = autoRouteDecision.eligible === true;

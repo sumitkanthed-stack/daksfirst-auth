@@ -214,9 +214,39 @@ function compactReason(result) {
   };
 }
 
+/**
+ * Derive a country tag from a UK postcode prefix. Used to populate the
+ * synthetic `country` field on properties (deal_properties has no country
+ * column). Scottish / Northern Ireland prefixes are specific; everything
+ * else is treated as England or Wales (platform geography policy).
+ */
+function countryFromPostcode(pc) {
+  if (!pc) return null;
+  const p = String(pc).toUpperCase().replace(/\s+/g, '');
+  if (/^BT/.test(p)) return 'northern ireland';
+  if (/^(AB|DD|DG|EH|FK|G[0-9]|HS|IV|KA|KW|KY|ML|PA|PH|TD|ZE)/.test(p)) return 'scotland';
+  return 'england'; // evaluator accepts england and wales as UK
+}
+
+/**
+ * Enrich deal_properties rows with the synthetic fields the evaluator expects:
+ *   - asset_type (prefers deal-level asset_type, falls back to per-property property_type)
+ *   - country (derived from postcode prefix)
+ * Pure function; does not mutate input.
+ */
+function enrichPropertiesForEvaluator(properties, deal) {
+  const dealAssetType = deal && deal.asset_type ? deal.asset_type : null;
+  return (properties || []).map(p => Object.assign({}, p, {
+    asset_type: p.asset_type || dealAssetType || p.property_type || null,
+    country: p.country || countryFromPostcode(p.postcode)
+  }));
+}
+
 module.exports = {
   evaluateAutoRoute,
   compactReason,
+  countryFromPostcode,
+  enrichPropertiesForEvaluator,
   // Exported for testing
   _normalizeGeo,
   _numLoan,
