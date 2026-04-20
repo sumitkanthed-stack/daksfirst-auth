@@ -545,6 +545,45 @@ export async function renderDealMatrix(deal) {
   const fmtPct = (v) => num(v) ? num(v).toFixed(1) : '0.0';
   const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
 
+  // ══ M3 Matrix-SSOT 2026-04-20 ══════════════════════════════════════
+  // Client-side mirror of services/fee-formulae.js. Keep in sync with the
+  // backend helper — both encode the same policy (confirmed with Sumit).
+  //
+  // DIP fee:        flat £1,000 default (not scaled; "commitment to underwrite")
+  // Commitment fee: 0.10% × loan_approved, round DOWN in £2k increments, min £5k
+  //                 e.g. £7.5m → 0.10%=£7,500 → round-down £2k = £6,000
+  // ═══════════════════════════════════════════════════════════════════
+  const DIP_FEE_DEFAULT = 1000;
+  const COMMITMENT_FEE_RATE = 0.001;
+  const COMMITMENT_FEE_MIN = 5000;
+  const COMMITMENT_FEE_INCREMENT = 2000;
+
+  const computeCommitmentFee = (loanApproved) => {
+    const n = Number(loanApproved || 0);
+    if (!isFinite(n) || n <= 0) return COMMITMENT_FEE_MIN;
+    const raw = n * COMMITMENT_FEE_RATE;
+    const rounded = Math.floor(raw / COMMITMENT_FEE_INCREMENT) * COMMITMENT_FEE_INCREMENT;
+    return Math.max(COMMITMENT_FEE_MIN, rounded);
+  };
+
+  const explainCommitmentFee = (loanApproved) => {
+    const n = Number(loanApproved || 0);
+    if (!isFinite(n) || n <= 0) {
+      return 'Set an approved loan amount to compute — minimum £5,000 otherwise.';
+    }
+    const raw = n * COMMITMENT_FEE_RATE;
+    const rounded = Math.floor(raw / COMMITMENT_FEE_INCREMENT) * COMMITMENT_FEE_INCREMENT;
+    const final = Math.max(COMMITMENT_FEE_MIN, rounded);
+    const parts = [
+      `0.10% × £${n.toLocaleString()} = £${raw.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+      `round down to £2k = £${rounded.toLocaleString()}`
+    ];
+    if (rounded < COMMITMENT_FEE_MIN) {
+      parts.push(`below £5,000 floor → £${final.toLocaleString()}`);
+    }
+    return parts.join(' → ');
+  };
+
   // Portfolio totals — sum across all properties, fallback to flat deal fields
   const portfolioValuation = () => {
     if (deal.properties && deal.properties.length > 0) {
@@ -2332,13 +2371,28 @@ export async function renderDealMatrix(deal) {
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
                 ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct ?? '2.00', 'text', ['rm','admin'].includes(role))}
                 ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee, 'money', ['rm','admin'].includes(role))}
+
+                <!-- M3: Commitment Fee with live formula default + hint -->
+                <div style="margin-bottom:12px">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;">
+                    <label style="font-size:9px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;" for="mf-commitment_fee">Commitment Fee (£)</label>
+                    <span style="font-size:8px;color:#34D399;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.2);padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;">Auto-calc</span>
+                  </div>
+                  ${['rm','admin'].includes(role)
+                    ? '<input id="mf-commitment_fee" type="text" inputmode="numeric" data-field="commitment_fee" data-type="money" style="width:100%;padding:8px 12px;background:#0F172A;border:1px solid rgba(52,211,153,0.2);border-radius:8px;color:#F1F5F9;font-size:13px;" value="' + formatWithCommas(String(deal.commitment_fee && Number(deal.commitment_fee) > 0 ? Math.round(Number(deal.commitment_fee)) : computeCommitmentFee(deal.loan_amount_approved ?? deal.loan_amount))) + '" oninput="this.value=this.value.replace(/[^0-9.,]/g,\'\')" onfocus="this.select()" onblur="window.matrixValidateAndSave(\'commitment_fee\', this.value, \'money\')" />'
+                    : '<div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);border-radius:8px;color:#CBD5E1;font-size:13px;">£' + formatWithCommas(String(deal.commitment_fee && Number(deal.commitment_fee) > 0 ? Math.round(Number(deal.commitment_fee)) : computeCommitmentFee(deal.loan_amount_approved ?? deal.loan_amount))) + '</div>'
+                  }
+                  <div id="commitment-fee-hint" style="font-size:10px;color:#64748B;margin-top:4px;font-style:italic;">${explainCommitmentFee(deal.loan_amount_approved ?? deal.loan_amount)}</div>
+                </div>
+
                 ${renderEditableField('dip_fee', 'DIP / Onboarding Fee (£)', deal.dip_fee ?? '1000', 'money', ['rm','admin'].includes(role))}
                 ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', deal.exit_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
                 ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', deal.extension_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
               </div>
               <p style="font-size:10.5px;color:#94A3B8;margin:12px 0 0 0;font-style:italic;">
-                Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 \u00B7 Exit 1.00% \u00B7 Extension 1.00%. Broker Fee is paid from the Arrangement Fee (not additional). Commitment Fee formula available as tooltip (coming in M3).
+                Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 (flat, not scaled) \u00B7 Exit 1.00% \u00B7 Extension 1.00%.
+                Commitment Fee auto-computes from 0.10% × approved loan, rounded down to nearest £2,000, minimum £5,000. RM can override by typing any value.
+                Broker Fee is paid from the Arrangement Fee (not additional).
               </p>
             </div>
           </div>
@@ -3082,6 +3136,30 @@ export async function renderDealMatrix(deal) {
         // Servicing change → also toggle the Retained Months wrapper visibility
         if (fieldKey === 'interest_servicing_approved' && typeof window._toggleRetainedMonthsVisibility === 'function') {
           try { window._toggleRetainedMonthsVisibility(value); } catch (_) {}
+        }
+        // M3: Commitment Fee auto-recompute when approved loan changes.
+        // Only updates UI + silently saves if RM hasn't manually overridden
+        // (i.e. current DB value matches the old formula result, or is 0/null).
+        if (['loan_amount_approved', 'loan_amount'].includes(fieldKey)) {
+          const newLoan = parseFloat(stripCommas(String(value))) || 0;
+          const newFee = computeCommitmentFee(newLoan);
+          const currentFee = Number(deal.commitment_fee || 0);
+          const oldLoan = fieldKey === 'loan_amount_approved'
+            ? Number(deal.loan_amount || deal.loan_amount_approved || 0)  // previous loan before this save
+            : Number(deal.loan_amount_approved || 0);
+          const oldFormula = computeCommitmentFee(oldLoan);
+          const isUserOverridden = currentFee > 0 && Math.abs(currentFee - oldFormula) > 1;
+
+          const feeEl = document.getElementById('mf-commitment_fee');
+          const hintEl = document.getElementById('commitment-fee-hint');
+          if (feeEl && !isUserOverridden) {
+            feeEl.value = formatWithCommas(String(newFee));
+            feeEl.style.borderColor = '#34D399';
+            setTimeout(() => { feeEl.style.borderColor = 'rgba(52,211,153,0.2)'; }, 1200);
+            deal.commitment_fee = newFee;
+            _silentSave('commitment_fee', newFee);
+          }
+          if (hintEl) hintEl.textContent = explainCommitmentFee(newLoan);
         }
       } else {
         const err = await resp.json().catch(() => ({}));
