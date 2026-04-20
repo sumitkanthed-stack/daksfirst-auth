@@ -242,10 +242,26 @@ function renderRequestedApprovedField(baseField, label, requestedVal, approvedVa
     return formatDisplay(requestedVal);
   })();
 
-  // Adjusted badge — shown when approved differs from requested (non-null on both sides)
-  const isAdjusted = (requestedVal != null && requestedVal !== '' &&
-    approvedVal != null && approvedVal !== '' &&
-    String(requestedVal).trim() !== String(approvedVal).trim());
+  // Adjusted badge — shown when approved differs from requested (non-null on both sides).
+  // Use numeric comparison for money/percent/number types (NUMERIC(5,2) vs NUMERIC(5,3)
+  // serialise as "1.00" vs "1.000" which string-diff would flag incorrectly).
+  const isAdjusted = (() => {
+    if (requestedVal == null || requestedVal === '') return false;
+    if (approvedVal == null || approvedVal === '') return false;
+    const numericTypes = ['money', 'number', 'percent'];
+    if (numericTypes.includes(inputType)) {
+      const a = Number(String(requestedVal).replace(/,/g, ''));
+      const b = Number(String(approvedVal).replace(/,/g, ''));
+      if (isFinite(a) && isFinite(b)) return Math.abs(a - b) > 0.0001;
+    }
+    // 'text' type may hold a number (e.g. LTV, Rate, Term). Try numeric first, fall back to string.
+    if (inputType === 'text') {
+      const a = Number(String(requestedVal).replace(/,/g, ''));
+      const b = Number(String(approvedVal).replace(/,/g, ''));
+      if (isFinite(a) && isFinite(b)) return Math.abs(a - b) > 0.0001;
+    }
+    return String(requestedVal).trim() !== String(approvedVal).trim();
+  })();
   const adjustedBadge = isAdjusted
     ? '<span style="font-size:8px;color:#FBBF24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);padding:1px 5px;border-radius:8px;margin-left:6px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">Adjusted</span>'
     : '';
@@ -2937,25 +2953,76 @@ export async function renderDealMatrix(deal) {
         // Update deal object in memory so subsequent calculations use fresh data
         deal[fieldKey] = value;
 
-        // Auto-calculate LTV when loan_amount changes
-        if (fieldKey === 'loan_amount') {
-          const valuation = portfolioValuation();
+        // M2b (Matrix-SSOT): bi-directional Loan ↔ LTV coupling.
+        // portfolioValuation() reads from deal_properties totals; both sides of the
+        // equation use the same valuation so the math stays consistent.
+        //
+        //   loan_amount      → ltv_requested   (legacy single-value pair, still supported)
+        //   loan_amount_approved → ltv_approved  (new Approved pair — what RM offers)
+        //   ltv_approved     → loan_amount_approved  (back-solve: loan = ltv × val / 100)
+        //
+        // Requested side is captured at submission, not editable from matrix — no recalc there.
+        const _valuation = portfolioValuation();
+        const _flashBorder = (elId) => {
+          const el2 = document.getElementById(elId);
+          if (el2) {
+            el2.value = el2.value; // no-op set to trigger repaint in some browsers
+            el2.style.borderColor = '#34D399';
+            setTimeout(() => { el2.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
+          }
+          return el2;
+        };
+        const _silentSave = (key, val) => {
+          fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/matrix-fields`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [key]: val })
+          }).catch(() => {});
+        };
+
+        if (fieldKey === 'loan_amount' && _valuation > 0) {
           const loanVal = parseFloat(stripCommas(String(value))) || 0;
-          if (valuation > 0 && loanVal > 0) {
-            const ltv = ((loanVal / valuation) * 100).toFixed(1);
-            const ltvEl = document.getElementById('mf-ltv_requested');
-            if (ltvEl) {
-              ltvEl.value = ltv;
-              ltvEl.style.borderColor = '#34D399';
-              setTimeout(() => { ltvEl.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
-            }
+          if (loanVal > 0) {
+            const ltv = ((loanVal / _valuation) * 100).toFixed(2);
+            const el2 = document.getElementById('mf-ltv_requested');
+            if (el2) { el2.value = ltv; _flashBorder('mf-ltv_requested'); }
             deal.ltv_requested = ltv;
-            // Save LTV to backend too
-            fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/matrix-fields`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ltv_requested: ltv })
-            }).catch(() => {});
+            _silentSave('ltv_requested', ltv);
+          }
+        }
+
+        if (fieldKey === 'loan_amount_approved' && _valuation > 0) {
+          const loanVal = parseFloat(stripCommas(String(value))) || 0;
+          if (loanVal > 0) {
+            const ltv = ((loanVal / _valuation) * 100).toFixed(2);
+            const el2 = document.getElementById('mf-ltv_approved');
+            if (el2) { el2.value = ltv; _flashBorder('mf-ltv_approved'); }
+            deal.ltv_approved = ltv;
+            _silentSave('ltv_approved', ltv);
+          }
+        }
+
+        if (fieldKey === 'ltv_approved' && _valuation > 0) {
+          const ltvVal = parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
+          if (ltvVal > 0) {
+            const loan = Math.round((ltvVal / 100) * _valuation);
+            const el2 = document.getElementById('mf-loan_amount_approved');
+            if (el2) { el2.value = formatWithCommas(String(loan)); _flashBorder('mf-loan_amount_approved'); }
+            deal.loan_amount_approved = loan;
+            _silentSave('loan_amount_approved', loan);
+          }
+        }
+
+        // Legacy: ltv_requested → loan_amount back-solve (if user edits the requested LTV
+        // on an older deal, keep loan_amount in sync for backward compat)
+        if (fieldKey === 'ltv_requested' && _valuation > 0) {
+          const ltvVal = parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
+          if (ltvVal > 0) {
+            const loan = Math.round((ltvVal / 100) * _valuation);
+            const el2 = document.getElementById('mf-loan_amount');
+            if (el2) { el2.value = formatWithCommas(String(loan)); _flashBorder('mf-loan_amount'); }
+            deal.loan_amount = loan;
+            _silentSave('loan_amount', loan);
           }
         }
 
