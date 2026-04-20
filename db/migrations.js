@@ -1013,6 +1013,27 @@ async function runMigrations() {
       console.log('[migrate] Note on auto-route columns:', err.message.substring(0, 100));
     }
 
+    // ── M4c Fix (2026-04-20): auto_routed default was FALSE, causing the Credit
+    //    Decision UI block to appear on every unissued deal. Semantically
+    //    auto_routed should be NULL until Issue DIP fires, then set to TRUE
+    //    (auto-issued) or FALSE (held for credit). Fix default + backfill.
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN auto_routed DROP DEFAULT`);
+      const bf = await pool.query(`
+        UPDATE deal_submissions
+        SET auto_routed = NULL
+        WHERE dip_issued_at IS NULL
+        RETURNING id
+      `);
+      if (bf.rows.length > 0) {
+        console.log(`[migrate] ✓ auto_routed backfilled to NULL on ${bf.rows.length} unissued deal(s)`);
+      } else {
+        console.log('[migrate] ✓ auto_routed default cleared (no backfill needed)');
+      }
+    } catch (err) {
+      console.log('[migrate] Note on auto_routed default fix:', err.message.substring(0, 120));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

@@ -1386,8 +1386,8 @@ export function renderInternalWorkflowControls(deal) {
             'dip_conditions_approved', 'dip_conditions_approved_by', 'dip_conditions_approved_at',
             'dip_credit_decision', 'dip_credit_decided_by', 'dip_credit_decided_at', 'dip_credit_notes',
             'dip_notes', 'additional_notes',
-            // M4c: auto-route state — drives Credit Decision block visibility
-            'auto_routed', 'auto_route_reason', 'auto_route_decision_at',
+            // M4c: auto-route state + dip_issued_at — drives Credit Decision block visibility
+            'auto_routed', 'auto_route_reason', 'auto_route_decision_at', 'dip_issued_at',
             // UoF + Exit approval stamps (M4d)
             'dip_use_of_funds_approved', 'dip_use_of_funds_approved_by', 'dip_use_of_funds_approved_at',
             'dip_exit_strategy_approved', 'dip_exit_strategy_approved_by', 'dip_exit_strategy_approved_at'
@@ -1577,8 +1577,13 @@ export function renderInternalWorkflowControls(deal) {
         const container = document.getElementById('dip-credit-decision-container');
         if (!container) return;
 
-        // Visibility: only for deals held for credit review, post-issue
-        const needsCreditReview = deal.auto_routed === false;
+        // Visibility: only for deals where auto-routing has FIRED (proved by dip_issued_at
+        // being set) AND it flagged credit review (auto_routed === false).
+        // Unissued deals have auto_routed == null (or legacy DEFAULT FALSE before migration M4e-1);
+        // the dip_issued_at guard prevents the block from showing on any deal that hasn't had
+        // Issue DIP clicked at least once.
+        const hasBeenIssued = !!deal.dip_issued_at;
+        const needsCreditReview = hasBeenIssued && deal.auto_routed === false;
         if (!needsCreditReview) { container.innerHTML = ''; return; }
 
         const currentRole = getCurrentRole();
