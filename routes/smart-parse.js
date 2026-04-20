@@ -1072,29 +1072,40 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
   // Write properties (wipe and rewrite)
   await client.query(`DELETE FROM deal_properties WHERE deal_id = $1`, [dealId]);
 
+  // Defensive truncation — Claude can return verbose descriptions that overflow
+  // fixed-width VARCHAR columns (e.g., current_use VARCHAR(50) getting
+  // "2 Bedroom River Front Apartment with balcony and Thames views" = 65 chars).
+  const cap = (s, n) => (s == null ? null : String(s).substring(0, n));
+
   for (const propAssignment of assignments.properties || []) {
     const candidate = candidates.properties.find(c => c.id === propAssignment.candidate_id);
     if (!candidate) continue;
 
     if (propAssignment.role === 'ignore') continue;
 
-    await client.query(
-      `INSERT INTO deal_properties (
-        deal_id, address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price, gdv, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
-      [
-        dealId,
-        candidate.address || '',
-        candidate.postcode || null,
-        candidate.property_type || null,
-        candidate.tenure || null,
-        candidate.occupancy || null,
-        candidate.current_use || null,
-        candidate.market_value || null,
-        candidate.purchase_price || null,
-        null // gdv can be null or calculated later
-      ]
-    );
+    try {
+      await client.query(
+        `INSERT INTO deal_properties (
+          deal_id, address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price, gdv, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+        [
+          dealId,
+          candidate.address || '',                 // TEXT, no cap needed
+          cap(candidate.postcode, 15),             // VARCHAR(15)
+          cap(candidate.property_type, 50),        // VARCHAR(50)
+          cap(candidate.tenure, 30),               // VARCHAR(30)
+          cap(candidate.occupancy, 30),            // VARCHAR(30)
+          cap(candidate.current_use, 50),          // VARCHAR(50) — the 98-char overflow was here
+          candidate.market_value || null,
+          candidate.purchase_price || null,
+          null
+        ]
+      );
+      console.log(`[confirm-candidates] wrote property ${candidate.address}`);
+    } catch (propErr) {
+      console.error(`[confirm-candidates] property insert failed for ${candidate.address}:`, propErr.message);
+      throw propErr;
+    }
   }
 
   // Update deal_submissions from loan_facts and broker
