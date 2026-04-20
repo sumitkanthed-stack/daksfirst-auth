@@ -2211,7 +2211,7 @@ export async function renderDealMatrix(deal) {
 
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s4', 'L', 'Loan Terms & Use of Funds', 'Loan structure and drawdown', [
+      ${renderSectionHeader('s4', 'L', 'Loan Terms & Economics', 'Loan structure, fees, Day Zero, use of funds', [
         renderStatusDot(0, 'not-started', 'dip-sec-s4'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -2313,6 +2313,33 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('drawdown_date', 'Target Drawdown', deal.drawdown_date, 'date', canEdit)}
               </div>
               <div id="loan-limit-indicator"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fees (moved from s7 2026-04-20 — lives with Loan Structure and Day Zero to form a single
+             Loan Economics block. DIP Loan Terms approval gate covers this entire section. -->
+        ${renderFieldRow('fees', 'Fee Schedule', `Arrangement: ${deal.arrangement_fee_pct ? fmtPct(deal.arrangement_fee_pct) + '%' : '2.00%'}, Broker: ${deal.broker_fee_pct ? fmtPct(deal.broker_fee_pct) + '%' : 'TBA'}, DIP: £${deal.dip_fee ?? 1000}, Commit: £${deal.commitment_fee || 'auto'}`,
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-fees">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Fee Schedule</div>
+                ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct ?? '2.00', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee, 'money', ['rm','admin'].includes(role))}
+                ${renderEditableField('dip_fee', 'DIP / Onboarding Fee (£)', deal.dip_fee ?? '1000', 'money', ['rm','admin'].includes(role))}
+                ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', deal.exit_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', deal.extension_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
+              </div>
+              <p style="font-size:10.5px;color:#94A3B8;margin:12px 0 0 0;font-style:italic;">
+                Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 \u00B7 Exit 1.00% \u00B7 Extension 1.00%. Broker Fee is paid from the Arrangement Fee (not additional). Commitment Fee formula available as tooltip (coming in M3).
+              </p>
             </div>
           </div>
         </div>
@@ -2451,7 +2478,7 @@ export async function renderDealMatrix(deal) {
   if (showCommercial) {
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
-      ${renderSectionHeader('s7', 'C', 'Commercial', 'Fees and credit approval', [
+      ${renderSectionHeader('s7', 'C', 'Credit Approval', 'Internal credit committee sign-off', [
         renderStatusDot(0, 'not-started', 'dip-sec-s7'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
@@ -2459,33 +2486,8 @@ export async function renderDealMatrix(deal) {
       ], isInternalUser)}
 
       <div id="content-s7" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
-        <!-- Fees -->
-        ${renderFieldRow('fees', 'Fees', `Arrangement: ${deal.arrangement_fee_pct ? fmtPct(deal.arrangement_fee_pct) + '%' : 'TBA'}, Broker: ${deal.broker_fee_pct ? fmtPct(deal.broker_fee_pct) + '%' : 'TBA'}`,
-          ['not-started', 'not-started', 'not-started', 'not-started'])}
-
-        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-fees">
-          <div style="padding:8px 26px 14px 50px">
-            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Fee Structure</div>
-                ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct ?? '2.00', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee, 'money', ['rm','admin'].includes(role))}
-                ${renderEditableField('dip_fee', 'DIP / Onboarding Fee (£)', deal.dip_fee ?? '1000', 'money', ['rm','admin'].includes(role))}
-                ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', deal.exit_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', deal.extension_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
-              </div>
-              <p style="font-size:10.5px;color:#94A3B8;margin:12px 0 0 0;font-style:italic;">
-                Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 \u00B7 Exit 1.00% \u00B7 Extension 1.00%. Retained Interest months is configured in the Loan Terms section.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Credit Approval — NOT at DIP stage, belongs in Formal Offer -->
+        <!-- Credit Approval — NOT at DIP stage, belongs in Formal Offer.
+             Fees block moved to s4 (Loan Terms & Economics) on 2026-04-20. -->
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
           ['not-required', 'not-started', isDIPStage ? 'not-started' : 'under-review', 'not-started'])}
 
@@ -2774,7 +2776,7 @@ export async function renderDealMatrix(deal) {
       'Property / Security': 's3',
       'Loan Terms': 's4',
       'Exit Strategy': 's5',
-      'Fees': 's7',
+      'Fees': 's4',
       'AML & Source of Funds': 's2'
     };
     // First close all sections
@@ -6221,10 +6223,10 @@ export async function renderDealMatrix(deal) {
     's1': 'Borrower / KYC',
     's2': 'Borrower Financials & AML',
     's3': 'Property / Security',
-    's4': 'Loan Terms & Use of Funds',
+    's4': 'Loan Terms & Economics',
     's5': 'Exit Strategy',
     's6': 'Legal & Insurance',
-    's7': 'Commercial',
+    's7': 'Credit Approval',
     's8': 'Documents Issued',
     'borrower': 'Borrower / KYC',
     'documents': 'Documents'
@@ -6782,7 +6784,7 @@ export async function renderDealMatrix(deal) {
       'Property / Security': 's3',
       'Loan Terms': 's4',
       'Exit Strategy': 's5',
-      'Fees': 's7',
+      'Fees': 's4',
       'AML & Source of Funds': 's2'  // AML is within Borrower Financials section
     };
     if (checklistEl) {
@@ -6857,7 +6859,7 @@ export async function renderDealMatrix(deal) {
       'Property / Security': 's3',
       'Loan Terms': 's4',
       'Exit Strategy': 's5',
-      'Fees': 's7',
+      'Fees': 's4',
       'AML & Source of Funds': 's2'  // AML fields roll up into s2 header
     };
 
