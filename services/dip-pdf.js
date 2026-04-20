@@ -588,732 +588,845 @@ function _g5RenderSecuritySection(dipData, deal) {
 // ═══════════════════════════════════════════════════════════════════
 
 function buildDipHtml(deal, dipData, options) {
+  // Data extraction with Matrix-SSOT fallback
   const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
-  const bType = (deal.borrower_type || 'individual').toLowerCase();
-  const isCorp = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
-  const loanAmt = parseFloat(dipData.loan_amount || deal.loan_amount || 0);
-  // Fee resolution order (single-source-of-truth pass 2026-04-20):
-  // 1. dipData.*_pct — explicit override from the DIP issue form
-  // 2. deal.*_pct — native columns on deal_submissions, written by matrix inline edit
-  // 3. dipData.arrangement_fee / broker_fee / deal.arrangement_fee — legacy JSONB / legacy columns
-  // 4. default (2% arrangement, 0% broker)
-  const arrFee = parseFloat(dipData.arrangement_fee_pct || deal.arrangement_fee_pct || dipData.arrangement_fee || deal.arrangement_fee || 2);
-  const brkFee = parseFloat(dipData.broker_fee_pct || deal.broker_fee_pct || dipData.broker_fee || 0);
-  const totalPropertyVal = parseFloat(dipData.property_value || deal.property_value || deal.estimated_value || 0);
+  const grossLoan = parseFloat(deal.loan_amount_approved || deal.loan_amount || 0);
+  const loanTerm = parseFloat(deal.term_months || 12);
+  const ratePerMonth = parseFloat(deal.rate_approved || deal.rate_approved || 0.95) / 100;
+  const retainedMonths = deal.retained_interest_months || dipData.retained_months || 6;
+  const arrangementFeePct = parseFloat(deal.arrangement_fee_pct || dipData.arrangement_fee_pct || 2);
+  const commitmentFee = parseFloat(deal.commitment_fee || dipData.fee_commitment || 0);
+  const dipFee = parseFloat(deal.dip_fee || dipData.fee_onboarding || 1000);
+  const brokerFeePct = parseFloat(deal.broker_fee_pct || dipData.broker_fee_pct || 0);
+  const minValueCovenant = parseFloat(deal.min_value_covenant || dipData.min_value_covenant || 0);
+  const minLoanTerm = parseFloat(deal.min_loan_term || 3);
+  const dayCountBasis = deal.day_count_basis || '360';
+  const requiresShareCharge = deal.requires_share_charge === true;
+  const defaultRate = ratePerMonth * 100 + 2;
 
+  // Property schedule
+  const properties = (dipData.properties || []).map((p, idx) => ({
+    num: idx + 1,
+    address: p.address || '',
+    postcode: p.postcode || '',
+    tenure: p.tenure || '\u2014',
+    value: parseFloat(p.market_value || 0)
+  }));
+  const totalPortfolioValue = properties.reduce((sum, p) => sum + p.value, 0);
+
+  // Loan Terms grid data
+  const ltv = totalPortfolioValue > 0 ? (grossLoan / totalPortfolioValue * 100) : 0;
+  const interestServicing = retainedMonths > 0 ? `Retained (${retainedMonths} mo)` : 'Serviced Monthly';
+
+  // Parties rendering via G5
+  const partiesHtml = _g5RenderPartiesSection(dipData);
+
+  // Issue date
   const issueDate = options.issuedAt
     ? new Date(options.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // Build property rows — deal_properties table is the single source of truth (Claude-parsed)
-  const dbProperties = dipData.properties || [];
+  // Admin config fallback
+  const adminConfig = options.adminConfig || {};
+  const FALLBACK_CF = `<ul>
+<li><strong>If the deal completes:</strong> the Commitment Fee is credited against the Arrangement Fee payable on completion (Borrower does not pay twice).</li>
+<li><strong>If the Borrower withdraws, or if information provided is misrepresented, or if the valuation does not support the proposed lending, or if KYC / AML is not satisfactory:</strong> the Commitment Fee is <strong>forfeited</strong>.</li>
+<li><strong>If Daksfirst withdraws for reasons wholly within its own control:</strong> the Commitment Fee <em>may be refunded</em> at Daksfirst's discretion.</li>
+</ul>`;
 
-  let propRowsHtml = '';
-  let totalVal = 0;
-  const propCount = dbProperties.length || 1;
+  const FALLBACK_REG = `<p><strong>Regulatory Disclosure &amp; Nature of Facility.</strong> Daksfirst Limited is a private limited company registered in England and Wales under company number <strong>11626401</strong>, with registered office at 8 Hill Street, Mayfair, London W1J 5NG. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (<strong>FCA No. 937220</strong>).</p>
+<p><strong>This facility is an unregulated mortgage contract.</strong> The Borrower is a corporate entity and the secured property is held for investment / commercial purposes, not for occupation by the Borrower or a related individual. Accordingly, the protections afforded to consumers under FCA rules &mdash; including access to the Financial Ombudsman Service and the Financial Services Compensation Scheme (FSCS) &mdash; do not apply to this transaction.</p>
+<p>Daksfirst reserves the right to withdraw or amend this DIP at any time prior to the issuance of a binding Facility Letter. The Borrower should not rely on this DIP as a guarantee of funding.</p>`;
 
-  if (dbProperties.length > 0) {
-    // Claude has parsed — use deal_properties directly
-    dbProperties.forEach((prop, idx) => {
-      const val = parseFloat(prop.market_value || 0);
-      totalVal += val;
-      propRowsHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
-        <td style="padding:6px 8px;font-weight:600;">${idx + 1}</td>
-        <td style="padding:6px 8px;">${esc((prop.address || '').trim())}</td>
-        <td style="padding:6px 8px;">${esc((prop.postcode || '\u2014').trim())}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(val)}</td>
-      </tr>`;
-    });
-  } else {
-    // Not yet parsed — show raw data as single row (no regex, no guessing)
-    totalVal = totalPropertyVal;
-    propRowsHtml = `<tr style="border-bottom:1px solid #f0f0f0;">
-      <td style="padding:6px 8px;font-weight:600;">1</td>
-      <td style="padding:6px 8px;">${esc(deal.security_address || 'TBC')}</td>
-      <td style="padding:6px 8px;">${esc(fullPostcode)}</td>
-      <td style="padding:6px 8px;text-align:right;font-weight:600;">${money(totalPropertyVal)}</td>
-    </tr>`;
-  }
-  if (!totalVal) totalVal = totalPropertyVal;
+  // Compute waterfall
+  const waterfallCalc = computeNetAdvanceWaterfall({
+    grossLoan,
+    ratePerMonth,
+    retainedMonths,
+    arrangementFeePct,
+    commitmentFeePaid: commitmentFee,
+    cfCreditAgainstAf: adminConfig?.cf_credit_against_af !== false
+  });
 
-  // Borrower type badge
-  const borrowerTypeBadge = isCorp
-    ? `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dbeafe;color:#1e3a5f;">${esc(bType.toUpperCase())}</span>`
-    : `<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;">INDIVIDUAL</span>`;
+  // Broker name
+  const brokerName = deal.broker_company || dipData.broker_firm || '[Broker Firm]';
 
-  // Parties table — G5 Option B (parties_grouped) with legacy fallback
-  let partiesHtml = _g5RenderPartiesSection(dipData);
-  if (partiesHtml === null && dipData.borrowers && dipData.borrowers.length > 0) {
-    // Legacy fallback rendering — used only if parties_grouped is missing (shouldn't happen post-G5.1)
-    partiesHtml = `
-    <div style="margin-top:8px;padding-top:10px;border-top:1px solid #e5e7eb;">
-      <h5 style="margin:0 0 8px;color:#374151;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Parties to the DIP (${dipData.borrowers.length})</h5>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <tr style="background:#f3f4f6;">
-          <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Name</th>
-          <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;">Role</th>
-          <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;">KYC Status</th>
-        </tr>
-        ${dipData.borrowers.map(b => {
-          const roleBg = (b.role || '').toLowerCase() === 'primary' ? '#bee3f8' : (b.role || '').toLowerCase() === 'guarantor' ? '#fef3c7' : '#e5e7eb';
-          const roleColor = (b.role || '').toLowerCase() === 'primary' ? '#2a4365' : (b.role || '').toLowerCase() === 'guarantor' ? '#744210' : '#374151';
-          const kycOk = b.kyc_verified || b.kyc_status === 'verified';
-          return `<tr style="border-bottom:1px solid #f0f0f0;">
-            <td style="padding:5px 8px;font-weight:600;">${esc(b.name || b.full_name || '')}</td>
-            <td style="padding:5px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;background:${roleBg};color:${roleColor};">${esc(b.role || 'primary')}</span></td>
-            <td style="padding:5px 8px;text-align:center;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${kycOk ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'};">${kycOk ? 'Verified' : 'KYC Pending'}</span></td>
-          </tr>`;
-        }).join('')}
-      </table>
-    </div>`;
-  }
-  if (partiesHtml === null) partiesHtml = '';
-
-  // Security items — issueDip saves fixed_charge / pg_from_ubo
-  const securityCharge = esc(humanize(dipData.fixed_charge || dipData.security_charge || 'first_and_debenture'));
-  const pgRaw = dipData.pg_from_ubo || (isCorp ? 'required' : null);
-  const personalGuarantee = pgRaw === 'required' ? 'Required from UBO' : pgRaw === 'limited' ? 'Limited Guarantee' : pgRaw === 'waived' ? 'Waived' : (isCorp ? 'Required from UBO' : 'N/A');
-  const debenture = isCorp ? 'Required (corporate borrower)' : 'N/A';
-
-  // Conditions precedent
-  const cpItems = [
-    'Satisfactory independent valuation',
-    'Clear title search \u2014 no encumbrances',
-    'Legal due diligence by Lender\u2019s solicitors',
-    'First legal charge in favour of Lender',
-    'Buildings insurance \u2014 Lender\u2019s interest noted'
-  ];
-  if (isCorp) {
-    cpItems.push('Personal guarantee from UBO');
-    cpItems.push('Debenture over corporate assets');
-  }
-  cpItems.push('KYC/AML documentation for all parties');
-  cpItems.push('Evidence of source of deposit & funds');
-  cpItems.push('Payment of all applicable fees');
-
-  const cpHtml = cpItems.map((c, i) => `<div style="padding:2px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:4px;font-size:11px;">
-    <span style="color:#1e3a5f;font-weight:600;min-width:16px;">${i + 1}.</span>
-    <span>${esc(c)}</span>
-  </div>`).join('');
-
-  // Fee rows
-  const feeRows = [
-    { name: 'Onboarding / DIP Fee', amount: money(dipData.fee_onboarding || 0), when: 'After DIP acceptance', trigger: 'Before Credit Review' },
-    { name: 'Commitment Fee', amount: money(dipData.fee_commitment || 0), when: 'After Termsheet acceptance', trigger: 'Before Underwriting' },
-    { name: 'Arrangement Fee', amount: feeLine(arrFee, loanAmt), when: 'On completion', trigger: 'Deducted from advance', highlight: true },
-    { name: '\u21B3 of which Broker Fee', amount: feeLine(brkFee, loanAmt), when: 'On completion', trigger: 'From arrangement fee', highlight: true, sub: true },
-    { name: 'Exit Fee', amount: '1.00% of loan', when: 'On redemption', trigger: 'Payable on exit' },
-    { name: 'Extension Fee', amount: '1.00% of loan', when: 'If term extended', trigger: 'Per extension period agreed' }
-  ];
-
-  const feeRowsHtml = feeRows.map(f => `<tr style="border-bottom:1px solid #f3f4f6;${f.highlight ? 'background:#fefce8;' : ''}">
-    <td style="padding:5px 6px;${f.sub ? 'padding-left:20px;color:#92400e;' : 'font-weight:600;'}">${esc(f.name)}</td>
-    <td style="padding:5px 6px;text-align:right;font-weight:600;${f.sub ? 'color:#92400e;' : ''}">${f.amount}</td>
-    <td style="padding:5px 6px;font-size:10px;color:#60A5FA;">${esc(f.when)}</td>
-    <td style="padding:5px 6px;font-size:10px;">${esc(f.trigger)}</td>
-  </tr>`).join('');
-
-  // DIP conditions / notes
-  const dipNotes = dipData.conditions || dipData.notes || '';
-
+  // Build HTML
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
+<title>DIP - ${dealRef}</title>
 <style>
-  @page {
-    size: A4;
-    margin: 0;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    color: #1a1a2e;
-    font-size: 13px;
-    line-height: 1.4;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  .page-wrapper {
-    width: 210mm;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #222;
+    font-size: 10px;
+    line-height: 1.42;
+    margin: 0;
     padding: 0;
   }
+  .page {
+    width: 210mm;
+    height: 297mm;
+    background: #fff;
+    margin: 0 auto 24px;
+    padding: 0 16mm 28mm 16mm;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
 
-  /* ── HEADER BAR ── */
-  .header-bar {
-    background: #1F3864;
-    padding: 12px 24px;
+  /* Brand header */
+  .brand {
+    background: #1a3a5c;
+    color: #fff;
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    padding: 9mm 16mm 7mm 16mm;
+    margin: 0 -16mm 10px -16mm;
+    border-bottom: 3px solid #c9a456;
   }
-  .header-bar img { width: 38px; height: 38px; }
-  .header-bar .title-area { flex: 1; }
-  .header-bar h1 { color: #fff; font-size: 18px; margin: 0; letter-spacing: 1px; }
-  .header-bar .tagline { color: #C9A227; font-size: 8px; font-style: italic; margin-top: 2px; }
-  .header-bar .info-right { text-align: right; font-size: 7.5px; }
-  .header-bar .info-right .addr { color: #fff; }
-  .header-bar .info-right .fca { color: #C9A227; margin-top: 2px; }
+  .brand-left { display: flex; align-items: center; gap: 12px; }
+  .brand-logo { flex: 0 0 58px; width: 58px; height: 58px; display: block; }
+  .brand-text { padding-top: 1px; }
+  .brand-name { font-size: 20px; font-weight: 800; letter-spacing: 1.4px; color: #fff; line-height: 1; }
+  .brand-tagline { font-size: 10px; font-style: italic; color: #c9a456; margin-top: 3px; }
+  .brand-right { text-align: right; font-size: 9.5px; color: #fff; line-height: 1.5; }
+  .brand-right .deal-ref { font-weight: 700; font-size: 11px; }
+  .brand-right .issued { color: #c9a456; font-weight: 600; }
 
-  .gold-bar { height: 2px; background: #C9A227; }
+  /* Title bar */
+  .title-bar { text-align: center; margin: 14px 0 8px; page-break-after: avoid; }
+  .title-bar h1 { margin: 0; color: #0f2a4a; font-size: 17px; font-weight: 700; }
+  .title-bar .sub { font-size: 9px; color: #6b7280; margin-top: 3px; }
+  .title-bar .ver { color: #aaa; }
 
-  /* ── DIP BODY ── */
-  .dip-body {
-    background: #f0f5ff;
-    padding: 14px 24px;
-  }
-
-  .dip-title {
-    text-align: center;
-    margin-bottom: 4px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #2563eb;
-  }
-  .dip-title h2 { font-size: 16px; color: #1e3a5f; margin: 0 0 1px; }
-  .dip-title .subtitle { font-size: 9px; color: #4b5563; }
-
-  /* Reference strip */
+  /* Ref strip */
   .ref-strip {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
-    font-size: 11px;
-  }
-  .ref-strip .deal-ref {
-    font-weight: 700;
-    font-size: 12px;
-    color: #1e3a5f;
-    padding: 3px 10px;
-    border: 2px solid #1e3a5f;
+    border: 1.5px solid #1a3a5c;
     border-radius: 4px;
-  }
-  .ref-strip .date { color: #6b7280; }
-
-  .intro-text { margin: 0 0 10px; font-size: 11px; color: #4b5563; }
-
-  /* ── SECTION BLOCKS ── */
-  .section {
-    background: #f9fafb;
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    border: 1px solid #e5e7eb;
-  }
-  .section.blue {
-    background: #f0f5ff;
-    border: 2px solid #2563eb;
-  }
-  .section.purple {
-    background: #faf5ff;
-    border: 2px solid #7c3aed;
-  }
-  .section.amber {
-    background: #fffbeb;
-    border: 1px solid #f59e0b;
-  }
-  .section.green-border {
-    background: #f0fdf4;
-    border: 2px solid #16a34a;
-  }
-
-  /* ── Section heading bar (full-width coloured strip) ── */
-  .section-bar {
-    background: #1F3864;
-    color: #fff;
-    padding: 5px 12px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    border-radius: 4px 4px 0 0;
-    margin-bottom: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .section-bar.purple { background: #7c3aed; }
-  .section-bar.green { background: #16a34a; }
-  .section-bar.grey { background: #6b7280; }
-  .section-bar.amber { background: #92400e; }
-  .section-bar + .section { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
-
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    padding: 7px 12px;
     margin-bottom: 7px;
+    page-break-inside: avoid;
+    page-break-after: avoid;
   }
-  .section-header h5 {
-    margin: 0;
-    color: #374151;
-    font-size: 11px;
-    text-transform: uppercase;
+  .ref-strip .ref { font-weight: 700; color: #0f2a4a; font-size: 12px; }
+  .ref-strip .issued { font-size: 9.5px; }
+  .ref-strip .badge { background: #1a3a5c; color: #fff; font-weight: 700; font-size: 9px; padding: 4px 10px; border-radius: 3px; letter-spacing: 0.8px; }
+
+  .preamble { font-size: 9.5px; color: #333; margin-bottom: 8px; line-height: 1.5; page-break-after: avoid; }
+
+  /* Sections */
+  .section { page-break-inside: avoid; break-inside: avoid; margin-top: 8px; }
+  .section-bar {
+    background: #0f2a4a;
+    color: #fff;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    padding: 6px 10px;
+    border-radius: 3px 3px 0 0;
+  }
+  .section-body {
+    border: 1px solid #e5e7ec;
+    border-top: 0;
+    padding: 9px 10px;
+    border-radius: 0 0 3px 3px;
+  }
+
+  /* Parties */
+  .parties-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .party-card {
+    border: 1px solid #e5e7ec;
+    border-left: 3px solid #1a3a5c;
+    border-radius: 3px;
+    padding: 7px 9px;
+  }
+  .party-card.guarantor { border-left-color: #c9a456; background: #fffdf7; }
+  .party-tag {
+    display: inline-block;
+    background: #1a3a5c;
+    color: #fff;
+    font-weight: 700;
+    font-size: 8.5px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-bottom: 5px;
     letter-spacing: 0.5px;
   }
-  .section-header.navy h5 { color: #1e3a5f; }
-  .section-header.purple h5 { color: #7c3aed; }
-  .section-header.amber h5 { color: #92400e; }
-  .section-header.grey h5 { color: #6b7280; }
+  .party-tag.g { background: #c9a456; }
+  .party-role { font-size: 8px; color: #6b7280; letter-spacing: 0.6px; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+  .party-name { font-weight: 700; font-size: 11.5px; color: #0f2a4a; margin-bottom: 2px; }
+  .party-meta { font-size: 9px; color: #444; margin-bottom: 1px; }
 
-  /* ── GRID ── */
-  .grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    font-size: 12px;
-    margin-bottom: 8px;
-  }
-  .grid-3 {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-    font-size: 12px;
-    margin-bottom: 8px;
-  }
+  /* Security rows */
+  .sec-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #e5e7ec; font-size: 9.5px; }
+  .sec-row:last-child { border-bottom: 0; }
+  .sec-row .label strong { color: #0f2a4a; }
+  .status { font-size: 8.5px; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.5px; }
+  .status.req { background: #e5f3ea; color: #2e8f4e; }
 
-  .field-box {
-    padding: 7px 8px;
-    border-radius: 5px;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-  }
-  .field-box.blue { background: #eff6ff; border-color: #bfdbfe; }
-  .field-box.amber { background: #fef3c7; border-color: #fbbf24; }
-  .field-box.green { background: #f0fff4; border-color: #86efac; }
-
-  .field-label {
-    font-size: 9px;
-    color: #6b7280;
-    display: block;
-    font-weight: 600;
-    margin-bottom: 1px;
-  }
-  .field-label.blue { color: #1e40af; }
-  .field-label.amber { color: #92400e; }
-  .field-label.navy { color: #374151; font-weight: 600; }
-  .field-label.green { color: #15803d; }
-
-  .field-value {
-    font-size: 13px;
-    font-weight: 700;
-    color: #1a1a2e;
-  }
-  .field-value.navy { color: #1e3a5f; }
-  .field-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
-
-  /* ── TABLES ── */
-  table.dip-table {
+  /* Tables */
+  .sched-table {
     width: 100%;
     border-collapse: collapse;
+  }
+  .sched-table th {
+    background: #f4f6f9;
+    color: #0f2a4a;
+    font-size: 8.5px;
+    padding: 5px 8px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7ec;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  .sched-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #e5e7ec;
+    font-size: 9.5px;
+  }
+  .sched-table .num { width: 22px; color: #6b7280; }
+  .sched-table .val { text-align: right; font-weight: 600; }
+  .sched-table tr.total td { background: #f8fafc; font-weight: 700; color: #0f2a4a; border-bottom: 0; }
+
+  .sched-footer { display: flex; justify-content: space-between; font-size: 9px; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e5e7ec; color: #333; }
+  .sched-footer strong { color: #0f2a4a; }
+
+  .omv-note { margin-top: 6px; padding: 6px 9px; background: #fef9e7; border-left: 3px solid #c9a456; border-radius: 0 3px 3px 0; font-size: 8.5px; color: #5a4a1a; line-height: 1.5; }
+  .omv-note strong { color: #0f2a4a; }
+
+  /* Loan Terms grid */
+  .lt-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .lt-cell {
+    border: 1px solid #e5e7ec;
+    border-radius: 3px;
+    padding: 5px 7px;
+    min-height: 40px;
+  }
+  .lt-cell.lt-default {
+    background: #fff1f0;
+    border-color: #e5a7a2;
+  }
+  .lt-cell.lt-default .lt-label { color: #b42318; }
+  .lt-cell.lt-default .lt-value { color: #b42318; }
+  .lt-cell.lt-default .lt-hint { color: #8a2b23; }
+  .lt-label { font-size: 8px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .lt-value { font-size: 11px; font-weight: 700; color: #0f2a4a; }
+  .lt-hint { font-size: 8px; color: #6b7280; margin-top: 1px; }
+
+  /* Waterfall */
+  .waterfall {
+    background: #fef4e0;
+    border: 1px solid #b45309;
+    border-radius: 3px;
+    padding: 8px 12px;
+    margin-top: 7px;
+    page-break-inside: avoid;
+  }
+  .waterfall-title { font-size: 9.5px; font-weight: 700; color: #b45309; letter-spacing: 0.7px; margin-bottom: 5px; }
+  .waterfall-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 10px; }
+  .waterfall-row.deduction { color: #7c2d12; }
+  .waterfall-row .amount { font-weight: 700; font-family: 'SF Mono', Consolas, monospace; font-size: 10.5px; }
+  .waterfall-row.total {
+    border-top: 2px solid #b45309;
+    margin-top: 5px;
+    padding-top: 5px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #0f2a4a;
+  }
+  .waterfall-row.total .amount {
+    background: #0f2a4a;
+    color: #fff;
+    padding: 2px 10px;
+    border-radius: 3px;
     font-size: 11px;
   }
-  table.dip-table thead tr { background: #f3f4f6; }
-  table.dip-table th {
+
+  /* Uses table */
+  .uses-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .uses-table th {
+    background: #f4f6f9;
+    color: #0f2a4a;
+    font-size: 8.5px;
+    padding: 5px 8px;
     text-align: left;
-    padding: 4px 6px;
-    border-bottom: 1px solid #e5e7eb;
-    font-weight: 600;
-    font-size: 10px;
-    color: #6b7280;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #e5e7ec;
+    font-weight: 700;
   }
-  table.dip-table td {
-    padding: 4px 6px;
-    border-bottom: 1px solid #f3f4f6;
+  .uses-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7ec;
+    font-size: 9.5px;
+    vertical-align: top;
   }
+  .uses-table .num { width: 22px; color: #6b7280; }
+  .uses-table .val { text-align: right; font-weight: 600; color: #0f2a4a; width: 90px; }
+  .uses-table tr.total td {
+    background: #eef4ff;
+    font-weight: 700;
+    color: #0f2a4a;
+    border-bottom: 0;
+    border-top: 2px solid #1a3a5c;
+  }
+  .uses-note { margin-top: 7px; padding: 5px 10px; background: #f7f9fc; border-left: 3px solid #1a3a5c; border-radius: 0 3px 3px 0; font-size: 8.5px; color: #555; line-height: 1.5; font-style: italic; }
 
-  /* ── BADGES ── */
-  .badge {
-    padding: 2px 6px;
-    border-radius: 10px;
-    font-size: 9px;
-    font-weight: 600;
-    display: inline-block;
+  /* Fee table */
+  .fee-table { width: 100%; border-collapse: collapse; }
+  .fee-table th {
+    background: #f4f6f9;
+    color: #0f2a4a;
+    font-size: 8.5px;
+    padding: 5px 8px;
+    text-align: left;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #e5e7ec;
+    font-weight: 700;
   }
+  .fee-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #e5e7ec;
+    font-size: 9.5px;
+  }
+  .fee-table td.amt { font-weight: 700; color: #0f2a4a; }
+  .fee-table tr.highlight td { background: #fffdf7; }
+  .fee-table .sub-row td { padding-left: 20px; color: #6b7280; font-style: italic; }
+  .fee-note { font-size: 8.5px; font-style: italic; color: #6b7280; margin-top: 7px; }
 
-  /* ── BOTTOM BLOCK ── */
-  .red-notice {
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
+  .cf-treatment {
+    margin-top: 8px;
+    background: #fef9e7;
+    border: 1px solid #c9a456;
+    border-radius: 3px;
     padding: 8px 12px;
-    border-radius: 5px;
-    margin-bottom: 8px;
-    text-align: center;
   }
-  .red-notice p {
+  .cf-treatment .cf-title {
     font-size: 9px;
-    color: #991b1b;
-    font-weight: 600;
-    margin: 0;
-    line-height: 1.4;
+    font-weight: 700;
+    color: #0f2a4a;
+    letter-spacing: 0.6px;
+    margin-bottom: 5px;
+  }
+  .cf-treatment ul { margin: 0; padding-left: 15px; font-size: 9px; line-height: 1.5; }
+  .cf-treatment ul li { margin-bottom: 3px; color: #3a3a3a; }
+  .cf-treatment ul li strong { color: #0f2a4a; }
+
+  /* Conditions precedent */
+  .cp-list { column-count: 2; column-gap: 20px; font-size: 9.5px; margin: 3px 0 0; padding-left: 18px; }
+  .cp-list li { margin-bottom: 2px; break-inside: avoid; }
+
+  /* Next steps */
+  .ns-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; }
+  .ns-steps { border: 1px solid #e5e7ec; border-radius: 3px; padding: 8px 10px; }
+  .ns-steps ol { margin: 0; padding-left: 16px; font-size: 9.5px; }
+  .ns-steps ol li { margin-bottom: 4px; line-height: 1.5; }
+  .ns-steps ol li strong { color: #0f2a4a; }
+
+  .pay-box {
+    border: 2px solid #2e8f4e;
+    background: #f4fbf6;
+    border-radius: 3px;
+    padding: 8px 10px;
+  }
+  .pay-box h4 {
+    margin: 0 0 5px;
+    color: #2e8f4e;
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+  }
+  .pay-box table {
+    width: 100%;
+    font-size: 9.5px;
+    border-collapse: collapse;
+  }
+  .pay-box td {
+    padding: 1.5px 0;
+    vertical-align: top;
+  }
+  .pay-box td:first-child {
+    color: #6b7280;
+    width: 78px;
+  }
+  .pay-box td:last-child { font-weight: 700; color: #0f2a4a; }
+
+  /* Notice + ack */
+  .notice {
+    background: #fff1f0;
+    border: 1px solid #b42318;
+    border-radius: 3px;
+    padding: 7px 12px;
+    text-align: center;
+    font-size: 9px;
+    color: #b42318;
+    font-weight: 700;
+    margin-top: 8px;
+    page-break-inside: avoid;
   }
 
-  .sig-row {
+  .ack { margin-top: 8px; page-break-inside: avoid; }
+  .ack-content { font-size: 9.5px; margin-bottom: 12px; }
+
+  .ack-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .ack-row-two {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-top: 10px;
+    gap: 16px;
+    margin-top: 6px;
   }
-  .sig-block {
-    border-top: 1px solid #6b7280;
-    padding-top: 4px;
-  }
-  .sig-block .label { font-size: 9px; font-weight: 700; color: #1e3a5f; }
-  .sig-block .name { font-size: 10px; color: #374151; margin-top: 1px; }
 
-  /* ── FOOTER ── */
-  .footer-bar {
-    border-top: 2px solid #C9A227;
-    padding: 6px 24px;
+  .sig-card {
+    border: 1px solid #e5e7ec;
+    border-top: 3px solid #1a3a5c;
+    border-radius: 2px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    background: #fcfcfd;
+  }
+
+  .sig-role {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #0f2a4a;
+    letter-spacing: 1.2px;
     text-align: center;
-    font-size: 7px;
+    background: #eef3f9;
+    padding: 3px 0;
+    border-radius: 2px;
+    margin-bottom: 9px;
+  }
+
+  .sig-entity {
+    flex: 0 0 auto;
+    min-height: 42px;
+    text-align: center;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #e5e7ec;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .sig-entity .entity-name {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #0f2a4a;
+    line-height: 1.25;
+  }
+  .sig-entity .entity-cap {
+    font-size: 8px;
+    font-style: italic;
     color: #6b7280;
-    line-height: 1.5;
-    margin-top: 8px;
+    margin-top: 3px;
+    line-height: 1.35;
+  }
+
+  .sig-field { margin-top: 8px; }
+  .sig-field:first-of-type { margin-top: 0; }
+  .sig-field .sig-label {
+    font-size: 7.5px;
+    font-weight: 700;
+    color: #6b7280;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .sig-field .sig-line {
+    border-bottom: 1px solid #5a5a5a;
+    height: 12px;
+  }
+  .sig-field.sig-signature .sig-line { height: 22px; }
+
+  .ack-stamp {
+    margin-top: 10px;
+    border: 1px dashed #bbb;
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-size: 8px;
+    color: #6b7280;
+    text-align: center;
+    font-style: italic;
   }
 
   .disclaimer {
-    margin-top: 10px;
-    padding: 8px 10px;
-    background: #f9fafb;
-    border-radius: 5px;
-    border: 1px solid #e5e7eb;
-  }
-  .disclaimer p {
-    margin: 0;
-    font-size: 9px;
+    font-size: 8px;
     color: #6b7280;
-    line-height: 1.4;
+    margin-top: 8px;
+    line-height: 1.55;
+    padding: 7px 10px;
+    background: #f8f9fb;
+    border-radius: 3px;
+    page-break-inside: avoid;
   }
 
-  /* ── PAGE BREAK CONTROL ── */
-  .section-bar { break-after: avoid; }
-  .section-bar + .section { break-before: avoid; }
-
-  /* Ensure colour-printing on all browsers */
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* Page footer */
+  .page-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #1a3a5c;
+    color: #fff;
+    padding: 6mm 16mm 6mm 16mm;
+    border-top: 3px solid #c9a456;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    font-size: 7.8px;
+    line-height: 1.5;
+  }
+  .page-footer .corp { flex: 1; padding-right: 10mm; }
+  .page-footer .corp .legal-line { color: #fff; margin-bottom: 2px; }
+  .page-footer .corp .legal-line strong { color: #fff; font-weight: 700; }
+  .page-footer .corp .legal-line .label { color: #c9a456; font-weight: 600; }
+  .page-footer .corp .policies { color: #cdd5e0; font-size: 7.3px; margin-top: 3px; font-style: italic; }
+  .page-footer .corp .policies a { color: #c9a456; text-decoration: none; }
+  .page-footer .pnum { text-align: right; flex: 0 0 auto; font-size: 8.5px; }
+  .page-footer .pnum .web { color: #c9a456; font-weight: 700; }
+  .page-footer .pnum .page-num { color: #fff; font-weight: 600; margin-top: 2px; }
 </style>
 </head>
 <body>
-<div class="page-wrapper">
 
-  <!-- ═══ HEADER ═══ -->
-  <div class="header-bar">
-    <img src="data:image/png;base64,${LOGO_B64}" alt="DF">
-    <div class="title-area">
-      <h1>DAKSFIRST</h1>
-      <div class="tagline">Bridging Finance, Built for Professionals</div>
+<!-- ══════════════════════════ PAGE 1 ══════════════════════════ -->
+<div class="page">
+  <div class="brand">
+    <div class="brand-left">
+      <img class="brand-logo" alt="Daksfirst" src="data:image/png;base64,${LOGO_B64}">
+      <div class="brand-text">
+        <div class="brand-name">DAKSFIRST</div>
+        <div class="brand-tagline">Bridging Finance</div>
+      </div>
     </div>
-    <div class="info-right">
-      <div class="addr">8 Hill Street, Mayfair, London W1J 5NG</div>
-      <div class="fca">FCA 937220 &nbsp;|&nbsp; portal@daksfirst.com</div>
+    <div class="brand-right">
+      <div class="deal-ref">Deal Ref: ${esc(dealRef)}</div>
+      <div class="issued">Issued: ${esc(issueDate)} · Valid 14 days</div>
     </div>
   </div>
-  <div class="gold-bar"></div>
 
-  <!-- ═══ BODY ═══ -->
-  <div class="dip-body">
+  <div class="title-bar">
+    <h1>Decision In Principle (DIP)</h1>
+    <div class="sub">Indicative terms — subject to full underwriting, valuation &amp; credit approval <span class="ver">[v5.0]</span></div>
+  </div>
 
-    <div class="dip-title">
-      <h2>Decision In Principle (DIP)</h2>
-      <div class="subtitle">Daksfirst Limited &mdash; FCA 937220 &mdash; 8 Hill Street, Mayfair, London W1J 5NG <span style="color:#C9A227;font-size:7px;">[v4.2]</span></div>
+  <div class="ref-strip">
+    <div class="ref">${esc(dealRef)}</div>
+    <div class="issued">Borrower type: <strong>${deal.borrower_type ? deal.borrower_type.toUpperCase() : 'CORPORATE'}</strong> &nbsp;|&nbsp; Portfolio: <strong>${properties.length} ${properties.length === 1 ? 'Property' : 'Properties'}</strong></div>
+    <div class="badge">${deal.borrower_type ? deal.borrower_type.toUpperCase() : 'CORPORATE'}</div>
+  </div>
+
+  <div class="preamble">
+    This Decision in Principle sets out the indicative terms under which Daksfirst may provide senior secured finance. All terms are subject to full underwriting, valuation, and credit approval.
+  </div>
+
+  <!-- PARTIES -->
+  <div class="section">
+    <div class="section-bar">PARTIES TO THE FACILITY</div>
+    <div class="section-body">
+      ${partiesHtml || '<div style="font-size:9.5px;color:#666;">Parties section pending G5 data.</div>'}
     </div>
+  </div>
 
-    <div class="ref-strip">
-      <span class="deal-ref">${esc(dealRef)}</span>
-      <span class="date">Issued: ${esc(issueDate)}</span>
-      ${borrowerTypeBadge}
+  <!-- SECURITY STRUCTURE -->
+  <div class="section">
+    <div class="section-bar">SECURITY &amp; GUARANTEE STRUCTURE</div>
+    <div class="section-body">
+      <div class="sec-row"><div class="label"><strong>First Legal Charge</strong> over ${properties.length} ${properties.length === 1 ? 'Property' : 'Properties'}</div><div class="status req">REQUIRED</div></div>
+      <div class="sec-row"><div class="label"><strong>Fixed &amp; Floating Charge (Debenture)</strong></div><div class="status req">REQUIRED</div></div>
+      <div class="sec-row"><div class="label"><strong>Personal Guarantee</strong> from UBO(s)</div><div class="status req">REQUIRED</div></div>
+      ${requiresShareCharge ? `<div class="sec-row"><div class="label"><strong>Share Charge</strong></div><div class="status req">REQUIRED</div></div>` : ''}
     </div>
+  </div>
 
-    <p class="intro-text">This Decision in Principle sets out the indicative terms under which Daksfirst Limited may provide senior secured finance. All terms are subject to full underwriting, valuation, and credit approval.</p>
-
-    <!-- ═══ BORROWER DETAILS ═══ -->
-    <div class="section-bar"><span>Borrower Details</span>${borrowerTypeBadge}</div>
-    <div class="section">
-
-      ${isCorp ? `
-      <div class="grid-2">
-        <div class="field-box blue">
-          <span class="field-label blue">Corporate Entity</span>
-          <div class="field-value">${esc(clean(deal.borrower_company || deal.company_name))}</div>
-          ${deal.company_number ? `<div class="field-sub">Co. No: ${esc(deal.company_number)}</div>` : ''}
-        </div>
-        <div class="field-box amber">
-          <span class="field-label amber">Ultimate Beneficial Owner (UBO)</span>
-          <div class="field-value">${esc(clean(deal.borrower_name))}</div>
-          <div class="field-sub">${esc(clean(deal.borrower_email))} ${deal.borrower_phone ? '&middot; ' + esc(deal.borrower_phone) : ''}</div>
-        </div>
-      </div>
-      ` : `
-      <div class="grid-3">
-        <div class="field-box">
-          <span class="field-label">Name</span>
-          <div class="field-value">${esc(clean(deal.borrower_name))}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label">Email</span>
-          <div class="field-value" style="font-size:12px;">${esc(clean(deal.borrower_email))}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label">Phone</span>
-          <div class="field-value">${esc(clean(deal.borrower_phone))}</div>
-        </div>
-      </div>
-      `}
-
-      ${partiesHtml}
-      ${_g5RenderSecuritySection(dipData, deal)}
-    </div>
-
-    <!-- ═══ SECURITY SCHEDULE ═══ -->
-    <div class="section-bar">Security Schedule &mdash; ${propCount} ${propCount === 1 ? 'Property' : 'Properties'}</div>
-    <div class="section">
-      <table class="dip-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Address</th>
-            <th>Postcode</th>
-            <th style="text-align:right;">Valuation (&pound;)</th>
-          </tr>
-        </thead>
+  <!-- SECURITY SCHEDULE -->
+  <div class="section">
+    <div class="section-bar">SECURITY SCHEDULE — ${properties.length} ${properties.length === 1 ? 'PROPERTY' : 'PROPERTIES'}</div>
+    <div class="section-body">
+      <table class="sched-table">
+        <thead><tr><th class="num">#</th><th>Address</th><th>Postcode</th><th>Tenure</th><th class="val">Value as Supplied (£)</th></tr></thead>
         <tbody>
-          ${propRowsHtml}
-        </tbody>
-        <tfoot>
-          <tr style="background:#f0f5ff;font-weight:600;">
-            <td colspan="3" style="padding:8px;text-align:right;font-size:12px;">Total Portfolio Valuation:</td>
-            <td style="padding:8px;text-align:right;font-size:13px;color:#1e3a5f;font-weight:700;">${money(totalVal || totalPropertyVal)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div style="margin-top:8px;font-size:12px;color:#6b7280;">Asset Type: <strong>${esc(humanize(deal.asset_type))}</strong> &nbsp;|&nbsp; Tenure: <strong>${esc(humanize(deal.property_tenure))}</strong></div>
-    </div>
-
-    <!-- ═══ VALUATION SUMMARY ═══ -->
-    <div class="section-bar">Valuation Summary</div>
-    <div class="section">
-      <div class="grid-3">
-        <div class="field-box green">
-          <span class="field-label green">Total Property Value (&pound;)</span>
-          <div class="field-value">${money(totalVal || totalPropertyVal)}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label">Purchase Price (&pound;)</span>
-          <div class="field-value">${money(dipData.purchase_price || deal.purchase_price)}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label">Number of Properties</span>
-          <div class="field-value">${propCount}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ LOAN TERMS ═══ -->
-    <div class="section-bar">Indicative Loan Terms</div>
-    <div class="section blue">
-      <div class="grid-3">
-        <div class="field-box blue">
-          <span class="field-label navy">Loan Amount (&pound;)</span>
-          <div class="field-value navy">${money(dipData.loan_amount || deal.loan_amount)}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label navy">Term (months)</span>
-          <div class="field-value">${esc(clean(dipData.term_months || deal.term_months))}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label navy">Rate (%/month)</span>
-          <div class="field-value">${pct(dipData.rate_monthly || deal.rate_requested)}</div>
-          <div class="field-sub" style="color:#92400e;">Min 0.85%</div>
-        </div>
-      </div>
-      <div class="grid-3">
-        <div class="field-box">
-          <span class="field-label navy">Interest Servicing</span>
-          <div class="field-value">${esc(humanize(dipData.interest_servicing || 'retained'))}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label navy">Arrangement Fee (%)</span>
-          <div class="field-value">${arrFee.toFixed(2)}%</div>
-        </div>
-        <div class="field-box green">
-          <span class="field-label green">LTV (%)</span>
-          <div class="field-value">${pct(dipData.ltv || deal.ltv_requested)}</div>
-          <div class="field-sub" style="color:#15803d;">Auto-calculated &middot; Max 75%</div>
-        </div>
-      </div>
-
-      <!-- Day Zero Calculation (inline sub-section, stays inside Loan Terms) -->
-      <div style="margin-top:10px;padding:10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:5px;">
-        <h5 style="margin:0 0 8px;color:#92400e;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;">Day Zero Calculation</h5>
-        <div class="grid-2">
-          <div class="field-box">
-            <span class="field-label amber">Retained Interest (months)</span>
-            <div class="field-value">${esc(clean(dipData.retained_months || '6'))}</div>
-          </div>
-          <div class="field-box">
-            <span class="field-label amber">Broker Fee (%)</span>
-            <div class="field-value">${brkFee.toFixed(2)}%</div>
-            <div class="field-sub" style="color:#b45309;font-weight:600;">Paid from Arrangement Fee (not additional)</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ FEE SCHEDULE ═══ -->
-    <div class="section-bar purple">Fee Schedule</div>
-    <div class="section purple">
-      <p style="margin:0 0 12px;font-size:11px;color:#4b5563;">All fees disclosed to borrower. No fee required before DIP issuance.</p>
-      <table class="dip-table">
-        <thead>
-          <tr style="background:#f5f3ff;">
-            <th style="border-bottom:2px solid #7c3aed;">Fee Type</th>
-            <th style="text-align:right;border-bottom:2px solid #7c3aed;">Amount (&pound;)</th>
-            <th style="border-bottom:2px solid #7c3aed;">When Due</th>
-            <th style="border-bottom:2px solid #7c3aed;">Payment Trigger</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${feeRowsHtml}
+          ${properties.map(p => `<tr><td class="num">${p.num}</td><td>${esc(p.address)}</td><td>${esc(p.postcode)}</td><td>${esc(p.tenure)}</td><td class="val">${fmtGBP(p.value)}</td></tr>`).join('')}
+          <tr class="total"><td></td><td colspan="3">Total Portfolio Value (as supplied)</td><td class="val">${fmtGBP(totalPortfolioValue)}</td></tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- ═══ THIRD-PARTY COSTS ═══ -->
-    <div class="section-bar grey">Estimated Third-Party Costs</div>
-    <div class="section">
-      <p style="margin:0 0 12px;font-size:11px;color:#6b7280;font-style:italic;">These are not Daksfirst fees. Third-party costs borne directly by the borrower, disclosed for budgeting purposes only.</p>
-      <table class="dip-table">
-        <thead>
-          <tr>
-            <th>Cost</th>
-            <th style="text-align:right;">Estimated (&pound;)</th>
-            <th>Payable To</th>
-            <th>Payment Method</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px;font-weight:600;">Valuation</td>
-            <td style="padding:8px;text-align:right;">${money(dipData.valuation_cost || 0)}</td>
-            <td style="padding:8px;font-size:11px;">Independent valuer</td>
-            <td style="padding:8px;font-size:11px;">Paid directly by client to valuer</td>
-          </tr>
-          <tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px;font-weight:600;">Legal (Lender&rsquo;s solicitors)</td>
-            <td style="padding:8px;text-align:right;">${money(dipData.legal_cost || 0)}</td>
-            <td style="padding:8px;font-size:11px;">Daksfirst&rsquo;s appointed solicitors</td>
-            <td style="padding:8px;font-size:11px;">Via undertaking from client&rsquo;s solicitors</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ═══ PURPOSE & EXIT ═══ -->
-    <div class="grid-2" style="margin-bottom:16px;">
-      <div class="field-box">
-        <span class="field-label">Loan Purpose</span>
-        <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(clean(dipData.loan_purpose || deal.loan_purpose))}</div>
+      <div class="sched-footer">
+        <div>Asset Type: <strong>Residential</strong></div>
+        <div>Purchase Price: <strong>${fmtGBP(0)}</strong></div>
+        <div>LTV (on supplied value): <strong>${ltv.toFixed(2)}%</strong></div>
       </div>
-      <div class="field-box">
-        <span class="field-label">Exit Strategy</span>
-        <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(clean(dipData.exit_strategy || deal.exit_strategy))}</div>
+      <div class="omv-note">
+        <strong>Note on valuation:</strong> Values shown are <em>as supplied by the broker / borrower</em>. Final lending decision and LTV will be based on the <strong>180-day Open Market Value (180-day OMV)</strong> from an independent RICS valuer instructed by Daksfirst.
       </div>
     </div>
+  </div>
 
-    ${dipNotes ? `
-    <div class="field-box" style="margin-bottom:16px;">
-      <span class="field-label navy">DIP Conditions / RM Notes</span>
-      <div style="font-size:13px;margin-top:4px;color:#374151;line-height:1.5;">${esc(dipNotes)}</div>
-    </div>
-    ` : ''}
+  <!-- LOAN TERMS -->
+  <div class="section">
+    <div class="section-bar">INDICATIVE LOAN TERMS</div>
+    <div class="section-body">
+      <div class="lt-grid">
+        <div class="lt-cell"><div class="lt-label">Loan Amount</div><div class="lt-value">${fmtGBP(grossLoan)}</div></div>
+        <div class="lt-cell"><div class="lt-label">Term</div><div class="lt-value">${loanTerm} months</div><div class="lt-hint">Min ${minLoanTerm} months</div></div>
+        <div class="lt-cell"><div class="lt-label">Rate</div><div class="lt-value">${(ratePerMonth * 100).toFixed(2)}% p.m.</div><div class="lt-hint">Min 0.85% · 360-day basis</div></div>
+        <div class="lt-cell lt-default"><div class="lt-label">Default Rate</div><div class="lt-value">${defaultRate.toFixed(2)}% p.m.</div><div class="lt-hint">Rate + 2%</div></div>
 
-    <!-- ═══ SECURITY & GUARANTEES + CONDITIONS PRECEDENT (side by side) ═══ -->
-    <div class="grid-2" style="margin-bottom:10px;">
-      <div>
-        <div class="section-bar">Security &amp; Guarantees</div>
-        <div class="section" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
-        <div class="field-box" style="margin-bottom:8px;">
-          <span class="field-label">First Legal Charge</span>
-          <div style="font-size:12px;font-weight:600;">${propCount > 1 ? 'Over all ' + propCount + ' security properties' : 'Over the security property'}</div>
-        </div>
-        <div class="field-box" style="margin-bottom:8px;">
-          <span class="field-label">Debenture</span>
-          <div style="font-size:12px;font-weight:600;">${esc(debenture)}</div>
-        </div>
-        <div class="field-box">
-          <span class="field-label">Personal Guarantee</span>
-          <div style="font-size:12px;font-weight:600;">${esc(personalGuarantee)}</div>
-        </div>
-        </div>
-      </div>
-      <div>
-        <div class="section-bar">Conditions Precedent</div>
-        <div class="section" style="margin-bottom:0;border-top-left-radius:0;border-top-right-radius:0;">
-        <div style="font-size:12px;">${cpHtml}</div>
-        </div>
+        <div class="lt-cell"><div class="lt-label">Gross LTV</div><div class="lt-value">${ltv.toFixed(2)}%</div><div class="lt-hint">Max 75%</div></div>
+        <div class="lt-cell"><div class="lt-label">Min Value Covenant</div><div class="lt-value">${fmtGBP(minValueCovenant || totalPortfolioValue)}</div><div class="lt-hint">Portfolio floor</div></div>
+        <div class="lt-cell"><div class="lt-label">Interest Servicing</div><div class="lt-value" style="font-size:10.5px;">${interestServicing}</div></div>
+        <div class="lt-cell"><div class="lt-label">Arrangement Fee</div><div class="lt-value">${arrangementFeePct.toFixed(2)}%</div></div>
+
+        <div class="lt-cell"><div class="lt-label">Loan Purpose</div><div class="lt-value" style="font-size:10.5px;">Purchase</div></div>
+        <div class="lt-cell" style="grid-column: span 3;"><div class="lt-label">Exit Strategy</div><div class="lt-value" style="font-size:10.5px;">Refinance</div></div>
       </div>
     </div>
+  </div>
 
-    <!-- ═══ BOTTOM BLOCK — stays together, never splits ═══ -->
-    <div class="bottom-block">
-
-      <!-- ═══ HOW TO PROCEED — PAYMENT DETAILS ═══ -->
-      <div class="section-bar green">How to Proceed &mdash; Payment Details</div>
-      <div class="section green-border" style="border-top-left-radius:0;border-top-right-radius:0;">
-        <div class="grid-2">
-          <div class="field-box">
-            <p style="font-size:12px;color:#374151;margin:0;line-height:1.6;">To proceed, remit the Onboarding/DIP Fee below. Quote the deal reference <strong>${esc(dealRef)}</strong> as payment reference.</p>
-            <p style="font-size:11px;color:#6b7280;margin-top:6px;font-style:italic;">Upon receipt, Daksfirst will commence credit review.</p>
-          </div>
-          <div style="background:#f8fafc;padding:10px;border-radius:6px;border:1px solid #e5e7eb;">
-            <table style="width:100%;font-size:11px;">
-              <tr><td style="color:#6b7280;padding:2px 0;width:100px;">Account Name:</td><td style="font-weight:600;color:#1e3a5f;">Daksfirst Limited</td></tr>
-              <tr><td style="color:#6b7280;padding:2px 0;">Bank:</td><td style="font-weight:600;color:#1e3a5f;">HSBC</td></tr>
-              <tr><td style="color:#6b7280;padding:2px 0;">Account No:</td><td style="font-weight:600;color:#1e3a5f;">90300721</td></tr>
-              <tr><td style="color:#6b7280;padding:2px 0;">Sort Code:</td><td style="font-weight:600;color:#1e3a5f;">40-02-45</td></tr>
-              <tr><td style="color:#6b7280;padding:2px 0;">IBAN:</td><td style="font-weight:600;color:#1e3a5f;">GB64HBUK40024590300721</td></tr>
-              <tr><td style="color:#6b7280;padding:2px 0;">Reference:</td><td style="font-weight:600;color:#1e3a5f;">${esc(dealRef)}</td></tr>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ═══ RED NOTICE ═══ -->
-      <div class="red-notice">
-        <p>IMPORTANT NOTICE: This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation and credit committee approval.</p>
-      </div>
-
-      <!-- ═══ ACKNOWLEDGEMENT ═══ -->
-      <div style="margin-bottom:8px;">
-        <h5 style="margin:0 0 4px;color:#1e3a5f;font-size:11px;font-weight:700;">BORROWER ACKNOWLEDGEMENT</h5>
-        <p style="font-size:11px;color:#374151;line-height:1.4;">By accepting this DIP, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for 14 days from the date of issue.</p>
-      </div>
-
-      <!-- ═══ SIGNATURES ═══ -->
-      <div class="sig-row">
-        <div class="sig-block">
-          <div class="label">Borrower Signature</div>
-          <div class="name">${esc(clean(deal.borrower_name))}</div>
-          ${isCorp ? `<div class="name" style="font-size:10px;color:#6b7280;">${esc(clean(deal.borrower_company || deal.company_name))}</div>` : ''}
-        </div>
-        <div class="sig-block">
-          <div class="label">For and on behalf of the Lender</div>
-          <div class="name">Daksfirst Bridging 1 Ltd</div>
-        </div>
-      </div>
-
-      <!-- ═══ DISCLAIMER ═══ -->
-      <div class="disclaimer">
-        <p><strong>Disclaimer:</strong> This Decision In Principle (DIP) is issued by Daksfirst Limited and is indicative only. It does not constitute a formal offer of finance and is subject to satisfactory due diligence, valuation, legal review, and final credit approval. All terms stated herein are subject to change. Daksfirst Limited reserves the right to withdraw or amend this DIP at any time prior to the issuance of a formal facility letter. The borrower should not rely on this DIP as a guarantee of funding. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (FCA No. 937220). Registered office: 8 Hill Street, Mayfair, London W1J 5NG.</p>
-      </div>
-
-    </div><!-- .bottom-block -->
-
-  </div><!-- .dip-body -->
-
+  <div class="page-footer">
+    <div class="corp">
+      <div class="legal-line"><strong>Daksfirst Limited</strong> · 8 Hill Street, Mayfair, London W1J 5NG</div>
+      <div class="legal-line"><span class="label">Co. Reg</span> 11626401 · <span class="label">FCA</span> 937220 · portal@daksfirst.com</div>
+      <div class="policies">T&Cs, AML & Privacy Policies — see website</div>
+    </div>
+    <div class="pnum">
+      <div class="web">www.daksfirst.com</div>
+      <div class="page-num">Page 1 of 3</div>
+    </div>
+  </div>
 </div>
+
+<!-- ══════════════════════════ PAGE 2 ══════════════════════════ -->
+<div class="page">
+  <div class="brand">
+    <div class="brand-left">
+      <img class="brand-logo" alt="Daksfirst" src="data:image/png;base64,${LOGO_B64}">
+      <div class="brand-text">
+        <div class="brand-name">DAKSFIRST</div>
+        <div class="brand-tagline">Bridging Finance</div>
+      </div>
+    </div>
+    <div class="brand-right">
+      <div class="deal-ref">Deal Ref: ${esc(dealRef)}</div>
+      <div class="issued">Page 2 of 3</div>
+    </div>
+  </div>
+
+  <!-- DAY ZERO WATERFALL -->
+  <div class="section">
+    <div class="section-bar">DAY ZERO — NET ADVANCE ON COMPLETION</div>
+    <div class="section-body" style="padding: 0;">
+      <div class="waterfall" style="margin: 0; border-radius: 0; border: 0;">
+        <div class="waterfall-row"><div>Gross Loan</div><div class="amount">${fmtGBP(waterfallCalc.gross)}</div></div>
+        <div class="waterfall-row deduction"><div>Less: Retained Interest (${retainedMonths} months × ${(ratePerMonth*100).toFixed(2)}%, ${dayCountBasis}-day basis)</div><div class="amount">${fmtGBPParen(-waterfallCalc.retainedInterest)}</div></div>
+        <div class="waterfall-row deduction">
+          <div>Less: Arrangement Fee <span style="font-weight:400;font-size:9px;">(${arrangementFeePct.toFixed(2)}% = ${fmtGBP(grossLoan * arrangementFeePct / 100)}${commitmentFee > 0 ? ', net of ' + fmtGBP(commitmentFee) + ' Commitment Fee credit' : ''})</span></div>
+          <div class="amount">${fmtGBPParen(-waterfallCalc.afNet)}</div>
+        </div>
+        <div class="waterfall-row total"><div>Net Advance to Borrower</div><div class="amount">${fmtGBP(waterfallCalc.netAdvance)}</div></div>
+      </div>
+      <div style="background:#fefcf5; padding:6px 14px; font-size:8.5px; color:#5a4a1a; font-style:italic; border-top: 1px solid #b45309; border-radius: 0 0 3px 3px;">
+        ${commitmentFee > 0 ? `Commitment Fee of ${fmtGBP(commitmentFee)} paid at Term Sheet acceptance is credited against the Arrangement Fee above. ` : ''}Net Advance is on the Gross Loan and excludes solicitors' costs, valuation fees, and disbursements — all borne directly by the Borrower.
+      </div>
+    </div>
+  </div>
+
+  <!-- USES OF NET LOAN -->
+  <div class="section">
+    <div class="section-bar">USES OF NET LOAN</div>
+    <div class="section-body">
+      <table class="uses-table">
+        <thead><tr><th>#</th><th>Purpose</th><th>Timing</th><th class="val">Amount</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td><strong>Day 1 Release</strong> — Purchase of security properties</td><td>On completion</td><td class="val">${fmtGBP(waterfallCalc.netAdvance)}</td></tr>
+          <tr class="total"><td></td><td colspan="2">TOTAL — must match Net Advance</td><td class="val">${fmtGBP(waterfallCalc.netAdvance)}</td></tr>
+        </tbody>
+      </table>
+      <div class="uses-note">For refurbishment / development-bridging deals, Uses of Net Loan will split across Day 1 release + staged draws (paid against surveyor-certified invoices) + retention. Drawdown timing is set in the Facility Letter.</div>
+    </div>
+  </div>
+
+  <!-- FEE SCHEDULE -->
+  <div class="section">
+    <div class="section-bar">FEE SCHEDULE</div>
+    <div class="section-body">
+      <table class="fee-table">
+        <thead><tr><th>Fee</th><th>Amount</th><th>When Due</th><th>Payment Trigger</th></tr></thead>
+        <tbody>
+          <tr class="highlight"><td><strong>Onboarding / DIP Fee</strong></td><td class="amt">${fmtGBP(dipFee)}</td><td>On DIP acceptance</td><td>Required before Credit Review</td></tr>
+          <tr><td><strong>Commitment Fee</strong></td><td class="amt">${fmtGBP(commitmentFee)}</td><td>On Termsheet acceptance</td><td>Required before Underwriting</td></tr>
+          <tr><td><strong>Arrangement Fee</strong></td><td class="amt">${fmtGBP(grossLoan * arrangementFeePct / 100)} (${arrangementFeePct.toFixed(2)}%)</td><td>On completion</td><td>Deducted from advance</td></tr>
+          ${brokerFeePct > 0 && deal.broker_id ? `<tr class="sub-row"><td>↳ of which Broker Fee</td><td>—</td><td>On completion</td><td>From arrangement fee</td></tr>` : ''}
+          <tr><td><strong>Exit Fee</strong></td><td class="amt">1.00% of loan</td><td>On redemption</td><td>Payable at exit</td></tr>
+          <tr><td><strong>Extension Fee</strong></td><td class="amt">1.00% of loan</td><td>If term extended</td><td>Per extension period agreed</td></tr>
+        </tbody>
+      </table>
+      <div class="cf-treatment">
+        <div class="cf-title">COMMITMENT FEE — TREATMENT ON DEAL OUTCOME</div>
+        ${adminConfig.cf_treatment_clause_html || FALLBACK_CF}
+      </div>
+      <div class="fee-note"><strong>Third-party costs</strong> (valuation, Lender's solicitors) are borne directly by the Borrower. Estimates provided at Term Sheet stage once valuer and solicitors are instructed.</div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <div class="corp">
+      <div class="legal-line"><strong>Daksfirst Limited</strong> · 8 Hill Street, Mayfair, London W1J 5NG</div>
+      <div class="legal-line"><span class="label">Co. Reg</span> 11626401 · <span class="label">FCA</span> 937220 · portal@daksfirst.com</div>
+      <div class="policies">T&Cs, AML & Privacy Policies — see website</div>
+    </div>
+    <div class="pnum">
+      <div class="web">www.daksfirst.com</div>
+      <div class="page-num">Page 2 of 3</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ PAGE 3 ══════════════════════════ -->
+<div class="page">
+  <div class="brand">
+    <div class="brand-left">
+      <img class="brand-logo" alt="Daksfirst" src="data:image/png;base64,${LOGO_B64}">
+      <div class="brand-text">
+        <div class="brand-name">DAKSFIRST</div>
+        <div class="brand-tagline">Bridging Finance</div>
+      </div>
+    </div>
+    <div class="brand-right">
+      <div class="deal-ref">Deal Ref: ${esc(dealRef)}</div>
+      <div class="issued">Page 3 of 3</div>
+    </div>
+  </div>
+
+  <!-- CONDITIONS PRECEDENT -->
+  <div class="section">
+    <div class="section-bar">CONDITIONS PRECEDENT</div>
+    <div class="section-body">
+      <ol class="cp-list">
+        <li>Satisfactory independent valuation (180-day OMV)</li>
+        <li>Clear title search — no encumbrances</li>
+        <li>Legal due diligence by Lender's solicitors</li>
+        <li>First legal charge in favour of Lender</li>
+        <li>Buildings insurance — Lender's interest noted</li>
+        <li>Personal guarantee from UBO(s)</li>
+        <li>Debenture over corporate assets</li>
+        <li>KYC / AML documentation for all parties</li>
+        <li>Evidence of source of deposit &amp; funds</li>
+        <li>Payment of all applicable fees</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- NEXT STEPS -->
+  <div class="section">
+    <div class="section-bar">NEXT STEPS — TO PROCEED</div>
+    <div class="section-body">
+      <div class="ns-grid">
+        <div class="ns-steps">
+          <ol>
+            <li>Remit the <strong>Onboarding / DIP Fee of ${fmtGBP(dipFee)}</strong> to the account on the right, quoting reference <strong>${esc(dealRef)}</strong>.</li>
+            <li>On receipt, Daksfirst will commence <strong>credit review</strong> (typical turnaround 5–7 working days).</li>
+            <li>On credit clearance, Daksfirst will issue a <strong>binding Term Sheet</strong> and instruct valuer &amp; solicitors.</li>
+          </ol>
+        </div>
+        <div class="pay-box">
+          <h4>PAYMENT DETAILS — DIP FEE</h4>
+          <table>
+            <tr><td>Account Name</td><td>Daksfirst Limited</td></tr>
+            <tr><td>Bank</td><td>HSBC</td></tr>
+            <tr><td>Account No</td><td>90300721</td></tr>
+            <tr><td>Sort Code</td><td>40-02-45</td></tr>
+            <tr><td>IBAN</td><td style="font-size:9px;">GB64HBUK40024590300721</td></tr>
+            <tr><td>Reference</td><td>${esc(dealRef)}</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notice">
+    <div style="font-size:10.5px; margin-bottom:4px;">IMPORTANT NOTICE</div>
+    <div style="font-weight:600; font-size:9px; line-height:1.55;">
+      This Decision in Principle is indicative only and does not constitute a binding offer or commitment to lend. Final approval is subject to full underwriting, valuation, and credit committee approval. <span style="text-transform:uppercase;">You should not enter into any financial commitments based on this DIP. Seek independent legal advice before signing.</span>
+    </div>
+  </div>
+
+  <div class="ack section">
+    <div class="section-bar">EXECUTION &amp; ACKNOWLEDGEMENT</div>
+    <div class="section-body">
+      <div class="ack-content">By countersigning below, the Borrower acknowledges intention to proceed on the terms above. This DIP is valid for <strong>14 days</strong> from the date of issue.</div>
+      <div class="${deal.broker_id ? 'ack-row' : 'ack-row-two'}">
+        <div class="sig-card">
+          <div class="sig-role">BORROWER</div>
+          <div class="sig-entity">
+            <div class="entity-name">${esc(deal.borrower_name || 'Borrower')}</div>
+            <div class="entity-cap">The Borrower, by its duly authorised signatory and UBO</div>
+          </div>
+          <div class="sig-field"><div class="sig-label">Name</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Title</div><div class="sig-line"></div></div>
+          <div class="sig-field sig-signature"><div class="sig-label">Signature</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Date &amp; Time</div><div class="sig-line"></div></div>
+        </div>
+        ${deal.broker_id ? `<div class="sig-card">
+          <div class="sig-role">INTRODUCING BROKER</div>
+          <div class="sig-entity">
+            <div class="entity-name">${esc(brokerName)}</div>
+            <div class="entity-cap">The Introducing Broker, by its duly authorised signatory</div>
+          </div>
+          <div class="sig-field"><div class="sig-label">Name</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Title</div><div class="sig-line"></div></div>
+          <div class="sig-field sig-signature"><div class="sig-label">Signature</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Date &amp; Time</div><div class="sig-line"></div></div>
+        </div>` : ''}
+        <div class="sig-card">
+          <div class="sig-role">LENDER</div>
+          <div class="sig-entity">
+            <div class="entity-name">Daksfirst Limited</div>
+            <div class="entity-cap">For and on behalf of the Lender, as Originator and Security Agent</div>
+          </div>
+          <div class="sig-field"><div class="sig-label">Name</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Title</div><div class="sig-line"></div></div>
+          <div class="sig-field sig-signature"><div class="sig-label">Signature</div><div class="sig-line"></div></div>
+          <div class="sig-field"><div class="sig-label">Date &amp; Time</div><div class="sig-line"></div></div>
+        </div>
+      </div>
+      <div class="ack-stamp">Electronic signatures via DocuSign apply the same legal effect as wet-ink signatures under the UK Electronic Communications Act 2000.</div>
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    ${adminConfig.regulatory_disclosure_html || FALLBACK_REG}
+  </div>
+
+  <div class="page-footer">
+    <div class="corp">
+      <div class="legal-line"><strong>Daksfirst Limited</strong> · 8 Hill Street, Mayfair, London W1J 5NG</div>
+      <div class="legal-line"><span class="label">Co. Reg</span> 11626401 · <span class="label">FCA</span> 937220 · portal@daksfirst.com</div>
+      <div class="policies">T&Cs, AML & Privacy Policies — see website</div>
+    </div>
+    <div class="pnum">
+      <div class="web">www.daksfirst.com</div>
+      <div class="page-num">Page 3 of 3</div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>`;
 }
@@ -1324,7 +1437,7 @@ function buildDipHtml(deal, dipData, options) {
 // ═══════════════════════════════════════════════════════════════════
 
 async function generateDipPdf(deal, dipData = {}, options = {}) {
-  console.log('[dip-pdf] TEMPLATE VERSION: v4.2 — generating PDF for', deal.submission_id);
+  console.log('[dip-pdf] TEMPLATE VERSION: v5.0 — generating PDF for', deal.submission_id);
   console.log('[dip-pdf] DATA DUMP:', JSON.stringify({
     properties_count: (dipData.properties || []).length,
     properties: (dipData.properties || []).map(p => ({ addr: (p.address||'').substring(0,30), pc: p.postcode, val: p.market_value })),
@@ -1351,16 +1464,7 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '0', right: '0', bottom: '32px', left: '0' },
-      displayHeaderFooter: true,
-      headerTemplate: '<span></span>',
-      footerTemplate: `
-        <div style="width:100%;padding:0 24px;font-family:Arial,sans-serif;border-top:2px solid #C9A227;">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px;">
-            <span style="font-size:7px;color:#6b7280;">Daksfirst Limited | 8 Hill Street, Mayfair, London W1J 5NG | FCA 937220 | portal@daksfirst.com</span>
-            <span style="font-size:7px;color:#6b7280;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-          </div>
-        </div>`
+      margin: { top: '0', right: '0', bottom: '0', left: '0' }
     });
 
     return Buffer.from(pdfBuffer);
