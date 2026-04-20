@@ -854,11 +854,14 @@ router.post('/:submissionId/dip-credit-decision', authenticateToken, authenticat
     }
 
     const dealRes = await pool.query(
-      `SELECT id, deal_stage, auto_routed FROM deal_submissions WHERE submission_id = $1`,
+      `SELECT id, deal_stage, auto_routed, user_id, submission_id, dip_broker_notified_at,
+              status, loan_amount, loan_amount_approved, borrower_name, dip_issued_at
+       FROM deal_submissions WHERE submission_id = $1`,
       [req.params.submissionId]
     );
     if (dealRes.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
-    const dealId = dealRes.rows[0].id;
+    const dealRow = dealRes.rows[0];
+    const dealId = dealRow.id;
 
     // Apply matrix overrides first (if provided) — these revoke dependent approvals
     // via the existing matrix-fields PUT pattern (audit consistency + auto-revoke).
@@ -915,18 +918,45 @@ router.post('/:submissionId/dip-credit-decision', authenticateToken, authenticat
       req.user.userId
     );
 
+    // ── M5-2: On approval, fire broker email if we haven't already ──
+    // Idempotency: dip_broker_notified_at guards against double-send if Credit
+    // accidentally re-clicks approve or if something loops.
+    let brokerNotified = false;
+    if (decision === 'approved' && !dealRow.dip_broker_notified_at) {
+      try {
+        const brokerRes = await pool.query(`SELECT email FROM users WHERE id = $1`, [dealRow.user_id]);
+        if (brokerRes.rows.length > 0 && brokerRes.rows[0].email) {
+          // Re-fetch minimal deal row for notifyDealEvent payload
+          const dealForEmail = Object.assign({}, dealRow, {
+            submission_id: dealRow.submission_id || req.params.submissionId,
+            status: dealRow.status || 'dip_issued'
+          });
+          await notifyDealEvent('dip_issued', dealForEmail, [brokerRes.rows[0].email]);
+          await pool.query(`UPDATE deal_submissions SET dip_broker_notified_at = NOW() WHERE id = $1`, [dealId]);
+          brokerNotified = true;
+          console.log(`[dip-credit-decision] Broker notified on Credit approve for ${req.params.submissionId}`);
+        }
+      } catch (emailErr) {
+        // Non-blocking — decision is already recorded. Log and continue.
+        console.error('[dip-credit-decision] Broker email failed (non-blocking):', emailErr.message);
+      }
+    } else if (decision === 'approved' && dealRow.dip_broker_notified_at) {
+      console.log(`[dip-credit-decision] Broker already notified at ${dealRow.dip_broker_notified_at} — skipping`);
+    }
+
     res.json({
       success: true,
       decision,
       decided_by: r.rows[0].dip_credit_decided_by,
       decided_at: r.rows[0].dip_credit_decided_at,
       overrides_applied: overrideFields.length > 0,
+      broker_notified: brokerNotified,
       row: r.rows[0],
       message: decision === 'approved'
-        ? 'Credit approved — DIP will release to broker.'
+        ? (brokerNotified ? 'Credit approved — broker notified.' : 'Credit approved — broker was already notified.')
         : decision === 'declined'
-          ? 'Credit declined — deal will not proceed.'
-          : 'More info requested — RM will be notified.'
+          ? 'Credit declined — deal will not proceed until RM addresses concerns.'
+          : 'More info requested — RM will see the notes and can update the deal.'
     });
   } catch (error) {
     console.error('[dip-credit-decision] Error:', error);
@@ -1000,14 +1030,45 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
     const dealId = deal.id;
     const userId = deal.user_id;
 
+    // ── M5-1 (2026-04-20): Matrix-SSOT — prefer matrix _approved columns over dip_data.
+    // Priority order for each field:
+    //   1. deal.<field>_approved  (matrix canonical — RM-approved value)
+    //   2. dip_data.<field>       (legacy form override, back-compat)
+    //   3. deal.<legacy column>   (very old data)
+    const _matrixOrForm = (approvedVal, dipDataVal, legacyVal) => {
+      if (approvedVal != null && approvedVal !== '') return approvedVal;
+      if (dipDataVal != null && dipDataVal !== '') return dipDataVal;
+      return legacyVal;
+    };
+
+    // ── M5-1: 7-APPROVAL GATE — prevent direct-API bypass of DIP form approval UI ──
+    const REQUIRED_APPROVALS = [
+      { col: 'dip_borrower_approved',      label: 'Borrower & Guarantors' },
+      { col: 'dip_security_approved',      label: 'Security & Properties' },
+      { col: 'dip_use_of_funds_approved',  label: 'Use of Funds & Purpose' },
+      { col: 'dip_exit_strategy_approved', label: 'Exit Strategy' },
+      { col: 'dip_loan_terms_approved',    label: 'Loan Terms (Approved)' },
+      { col: 'dip_fees_approved',          label: 'Fee Schedule' },
+      { col: 'dip_conditions_approved',    label: 'Conditions & Notes' }
+    ];
+    const missingApprovals = REQUIRED_APPROVALS.filter(a => !deal[a.col]);
+    if (missingApprovals.length > 0) {
+      console.log('[issue-dip] BLOCKED — missing approvals:', missingApprovals.map(m => m.col).join(', '));
+      return res.status(400).json({
+        error: 'DIP cannot be issued — section approvals incomplete',
+        missing_approvals: missingApprovals.map(m => m.label),
+        message: 'The following DIP sections have not been approved: ' + missingApprovals.map(m => m.label).join(', ') + '. Approve them in the DIP Section Approvals block before issuing.'
+      });
+    }
+
     // ── AUTOMATED GUARDRAILS — hard blocks based on Daksfirst lending criteria ──
     const guardrailErrors = [];
-    const dipLoan = parseFloat(dip_data?.loan_amount || deal.loan_amount || 0);
-    const dipLtv = parseFloat(dip_data?.ltv || deal.ltv_requested || 0);
-    const dipRate = parseFloat(dip_data?.rate_monthly || deal.rate_requested || 0);
-    const dipTerm = parseInt(dip_data?.term_months || deal.term_months || 0);
-    const assetType = (dip_data?.asset_type || deal.asset_type || '').toLowerCase();
-    const loanPurpose = (dip_data?.loan_purpose || deal.loan_purpose || '').toLowerCase();
+    const dipLoan = parseFloat(_matrixOrForm(deal.loan_amount_approved, dip_data?.loan_amount, deal.loan_amount) || 0);
+    const dipLtv = parseFloat(_matrixOrForm(deal.ltv_approved, dip_data?.ltv, deal.ltv_requested) || 0);
+    const dipRate = parseFloat(_matrixOrForm(deal.rate_approved, dip_data?.rate_monthly, deal.rate_requested) || 0);
+    const dipTerm = parseInt(_matrixOrForm(deal.term_months_approved, dip_data?.term_months, deal.term_months) || 0);
+    const assetType = String(_matrixOrForm(null, dip_data?.asset_type, deal.asset_type) || '').toLowerCase();
+    const loanPurpose = String(_matrixOrForm(null, dip_data?.loan_purpose, deal.loan_purpose) || '').toLowerCase();
 
     // Loan size: £500k – £15m
     if (dipLoan < 500000) guardrailErrors.push(`Loan amount £${(dipLoan).toLocaleString()} is below minimum £500,000`);
@@ -1224,11 +1285,13 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       auto_route_summary: autoRouteDecision.summary
     }, req.user.userId);
 
-    // Notify broker via email — only if auto-routed (Credit review deals hold)
+    // Notify broker via email — only if auto-routed (Credit review deals hold).
+    // M5-2: stamp dip_broker_notified_at so we don't double-send when credit-approve fires.
     if (autoRouted) {
       const brokerEmailResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [userId]);
       if (brokerEmailResult.rows.length > 0) {
         await notifyDealEvent('dip_issued', result.rows[0], [brokerEmailResult.rows[0].email]);
+        await pool.query(`UPDATE deal_submissions SET dip_broker_notified_at = NOW() WHERE id = $1`, [dealId]);
         console.log(`[issue-dip] Broker notified (auto-routed) for ${req.params.submissionId}`);
       }
     } else {
@@ -2247,11 +2310,13 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
-    // M2c: Auto-revoke — if any edited field belongs to an approval section's
-    // referenced set, clear that section's DIP approval stamp. Surfaces the
-    // "re-approve" state to the RM without silently letting changed data slip
-    // through an old approval.
+    // M2c+M5-3: Auto-revoke — if any edited field belongs to an approval section's
+    // referenced set, clear that section's DIP approval stamp. AND if loan_terms
+    // or fees are touched, ALSO clear dip_credit_decision (triggers a fresh
+    // Credit review cycle — RM edits after Credit saw it = Credit re-reviews).
     const revokedSections = [];
+    let creditDecisionCleared = false;
+    const CREDIT_RESET_TRIGGERS = new Set([...AUTO_REVOKE_MAP.dip_loan_terms_approved, ...AUTO_REVOKE_MAP.dip_fees_approved]);
     for (const [approvalCol, watchedFields] of Object.entries(AUTO_REVOKE_MAP)) {
       const changed = editedFields.some(f => watchedFields.includes(f));
       if (changed) {
@@ -2260,6 +2325,15 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
         setClauses.push(`${approvalCol}_at = NULL`);
         revokedSections.push(approvalCol);
       }
+    }
+    // M5-3: Clear credit decision if any loan_terms or fees trigger fired
+    const creditReset = editedFields.some(f => CREDIT_RESET_TRIGGERS.has(f));
+    if (creditReset) {
+      setClauses.push(`dip_credit_decision = NULL`);
+      setClauses.push(`dip_credit_decided_by = NULL`);
+      setClauses.push(`dip_credit_decided_at = NULL`);
+      setClauses.push(`dip_credit_notes = NULL`);
+      creditDecisionCleared = true;
     }
 
     setClauses.push(`updated_at = NOW()`);
@@ -2342,11 +2416,13 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
     }
 
     console.log('[matrix-fields] Deal', req.params.submissionId, '- updated by', role, userId, ':', editedFields.length, 'fields' +
-      (revokedSections.length > 0 ? ` (auto-revoked: ${revokedSections.join(', ')})` : ''));
+      (revokedSections.length > 0 ? ` (auto-revoked: ${revokedSections.join(', ')})` : '') +
+      (creditDecisionCleared ? ' (credit decision cleared)' : ''));
     res.json({
       success: true,
       fields_updated: editedFields.length,
-      revoked_approvals: revokedSections
+      revoked_approvals: revokedSections,
+      credit_decision_cleared: creditDecisionCleared
     });
   } catch (error) {
     console.error('[matrix-fields] Error:', error);

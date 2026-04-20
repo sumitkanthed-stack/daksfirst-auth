@@ -1008,6 +1008,9 @@ async function runMigrations() {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_decision_at TIMESTAMPTZ`);
+      // M5-2: Tracks whether broker has been notified of the DIP. Idempotency guard
+      // — both auto-route path and credit-approve path set it so we don't double-send.
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS dip_broker_notified_at TIMESTAMPTZ`);
       console.log('[migrate] ✓ deal_submissions auto-route columns');
     } catch (err) {
       console.log('[migrate] Note on auto-route columns:', err.message.substring(0, 100));
