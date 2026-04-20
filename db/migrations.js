@@ -1037,6 +1037,52 @@ async function runMigrations() {
       console.log('[migrate] Note on auto_routed default fix:', err.message.substring(0, 120));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  DIP v5 — 2026-04-20 (redesign mockup sign-off)
+    //  New columns on deal_submissions + admin_config policy rows for the new DIP
+    //  rendering. All non-breaking additions; existing renderer ignores them.
+    //  Schema changes land here; template switch happens in Commit B.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS min_value_covenant NUMERIC(15,2)`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS min_loan_term INT DEFAULT 3`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS uses_of_net_loan JSONB DEFAULT '[]'::jsonb`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS day_count_basis VARCHAR(10) DEFAULT '360'`);
+      console.log('[migrate] ✓ DIP v5 columns on deal_submissions (min_value_covenant, min_loan_term, uses_of_net_loan, day_count_basis)');
+    } catch (err) {
+      console.log('[migrate] Note on DIP v5 columns:', err.message.substring(0, 120));
+    }
+
+    // ── admin_config: extend with DIP policy clauses (seed defaults if empty) ──
+    try {
+      await pool.query(`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS cf_treatment_clause_html TEXT`);
+      await pool.query(`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS regulatory_disclosure_html TEXT`);
+      await pool.query(`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS cf_credit_against_af BOOLEAN DEFAULT TRUE`);
+
+      const CF_DEFAULT = `<ul>
+<li><strong>If the deal completes:</strong> the Commitment Fee is credited against the Arrangement Fee payable on completion (Borrower does not pay twice).</li>
+<li><strong>If the Borrower withdraws, or if information provided is misrepresented, or if the valuation does not support the proposed lending, or if KYC / AML is not satisfactory:</strong> the Commitment Fee is <strong>forfeited</strong>.</li>
+<li><strong>If Daksfirst withdraws for reasons wholly within its own control:</strong> the Commitment Fee <em>may be refunded</em> at Daksfirst's discretion.</li>
+</ul>`;
+
+      const REG_DEFAULT = `<p><strong>Regulatory Disclosure &amp; Nature of Facility.</strong> Daksfirst Limited is a private limited company registered in England and Wales under company number <strong>11626401</strong>, with registered office at 8 Hill Street, Mayfair, London W1J 5NG. Daksfirst Limited is authorised and regulated by the Financial Conduct Authority (<strong>FCA No. 937220</strong>).</p>
+<p><strong>This facility is an unregulated mortgage contract.</strong> The Borrower is a corporate entity and the secured property is held for investment / commercial purposes, not for occupation by the Borrower or a related individual. Accordingly, the protections afforded to consumers under FCA rules &mdash; including access to the Financial Ombudsman Service and the Financial Services Compensation Scheme (FSCS) &mdash; do not apply to this transaction.</p>
+<p>Daksfirst reserves the right to withdraw or amend this DIP at any time prior to the issuance of a binding Facility Letter. The Borrower should not rely on this DIP as a guarantee of funding.</p>`;
+
+      // Seed defaults only if the field is NULL (preserves admin edits)
+      await pool.query(
+        `UPDATE admin_config SET cf_treatment_clause_html = $1 WHERE id = 1 AND cf_treatment_clause_html IS NULL`,
+        [CF_DEFAULT]
+      );
+      await pool.query(
+        `UPDATE admin_config SET regulatory_disclosure_html = $1 WHERE id = 1 AND regulatory_disclosure_html IS NULL`,
+        [REG_DEFAULT]
+      );
+      console.log('[migrate] ✓ admin_config DIP policy clauses (CF treatment + regulatory disclosure)');
+    } catch (err) {
+      console.log('[migrate] Note on admin_config DIP policy:', err.message.substring(0, 120));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
