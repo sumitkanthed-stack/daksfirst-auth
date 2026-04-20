@@ -1130,12 +1130,10 @@ export function renderInternalWorkflowControls(deal) {
         <div id="dip-section-approvals-grid" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
       </div>` : ''}
 
-      <!-- ═══ PRE-ISSUE CHECKLIST (hidden after issuance) ═══ -->
-      ${stage !== 'dip_issued' ? `<div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
-        <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
-        <p style="margin:0 0 10px;font-size:11px;color:#4b5563;">All items must be satisfied before the DIP can be issued.</p>
-        <div id="dip-checklist" style="font-size:12px;line-height:2;"></div>
-      </div>` : ''}
+      <!-- M4d 2026-04-20: Pre-Issue Checklist removed — redundant with Section Approvals above.
+           The 7 approval cards each enforce completeness on their referenced matrix fields.
+           Hidden placeholder kept so legacy validateDipChecklist() references don't 500. -->
+      <div id="dip-checklist" style="display:none;"></div>
 
       <div style="display:flex;gap:12px;align-items:center;">
         ${stage !== 'dip_issued' ? `<button id="btn-issue-dip" onclick="window.showIssueDipPreflight && window.showIssueDipPreflight()" disabled style="padding:10px 24px;background:#9ca3af;color:white;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;font-size:14px;transition:all 0.2s;" title="Shows pre-flight auto-route check before issuing">Issue DIP to ${deal.broker_id || deal.broker_name ? 'Broker' : 'Borrower'}</button>` : ''}
@@ -1325,27 +1323,29 @@ export function renderInternalWorkflowControls(deal) {
         const countEl = document.getElementById('dip-checklist-count');
         if (countEl) countEl.textContent = passCount + '/' + checks.length + ' complete';
 
-        // M4b (Matrix-SSOT): Issue DIP also requires all 5 section approvals ✓
+        // M4d (Matrix-SSOT): Issue DIP gated on 7 section approvals only.
+        // Pre-Issue Checklist removed — approval gates enforce completeness.
         const approvalsComplete = renderDipApprovalGates();
 
-        // Enable/disable Issue button — passes BOTH checklist AND approval gates
         const btn = document.getElementById('btn-issue-dip');
         if (btn) {
-          if (allPassed && approvalsComplete) {
+          if (approvalsComplete) {
             btn.disabled = false;
             btn.style.background = '#16a34a';
             btn.style.color = '#ffffff';
             btn.style.cursor = 'pointer';
-            btn.title = 'All checks passed and all 5 DIP sections approved';
+            btn.title = 'All 7 DIP sections approved — ready to issue';
           } else {
             btn.disabled = true;
             btn.style.background = '#9ca3af';
             btn.style.cursor = 'not-allowed';
-            btn.title = !allPassed ? 'Pre-Issue Checklist incomplete'
-              : !approvalsComplete ? 'DIP Section Approvals incomplete'
-              : '';
+            btn.title = 'Approve all 7 sections above before issuing';
           }
         }
+
+        // Hide legacy checklist counter (deprecated by approval gates)
+        const countEl = document.getElementById('dip-checklist-count');
+        if (countEl) countEl.style.display = 'none';
       };
 
       // M4b: Pull fresh deal data before rendering approvals.
@@ -1395,32 +1395,107 @@ export function renderInternalWorkflowControls(deal) {
         const progress = document.getElementById('dip-approval-progress');
         if (!grid) return true; // Not visible (non-internal or post-issuance) — don't block issue
 
+        // M4d 2026-04-20: 7-card approval gates with completeness checks.
+        // Order matches the new matrix section order (commercial sequence):
+        //   Borrower → Security → Use of Funds → Exit Strategy → Loan Terms → Fees → Conditions.
+        // Each card includes a completeness check — Approve button disabled when
+        // required matrix fields are missing; tooltip explains what to fill.
         const SECTIONS = [
-          { key: 'borrower',    label: 'Borrower & Guarantors', summary: () => (deal.borrower_name || '—') + (deal.company_number ? ' · Co. No ' + deal.company_number : '') },
-          { key: 'security',    label: 'Security & Properties',  summary: () => {
-            const props = deal.properties || [];
-            const total = props.reduce((s,p) => s + (Number(p.market_value) || 0), 0);
-            return props.length + ' propert' + (props.length === 1 ? 'y' : 'ies') + (total > 0 ? ' · Total MV £' + Math.round(total).toLocaleString() : '');
-          }},
-          { key: 'loan_terms',  label: 'Loan Terms (Approved)',  summary: () => {
-            const loan = deal.loan_amount_approved ?? deal.loan_amount;
-            const ltv = deal.ltv_approved ?? deal.ltv_requested;
-            const rate = deal.rate_approved ?? deal.rate_requested;
-            const term = deal.term_months_approved ?? deal.term_months;
-            return (loan ? '£' + Math.round(Number(loan)).toLocaleString() : '£—') + ' · ' + (ltv ? Number(ltv).toFixed(2) + '% LTV' : 'LTV —') + ' · ' + (rate ? Number(rate).toFixed(2) + '%/mo' : 'Rate —') + ' · ' + (term ? term + ' mo' : 'Term —');
-          }},
-          { key: 'fees',        label: 'Fee Schedule',           summary: () => {
-            const arr = deal.arrangement_fee_pct;
-            const commit = deal.commitment_fee;
-            const dipFee = deal.dip_fee;
-            return 'Arr ' + (arr ? Number(arr).toFixed(2) + '%' : '—') + ' · Commit £' + (commit ? Math.round(Number(commit)).toLocaleString() : '—') + ' · DIP £' + (dipFee ? Math.round(Number(dipFee)).toLocaleString() : '—');
-          }},
-          { key: 'conditions',  label: 'Conditions & Notes',     summary: () => {
-            const notes = deal.dip_notes || deal.additional_notes;
-            if (!notes || !notes.trim()) return 'No conditions noted (approve as-is or add notes).';
-            const snip = notes.length > 80 ? notes.substring(0, 80) + '…' : notes;
-            return snip;
-          }}
+          {
+            key: 'borrower', label: 'Borrower & Guarantors',
+            summary: () => (deal.borrower_name || '—') + (deal.company_number ? ' · Co. No ' + deal.company_number : ''),
+            complete: () => {
+              if (!deal.borrower_name || !String(deal.borrower_name).trim()) return { ok: false, reason: 'Borrower name required' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'security', label: 'Security & Properties',
+            summary: () => {
+              const props = deal.properties || [];
+              const total = props.reduce((s,p) => s + (Number(p.market_value) || 0), 0);
+              return props.length + ' propert' + (props.length === 1 ? 'y' : 'ies') + (total > 0 ? ' · Total MV £' + Math.round(total).toLocaleString() : '');
+            },
+            complete: () => {
+              const props = deal.properties || [];
+              if (props.length === 0) return { ok: false, reason: 'At least one property required' };
+              const anyMissing = props.some(p => !(Number(p.market_value) > 0));
+              if (anyMissing) return { ok: false, reason: 'All properties need market values' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'use_of_funds', label: 'Use of Funds & Purpose',
+            summary: () => {
+              const purpose = deal.loan_purpose;
+              const uof = deal.use_of_funds;
+              if (!purpose && !uof) return 'Purpose + use of funds not yet set.';
+              return (purpose ? String(purpose).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—') + (uof ? ' · ' + (uof.length > 60 ? uof.substring(0, 60) + '…' : uof) : '');
+            },
+            complete: () => {
+              if (!deal.loan_purpose) return { ok: false, reason: 'Loan purpose required' };
+              if (!deal.use_of_funds || !String(deal.use_of_funds).trim()) return { ok: false, reason: 'Use of Funds detail required' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'exit_strategy', label: 'Exit Strategy',
+            summary: () => {
+              const exit = deal.exit_strategy_approved || deal.exit_strategy;
+              if (!exit || !String(exit).trim()) return 'No exit strategy documented.';
+              return exit.length > 80 ? exit.substring(0, 80) + '…' : exit;
+            },
+            complete: () => {
+              const exit = deal.exit_strategy_approved || deal.exit_strategy;
+              if (!exit || !String(exit).trim()) return { ok: false, reason: 'Exit strategy required' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'loan_terms', label: 'Loan Terms (Approved)',
+            summary: () => {
+              const loan = deal.loan_amount_approved ?? deal.loan_amount;
+              const ltv = deal.ltv_approved ?? deal.ltv_requested;
+              const rate = deal.rate_approved ?? deal.rate_requested;
+              const term = deal.term_months_approved ?? deal.term_months;
+              return (loan ? '£' + Math.round(Number(loan)).toLocaleString() : '£—') + ' · ' + (ltv ? Number(ltv).toFixed(2) + '% LTV' : 'LTV —') + ' · ' + (rate ? Number(rate).toFixed(2) + '%/mo' : 'Rate —') + ' · ' + (term ? term + ' mo' : 'Term —');
+            },
+            complete: () => {
+              const loan = Number(deal.loan_amount_approved ?? deal.loan_amount ?? 0);
+              const ltv = Number(deal.ltv_approved ?? deal.ltv_requested ?? 0);
+              const rate = Number(deal.rate_approved ?? deal.rate_requested ?? 0);
+              const term = Number(deal.term_months_approved ?? deal.term_months ?? 0);
+              if (loan <= 0) return { ok: false, reason: 'Approved loan amount required' };
+              if (ltv <= 0) return { ok: false, reason: 'Approved LTV required' };
+              if (rate < 0.85) return { ok: false, reason: 'Rate must be ≥ 0.85%/mo' };
+              if (term < 3 || term > 24) return { ok: false, reason: 'Term must be 3–24 months' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'fees', label: 'Fee Schedule',
+            summary: () => {
+              const arr = deal.arrangement_fee_pct;
+              const commit = deal.commitment_fee;
+              const dipFee = deal.dip_fee;
+              return 'Arr ' + (arr ? Number(arr).toFixed(2) + '%' : '—') + ' · Commit £' + (commit ? Math.round(Number(commit)).toLocaleString() : '—') + ' · DIP £' + (dipFee ? Math.round(Number(dipFee)).toLocaleString() : '—');
+            },
+            complete: () => {
+              if (!(Number(deal.arrangement_fee_pct) > 0)) return { ok: false, reason: 'Arrangement fee required' };
+              if (!(Number(deal.dip_fee) > 0)) return { ok: false, reason: 'DIP fee required' };
+              return { ok: true };
+            }
+          },
+          {
+            key: 'conditions', label: 'Conditions & Notes',
+            summary: () => {
+              const notes = deal.dip_notes || deal.additional_notes;
+              if (!notes || !notes.trim()) return 'No conditions noted (approve as-is or add notes).';
+              return notes.length > 80 ? notes.substring(0, 80) + '…' : notes;
+            },
+            // Conditions is free-text — always allowed to approve (even if empty).
+            complete: () => ({ ok: true })
+          }
         ];
 
         let approvedCount = 0;
@@ -1431,27 +1506,40 @@ export function renderInternalWorkflowControls(deal) {
           const isApproved = !!deal[colApproved];
           if (isApproved) approvedCount++;
 
+          // Completeness check (M4d): disable Approve if required matrix fields missing
+          const completeness = sec.complete ? sec.complete() : { ok: true };
+
           const stampHtml = isApproved
             ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#166534;font-weight:600;">' +
                 '<span>\u2713 Approved</span>' +
                 (deal[colAt] ? '<span style="color:#4b5563;font-weight:400;"> \u00B7 ' + new Date(deal[colAt]).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) + '</span>' : '') +
               '</div>'
-            : '<div style="font-size:11px;color:#9ca3af;font-weight:600;">Not approved</div>';
+            : (completeness.ok
+              ? '<div style="font-size:11px;color:#9ca3af;font-weight:600;">Ready to approve</div>'
+              : '<div style="font-size:11px;color:#b45309;font-weight:600;">\u26A0 ' + sanitizeHtml(completeness.reason) + '</div>');
 
+          // Button state: Unapprove (always enabled if approved), Approve (disabled when incomplete)
           const btnLabel = isApproved ? 'Unapprove' : 'Approve';
-          const btnBg = isApproved ? '#fef2f2' : '#dcfce7';
-          const btnColor = isApproved ? '#991b1b' : '#166534';
-          const btnBorder = isApproved ? '#fecaca' : '#86efac';
+          const btnEnabled = isApproved || completeness.ok;
           const action = isApproved ? 'unapproveDipSection' : 'approveDipSection';
 
-          return '<div style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:' + (isApproved ? '#f0fdf4' : '#ffffff') + ';border:1px solid ' + (isApproved ? '#bbf7d0' : '#e5e7eb') + ';border-radius:6px;">' +
-            '<div style="width:24px;height:24px;border-radius:50%;background:' + (isApproved ? '#16a34a' : '#d1d5db') + ';color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">' + (idx + 1) + '</div>' +
+          const btnBg = isApproved ? '#fef2f2' : (btnEnabled ? '#dcfce7' : '#f3f4f6');
+          const btnColor = isApproved ? '#991b1b' : (btnEnabled ? '#166534' : '#9ca3af');
+          const btnBorder = isApproved ? '#fecaca' : (btnEnabled ? '#86efac' : '#d1d5db');
+          const btnCursor = btnEnabled ? 'pointer' : 'not-allowed';
+          const btnTitle = btnEnabled ? '' : 'Fill required fields in matrix first: ' + (completeness.reason || '');
+          const btnOnclick = btnEnabled
+            ? `window.${action}('${deal.submission_id}', '${sec.key}')`
+            : 'void 0';
+
+          return '<div style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:' + (isApproved ? '#f0fdf4' : (completeness.ok ? '#ffffff' : '#fffbeb')) + ';border:1px solid ' + (isApproved ? '#bbf7d0' : (completeness.ok ? '#e5e7eb' : '#fde68a')) + ';border-radius:6px;">' +
+            '<div style="width:24px;height:24px;border-radius:50%;background:' + (isApproved ? '#16a34a' : (completeness.ok ? '#d1d5db' : '#f59e0b')) + ';color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">' + (idx + 1) + '</div>' +
             '<div>' +
               '<div style="font-size:12px;font-weight:700;color:#0f172a;">' + sanitizeHtml(sec.label) + '</div>' +
               '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + sanitizeHtml(sec.summary()) + '</div>' +
               stampHtml +
             '</div>' +
-            '<button onclick="window.' + action + '(\'' + deal.submission_id + '\', \'' + sec.key + '\')" style="padding:6px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">' + btnLabel + '</button>' +
+            '<button ' + (btnEnabled ? '' : 'disabled ') + 'onclick="' + btnOnclick + '" title="' + sanitizeHtml(btnTitle) + '" style="padding:6px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:5px;font-size:11px;font-weight:700;cursor:' + btnCursor + ';">' + btnLabel + '</button>' +
           '</div>';
         }).join('');
         grid.innerHTML = cardsHtml;
