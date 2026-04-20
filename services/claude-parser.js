@@ -407,6 +407,184 @@ function deduplicateBorrowers(borrowers) {
   return Array.from(seen.values());
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Candidate dedup — added 2026-04-20. Groups duplicates across batches and
+//  merges source_docs, role_hints, reasoning. Works on the candidate output
+//  shape from parseDealForCandidates (different fields from full borrower
+//  records — that's why these are separate from deduplicateBorrowers).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NAME_TITLES = new Set(['mr', 'mrs', 'miss', 'ms', 'dr', 'sir', 'dame', 'lord', 'lady', 'prof', 'rev']);
+
+function _normaliseNameKey(name) {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t && !NAME_TITLES.has(t))
+    .sort()
+    .join(' ');
+}
+
+function _normaliseCompanyKey(name) {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(ltd|limited|llp|plc|inc|llc|co|uk)\b/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function _mergeSources(a, b) {
+  const set = new Set([...(a || []), ...(b || [])]);
+  return Array.from(set);
+}
+
+function _pickLonger(a, b) {
+  const sa = (a || '').toString();
+  const sb = (b || '').toString();
+  return sa.length >= sb.length ? sa : sb;
+}
+
+function _pickNonEmpty(a, b) {
+  if (a !== null && a !== undefined && a !== '') return a;
+  return b;
+}
+
+// Two name-token lists match if every pair is either equal OR one is a single
+// letter that matches the first char of the other (initials-vs-fullname match).
+function _tokensMatchWithInitials(shortToks, longToks) {
+  if (shortToks.length !== longToks.length) return false;
+  for (let i = 0; i < shortToks.length; i++) {
+    const a = shortToks[i];
+    const b = longToks[i];
+    if (a === b) continue;
+    if (a.length === 1 && b.startsWith(a)) continue;
+    if (b.length === 1 && a.startsWith(b)) continue;
+    return false;
+  }
+  return true;
+}
+
+function deduplicateCandidateIndividuals(individuals) {
+  if (!Array.isArray(individuals) || individuals.length === 0) return individuals;
+
+  // Pass 1: group by exact name-key match OR DOB match
+  const groups = [];
+  for (const ind of individuals) {
+    const nameKey = _normaliseNameKey(ind.name);
+    const dob = (ind.date_of_birth || '').substring(0, 10);
+
+    const match = groups.find(g => {
+      if (dob && g.dob && dob === g.dob) return true;
+      if (nameKey && g.nameKey === nameKey) return true;
+      return false;
+    });
+
+    if (match) {
+      match.dob = match.dob || dob;
+      match.nameKey = match.nameKey || nameKey;
+      match.variants.push(ind);
+    } else {
+      groups.push({ nameKey, dob, variants: [ind] });
+    }
+  }
+
+  // Pass 2: collapse initials-matching pairs (e.g. "A Cenci" + "Alessandra Cenci")
+  // Walk groups oldest-first; if any later group's tokens match with the
+  // initials rule AND DOBs don't conflict, absorb it.
+  for (let i = 0; i < groups.length; i++) {
+    const gi = groups[i];
+    const giTokens = (gi.nameKey || '').split(' ').filter(Boolean);
+    if (giTokens.length === 0) continue;
+
+    for (let j = groups.length - 1; j > i; j--) {
+      const gj = groups[j];
+      if (gi.dob && gj.dob && gi.dob !== gj.dob) continue;   // different DOB → different people
+      const gjTokens = (gj.nameKey || '').split(' ').filter(Boolean);
+      if (gjTokens.length === 0) continue;
+      if (_tokensMatchWithInitials(gjTokens, giTokens) || _tokensMatchWithInitials(giTokens, gjTokens)) {
+        gi.variants.push(...gj.variants);
+        gi.dob = gi.dob || gj.dob;
+        // Keep the richer name-key (more characters)
+        if ((gj.nameKey || '').length > (gi.nameKey || '').length) gi.nameKey = gj.nameKey;
+        groups.splice(j, 1);
+      }
+    }
+  }
+
+  // Collapse each group into a single record by picking best fields + unioning
+  return groups.map((group, idx) => {
+    const v = group.variants;
+    const merged = {
+      id: 'ind-' + (idx + 1),
+      name: v.reduce((best, c) => (c.name && c.name.length > (best.name || '').length ? c : best), {}).name || v[0].name,
+      date_of_birth: v.reduce((d, c) => d || c.date_of_birth, null),
+      nationality: v.reduce((n, c) => n || c.nationality, null),
+      address: v.reduce((a, c) => a || c.address, null),
+      email: v.reduce((e, c) => e || c.email, null),
+      phone: v.reduce((p, c) => p || c.phone, null),
+      psc_percentage: v.reduce((p, c) => p || c.psc_percentage, null),
+      id_document_type: v.reduce((t, c) => t || c.id_document_type, null),
+      id_document_number: v.reduce((n, c) => n || c.id_document_number, null),
+      linked_to_corporate_id: v.reduce((l, c) => l || c.linked_to_corporate_id, null),
+      // Union of role_hints across all duplicates — keep every hint Claude saw
+      role_hints: Array.from(new Set(v.flatMap(c => c.role_hints || []))),
+      // Union of source docs / pages
+      source_docs: _mergeSources(...v.map(c => c.source_docs)),
+      source_pages: Array.from(new Set(v.flatMap(c => c.source_pages || []))),
+      // Pick the longest reasoning (most detail) — or concatenate top 2 if short
+      reasoning: v.reduce((best, c) => _pickLonger(best, c.reasoning), ''),
+      // Track duplicate count so UI can show "merged from N mentions"
+      _duplicate_count: v.length
+    };
+    return merged;
+  });
+}
+
+function deduplicateCandidateCorporates(corporates) {
+  if (!Array.isArray(corporates) || corporates.length === 0) return corporates;
+
+  const groups = [];
+  for (const corp of corporates) {
+    const coNo = (corp.company_number || '').replace(/\s/g, '').toLowerCase();
+    const nameKey = _normaliseCompanyKey(corp.name);
+
+    // Company number is a strong match; name match is a fallback
+    const match = groups.find(g => {
+      if (coNo && g.coNo && coNo === g.coNo) return true;
+      if (nameKey && g.nameKey === nameKey) return true;
+      return false;
+    });
+
+    if (match) {
+      match.coNo = match.coNo || coNo;
+      match.nameKey = match.nameKey || nameKey;
+      match.variants.push(corp);
+    } else {
+      groups.push({ coNo, nameKey, variants: [corp] });
+    }
+  }
+
+  return groups.map((group, idx) => {
+    const v = group.variants;
+    return {
+      id: 'corp-' + (idx + 1),
+      name: v.reduce((best, c) => (c.name && c.name.length > (best.name || '').length ? c : best), {}).name || v[0].name,
+      company_number: v.reduce((n, c) => n || c.company_number, null),
+      jurisdiction: v.reduce((j, c) => j || c.jurisdiction, null),
+      registered_address: v.reduce((a, c) => _pickNonEmpty(a, c.registered_address), null),
+      source_docs: _mergeSources(...v.map(c => c.source_docs)),
+      source_pages: Array.from(new Set(v.flatMap(c => c.source_pages || []))),
+      reasoning: v.reduce((best, c) => _pickLonger(best, c.reasoning), ''),
+      _duplicate_count: v.length
+    };
+  });
+}
+
 
 /**
  * Merge batch results into existing analysis
@@ -1276,12 +1454,52 @@ JSON schema:
     }
   }
 
-  // ── Deduplicate candidates by address/postcode for properties ──
-  if (mergedCandidates.properties && Array.isArray(mergedCandidates.properties)) {
-    mergedCandidates.properties = deduplicateProperties(mergedCandidates.properties);
+  // ── Intelligent dedup across all candidate types ──
+  const beforeCorps = mergedCandidates.corporate_entities.length;
+  const beforeInds = mergedCandidates.individuals.length;
+  const beforeProps = mergedCandidates.properties.length;
+
+  // 1) Dedupe corporates first, and build old-id → new-id map so we can rewrite
+  //    linked_to_corporate_id references on individuals.
+  const corpIdRemap = {};
+  if (Array.isArray(mergedCandidates.corporate_entities)) {
+    const originalCorps = mergedCandidates.corporate_entities;
+    const dedupedCorps = deduplicateCandidateCorporates(originalCorps);
+    // Build remap: for each original corp, find which deduped corp it merged into
+    for (const orig of originalCorps) {
+      const origCoNo = (orig.company_number || '').replace(/\s/g, '').toLowerCase();
+      const origNameKey = _normaliseCompanyKey(orig.name);
+      for (let i = 0; i < dedupedCorps.length; i++) {
+        const d = dedupedCorps[i];
+        const dCoNo = (d.company_number || '').replace(/\s/g, '').toLowerCase();
+        const dNameKey = _normaliseCompanyKey(d.name);
+        if ((origCoNo && origCoNo === dCoNo) || (origNameKey && origNameKey === dNameKey)) {
+          corpIdRemap[orig.id] = d.id;
+          break;
+        }
+      }
+    }
+    mergedCandidates.corporate_entities = dedupedCorps;
   }
 
-  console.log(`[claude-parser] parseDealForCandidates: extracted ${mergedCandidates.corporate_entities.length} corporates, ${mergedCandidates.individuals.length} individuals, ${mergedCandidates.properties.length} properties`);
+  // 2) Dedupe individuals + rewrite linked_to_corporate_id via remap
+  if (Array.isArray(mergedCandidates.individuals)) {
+    // Rewrite links before deduping so merged records carry the remapped id
+    mergedCandidates.individuals = mergedCandidates.individuals.map(ind => ({
+      ...ind,
+      linked_to_corporate_id: corpIdRemap[ind.linked_to_corporate_id] || ind.linked_to_corporate_id
+    }));
+    mergedCandidates.individuals = deduplicateCandidateIndividuals(mergedCandidates.individuals);
+  }
+
+  // 3) Dedupe properties (existing fn — matches on address + postcode)
+  if (Array.isArray(mergedCandidates.properties)) {
+    mergedCandidates.properties = deduplicateProperties(mergedCandidates.properties);
+    // Re-label IDs so UI shows P1, P2, P3... in order
+    mergedCandidates.properties.forEach((p, i) => { p.id = 'prop-' + (i + 1); });
+  }
+
+  console.log(`[claude-parser] parseDealForCandidates dedup: corporates ${beforeCorps}→${mergedCandidates.corporate_entities.length}, individuals ${beforeInds}→${mergedCandidates.individuals.length}, properties ${beforeProps}→${mergedCandidates.properties.length}`);
 
   return {
     success: true,
@@ -1291,4 +1509,4 @@ JSON schema:
   };
 }
 
-module.exports = { parseDealDocuments, deduplicateProperties, parseDocumentsOnly, parseDealForCandidates };
+module.exports = { parseDealDocuments, deduplicateProperties, parseDocumentsOnly, parseDealForCandidates, deduplicateCandidateIndividuals, deduplicateCandidateCorporates };
