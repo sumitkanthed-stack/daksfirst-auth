@@ -1126,6 +1126,15 @@ export async function renderDealMatrix(deal) {
                   const electedAtIso = gChm.elected_at || null;
                   const electedBrokerTrace = gChm.broker_trace_required === true;
 
+                  // F2 (2026-04-20): Orphan detection — source PSC may have been deleted
+                  // (happens when primary borrower was deleted, cascading its PSC chain,
+                  // but the top-level elected guarantor row survived because it's not a child).
+                  // Check if the referenced source id still exists in deal.borrowers.
+                  const electedSourceExists = electedFromId
+                    ? (deal.borrowers || []).some(b => b.id === electedFromId)
+                    : true; // no elected id => not elected => not orphan
+                  const isOrphan = electedFromId && !electedSourceExists;
+
                   // Acronym roles (PSC / UBO / LLP) should display uppercase, not title-case
                   const _fmtRole = (r) => {
                     if (!r) return '';
@@ -1133,6 +1142,21 @@ export async function renderDealMatrix(deal) {
                     if (['psc','ubo','llp','plc'].includes(lr)) return lr.toUpperCase();
                     return lr.charAt(0).toUpperCase() + lr.slice(1);
                   };
+
+                  // F2: Orphan banner — render ABOVE the elected banner when source is gone
+                  const orphanBanner = isOrphan
+                    ? '<div style="margin-bottom:10px;padding:10px 12px;background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.4);border-left:3px solid #FB923C;border-radius:6px;">' +
+                        '<div style="font-size:10px;color:#FB923C;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u26A0 Orphan Guarantor \u2014 Source Deleted</div>' +
+                        '<div style="font-size:11px;color:#FED7AA;line-height:1.5;">' +
+                          'This guarantor was elected from <strong>' + sanitizeHtml(electedFromName || 'a corporate PSC') + '</strong>, but that source entity is no longer on this deal ' +
+                          '(typically because the primary borrower was deleted and cascaded the PSC chain).' +
+                        '</div>' +
+                        '<div style="font-size:10px;color:#FED7AA;margin-top:6px;">' +
+                          'Action: either <strong>delete this guarantor row</strong> if the election is no longer valid, ' +
+                          'or <strong>re-add the source entity</strong> and re-elect to restore provenance.' +
+                        '</div>' +
+                      '</div>'
+                    : '';
 
                   const electedBanner = electedFromId
                     ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.3);border-left:3px solid #A78BFA;border-radius:6px;">' +
@@ -1148,7 +1172,8 @@ export async function renderDealMatrix(deal) {
                       '</div>'
                     : '';
 
-                  return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #818CF8;border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
+                  return '<div style="background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-left:3px solid ' + (isOrphan ? '#FB923C' : '#818CF8') + ';border-radius:8px;padding:12px 14px;margin-bottom:12px;">' +
+                    orphanBanner +
                     electedBanner +
                     // Identity card
                     '<div style="background:rgba(129,140,248,0.05);border:1px solid rgba(129,140,248,0.18);border-radius:6px;padding:10px 14px;margin-bottom:10px;">' +
@@ -5324,147 +5349,6 @@ export async function renderDealMatrix(deal) {
       // G5.3 Part B Commit 2 — delegate to shared renderer.
       // Renderer handles nested kids with inline expandable sub-panels + broker-trace banner.
       innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0);
-    } else if (false /* PART_B_DEAD_CORP_BRANCH — see below */) {
-      // Dead branch: original inline corporate rendering preserved as a literal to keep
-      // the file parse-clean. Never executes (condition is `false`).
-      // The expression references nestedKidsTable/recursionHtml that no longer exist,
-      // but ReferenceErrors don't fire because the branch is never entered.
-      // (Refactor note 2026-04-19: Part B moved all corporate rendering into window._renderCorporatePanelHtml.)
-      innerBody =
-        // ── Header: Corporate Name + Badges ──
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
-          '<div>' +
-            '<div style="font-size:10px;color:#38BDF8;text-transform:uppercase;font-weight:700;letter-spacing:.3px;">Corporate ' + (bor.role === 'psc' ? 'PSC' : (bor.role || '').toUpperCase()) + '</div>' +
-            '<div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-top:2px;">' + sanitizeHtml(bor.full_name || 'Unknown Company') + '</div>' +
-          '</div>' +
-          '<div style="display:flex;gap:6px;align-items:center;">' +
-            chBadge +
-            '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:#38BDF8;background:rgba(56,189,248,0.1);text-transform:capitalize;">' + (bor.role || 'psc') + '</span>' +
-          '</div>' +
-        '</div>' +
-
-        // ── Two-column layout: Corporate Identity + CH Details ──
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">' +
-          // LEFT: Corporate Identity
-          '<div>' +
-            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Corporate Identity</div>' +
-            field('Company Number', companyNo, 'CH') +
-            field('Jurisdiction', bor.jurisdiction || chd2.jurisdiction || 'England and Wales', 'CH') +
-            field('Registered Address', regAddr, 'CH') +
-            (natures.length > 0
-              ? '<div style="margin-bottom:8px;">' +
-                  '<div style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nature of Control</div>' +
-                  '<div style="font-size:11px;color:#F1F5F9;line-height:1.5;">' + natures.map(n => sanitizeHtml(String(n).replace(/-/g, ' '))).join('<br/>') + '</div>' +
-                '</div>'
-              : field('Nature of Control', null, 'CH')) +
-          '</div>' +
-
-          // RIGHT: CH Verification
-          '<div>' +
-            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Companies House Verification</div>' +
-            field('CH Verified At', bor.ch_verified_at ? fmtDate(bor.ch_verified_at) : null, 'Broker') +
-            field('Matched Role', bor.ch_matched_role || null, 'CH') +
-            field('Match Confidence', bor.ch_match_confidence || null, 'CH') +
-            (bor.company_number && canEdit
-              ? '<div style="margin-top:10px;">' +
-                  '<button onclick="window._chVerifyCorporateParty(' + bor.id + ', \'' + deal.submission_id + '\')" style="padding:4px 12px;background:rgba(52,211,153,0.1);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">\u21BB Re-verify at CH</button>' +
-                '</div>'
-              : '') +
-          '</div>' +
-        '</div>' +
-
-        // ── CH Summary strip: status, age, risk, charges, accounts ──
-        (function() {
-          const riskCol = chd2.risk_score === 'low' ? '#34D399' : chd2.risk_score === 'medium' ? '#FBBF24' : chd2.risk_score === 'high' ? '#F87171' : '#94A3B8';
-          const riskBg = riskCol === '#34D399' ? 'rgba(52,211,153,0.1)' : riskCol === '#FBBF24' ? 'rgba(251,191,36,0.1)' : riskCol === '#F87171' ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.04)';
-          const statusCol = chd2.company_status === 'active' ? '#34D399' : '#F87171';
-          const statusBg = chd2.company_status === 'active' ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)';
-          const pills = [];
-          if (chd2.company_status) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + statusBg + ';color:' + statusCol + ';text-transform:capitalize;">' + sanitizeHtml(chd2.company_status) + '</span>');
-          if (chd2.age_months != null) {
-            const yrs = Math.floor(chd2.age_months / 12);
-            const mos = chd2.age_months % 12;
-            const ageStr = yrs > 0 ? (yrs + 'y ' + mos + 'm') : (mos + 'm');
-            pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Age: ' + ageStr + '</span>');
-          }
-          if (chd2.risk_score) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:' + riskBg + ';color:' + riskCol + ';text-transform:capitalize;">Risk: ' + sanitizeHtml(chd2.risk_score) + '</span>');
-          if (chd2.charges_total != null) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#CBD5E1;">Charges: ' + chd2.charges_total + ' total / ' + ((chd2.charges_outstanding || []).length) + ' outstanding</span>');
-          if (chd2.has_insolvency_history === true) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(248,113,113,0.15);color:#F87171;">\u26A0 Insolvency history</span>');
-          if (Array.isArray(chd2.sic_codes) && chd2.sic_codes.length > 0) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">SIC: ' + chd2.sic_codes.join(', ') + '</span>');
-          if (chd2.accounts && chd2.accounts.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Accounts due: ' + fmtDate(chd2.accounts.next_due) + (chd2.accounts.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
-          if (chd2.confirmation_statement && chd2.confirmation_statement.next_due) pills.push('<span style="padding:3px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.04);color:#94A3B8;">Conf stmt due: ' + fmtDate(chd2.confirmation_statement.next_due) + (chd2.confirmation_statement.overdue ? ' <span style="color:#F87171;">OVERDUE</span>' : '') + '</span>');
-          if (pills.length === 0) return '';
-          return '<div style="margin-top:12px;padding:10px 12px;background:rgba(56,189,248,0.04);border:1px solid rgba(56,189,248,0.15);border-radius:6px;">' +
-            '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">CH Summary</div>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + pills.join('') + '</div>' +
-          '</div>';
-        })() +
-
-        // ── Outstanding Charges table ──
-        (function() {
-          const charges = Array.isArray(chd2.charges_outstanding) ? chd2.charges_outstanding : [];
-          if (charges.length === 0) return '';
-          return '<div style="margin-top:12px;">' +
-            '<div style="font-size:9px;color:#F87171;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Outstanding Charges \u2014 ' + charges.length + '</div>' +
-            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
-              '<thead><tr style="background:rgba(248,113,113,0.06);">' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Charge Code</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Created</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Entitled</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
-              '</tr></thead><tbody>' +
-              charges.map(c => {
-                const entitled = Array.isArray(c.persons_entitled) && c.persons_entitled.length > 0
-                  ? c.persons_entitled.map(p => sanitizeHtml(p.name || '')).join('; ') : '—';
-                const flags = [];
-                if (c.particulars && c.particulars.contains_fixed_charge) flags.push('Fixed');
-                if (c.particulars && c.particulars.contains_floating_charge) flags.push('Floating');
-                if (c.particulars && c.particulars.floating_charge_covers_all) flags.push('All assets');
-                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-                  '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(c.charge_code || '—') + '</td>' +
-                  '<td style="padding:4px 8px;color:#94A3B8;">' + (c.created_on ? fmtDate(c.created_on) : '—') + '</td>' +
-                  '<td style="padding:4px 8px;color:#E2E8F0;">' + entitled + '</td>' +
-                  '<td style="padding:4px 8px;color:#94A3B8;">' + (flags.length ? flags.join(' + ') : '—') + '</td>' +
-                '</tr>';
-              }).join('') +
-            '</tbody></table>' +
-          '</div>';
-        })() +
-
-        // ── Recent Filings (last 5) ──
-        (function() {
-          const filings = Array.isArray(chd2.recent_filings) ? chd2.recent_filings.slice(0, 5) : [];
-          if (filings.length === 0) return '';
-          const catBg = { mortgage:'rgba(248,113,113,0.08)', accounts:'rgba(56,189,248,0.08)', 'confirmation-statement':'rgba(167,139,250,0.08)', 'officers':'rgba(52,211,153,0.08)' };
-          const catCol = { mortgage:'#F87171', accounts:'#38BDF8', 'confirmation-statement':'#A78BFA', 'officers':'#34D399' };
-          return '<div style="margin-top:12px;">' +
-            '<div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Filings \u2014 last ' + filings.length + '</div>' +
-            '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
-              '<thead><tr style="background:rgba(167,139,250,0.04);">' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Date</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Type</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Category</th>' +
-                '<th style="text-align:left;padding:4px 8px;color:#94A3B8;font-size:9px;font-weight:600;text-transform:uppercase;">Description</th>' +
-              '</tr></thead><tbody>' +
-              filings.map(f => {
-                const col = catCol[f.category] || '#94A3B8';
-                const bg = catBg[f.category] || 'rgba(255,255,255,0.04)';
-                const desc = (f.description || '').replace(/-/g, ' ').replace(/mortgage /, '').replace(/with accounts type group/, '');
-                return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-                  '<td style="padding:4px 8px;color:#94A3B8;">' + (f.date ? fmtDate(f.date) : '—') + '</td>' +
-                  '<td style="padding:4px 8px;color:#E2E8F0;font-family:monospace;font-size:10px;">' + sanitizeHtml(f.type || '—') + '</td>' +
-                  '<td style="padding:4px 8px;"><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + bg + ';color:' + col + ';text-transform:capitalize;">' + sanitizeHtml(f.category || '—') + '</span></td>' +
-                  '<td style="padding:4px 8px;color:#CBD5E1;">' + sanitizeHtml(desc) + '</td>' +
-                '</tr>';
-              }).join('') +
-            '</tbody></table>' +
-          '</div>';
-        })() +
-
-        // ── Nested kids + recursion advisory ──
-        nestedKidsTable +
-        recursionHtml +
-        chMatchHtml;
     } else {
       // Individual detail (unchanged legacy layout)
       innerBody =
