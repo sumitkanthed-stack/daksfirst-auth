@@ -889,6 +889,43 @@ async function runMigrations() {
       // Don't rethrow — a backfill failure shouldn't prevent server start
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Delegated Authority — 2026-04-20 (Session 1a)
+    //  admin_config: single-row config table for auto-routing thresholds + toggles
+    //  deal_submissions: 3 columns to record the auto-route decision
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS admin_config (
+          id                          SERIAL PRIMARY KEY,
+          auto_approve_enabled        BOOLEAN       DEFAULT true,
+          auto_approve_max_loan       NUMERIC(15,2) DEFAULT 1000000,
+          auto_approve_max_ltv_pct    NUMERIC(5,2)  DEFAULT 65.00,
+          auto_approve_asset_types    TEXT[]        DEFAULT ARRAY['residential']::TEXT[],
+          updated_at                  TIMESTAMPTZ   DEFAULT NOW(),
+          updated_by                  INT REFERENCES users(id)
+        )
+      `);
+      // Seed the single-row config if empty; id=1 always
+      await pool.query(`
+        INSERT INTO admin_config (id, auto_approve_enabled, auto_approve_max_loan, auto_approve_max_ltv_pct, auto_approve_asset_types)
+        VALUES (1, true, 1000000, 65.00, ARRAY['residential']::TEXT[])
+        ON CONFLICT (id) DO NOTHING
+      `);
+      console.log('[migrate] ✓ admin_config table (Delegated Authority)');
+    } catch (err) {
+      console.log('[migrate] Note on admin_config:', err.message.substring(0, 100));
+    }
+
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_decision_at TIMESTAMPTZ`);
+      console.log('[migrate] ✓ deal_submissions auto-route columns');
+    } catch (err) {
+      console.log('[migrate] Note on auto-route columns:', err.message.substring(0, 100));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
