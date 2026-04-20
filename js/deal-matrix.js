@@ -2369,8 +2369,8 @@ export async function renderDealMatrix(deal) {
                 ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct ?? '2.00', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', (deal.arrangement_fee_pct != null ? Number(deal.arrangement_fee_pct).toFixed(2) : '2.00'), 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', (deal.broker_fee_pct != null ? Number(deal.broker_fee_pct).toFixed(2) : ''), 'text', ['rm','admin'].includes(role))}
 
                 <!-- M3: Commitment Fee with live formula default + hint -->
                 <div style="margin-bottom:12px">
@@ -2386,8 +2386,8 @@ export async function renderDealMatrix(deal) {
                 </div>
 
                 ${renderEditableField('dip_fee', 'DIP / Onboarding Fee (£)', deal.dip_fee ?? '1000', 'money', ['rm','admin'].includes(role))}
-                ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', deal.exit_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
-                ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', deal.extension_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', (deal.exit_fee_pct != null ? Number(deal.exit_fee_pct).toFixed(2) : '1.00'), 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', (deal.extension_fee_pct != null ? Number(deal.extension_fee_pct).toFixed(2) : '1.00'), 'text', ['rm','admin'].includes(role))}
               </div>
               <p style="font-size:10.5px;color:#94A3B8;margin:12px 0 0 0;font-style:italic;">
                 Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 (flat, not scaled) \u00B7 Exit 1.00% \u00B7 Extension 1.00%.
@@ -3137,22 +3137,16 @@ export async function renderDealMatrix(deal) {
         if (fieldKey === 'interest_servicing_approved' && typeof window._toggleRetainedMonthsVisibility === 'function') {
           try { window._toggleRetainedMonthsVisibility(value); } catch (_) {}
         }
-        // M3: Commitment Fee auto-recompute when approved loan changes.
-        // Only updates UI + silently saves if RM hasn't manually overridden
-        // (i.e. current DB value matches the old formula result, or is 0/null).
+        // M3: Commitment Fee auto-recompute — ALWAYS fires on loan change.
+        // Sumit 2026-04-20: formula is canonical; prior RM overrides do not
+        // survive a loan amount change (they were valid for the old loan, not
+        // this new one). RM can re-override by typing any value after.
         if (['loan_amount_approved', 'loan_amount'].includes(fieldKey)) {
           const newLoan = parseFloat(stripCommas(String(value))) || 0;
           const newFee = computeCommitmentFee(newLoan);
-          const currentFee = Number(deal.commitment_fee || 0);
-          const oldLoan = fieldKey === 'loan_amount_approved'
-            ? Number(deal.loan_amount || deal.loan_amount_approved || 0)  // previous loan before this save
-            : Number(deal.loan_amount_approved || 0);
-          const oldFormula = computeCommitmentFee(oldLoan);
-          const isUserOverridden = currentFee > 0 && Math.abs(currentFee - oldFormula) > 1;
-
           const feeEl = document.getElementById('mf-commitment_fee');
           const hintEl = document.getElementById('commitment-fee-hint');
-          if (feeEl && !isUserOverridden) {
+          if (feeEl) {
             feeEl.value = formatWithCommas(String(newFee));
             feeEl.style.borderColor = '#34D399';
             setTimeout(() => { feeEl.style.borderColor = 'rgba(52,211,153,0.2)'; }, 1200);
