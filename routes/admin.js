@@ -666,4 +666,76 @@ router.put('/broker/:userId/onboarding', authenticateToken, authenticateAdmin, a
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: Delegated Authority config (2026-04-20, DA Session 2a)
+//  Single-row config at admin_config.id=1.
+//  GET returns the current row (seeded by migration).
+//  PUT updates thresholds + asset-type allow-list + enabled toggle.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/config/delegated-authority', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT * FROM admin_config WHERE id = 1`);
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Admin config row not seeded. Migration may not have run.' });
+    }
+    res.json({ success: true, config: r.rows[0] });
+  } catch (error) {
+    console.error('[admin-config] GET error:', error);
+    res.status(500).json({ error: 'Failed to load admin config' });
+  }
+});
+
+router.put('/config/delegated-authority', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { auto_approve_enabled, auto_approve_max_loan, auto_approve_max_ltv_pct, auto_approve_asset_types } = req.body;
+
+    // Validate inputs
+    if (auto_approve_enabled != null && typeof auto_approve_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'auto_approve_enabled must be boolean' });
+    }
+    if (auto_approve_max_loan != null) {
+      const n = Number(auto_approve_max_loan);
+      if (!isFinite(n) || n <= 0) return res.status(400).json({ error: 'auto_approve_max_loan must be > 0' });
+      if (n > 100000000) return res.status(400).json({ error: 'auto_approve_max_loan looks too high (> £100m)' });
+    }
+    if (auto_approve_max_ltv_pct != null) {
+      const n = Number(auto_approve_max_ltv_pct);
+      if (!isFinite(n) || n <= 0 || n > 100) return res.status(400).json({ error: 'auto_approve_max_ltv_pct must be between 0 and 100' });
+    }
+    if (auto_approve_asset_types != null) {
+      if (!Array.isArray(auto_approve_asset_types)) {
+        return res.status(400).json({ error: 'auto_approve_asset_types must be an array' });
+      }
+      const allowedSet = ['residential', 'mixed-use', 'commercial', 'land-with-planning'];
+      const bad = auto_approve_asset_types.filter(t => !allowedSet.includes(String(t).toLowerCase()));
+      if (bad.length > 0) return res.status(400).json({ error: `Unknown asset types: ${bad.join(', ')}. Allowed: ${allowedSet.join(', ')}` });
+    }
+
+    // Build dynamic SET — only update fields that were explicitly provided
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    if (auto_approve_enabled != null) { sets.push(`auto_approve_enabled = $${i++}`); vals.push(auto_approve_enabled); }
+    if (auto_approve_max_loan != null) { sets.push(`auto_approve_max_loan = $${i++}`); vals.push(auto_approve_max_loan); }
+    if (auto_approve_max_ltv_pct != null) { sets.push(`auto_approve_max_ltv_pct = $${i++}`); vals.push(auto_approve_max_ltv_pct); }
+    if (auto_approve_asset_types != null) { sets.push(`auto_approve_asset_types = $${i++}::text[]`); vals.push(auto_approve_asset_types); }
+    sets.push(`updated_at = NOW()`);
+    sets.push(`updated_by = $${i++}`); vals.push(req.user.userId);
+
+    if (sets.length === 2) {
+      // Only updated_at + updated_by would change — no actual config delta
+      return res.status(400).json({ error: 'No config fields provided to update' });
+    }
+
+    const sql = `UPDATE admin_config SET ${sets.join(', ')} WHERE id = 1 RETURNING *`;
+    const r = await pool.query(sql, vals);
+    await logAudit(null, 'admin_config_updated', null, 'delegated_authority',
+      { fields: Object.keys(req.body), by: req.user.userId }, req.user.userId);
+    res.json({ success: true, config: r.rows[0] });
+  } catch (error) {
+    console.error('[admin-config] PUT error:', error);
+    res.status(500).json({ error: 'Failed to update admin config' });
+  }
+});
+
 module.exports = router;
