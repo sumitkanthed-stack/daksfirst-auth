@@ -2749,6 +2749,7 @@ export async function renderDealMatrix(deal) {
         <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
         ` : ''}
         <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Parse confirmed documents and extract deal data into matrix fields">Parse Confirmed Docs</button>
+        <button onclick="window.matrixParseForReview && window.matrixParseForReview()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#9333ea;color:#fff;cursor:pointer;transition:all .12s" title="Stage 3: Parse documents for candidate review and role assignment">Parse for Candidates</button>
         ${currentStage === 'received' ? `
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
         ` : `
@@ -6320,6 +6321,370 @@ export async function renderDealMatrix(deal) {
       hideParseProgress();
       console.error('[matrix-reparse] Error:', e);
       showToast('Connection error during re-parse', 'error');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STAGE 3 PARSER REFACTOR — Candidate Review UI
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Parse documents for candidate review (Stage 3 entrypoint)
+   * Calls /api/smart-parse/deals/:submissionId/parse-for-review
+   * Displays showCandidateReview() UI on success
+   */
+  window.matrixParseForReview = async function() {
+    const subId = deal.submission_id;
+    if (!subId) {
+      showToast('No submission ID found', 'error');
+      return;
+    }
+
+    showParseProgress('Parsing documents for candidate review...');
+
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/deals/${subId}/parse-for-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      hideParseProgress();
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Parse for review failed', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      if (data.success && data.candidates) {
+        showCandidateReview(data.candidates, data.confidence);
+      } else {
+        showToast(data.error || 'No candidates found', 'error');
+      }
+    } catch (err) {
+      hideParseProgress();
+      console.error('[matrix-parse-for-review]', err);
+      showToast('Failed to parse for review: ' + err.message, 'error');
+    }
+  };
+
+  /**
+   * Display the Candidate Review UI
+   * @param {Object} candidates - { corporate_entities, individuals, properties, loan_facts, broker }
+   * @param {Number} confidence - 0-1 confidence score
+   */
+  function showCandidateReview(candidates, confidence) {
+    const parserContent = document.getElementById('parser-content');
+    if (!parserContent) return;
+
+    const confPercent = Math.round((confidence || 0) * 100);
+    const confColor = confidence >= 0.8 ? '#34D399' : confidence >= 0.5 ? '#D4A853' : '#F87171';
+
+    // ── Corporate Entities cards ──
+    let corporateHtml = '';
+    const corporates = candidates.corporate_entities || [];
+    if (corporates.length > 0) {
+      for (const corp of corporates) {
+        const corpLabel = `C${corporates.indexOf(corp) + 1}`;
+        const registered = corp.registered_address ? `<div style="font-size:10px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(corp.registered_address)}</div>` : '';
+        const sourceDocs = (corp.source_docs || []).join(', ') || 'unknown';
+        const reasoning = (corp.reasoning || '').substring(0, 100) + (corp.reasoning?.length > 100 ? '…' : '');
+
+        corporateHtml += `
+          <div style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px;margin-bottom:12px;">
+            <div style="display:flex;gap:12px;margin-bottom:10px;">
+              <div style="flex-shrink:0;width:32px;height:32px;background:rgba(212,168,83,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#D4A853;">${corporateLabel}</div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;">${sanitizeHtml(corp.name || 'Unknown')}</div>
+                <div style="font-size:10px;color:#94A3B8;margin-top:1px;">Co. No: ${sanitizeHtml(corp.company_number || 'N/A')} · ${sanitizeHtml(corp.jurisdiction || 'Unknown')}</div>
+                ${registered}
+              </div>
+            </div>
+            <div style="background:#0f1729;border-radius:6px;padding:10px 12px;margin-bottom:10px;">
+              <div style="font-size:10px;color:#94A3B8;margin-bottom:3px;">Source: ${sanitizeHtml(sourceDocs)}</div>
+              <div style="font-size:10px;color:#94A3B8;">Reasoning: ${sanitizeHtml(reasoning)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="font-size:10px;color:#CBD5E1;font-weight:600;">ROLE:</label>
+              <select class="cand-role-select" data-cand-id="${corp.id}" data-cand-type="corporate" style="flex:1;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:12px;">
+                <option value="primary_borrower">Primary Borrower</option>
+                <option value="co_borrower">Co-Borrower</option>
+                <option value="corporate_guarantor">Corporate Guarantor</option>
+                <option value="ignore">Ignore</option>
+              </select>
+            </div>
+          </div>`;
+      }
+    }
+
+    // ── Individuals cards ──
+    let individualsHtml = '';
+    const individuals = candidates.individuals || [];
+    if (individuals.length > 0) {
+      for (const ind of individuals) {
+        const indLabel = `I${individuals.indexOf(ind) + 1}`;
+        const hints = (ind.role_hints || []).join(', ') || 'none';
+        const pscPct = ind.psc_percentage ? ` · PSC ${ind.psc_percentage}%` : '';
+        const sourceDocs = (ind.source_docs || []).join(', ') || 'unknown';
+        const reasoning = (ind.reasoning || '').substring(0, 100) + (ind.reasoning?.length > 100 ? '…' : '');
+
+        individualsHtml += `
+          <div style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px;margin-bottom:12px;">
+            <div style="display:flex;gap:12px;margin-bottom:10px;">
+              <div style="flex-shrink:0;width:32px;height:32px;background:rgba(52,211,153,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#34D399;">${indLabel}</div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;">${sanitizeHtml(ind.name || 'Unknown')}</div>
+                <div style="font-size:10px;color:#94A3B8;margin-top:1px;">
+                  ${ind.date_of_birth ? `DOB: ${sanitizeHtml(String(ind.date_of_birth).substring(0, 10))} · ` : ''}
+                  ${sanitizeHtml(ind.nationality || 'Unknown')}${pscPct}
+                </div>
+              </div>
+            </div>
+            <div style="background:#0f1729;border-radius:6px;padding:10px 12px;margin-bottom:10px;">
+              <div style="font-size:10px;color:#94A3B8;margin-bottom:3px;">Hints: ${sanitizeHtml(hints)}</div>
+              <div style="font-size:10px;color:#94A3B8;margin-bottom:3px;">Source: ${sanitizeHtml(sourceDocs)}</div>
+              <div style="font-size:10px;color:#94A3B8;">Reasoning: ${sanitizeHtml(reasoning)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <label style="font-size:10px;color:#CBD5E1;font-weight:600;">ROLE:</label>
+              <select class="cand-role-select" data-cand-id="${ind.id}" data-cand-type="individual" data-linked-corp="${ind.linked_to_corporate_id || ''}" style="flex:1;min-width:140px;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:12px;">
+                <option value="ubo">UBO</option>
+                <option value="director">Director</option>
+                <option value="pg_from_ubo">PG from UBO</option>
+                <option value="third_party_guarantor">3rd Party Guarantor</option>
+                <option value="kyc_only">KYC Only</option>
+                <option value="ignore">Ignore</option>
+              </select>
+              <label style="font-size:10px;color:#CBD5E1;font-weight:600;">LINK:</label>
+              <select class="cand-link-select" data-cand-id="${ind.id}" style="flex:1;min-width:100px;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:12px;">
+                <option value="">— None —</option>
+                ${corporates.map((c, i) => `<option value="${c.id}" ${c.id === ind.linked_to_corporate_id ? 'selected' : ''}>C${i + 1}: ${sanitizeHtml(c.name?.substring(0, 30) || 'Unknown')}</option>`).join('')}
+              </select>
+            </div>
+          </div>`;
+      }
+    }
+
+    // ── Properties cards ──
+    let propertiesHtml = '';
+    const properties = candidates.properties || [];
+    if (properties.length > 0) {
+      for (const prop of properties) {
+        const propLabel = `P${properties.indexOf(prop) + 1}`;
+        const sourceDocs = (prop.source_docs || []).join(', ') || 'unknown';
+        const reasoning = (prop.reasoning || '').substring(0, 100) + (prop.reasoning?.length > 100 ? '…' : '');
+        const marketVal = prop.market_value ? `£${Number(prop.market_value).toLocaleString()}` : 'N/A';
+        const purchasePrice = prop.purchase_price ? `£${Number(prop.purchase_price).toLocaleString()}` : 'N/A';
+
+        propertiesHtml += `
+          <div style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px;margin-bottom:12px;">
+            <div style="display:flex;gap:12px;margin-bottom:10px;">
+              <div style="flex-shrink:0;width:32px;height:32px;background:rgba(148,163,184,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#CBD5E1;">${propLabel}</div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:600;color:#F1F5F9;">${sanitizeHtml(prop.address || 'Unknown')}</div>
+                <div style="font-size:10px;color:#94A3B8;margin-top:1px;">
+                  ${prop.postcode ? `${sanitizeHtml(prop.postcode)} · ` : ''}
+                  ${sanitizeHtml(prop.tenure || 'N/A')} · ${sanitizeHtml(prop.occupancy_status || 'N/A')}
+                </div>
+              </div>
+            </div>
+            <div style="background:#0f1729;border-radius:6px;padding:10px 12px;margin-bottom:10px;">
+              <div style="font-size:10px;color:#94A3B8;margin-bottom:3px;">Market: ${marketVal} · Purchase: ${purchasePrice}</div>
+              <div style="font-size:10px;color:#94A3B8;margin-bottom:3px;">Source: ${sanitizeHtml(sourceDocs)}</div>
+              <div style="font-size:10px;color:#94A3B8;">Reasoning: ${sanitizeHtml(reasoning)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="font-size:10px;color:#CBD5E1;font-weight:600;">ROLE:</label>
+              <select class="cand-role-select" data-cand-id="${prop.id}" data-cand-type="property" style="flex:1;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:12px;">
+                <option value="security" selected>Security</option>
+                <option value="ignore">Ignore</option>
+              </select>
+            </div>
+          </div>`;
+      }
+    }
+
+    // ── Loan Facts (read-only summary) ──
+    const loanFacts = candidates.loan_facts || {};
+    const loanAmount = loanFacts.amount_requested ? `£${Number(loanFacts.amount_requested).toLocaleString()}` : 'N/A';
+    const termMonths = loanFacts.term_months ? `${loanFacts.term_months} months` : 'N/A';
+    const rateMonthly = loanFacts.rate_requested ? `${loanFacts.rate_requested}%/month` : 'N/A';
+    const loanPurpose = loanFacts.loan_purpose || 'N/A';
+    const exitStrategy = loanFacts.exit_strategy || 'N/A';
+    const retainedMonths = loanFacts.retained_months || 0;
+    const arrangeFeePct = loanFacts.arrangement_fee_pct || 0;
+    const brokerFeePct = loanFacts.broker_fee_pct || 0;
+
+    let html = `
+      <div style="background:#0f1729;border:1px solid rgba(212,168,83,0.25);border-radius:10px;padding:20px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <div style="font-size:16px;font-weight:700;color:#F1F5F9;">AI Candidate Review</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="font-size:18px;font-weight:800;color:${confColor};">${confPercent}%</div>
+            <div style="font-size:10px;font-weight:600;color:#94A3B8;text-transform:uppercase;">Confidence</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#94A3B8;margin-bottom:16px;">Claude parsed your documents. Review each candidate and assign it a role. The Matrix will only populate from candidates you confirm.</div>
+
+        <div style="background:rgba(255,255,255,0.04);border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:12px;">
+          <!-- Corporate Entities Section -->
+          ${corporates.length > 0 ? `
+            <div style="margin-bottom:16px;">
+              <div style="font-size:12px;font-weight:700;color:#D4A853;text-transform:uppercase;margin-bottom:12px;">Corporate Entities (${corporates.length})</div>
+              ${corporateHtml}
+            </div>
+          ` : ''}
+
+          <!-- Individuals Section -->
+          ${individuals.length > 0 ? `
+            <div style="margin-bottom:16px;">
+              <div style="font-size:12px;font-weight:700;color:#34D399;text-transform:uppercase;margin-bottom:12px;">Individuals (${individuals.length})</div>
+              ${individualsHtml}
+            </div>
+          ` : ''}
+
+          <!-- Properties Section -->
+          ${properties.length > 0 ? `
+            <div style="margin-bottom:16px;">
+              <div style="font-size:12px;font-weight:700;color:#CBD5E1;text-transform:uppercase;margin-bottom:12px;">Properties (${properties.length})</div>
+              ${propertiesHtml}
+            </div>
+          ` : ''}
+
+          <!-- Loan Facts Summary (read-only) -->
+          <div style="margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:#94A3B8;text-transform:uppercase;margin-bottom:10px;">Loan Facts Summary</div>
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 16px;">
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:11px;color:#94A3B8;">
+                <div><span style="color:#CBD5E1;font-weight:600;">${loanAmount}</span> gross</div>
+                <div><span style="color:#CBD5E1;font-weight:600;">${termMonths}</span> term</div>
+                <div><span style="color:#CBD5E1;font-weight:600;">${rateMonthly}</span> rate</div>
+                <div style="grid-column:1/-1;"><span style="color:#CBD5E1;font-weight:600;">${sanitizeHtml(loanPurpose)}</span> purpose</div>
+                <div>Exit: <span style="color:#CBD5E1;font-weight:600;">${sanitizeHtml(exitStrategy)}</span></div>
+                <div>Retained: <span style="color:#CBD5E1;font-weight:600;">${retainedMonths}mo</span></div>
+                <div>AF: <span style="color:#CBD5E1;font-weight:600;">${arrangeFeePct}%</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;">
+            <button onclick="document.getElementById('parser-content').innerHTML=''" style="padding:10px 18px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:#94A3B8;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button onclick="window.confirmCandidateAssignments()" style="padding:10px 20px;background:#D4A853;color:#0B1120;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Confirm Assignments →</button>
+          </div>
+        </div>
+      </div>`;
+
+    parserContent.innerHTML = html;
+    parserContent.style.display = 'block';
+
+    // Auto-open Parser section and scroll to it
+    const parserBody = document.getElementById('body-parser');
+    if (parserBody) {
+      parserBody.classList.remove('collapsed');
+      parserBody.style.maxHeight = 'none';
+    }
+    const parserSection = document.getElementById('section-parser');
+    if (parserSection) {
+      parserSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  /**
+   * Read all candidate role assignments from the UI and POST to confirm endpoint
+   */
+  window.confirmCandidateAssignments = async function() {
+    const subId = deal.submission_id;
+    if (!subId) {
+      showToast('No submission ID found', 'error');
+      return;
+    }
+
+    const corporateAssignments = [];
+    const individualAssignments = [];
+    const propertyAssignments = [];
+
+    // Collect corporate assignments
+    document.querySelectorAll('.cand-role-select[data-cand-type="corporate"]').forEach(sel => {
+      corporateAssignments.push({
+        candidate_id: sel.getAttribute('data-cand-id'),
+        role: sel.value
+      });
+    });
+
+    // Collect individual assignments
+    document.querySelectorAll('.cand-role-select[data-cand-type="individual"]').forEach(sel => {
+      const linkedCorpSelect = document.querySelector(`.cand-link-select[data-cand-id="${sel.getAttribute('data-cand-id')}"]`);
+      const linkedCorp = linkedCorpSelect ? linkedCorpSelect.value : '';
+      individualAssignments.push({
+        candidate_id: sel.getAttribute('data-cand-id'),
+        role: sel.value,
+        linked_to_corporate_candidate_id: linkedCorp || null
+      });
+    });
+
+    // Collect property assignments
+    document.querySelectorAll('.cand-role-select[data-cand-type="property"]').forEach(sel => {
+      propertyAssignments.push({
+        candidate_id: sel.getAttribute('data-cand-id'),
+        role: sel.value
+      });
+    });
+
+    const payload = {
+      assignments: {
+        corporate_entities: corporateAssignments,
+        individuals: individualAssignments,
+        properties: propertyAssignments
+      }
+    };
+
+    try {
+      floatingProgress.show({
+        label: 'Processing Assignments',
+        message: 'Confirming candidate assignments and populating matrix...'
+      });
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/smart-parse/deals/${subId}/confirm-candidates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        floatingProgress.error({ label: 'Confirmation Failed', message: err.error || 'Could not confirm assignments' });
+        return;
+      }
+
+      const data = await resp.json();
+      const summary = data.summary || {};
+      const corpCount = summary.corporates_created || 0;
+      const indCount = summary.individuals_created || 0;
+      const propCount = summary.properties_created || 0;
+
+      floatingProgress.complete({
+        label: 'Success',
+        message: `Matrix populated: ${corpCount} corporate(s), ${indCount} individual(s), ${propCount} propert${propCount === 1 ? 'y' : 'ies'}`
+      });
+
+      // Clear the review UI
+      const parserContent = document.getElementById('parser-content');
+      if (parserContent) parserContent.innerHTML = '';
+
+      // Reload the Matrix to show populated data
+      setTimeout(() => {
+        if (typeof window.loadDealIntoMatrix === 'function') {
+          window.loadDealIntoMatrix();
+        } else {
+          location.reload();
+        }
+      }, 1500);
+    } catch (err) {
+      console.error('[confirm-candidates]', err);
+      floatingProgress.error({ label: 'Connection Error', message: 'Failed to confirm: ' + err.message });
     }
   };
 

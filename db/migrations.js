@@ -1083,6 +1083,15 @@ async function runMigrations() {
       console.log('[migrate] Note on admin_config DIP policy:', err.message.substring(0, 120));
     }
 
+    // ── Stage 4: Candidates payload for broker-assigned parties ──
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS candidates_payload JSONB`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS candidates_parsed_at TIMESTAMPTZ`);
+      console.log('[migrate] ✓ deal_submissions candidates columns (candidates_payload + candidates_parsed_at)');
+    } catch (err) {
+      console.log('[migrate] Note on candidates columns:', err.message.substring(0, 120));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

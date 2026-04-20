@@ -8,7 +8,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
-const { parseDocumentsOnly } = require('../services/claude-parser');
+const { parseDocumentsOnly, parseDealForCandidates } = require('../services/claude-parser');
 const { syncDealProperties } = require('../services/property-parser');
 const config = require('../config');
 
@@ -755,6 +755,385 @@ router.post('/parse-document/:docId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[parse-document] Error:', error);
     res.status(500).json({ error: 'Failed to parse document' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STAGE 4: PARSE FOR CANDIDATES — Extract entities as candidates (not assigned)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/deals/:submissionId/parse-for-review', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+
+    // Fetch the deal
+    const dealResult = await pool.query(
+      `SELECT ds.id, ds.user_id, ds.borrower_user_id FROM deal_submissions ds WHERE ds.submission_id = $1`,
+      [submissionId]
+    );
+
+    if (dealResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    const deal = dealResult.rows[0];
+
+    // Check access (broker, borrower, or internal)
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const isInternal = INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Fetch ALL docs with file_content for this deal (any category)
+    const docsResult = await pool.query(
+      `SELECT id, filename, file_type, file_content, doc_category FROM deal_documents
+       WHERE deal_id = $1 AND file_content IS NOT NULL
+       ORDER BY uploaded_at ASC`,
+      [deal.id]
+    );
+
+    if (docsResult.rows.length === 0) {
+      return res.status(400).json({ error: 'No documents with content available to parse' });
+    }
+
+    console.log(`[parse-for-review] Parsing ${docsResult.rows.length} documents for deal ${submissionId}...`);
+
+    // Call parseDealForCandidates
+    const parseResult = await parseDealForCandidates(docsResult.rows);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: 'Failed to parse documents', reason: parseResult.reason });
+    }
+
+    // Store result in candidates_payload JSONB
+    await pool.query(
+      `UPDATE deal_submissions
+       SET candidates_payload = $1, candidates_parsed_at = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(parseResult.candidates), deal.id]
+    );
+
+    // Audit log
+    await logAudit(deal.id, 'candidates_parsed', null, null,
+      {
+        documents_count: docsResult.rows.length,
+        candidates_count: {
+          corporate_entities: (parseResult.candidates.corporate_entities || []).length,
+          individuals: (parseResult.candidates.individuals || []).length,
+          properties: (parseResult.candidates.properties || []).length
+        },
+        confidence: parseResult.confidence
+      },
+      req.user.userId);
+
+    res.json({
+      success: true,
+      candidates: parseResult.candidates,
+      confidence: parseResult.confidence
+    });
+  } catch (error) {
+    console.error('[parse-for-review] Error:', error);
+    res.status(500).json({ error: 'Failed to parse for review', message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Apply confirmed candidates to deal (transaction)
+// ─────────────────────────────────────────────────────────────────────────────
+async function applyConfirmedCandidates(client, dealId, candidates, assignments) {
+  // Write corporates first
+  const corpIdMap = {};
+
+  for (const corpAssignment of assignments.corporate_entities || []) {
+    const candidate = candidates.corporate_entities.find(c => c.id === corpAssignment.candidate_id);
+    if (!candidate) continue;
+
+    const { role } = corpAssignment;
+    if (role === 'ignore') continue;
+
+    // Map role to DB role
+    let dbRole = 'primary';
+    if (role === 'co_borrower') dbRole = 'joint';
+    else if (role === 'corporate_guarantor') dbRole = 'guarantor';
+
+    const result = await client.query(
+      `INSERT INTO deal_borrowers (
+        deal_id, full_name, borrower_type, role, company_name, company_number, parent_borrower_id, kyc_status, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, NOW(), NOW())
+       RETURNING id`,
+      [
+        dealId,
+        candidate.name || '',
+        'corporate',
+        dbRole,
+        candidate.name || '',
+        candidate.company_number || null,
+        'pending'
+      ]
+    );
+
+    corpIdMap[corpAssignment.candidate_id] = result.rows[0].id;
+  }
+
+  // Write individuals
+  for (const indAssignment of assignments.individuals || []) {
+    const candidate = candidates.individuals.find(c => c.id === indAssignment.candidate_id);
+    if (!candidate) continue;
+
+    const { role } = indAssignment;
+    if (role === 'ignore') continue;
+
+    // Get parent ID if linked
+    let parentBorrowerId = null;
+    if (indAssignment.linked_to_corporate_candidate_id) {
+      parentBorrowerId = corpIdMap[indAssignment.linked_to_corporate_candidate_id] || null;
+    }
+
+    // Map role to DB role
+    let dbRole = 'primary';
+    if (role === 'ubo' || role === 'director' || role === 'pg_from_ubo') {
+      dbRole = role; // 'ubo', 'director', 'pg_from_ubo' map directly
+    } else if (role === 'third_party_guarantor') {
+      dbRole = 'guarantor';
+    } else if (role === 'kyc_only') {
+      dbRole = 'primary'; // treat as primary but KYC-focused
+    }
+
+    const kycData = {
+      pg_required: role === 'pg_from_ubo'
+    };
+
+    await client.query(
+      `INSERT INTO deal_borrowers (
+        deal_id, full_name, borrower_type, role, date_of_birth, nationality, email, phone, parent_borrower_id, kyc_status, kyc_data, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
+      [
+        dealId,
+        candidate.name || '',
+        'individual',
+        dbRole,
+        candidate.date_of_birth || null,
+        candidate.nationality || null,
+        candidate.email || null,
+        candidate.phone || null,
+        parentBorrowerId,
+        'pending',
+        JSON.stringify(kycData)
+      ]
+    );
+  }
+
+  // Write properties (wipe and rewrite)
+  await client.query(`DELETE FROM deal_properties WHERE deal_id = $1`, [dealId]);
+
+  for (const propAssignment of assignments.properties || []) {
+    const candidate = candidates.properties.find(c => c.id === propAssignment.candidate_id);
+    if (!candidate) continue;
+
+    if (propAssignment.role === 'ignore') continue;
+
+    await client.query(
+      `INSERT INTO deal_properties (
+        deal_id, address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price, gdv, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+      [
+        dealId,
+        candidate.address || '',
+        candidate.postcode || null,
+        candidate.property_type || null,
+        candidate.tenure || null,
+        candidate.occupancy || null,
+        candidate.current_use || null,
+        candidate.market_value || null,
+        candidate.purchase_price || null,
+        null // gdv can be null or calculated later
+      ]
+    );
+  }
+
+  // Update deal_submissions from loan_facts and broker
+  const loanFacts = candidates.loan_facts || {};
+  const broker = candidates.broker || {};
+
+  const updateData = [];
+  const updateValues = [];
+  let paramIndex = 1;
+
+  if (loanFacts.amount_requested) {
+    updateData.push(`loan_amount = $${paramIndex++}`);
+    updateValues.push(loanFacts.amount_requested);
+  }
+  if (loanFacts.ltv_requested) {
+    updateData.push(`ltv_requested = $${paramIndex++}`);
+    updateValues.push(loanFacts.ltv_requested);
+  }
+  if (loanFacts.term_months) {
+    updateData.push(`term_months = $${paramIndex++}`);
+    updateValues.push(loanFacts.term_months);
+  }
+  if (loanFacts.rate_requested) {
+    updateData.push(`rate_requested = $${paramIndex++}`);
+    updateValues.push(loanFacts.rate_requested);
+  }
+  if (loanFacts.loan_purpose) {
+    updateData.push(`loan_purpose = $${paramIndex++}`);
+    updateValues.push(loanFacts.loan_purpose);
+  }
+  if (loanFacts.exit_strategy) {
+    updateData.push(`exit_strategy = $${paramIndex++}`);
+    updateValues.push(loanFacts.exit_strategy);
+  }
+  if (loanFacts.arrangement_fee_pct) {
+    updateData.push(`arrangement_fee_pct = $${paramIndex++}`);
+    updateValues.push(loanFacts.arrangement_fee_pct);
+  }
+  if (loanFacts.broker_fee_pct !== undefined) {
+    updateData.push(`broker_fee_pct = $${paramIndex++}`);
+    updateValues.push(loanFacts.broker_fee_pct);
+  }
+
+  if (broker.name) {
+    updateData.push(`broker_name = $${paramIndex++}`);
+    updateValues.push(broker.name);
+  }
+  if (broker.company) {
+    updateData.push(`broker_company = $${paramIndex++}`);
+    updateValues.push(broker.company);
+  }
+  if (broker.fca_number) {
+    updateData.push(`broker_fca = $${paramIndex++}`);
+    updateValues.push(broker.fca_number);
+  }
+
+  // Determine primary borrower name/type
+  const primaryCorp = assignments.corporate_entities?.find(c => c.role === 'primary_borrower');
+  const primaryInd = assignments.individuals?.find(c => c.role === 'primary_borrower');
+
+  if (primaryCorp) {
+    const corpCandidate = candidates.corporate_entities.find(c => c.id === primaryCorp.candidate_id);
+    if (corpCandidate) {
+      updateData.push(`borrower_name = $${paramIndex++}`);
+      updateValues.push(corpCandidate.name || '');
+      updateData.push(`borrower_company = $${paramIndex++}`);
+      updateValues.push(corpCandidate.name || '');
+      updateData.push(`borrower_type = 'corporate'`);
+    }
+  } else if (primaryInd) {
+    const indCandidate = candidates.individuals.find(c => c.id === primaryInd.candidate_id);
+    if (indCandidate) {
+      updateData.push(`borrower_name = $${paramIndex++}`);
+      updateValues.push(indCandidate.name || '');
+      updateData.push(`borrower_type = 'individual'`);
+    }
+  }
+
+  if (updateData.length > 0) {
+    updateValues.push(dealId);
+    await client.query(
+      `UPDATE deal_submissions SET ${updateData.join(', ')} WHERE id = $${paramIndex}`,
+      updateValues
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIRM CANDIDATES — Assign roles and persist to deal
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/deals/:submissionId/confirm-candidates', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { submissionId } = req.params;
+    const { assignments } = req.body;
+
+    if (!assignments) {
+      return res.status(400).json({ error: 'assignments object is required' });
+    }
+
+    // Fetch the deal
+    const dealResult = await client.query(
+      `SELECT ds.id, ds.user_id, ds.borrower_user_id, ds.candidates_payload
+       FROM deal_submissions ds WHERE ds.submission_id = $1`,
+      [submissionId]
+    );
+
+    if (dealResult.rows.length === 0) {
+      client.release();
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    const deal = dealResult.rows[0];
+
+    // Check access
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const isInternal = INTERNAL_ROLES.includes(req.user.role);
+    if (!isOwner && !isInternal) {
+      client.release();
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Load candidates payload
+    const candidates = deal.candidates_payload;
+    if (!candidates) {
+      client.release();
+      return res.status(400).json({ error: 'No candidates found for this deal. Call parse-for-review first.' });
+    }
+
+    // Validate: at least ONE primary_borrower
+    const hasPrimaryBorrower = (assignments.corporate_entities || []).some(c => c.role === 'primary_borrower') ||
+                               (assignments.individuals || []).some(c => c.role === 'primary_borrower');
+
+    if (!hasPrimaryBorrower) {
+      client.release();
+      return res.status(400).json({ error: 'At least one primary_borrower must be assigned' });
+    }
+
+    // BEGIN TRANSACTION
+    await client.query('BEGIN');
+
+    try {
+      // Wipe existing parties
+      await client.query(`DELETE FROM deal_borrowers WHERE deal_id = $1`, [deal.id]);
+
+      // Apply confirmed candidates
+      await applyConfirmedCandidates(client, deal.id, candidates, assignments);
+
+      // Audit log
+      const corpCount = assignments.corporate_entities?.filter(c => c.role !== 'ignore').length || 0;
+      const indCount = assignments.individuals?.filter(c => c.role !== 'ignore').length || 0;
+      const propCount = assignments.properties?.filter(c => c.role !== 'ignore').length || 0;
+
+      await logAudit(deal.id, 'candidates_confirmed', null, null,
+        {
+          assignments,
+          counts: {
+            corporates_created: corpCount,
+            individuals_created: indCount,
+            properties_created: propCount
+          }
+        },
+        req.user.userId);
+
+      // COMMIT
+      await client.query('COMMIT');
+
+      res.json({
+        success: true,
+        summary: {
+          corporates_created: corpCount,
+          individuals_created: indCount,
+          properties_created: propCount
+        }
+      });
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    }
+  } catch (error) {
+    console.error('[confirm-candidates] Error:', error);
+    res.status(500).json({ error: 'Failed to confirm candidates', message: error.message });
+  } finally {
+    client.release();
   }
 });
 

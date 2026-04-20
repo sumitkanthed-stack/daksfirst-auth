@@ -975,30 +975,58 @@ async function parseDocumentsOnly(docs) {
 
 /**
  * Map the rich analysis JSON from Path A to flat deal form field names
+ *
+ * Corporate-vs-individual borrower resolution (2026-04-20 fix):
+ *   - If analysis.company.name is set, the deal IS corporate. borrower_name
+ *     becomes the company name (Gold Medal Properties Limited), not the
+ *     UBO/PSC individual name. Individual attributes (DOB, nationality) are
+ *     null — they belong on the UBO child record in deal_borrowers, not on
+ *     the corporate parent.
+ *   - If no company detected, the deal is individual. borrower_name comes
+ *     from the first primary (or first) individual borrower.
+ *
+ * Multi-property (2026-04-20 fix):
+ *   - Still sets security_* scalar fields from the FIRST property (for
+ *     backward compat with legacy Matrix UI).
+ *   - ALSO returns properties_all: the full array of parsed properties so
+ *     the new candidate-review UI can render every one. Downstream writer
+ *     iterates this array to create one deal_properties row per asset.
  */
 function mapAnalysisToFormFields(analysis) {
   const fields = {};
 
-  // Borrower — from first primary borrower
-  const primary = (analysis.borrowers || []).find(b => b.role === 'primary') || (analysis.borrowers || [])[0];
-  if (primary) {
-    fields.borrower_name = primary.full_name || null;
-    fields.borrower_email = primary.email || null;
-    fields.borrower_phone = primary.phone || null;
-    fields.borrower_dob = primary.date_of_birth || null;
-    fields.borrower_nationality = primary.nationality || null;
+  const company = analysis.company || {};
+  const isCorporate = !!(company.name || company.borrower_type === 'corporate');
+
+  if (isCorporate) {
+    // Corporate deal — borrower_name = company name. Individual attrs null.
+    fields.borrower_name = company.name || null;
+    fields.borrower_email = null;
+    fields.borrower_phone = null;
+    fields.borrower_dob = null;
+    fields.borrower_nationality = null;
+    fields.borrower_type = 'corporate';
+    fields.company_name = company.name || null;
+    fields.company_number = company.company_number || null;
+    fields.borrower_company = company.name || null;
+  } else {
+    // Individual deal — borrower_name = first individual borrower's name.
+    const primary = (analysis.borrowers || []).find(b => b.role === 'primary') || (analysis.borrowers || [])[0];
+    if (primary) {
+      fields.borrower_name = primary.full_name || null;
+      fields.borrower_email = primary.email || null;
+      fields.borrower_phone = primary.phone || null;
+      fields.borrower_dob = primary.date_of_birth || null;
+      fields.borrower_nationality = primary.nationality || null;
+    }
+    fields.borrower_type = 'individual';
   }
 
-  // Company
-  if (analysis.company) {
-    fields.borrower_type = analysis.company.borrower_type || null;
-    fields.company_name = analysis.company.name || null;
-    fields.company_number = analysis.company.company_number || null;
-    fields.borrower_company = analysis.company.name || null;
-  }
-
-  // Property — from first security property
-  const prop = (analysis.parsedProperties || [])[0];
+  // Property — legacy scalar fields from first, PLUS full array for new UI
+  const allProps = Array.isArray(analysis.parsedProperties) ? analysis.parsedProperties : [];
+  fields.properties_all = allProps;
+  fields.properties_count = allProps.length;
+  const prop = allProps[0];
   if (prop) {
     fields.security_address = prop.address || null;
     fields.security_postcode = prop.postcode || null;
@@ -1049,4 +1077,218 @@ function mapAnalysisToFormFields(analysis) {
   return fields;
 }
 
-module.exports = { parseDealDocuments, deduplicateProperties, parseDocumentsOnly };
+/**
+ * parseDealForCandidates — extract deal entities as CANDIDATES (not role-assigned)
+ * Used by broker/RM review flow to assign roles manually.
+ *
+ * @param {Array} docs - Array of { filename, file_type, file_content, doc_category }
+ * @returns {Object} - { success, candidates { corporate_entities, individuals, properties, loan_facts, broker }, confidence, analysis_raw }
+ */
+async function parseDealForCandidates(docs) {
+  if (!docs || docs.length === 0) return { success: false, reason: 'no_documents' };
+
+  console.log(`[claude-parser] parseDealForCandidates: ${docs.length} documents`);
+
+  // ── Encode documents ──
+  const seenNames = new Set();
+  const allFiles = [];
+  for (const doc of docs) {
+    if (seenNames.has(doc.filename)) continue;
+    seenNames.add(doc.filename);
+    if (!doc.file_content) continue;
+    allFiles.push({
+      filename: doc.filename,
+      file_type: doc.file_type || 'application/octet-stream',
+      doc_category: doc.doc_category || null,
+      content_base64: Buffer.from(doc.file_content).toString('base64')
+    });
+  }
+
+  if (allFiles.length === 0) return { success: false, reason: 'no_content' };
+  console.log(`[claude-parser] parseDealForCandidates: ${allFiles.length} unique documents encoded`);
+
+  // ── Batch ──
+  const MAX_BATCH_B64 = 5 * 1024 * 1024;
+  const batches = [];
+  let currentBatch = [];
+  let currentSize = 0;
+  for (const file of allFiles) {
+    const fileSize = file.content_base64.length;
+    if (fileSize > MAX_BATCH_B64) {
+      if (currentBatch.length > 0) { batches.push(currentBatch); currentBatch = []; currentSize = 0; }
+      batches.push([file]);
+      continue;
+    }
+    if (currentSize + fileSize > MAX_BATCH_B64) { batches.push(currentBatch); currentBatch = []; currentSize = 0; }
+    currentBatch.push(file);
+    currentSize += fileSize;
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+  console.log(`[claude-parser] parseDealForCandidates: ${batches.length} batch(es)`);
+
+  // ── Candidate extraction prompt ──
+  const CANDIDATES_PROMPT = `You are analysing a UK bridging-loan broker pack for a lender. Your job is to extract every entity you find as a CANDIDATE. Do NOT decide who the Primary Borrower or Guarantor is — the lender's RM will assign roles from the UI.
+
+CRITICAL RULES:
+- For a LIMITED COMPANY deal, the Borrower is the company, not its PSC or Director. List the company as a corporate_entity candidate with registered name and Company Number. Individuals (directors, PSCs, UBOs) are SEPARATE candidates with role_hints array.
+- If you see multiple properties pledged as SECURITY/COLLATERAL, each is a separate candidate. Do NOT collapse to one.
+- For each candidate, note which document(s) and page(s) you found evidence on, and provide 1-2 sentence reasoning.
+- Extract EVERY corporate entity, EVERY individual, EVERY property found. Do not filter or collapse.
+
+Return ONLY a valid JSON object with no other text, no markdown, no backticks.
+
+JSON schema:
+{
+  "corporate_entities": [
+    {
+      "id": "corp-1",
+      "name": "Gold Medal Properties Limited",
+      "company_number": "16607286",
+      "jurisdiction": "England & Wales",
+      "registered_address": "...",
+      "source_docs": ["Certificate of Incorporation.pdf"],
+      "source_pages": [1],
+      "reasoning": "Identified as a limited company in Certificate of Incorporation and Companies House register entry."
+    }
+  ],
+  "individuals": [
+    {
+      "id": "ind-1",
+      "name": "Alessandra CENCI",
+      "date_of_birth": "1979-09-22",
+      "nationality": "Italian",
+      "address": "...",
+      "email": "kantheduk@gmail.com",
+      "phone": "07777 777777",
+      "role_hints": ["director", "psc"],
+      "linked_to_corporate_id": "corp-1",
+      "psc_percentage": 100,
+      "id_document_type": "passport",
+      "id_document_number": "...",
+      "source_docs": ["Passport.pdf", "PSC Declaration.pdf"],
+      "source_pages": [1, 2],
+      "reasoning": "Named as sole Director and 100% PSC of Gold Medal Properties Limited. Passport confirms DOB and Italian nationality."
+    }
+  ],
+  "properties": [
+    {
+      "id": "prop-1",
+      "address": "Apartment 82, King Henrys Reach, London",
+      "postcode": "W6 9RH",
+      "property_type": "residential",
+      "tenure": "leasehold",
+      "occupancy": "vacant",
+      "current_use": "2-bed river-front apartment",
+      "market_value": 1750000,
+      "purchase_price": 1300000,
+      "source_docs": ["Valuation Report.pdf"],
+      "source_pages": [1, 3],
+      "reasoning": "Primary security — 2-bed apartment. RICS Day 1 value £1,750,000, broker-stated purchase price £1,300,000."
+    }
+  ],
+  "loan_facts": {
+    "amount_requested": 2000000,
+    "term_months": 12,
+    "rate_requested": 0.95,
+    "rate_basis": "per month",
+    "ltv_requested": 48.02,
+    "loan_purpose": "purchase",
+    "exit_strategy": "refinance",
+    "interest_servicing": "retained",
+    "retained_months": 6,
+    "arrangement_fee_pct": 2.0,
+    "broker_fee_pct": 0,
+    "source_docs": ["Broker Email.pdf", "Facility Request.pdf"],
+    "reasoning": "Broker requests £2m gross, 12-month term, 0.95% pm retained, 2% arrangement. Refi exit stated."
+  },
+  "broker": {
+    "name": "...",
+    "company": "...",
+    "fca_number": "...",
+    "source_docs": [],
+    "reasoning": "..."
+  },
+  "confidence": 0.85
+}`;
+
+  // ── Process batches through Claude ──
+  let mergedCandidates = {
+    corporate_entities: [],
+    individuals: [],
+    properties: [],
+    loan_facts: {},
+    broker: {},
+    confidence: 0
+  };
+
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      const contentParts = buildContentBlocks(batches[i], null, null);
+      const body = {
+        model: CLAUDE_MODEL,
+        max_tokens: MAX_TOKENS,
+        system: CANDIDATES_PROMPT,
+        messages: [{ role: 'user', content: contentParts }]
+      };
+
+      const resp = await fetch(CLAUDE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => 'no body');
+        throw new Error(`Claude API ${resp.status}: ${errText}`);
+      }
+
+      const data = await resp.json();
+      const textContent = data.content?.find(c => c.type === 'text')?.text || '';
+      const parsed = parseClaudeResponse(textContent);
+
+      // Merge candidates (dedup by id if present, otherwise append)
+      if (parsed.corporate_entities && Array.isArray(parsed.corporate_entities)) {
+        mergedCandidates.corporate_entities.push(...parsed.corporate_entities);
+      }
+      if (parsed.individuals && Array.isArray(parsed.individuals)) {
+        mergedCandidates.individuals.push(...parsed.individuals);
+      }
+      if (parsed.properties && Array.isArray(parsed.properties)) {
+        mergedCandidates.properties.push(...parsed.properties);
+      }
+      if (parsed.loan_facts && typeof parsed.loan_facts === 'object') {
+        mergedCandidates.loan_facts = { ...mergedCandidates.loan_facts, ...parsed.loan_facts };
+      }
+      if (parsed.broker && typeof parsed.broker === 'object') {
+        mergedCandidates.broker = { ...mergedCandidates.broker, ...parsed.broker };
+      }
+      if (parsed.confidence && parsed.confidence > mergedCandidates.confidence) {
+        mergedCandidates.confidence = parsed.confidence;
+      }
+
+      console.log(`[claude-parser] parseDealForCandidates: batch ${i+1} done — ${parsed.corporate_entities?.length || 0} corporates, ${parsed.individuals?.length || 0} individuals, ${parsed.properties?.length || 0} properties`);
+    } catch (err) {
+      console.error(`[claude-parser] parseDealForCandidates: batch ${i+1} failed:`, err.message);
+    }
+  }
+
+  // ── Deduplicate candidates by address/postcode for properties ──
+  if (mergedCandidates.properties && Array.isArray(mergedCandidates.properties)) {
+    mergedCandidates.properties = deduplicateProperties(mergedCandidates.properties);
+  }
+
+  console.log(`[claude-parser] parseDealForCandidates: extracted ${mergedCandidates.corporate_entities.length} corporates, ${mergedCandidates.individuals.length} individuals, ${mergedCandidates.properties.length} properties`);
+
+  return {
+    success: true,
+    candidates: mergedCandidates,
+    confidence: mergedCandidates.confidence,
+    analysis_raw: mergedCandidates  // preserve raw for audit
+  };
+}
+
+module.exports = { parseDealDocuments, deduplicateProperties, parseDocumentsOnly, parseDealForCandidates };
