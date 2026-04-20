@@ -1112,6 +1112,21 @@ export function renderInternalWorkflowControls(deal) {
         <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#374151;"></div>
       </div>
 
+      <!-- ═══ M4b (Matrix-SSOT 2026-04-20): DIP Section Approval Gates ═══
+           Five sections that the RM must individually approve before Issue DIP fires.
+           Each card reads approval state from deal row (dip_<section>_approved / _by / _at).
+           Matrix edits to referenced fields auto-revoke the approval (server-side via AUTO_REVOKE_MAP). -->
+      ${stage !== 'dip_issued' && isInternal ? `<div style="background:#f0f9ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7dd3fc;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <h5 style="margin:0;color:#0c4a6e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">\u2696 DIP Section Approvals</h5>
+          <span id="dip-approval-progress" style="font-size:11px;color:#0c4a6e;font-weight:600;"></span>
+        </div>
+        <p style="margin:0 0 12px;font-size:11px;color:#475569;">
+          Matrix is canonical. Each section must be approved before Issue DIP fires. Any edit to matrix fields auto-revokes the relevant approval.
+        </p>
+        <div id="dip-section-approvals-grid" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
+      </div>` : ''}
+
       <!-- ═══ PRE-ISSUE CHECKLIST (hidden after issuance) ═══ -->
       ${stage !== 'dip_issued' ? `<div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #e5e7eb;">
         <h5 style="margin:0 0 10px;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Pre-Issue Checklist</h5>
@@ -1305,19 +1320,146 @@ export function renderInternalWorkflowControls(deal) {
         const countEl = document.getElementById('dip-checklist-count');
         if (countEl) countEl.textContent = passCount + '/' + checks.length + ' complete';
 
-        // Enable/disable Issue button
+        // M4b (Matrix-SSOT): Issue DIP also requires all 5 section approvals ✓
+        const approvalsComplete = renderDipApprovalGates();
+
+        // Enable/disable Issue button — passes BOTH checklist AND approval gates
         const btn = document.getElementById('btn-issue-dip');
         if (btn) {
-          if (allPassed) {
+          if (allPassed && approvalsComplete) {
             btn.disabled = false;
             btn.style.background = '#16a34a';
             btn.style.color = '#ffffff';
             btn.style.cursor = 'pointer';
+            btn.title = 'All checks passed and all 5 DIP sections approved';
           } else {
             btn.disabled = true;
             btn.style.background = '#9ca3af';
             btn.style.cursor = 'not-allowed';
+            btn.title = !allPassed ? 'Pre-Issue Checklist incomplete'
+              : !approvalsComplete ? 'DIP Section Approvals incomplete'
+              : '';
           }
+        }
+      };
+
+      // M4b: Render the 5 DIP Section Approval cards.
+      // Returns true if all 5 are approved (used by Issue DIP gate above).
+      const renderDipApprovalGates = () => {
+        const grid = document.getElementById('dip-section-approvals-grid');
+        const progress = document.getElementById('dip-approval-progress');
+        if (!grid) return true; // Not visible (non-internal or post-issuance) — don't block issue
+
+        const SECTIONS = [
+          { key: 'borrower',    label: 'Borrower & Guarantors', summary: () => (deal.borrower_name || '—') + (deal.company_number ? ' · Co. No ' + deal.company_number : '') },
+          { key: 'security',    label: 'Security & Properties',  summary: () => {
+            const props = deal.properties || [];
+            const total = props.reduce((s,p) => s + (Number(p.market_value) || 0), 0);
+            return props.length + ' propert' + (props.length === 1 ? 'y' : 'ies') + (total > 0 ? ' · Total MV £' + Math.round(total).toLocaleString() : '');
+          }},
+          { key: 'loan_terms',  label: 'Loan Terms (Approved)',  summary: () => {
+            const loan = deal.loan_amount_approved ?? deal.loan_amount;
+            const ltv = deal.ltv_approved ?? deal.ltv_requested;
+            const rate = deal.rate_approved ?? deal.rate_requested;
+            const term = deal.term_months_approved ?? deal.term_months;
+            return (loan ? '£' + Math.round(Number(loan)).toLocaleString() : '£—') + ' · ' + (ltv ? Number(ltv).toFixed(2) + '% LTV' : 'LTV —') + ' · ' + (rate ? Number(rate).toFixed(2) + '%/mo' : 'Rate —') + ' · ' + (term ? term + ' mo' : 'Term —');
+          }},
+          { key: 'fees',        label: 'Fee Schedule',           summary: () => {
+            const arr = deal.arrangement_fee_pct;
+            const commit = deal.commitment_fee;
+            const dipFee = deal.dip_fee;
+            return 'Arr ' + (arr ? Number(arr).toFixed(2) + '%' : '—') + ' · Commit £' + (commit ? Math.round(Number(commit)).toLocaleString() : '—') + ' · DIP £' + (dipFee ? Math.round(Number(dipFee)).toLocaleString() : '—');
+          }},
+          { key: 'conditions',  label: 'Conditions & Notes',     summary: () => {
+            const notes = deal.dip_notes || deal.additional_notes;
+            if (!notes || !notes.trim()) return 'No conditions noted (approve as-is or add notes).';
+            const snip = notes.length > 80 ? notes.substring(0, 80) + '…' : notes;
+            return snip;
+          }}
+        ];
+
+        let approvedCount = 0;
+        const cardsHtml = SECTIONS.map((sec, idx) => {
+          const colApproved = 'dip_' + sec.key + '_approved';
+          const colBy = colApproved + '_by';
+          const colAt = colApproved + '_at';
+          const isApproved = !!deal[colApproved];
+          if (isApproved) approvedCount++;
+
+          const stampHtml = isApproved
+            ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#166534;font-weight:600;">' +
+                '<span>\u2713 Approved</span>' +
+                (deal[colAt] ? '<span style="color:#4b5563;font-weight:400;"> \u00B7 ' + new Date(deal[colAt]).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) + '</span>' : '') +
+              '</div>'
+            : '<div style="font-size:11px;color:#9ca3af;font-weight:600;">Not approved</div>';
+
+          const btnLabel = isApproved ? 'Unapprove' : 'Approve';
+          const btnBg = isApproved ? '#fef2f2' : '#dcfce7';
+          const btnColor = isApproved ? '#991b1b' : '#166534';
+          const btnBorder = isApproved ? '#fecaca' : '#86efac';
+          const action = isApproved ? 'unapproveDipSection' : 'approveDipSection';
+
+          return '<div style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:' + (isApproved ? '#f0fdf4' : '#ffffff') + ';border:1px solid ' + (isApproved ? '#bbf7d0' : '#e5e7eb') + ';border-radius:6px;">' +
+            '<div style="width:24px;height:24px;border-radius:50%;background:' + (isApproved ? '#16a34a' : '#d1d5db') + ';color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">' + (idx + 1) + '</div>' +
+            '<div>' +
+              '<div style="font-size:12px;font-weight:700;color:#0f172a;">' + sanitizeHtml(sec.label) + '</div>' +
+              '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + sanitizeHtml(sec.summary()) + '</div>' +
+              stampHtml +
+            '</div>' +
+            '<button onclick="window.' + action + '(\'' + deal.submission_id + '\', \'' + sec.key + '\')" style="padding:6px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">' + btnLabel + '</button>' +
+          '</div>';
+        }).join('');
+        grid.innerHTML = cardsHtml;
+
+        if (progress) {
+          const pct = (approvedCount / SECTIONS.length) * 100;
+          const col = approvedCount === SECTIONS.length ? '#16a34a' : approvedCount > 0 ? '#ca8a04' : '#9ca3af';
+          progress.innerHTML = '<span style="color:' + col + ';">' + approvedCount + ' / ' + SECTIONS.length + ' approved</span>';
+        }
+
+        return approvedCount === SECTIONS.length;
+      };
+
+      // Register approve/unapprove globally so onclick handlers can reach them
+      window.approveDipSection = async (submissionId, section) => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-approve-section`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section })
+          });
+          const body = await res.json();
+          if (!res.ok) { showToast(body.error || 'Failed to approve', 'error'); return; }
+          // Update local deal state so next render reflects new stamp
+          deal['dip_' + section + '_approved'] = true;
+          deal['dip_' + section + '_approved_by'] = body.by;
+          deal['dip_' + section + '_approved_at'] = body.at;
+          showToast('Section approved: ' + section.replace(/_/g, ' '), 'success');
+          if (typeof validateDipChecklist === 'function') validateDipChecklist();
+          else renderDipApprovalGates();
+        } catch (err) {
+          showToast('Network error: ' + err.message, 'error');
+        }
+      };
+
+      window.unapproveDipSection = async (submissionId, section) => {
+        if (!confirm('Unapprove this section? You will need to re-approve before the DIP can be issued.')) return;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/dip-unapprove-section`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section })
+          });
+          const body = await res.json();
+          if (!res.ok) { showToast(body.error || 'Failed to unapprove', 'error'); return; }
+          deal['dip_' + section + '_approved'] = false;
+          deal['dip_' + section + '_approved_by'] = null;
+          deal['dip_' + section + '_approved_at'] = null;
+          showToast('Section unapproved: ' + section.replace(/_/g, ' '), 'info');
+          if (typeof validateDipChecklist === 'function') validateDipChecklist();
+          else renderDipApprovalGates();
+        } catch (err) {
+          showToast('Network error: ' + err.message, 'error');
         }
       };
 
