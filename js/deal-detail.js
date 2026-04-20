@@ -1319,9 +1319,13 @@ export function renderInternalWorkflowControls(deal) {
           ).join('');
         }
 
-        // Update counter
+        // Update counter (also hide — legacy Pre-Issue Checklist deprecated by
+        // approval gates in M4d; placeholder stays so this set doesn't crash).
         const countEl = document.getElementById('dip-checklist-count');
-        if (countEl) countEl.textContent = passCount + '/' + checks.length + ' complete';
+        if (countEl) {
+          countEl.textContent = passCount + '/' + checks.length + ' complete';
+          countEl.style.display = 'none';
+        }
 
         // M4d (Matrix-SSOT): Issue DIP gated on 7 section approvals only.
         // Pre-Issue Checklist removed — approval gates enforce completeness.
@@ -1342,10 +1346,6 @@ export function renderInternalWorkflowControls(deal) {
             btn.title = 'Approve all 7 sections above before issuing';
           }
         }
-
-        // Hide legacy checklist counter (deprecated by approval gates)
-        const countEl = document.getElementById('dip-checklist-count');
-        if (countEl) countEl.style.display = 'none';
       };
 
       // M4b: Pull fresh deal data before rendering approvals.
