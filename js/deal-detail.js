@@ -1281,9 +1281,11 @@ export function renderInternalWorkflowControls(deal) {
           checks.push({ label: 'UBO / Guarantor names entered', ok: !!(uboEl?.value?.trim()) });
         }
 
-        // 12. Onboarding fee amount set
-        const onboardingFee = money('dip-fee-onboarding');
-        checks.push({ label: 'Onboarding / DIP fee amount set', ok: onboardingFee > 0 });
+        // 12. Onboarding / DIP fee amount set — M4b: read from matrix (dip_fee),
+        // not the legacy DIP form input. Matrix has default £1,000; always passes
+        // unless explicitly cleared.
+        const dipFeeFromMatrix = Number(deal.dip_fee || 0);
+        checks.push({ label: 'Onboarding / DIP fee amount set', ok: dipFeeFromMatrix > 0 });
 
         // 13. Exit strategy provided
         checks.push({ label: 'Exit strategy provided', ok: !!val('dip-exit') });
