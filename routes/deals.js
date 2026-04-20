@@ -753,7 +753,14 @@ router.post('/:submissionId/recommendation', authenticateToken, authenticateInte
 //  Credit Decision (6th section) is separate and only applies when auto-route
 //  requires credit review — handled by the existing credit-decision endpoint.
 // ═══════════════════════════════════════════════════════════════════════════
-const VALID_DIP_SECTIONS = ['borrower', 'security', 'loan_terms', 'fees', 'conditions'];
+const VALID_DIP_SECTIONS = [
+  'borrower', 'security',
+  // M4d (2026-04-20): UoF + Exit are their own gates; sit BEFORE loan_terms
+  // in the RM's mental model because you price a loan after understanding
+  // purpose and exit, not before.
+  'use_of_funds', 'exit_strategy',
+  'loan_terms', 'fees', 'conditions'
+];
 
 async function _handleDipApproval(req, res, approve) {
   try {
@@ -2072,14 +2079,14 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'dip_fee', 'exit_fee_pct', 'extension_fee_pct'
     ];
 
-    // M2c (Matrix-SSOT auto-revoke): editing any field in an approval section's
+    // M2c+M4d (Matrix-SSOT auto-revoke): editing any field in an approval section's
     // referenced set clears that section's DIP approval stamp. Forces re-approval.
     const AUTO_REVOKE_MAP = {
       dip_loan_terms_approved: [
         'loan_amount_approved', 'ltv_approved', 'rate_approved', 'term_months_approved',
-        'interest_servicing_approved', 'exit_strategy_approved',
+        'interest_servicing_approved',
         // Requested-side changes also invalidate since display shows both
-        'loan_amount_requested', 'term_months_requested'
+        'loan_amount_requested', 'term_months_requested', 'interest_servicing_requested'
       ],
       dip_fees_approved: [
         'dip_fee', 'arrangement_fee_pct', 'broker_fee_pct', 'commitment_fee',
@@ -2089,7 +2096,16 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
         'security_address', 'security_postcode', 'asset_type', 'current_value',
         'requires_share_charge', 'additional_security_text'
       ],
-      dip_conditions_approved: ['additional_notes', 'exit_strategy_approved']
+      // M4d: Use of Funds is its own gate (was rolled into loan_terms / conditions)
+      dip_use_of_funds_approved: [
+        'loan_purpose', 'use_of_funds', 'refurb_scope', 'refurb_cost', 'purchase_price', 'deposit_source'
+      ],
+      // M4d: Exit Strategy its own gate (was rolled into conditions)
+      dip_exit_strategy_approved: [
+        'exit_strategy', 'exit_strategy_approved', 'exit_strategy_requested'
+      ],
+      // conditions is now a true 'anything else' bucket
+      dip_conditions_approved: ['additional_notes']
       // dip_borrower_approved revoked only by borrower CRUD endpoints, not matrix-fields
     };
 
