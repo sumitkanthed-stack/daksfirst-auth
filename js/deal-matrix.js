@@ -2258,13 +2258,14 @@ export async function renderDealMatrix(deal) {
               ${renderRequestedApprovedField(
                 'rate', 'Rate (%/month)',
                 deal.rate_requested,
-                deal.rate_approved ?? deal.rate_requested,
+                // Default to 1.10% when neither side is set (Daksfirst default rate)
+                deal.rate_approved ?? deal.rate_requested ?? '1.10',
                 'text', isInternalUser && canEdit
               )}
               ${renderRequestedApprovedField(
                 'interest_servicing', 'Interest Servicing',
                 deal.interest_servicing_requested ?? deal.interest_servicing,
-                deal.interest_servicing_approved ?? deal.interest_servicing,
+                deal.interest_servicing_approved ?? deal.interest_servicing ?? 'retained',
                 'select', canEdit,
                 [
                   { value: 'retained', label: 'Retained (deducted upfront)' },
@@ -2272,6 +2273,23 @@ export async function renderDealMatrix(deal) {
                   { value: 'rolled', label: 'Rolled Up' }
                 ]
               )}
+
+              <!-- Retained Interest Months — sub-parameter of Interest Servicing.
+                   Only meaningful when servicing = 'retained'. Default 6 months. -->
+              <div style="margin-top:2px;margin-bottom:14px;padding:10px 12px;background:rgba(52,211,153,0.04);border:1px solid rgba(52,211,153,0.12);border-radius:8px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                  <div style="flex:1;">
+                    <div style="font-size:9px;color:#34D399;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:700;">Retained Interest — Months</div>
+                    <div style="font-size:10.5px;color:#94A3B8;line-height:1.4;">Number of months of interest deducted upfront at drawdown. Applies when Interest Servicing is Retained. Daksfirst default: 6 months.</div>
+                  </div>
+                  <div style="width:120px;flex-shrink:0;">
+                    ${canEdit
+                      ? '<input id="mf-retained_interest_months" type="text" inputmode="numeric" data-field="retained_interest_months" data-type="text" style="width:100%;padding:8px 12px;background:#0F172A;border:1px solid rgba(52,211,153,0.25);border-radius:6px;color:#F1F5F9;font-size:14px;font-weight:600;text-align:center;" value="' + (deal.retained_interest_months ?? '6') + '" placeholder="6" onblur="window.matrixValidateAndSave(\'retained_interest_months\', this.value, \'text\')" />'
+                      : '<div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:6px;color:#CBD5E1;font-size:14px;font-weight:600;text-align:center;">' + (deal.retained_interest_months ?? '6') + '</div>'
+                    }
+                  </div>
+                </div>
+              </div>
 
               <!-- Operational date — not negotiable, single value -->
               <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.04);">
@@ -2436,11 +2454,16 @@ export async function renderDealMatrix(deal) {
                 ${['rm','admin'].includes(role) ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">RM/ADMIN EDIT</span>' : '<span style="font-size:8px;color:#64748B;font-weight:600;background:#1a2332;padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('arrangement_fee_pct', 'Arrangement Fee (%)', deal.arrangement_fee_pct ?? '2.00', 'text', ['rm','admin'].includes(role))}
                 ${renderEditableField('broker_fee_pct', 'Broker Fee (%)', deal.broker_fee_pct, 'text', ['rm','admin'].includes(role))}
                 ${renderEditableField('commitment_fee', 'Commitment Fee (£)', deal.commitment_fee, 'money', ['rm','admin'].includes(role))}
-                ${renderEditableField('retained_interest_months', 'Retained Interest (months)', deal.retained_interest_months, 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('dip_fee', 'DIP / Onboarding Fee (£)', deal.dip_fee ?? '1000', 'money', ['rm','admin'].includes(role))}
+                ${renderEditableField('exit_fee_pct', 'Exit Fee (%)', deal.exit_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
+                ${renderEditableField('extension_fee_pct', 'Extension Fee (%)', deal.extension_fee_pct ?? '1.00', 'text', ['rm','admin'].includes(role))}
               </div>
+              <p style="font-size:10.5px;color:#94A3B8;margin:12px 0 0 0;font-style:italic;">
+                Daksfirst defaults: Arrangement 2.00% \u00B7 DIP Fee £1,000 \u00B7 Exit 1.00% \u00B7 Extension 1.00%. Retained Interest months is configured in the Loan Terms section.
+              </p>
             </div>
           </div>
         </div>
