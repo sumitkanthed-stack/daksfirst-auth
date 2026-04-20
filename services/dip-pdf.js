@@ -592,7 +592,10 @@ function buildDipHtml(deal, dipData, options) {
   const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
   const grossLoan = parseFloat(deal.loan_amount_approved || deal.loan_amount || 0);
   const loanTerm = parseFloat(deal.term_months || 12);
-  const ratePerMonth = parseFloat(deal.rate_approved || deal.rate_approved || 0.95) / 100;
+  // Rate is stored as a percentage (e.g. 0.95 means 0.95%/month). DO NOT divide by 100 here —
+  // computeNetAdvanceWaterfall() does ratePm/100 internally. Double division was the v5.0
+  // Retained Interest bug that produced £1,197 instead of £119,700.
+  const ratePerMonth = parseFloat(deal.rate_approved || deal.rate_requested || 0.95);
   const retainedMonths = deal.retained_interest_months || dipData.retained_months || 6;
   const arrangementFeePct = parseFloat(deal.arrangement_fee_pct || dipData.arrangement_fee_pct || 2);
   const commitmentFee = parseFloat(deal.commitment_fee || dipData.fee_commitment || 0);
@@ -602,7 +605,8 @@ function buildDipHtml(deal, dipData, options) {
   const minLoanTerm = parseFloat(deal.min_loan_term || 3);
   const dayCountBasis = deal.day_count_basis || '360';
   const requiresShareCharge = deal.requires_share_charge === true;
-  const defaultRate = ratePerMonth * 100 + 2;
+  // Default Rate = normal rate + 2 percentage points. Both are percentages (0.95 → 2.95).
+  const defaultRate = computeDefaultRate(ratePerMonth);
 
   // Property schedule
   const properties = (dipData.properties || []).map((p, idx) => ({
@@ -1137,12 +1141,10 @@ function buildDipHtml(deal, dipData, options) {
     This Decision in Principle sets out the indicative terms under which Daksfirst may provide senior secured finance. All terms are subject to full underwriting, valuation, and credit approval.
   </div>
 
-  <!-- PARTIES -->
+  <!-- PARTIES — _g5RenderPartiesSection outputs its own section-bar + body so
+       we embed its HTML directly here. Wrapping in a .section would duplicate the bar. -->
   <div class="section">
-    <div class="section-bar">PARTIES TO THE FACILITY</div>
-    <div class="section-body">
-      ${partiesHtml || '<div style="font-size:9.5px;color:#666;">Parties section pending G5 data.</div>'}
-    </div>
+    ${partiesHtml || '<div class="section-bar">PARTIES TO THE FACILITY</div><div class="section-body"><div style="font-size:9.5px;color:#666;">Parties section pending G5 data.</div></div>'}
   </div>
 
   <!-- SECURITY STRUCTURE -->
