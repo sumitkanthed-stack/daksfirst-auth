@@ -2748,8 +2748,7 @@ export async function renderDealMatrix(deal) {
         ${isInternalUser || currentStage === 'received' ? `
         <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
         ` : ''}
-        <button onclick="window.matrixParseConfirmed && window.matrixParseConfirmed()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Parse confirmed documents and extract deal data into matrix fields">Parse Confirmed Docs</button>
-        <button onclick="window.matrixParseForReview && window.matrixParseForReview()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#9333ea;color:#fff;cursor:pointer;transition:all .12s" title="Stage 3: Parse documents for candidate review and role assignment">Parse for Candidates</button>
+        <button onclick="window.matrixParseForReview && window.matrixParseForReview()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Claude reads the uploaded pack, extracts every corporate, individual, property and loan fact it finds (with reasoning), then opens a review panel where you assign each one to a role before the Matrix is populated.">AI Parse &amp; Review</button>
         ${currentStage === 'received' ? `
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
         ` : `
@@ -6151,7 +6150,7 @@ export async function renderDealMatrix(deal) {
         autoPopulateMatrix(data.parsed_data);
       }
 
-      showToast(`${docCount} file${docCount !== 1 ? 's' : ''} uploaded and categorised. Please confirm categories in Document Repository, then click "Parse Confirmed Docs".`, 'success');
+      showToast(`${docCount} file${docCount !== 1 ? 's' : ''} uploaded and categorised. Please confirm categories in the Document Repository, then click "AI Parse & Review".`, 'success');
 
       // Refresh the Document Repository section to show new docs with category confirmation
       if (typeof window.refreshDocRepo === 'function') {
