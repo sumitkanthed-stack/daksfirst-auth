@@ -2275,12 +2275,13 @@ export async function renderDealMatrix(deal) {
               )}
 
               <!-- Retained Interest Months — sub-parameter of Interest Servicing.
-                   Only meaningful when servicing = 'retained'. Default 6 months. -->
-              <div style="margin-top:2px;margin-bottom:14px;padding:10px 12px;background:rgba(52,211,153,0.04);border:1px solid rgba(52,211,153,0.12);border-radius:8px;">
+                   Only meaningful when servicing = 'retained'. Default 6 months.
+                   Wrapper id used by window._toggleRetainedMonthsVisibility(). -->
+              <div id="retained-months-wrapper" style="margin-top:2px;margin-bottom:14px;padding:10px 12px;background:rgba(52,211,153,0.04);border:1px solid rgba(52,211,153,0.12);border-radius:8px;${(deal.interest_servicing_approved ?? deal.interest_servicing ?? 'retained') === 'retained' ? '' : 'display:none;'}">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
                   <div style="flex:1;">
-                    <div style="font-size:9px;color:#34D399;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:700;">Retained Interest — Months</div>
-                    <div style="font-size:10.5px;color:#94A3B8;line-height:1.4;">Number of months of interest deducted upfront at drawdown. Applies when Interest Servicing is Retained. Daksfirst default: 6 months.</div>
+                    <div style="font-size:9px;color:#34D399;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:700;">Retained Interest \u2014 Months</div>
+                    <div style="font-size:10.5px;color:#94A3B8;line-height:1.4;">Number of months of interest deducted upfront at drawdown. Daksfirst default: 6 months. Affects Day Zero below.</div>
                   </div>
                   <div style="width:120px;flex-shrink:0;">
                     ${canEdit
@@ -2289,6 +2290,22 @@ export async function renderDealMatrix(deal) {
                     }
                   </div>
                 </div>
+              </div>
+
+              <!-- Day Zero Calculation — live readout.
+                   Formula: Net Advance = Loan − Retained Interest (if retained) − Arrangement Fee
+                   Retained Interest = loan × monthly rate × retained months (only when servicing = retained)
+                   Updated by window._updateDayZeroPanel() on any relevant field change. -->
+              <div id="day-zero-panel" style="margin-top:14px;padding:12px 14px;background:linear-gradient(135deg, rgba(212,168,83,0.06), rgba(212,168,83,0.02));border:1px solid rgba(212,168,83,0.25);border-radius:8px;">
+                <div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Day Zero \u2014 Net Advance to Borrower</div>
+                <div id="day-zero-rows" style="display:grid;grid-template-columns:1fr auto;row-gap:4px;font-size:12px;color:#CBD5E1;">
+                  <div>Gross Loan (Approved)</div><div id="dz-gross" style="text-align:right;color:#F1F5F9;font-weight:600;">\u2014</div>
+                  <div id="dz-retained-label" style="color:#94A3B8;">Less: Retained Interest</div><div id="dz-retained" style="text-align:right;color:#F87171;">\u2014</div>
+                  <div style="color:#94A3B8;">Less: Arrangement Fee</div><div id="dz-arr" style="text-align:right;color:#F87171;">\u2014</div>
+                  <div style="color:#94A3B8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;font-weight:600;">= Net Advance on Day 1</div>
+                  <div id="dz-net" style="text-align:right;color:#34D399;font-weight:700;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;">\u2014</div>
+                </div>
+                <div id="dz-explain" style="font-size:10px;color:#64748B;margin-top:8px;font-style:italic;">\u2014</div>
               </div>
 
               <!-- Operational date — not negotiable, single value -->
@@ -3052,6 +3069,18 @@ export async function renderDealMatrix(deal) {
         // Recalculate completeness and loan limit after every save
         calculateCompleteness();
         updateLoanLimitIndicator();
+
+        // M2b: Day Zero panel live-refresh on fee/rate/loan/months/servicing changes
+        const _dzTrigger = ['loan_amount', 'loan_amount_approved', 'rate_requested', 'rate_approved',
+          'ltv_approved', 'arrangement_fee_pct', 'retained_interest_months',
+          'interest_servicing', 'interest_servicing_approved'];
+        if (_dzTrigger.includes(fieldKey) && typeof window._updateDayZeroPanel === 'function') {
+          try { window._updateDayZeroPanel(); } catch (_) {}
+        }
+        // Servicing change → also toggle the Retained Months wrapper visibility
+        if (fieldKey === 'interest_servicing_approved' && typeof window._toggleRetainedMonthsVisibility === 'function') {
+          try { window._toggleRetainedMonthsVisibility(value); } catch (_) {}
+        }
       } else {
         const err = await resp.json().catch(() => ({}));
         if (el) el.style.borderColor = '#F87171';
@@ -3235,6 +3264,95 @@ export async function renderDealMatrix(deal) {
   }
   // Render on page load
   updateLoanLimitIndicator();
+
+  // ═══════════════════════════════════════════════════════════════════
+  // M2b Matrix-SSOT 2026-04-20 — Retained-months conditional visibility + Day Zero readout
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Hide/show the Retained Interest Months block based on Interest Servicing = retained
+  window._toggleRetainedMonthsVisibility = function(servicingValue) {
+    const wrapper = document.getElementById('retained-months-wrapper');
+    if (!wrapper) return;
+    const shouldShow = (servicingValue === 'retained' || servicingValue == null || servicingValue === '');
+    wrapper.style.display = shouldShow ? '' : 'none';
+    // When hiding, Day Zero must recompute with retainedInterest=0
+    window._updateDayZeroPanel();
+  };
+
+  // Live Day Zero readout: Net Advance = Loan − Retained Interest − Arrangement Fee
+  // Inputs pulled from current deal object + live form values (matrix is the canonical source).
+  window._updateDayZeroPanel = function() {
+    const panel = document.getElementById('day-zero-panel');
+    if (!panel) return;
+
+    const _num = (v) => {
+      const n = parseFloat(String(v == null ? '' : v).replace(/[£,\s]/g, ''));
+      return isFinite(n) ? n : 0;
+    };
+    const _readField = (fieldId) => {
+      const el = document.getElementById(fieldId);
+      if (el && 'value' in el) return _num(el.value);
+      return 0;
+    };
+
+    const loan = _readField('mf-loan_amount_approved') || _num(deal.loan_amount_approved) || _num(deal.loan_amount);
+    const rate = _readField('mf-rate_approved') || _num(deal.rate_approved) || _num(deal.rate_requested) || 1.10;
+    const arrFeePct = _readField('mf-arrangement_fee_pct') || _num(deal.arrangement_fee_pct) || 2.00;
+
+    // Interest servicing — check the select's current value
+    const servicingEl = document.getElementById('mf-interest_servicing_approved');
+    const servicing = servicingEl ? servicingEl.value : (deal.interest_servicing_approved || deal.interest_servicing || 'retained');
+
+    const retainedMonths = servicing === 'retained'
+      ? (_readField('mf-retained_interest_months') || _num(deal.retained_interest_months) || 6)
+      : 0;
+
+    const retainedInterest = servicing === 'retained' ? loan * (rate / 100) * retainedMonths : 0;
+    const arrangementFee = loan * (arrFeePct / 100);
+    const netAdvance = Math.max(0, loan - retainedInterest - arrangementFee);
+
+    const _fmt = (n) => '£' + Math.round(n).toLocaleString();
+    const setText = (id, s) => { const e = document.getElementById(id); if (e) e.textContent = s; };
+
+    setText('dz-gross', loan > 0 ? _fmt(loan) : '—');
+    setText('dz-retained', retainedInterest > 0 ? '−' + _fmt(retainedInterest) : '—');
+    setText('dz-arr', arrangementFee > 0 ? '−' + _fmt(arrangementFee) : '—');
+    setText('dz-net', loan > 0 ? _fmt(netAdvance) : '—');
+
+    // Retained row styling — grey out when not applicable
+    const retainedLabel = document.getElementById('dz-retained-label');
+    if (retainedLabel) {
+      retainedLabel.style.opacity = servicing === 'retained' ? '1' : '0.4';
+      retainedLabel.textContent = servicing === 'retained'
+        ? 'Less: Retained Interest (' + retainedMonths + ' months)'
+        : 'Less: Retained Interest (n/a — servicing: ' + servicing + ')';
+    }
+
+    // Explanation line
+    const explain = document.getElementById('dz-explain');
+    if (explain) {
+      if (loan <= 0) {
+        explain.textContent = 'Set an Approved Loan amount to see the Day Zero calculation.';
+      } else if (servicing === 'retained') {
+        explain.textContent = 'Formula: £' + Math.round(loan).toLocaleString() + ' × ' + rate.toFixed(3) + '%/mo × ' + retainedMonths + ' months = £' + Math.round(retainedInterest).toLocaleString() + ' retained; Arrangement ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '. Valuation/legal costs are paid separately by borrower.';
+      } else {
+        explain.textContent = 'Interest Servicing is ' + servicing + ' — no upfront interest deduction. Arrangement Fee ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '.';
+      }
+    }
+  };
+
+  // Initial paint + wire it into the save flow (hooked in matrixValidateAndSave below by name)
+  requestAnimationFrame(() => {
+    try { window._updateDayZeroPanel(); } catch (_) {}
+    // Hook Interest Servicing select change so visibility toggles immediately
+    const servicingEl = document.getElementById('mf-interest_servicing_approved');
+    if (servicingEl && !servicingEl.__daksHooked) {
+      servicingEl.addEventListener('change', () => {
+        window._toggleRetainedMonthsVisibility(servicingEl.value);
+      });
+      servicingEl.__daksHooked = true;
+    }
+  });
 
   // ── Max LTV button — sets loan amount to max allowable ──
   window.matrixApplyMaxLoan = function() {
