@@ -741,6 +741,75 @@ router.post('/:submissionId/recommendation', authenticateToken, authenticateInte
 //  No DB writes, no PDF, no email. Feeds the matrix pre-flight modal so the
 //  RM can see the rule-by-rule verdict before committing.
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  DIP Section Approval Gates (M4a, 2026-04-20) — Matrix-SSOT for DIP
+//  Five sections that RM must individually approve before Issue DIP fires:
+//    borrower, security, loan_terms, fees, conditions
+//  Each stamp = {approved BOOLEAN, by INT ref users(id), at TIMESTAMPTZ}.
+//  matrix-fields PUT already auto-revokes stamps when referenced data changes
+//  (see AUTO_REVOKE_MAP in the /matrix-fields handler).
+//
+//  Issue DIP endpoint will check all 5 are TRUE before allowing DIP to go out.
+//  Credit Decision (6th section) is separate and only applies when auto-route
+//  requires credit review — handled by the existing credit-decision endpoint.
+// ═══════════════════════════════════════════════════════════════════════════
+const VALID_DIP_SECTIONS = ['borrower', 'security', 'loan_terms', 'fees', 'conditions'];
+
+async function _handleDipApproval(req, res, approve) {
+  try {
+    const { section } = req.body || {};
+    if (!section || !VALID_DIP_SECTIONS.includes(section)) {
+      return res.status(400).json({
+        error: 'Invalid section. Must be one of: ' + VALID_DIP_SECTIONS.join(', ')
+      });
+    }
+    const col = 'dip_' + section + '_approved';
+    const byCol = col + '_by';
+    const atCol = col + '_at';
+
+    const dealRes = await pool.query(
+      `SELECT id, deal_stage FROM deal_submissions WHERE submission_id = $1`,
+      [req.params.submissionId]
+    );
+    if (dealRes.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealRes.rows[0].id;
+
+    const sql = approve
+      ? `UPDATE deal_submissions SET ${col} = TRUE, ${byCol} = $1, ${atCol} = NOW(), updated_at = NOW()
+         WHERE id = $2
+         RETURNING ${col}, ${byCol}, ${atCol}`
+      : `UPDATE deal_submissions SET ${col} = FALSE, ${byCol} = NULL, ${atCol} = NULL, updated_at = NOW()
+         WHERE id = $2
+         RETURNING ${col}, ${byCol}, ${atCol}`;
+    const params = approve ? [req.user.userId, dealId] : [null, dealId];
+    const r = await pool.query(sql, params);
+
+    await logAudit(
+      dealId,
+      approve ? 'dip_section_approved' : 'dip_section_unapproved',
+      null, section,
+      { section, by: req.user.userId, role: req.user.role },
+      req.user.userId
+    );
+
+    res.json({
+      success: true,
+      section,
+      approved: !!r.rows[0][col],
+      by: r.rows[0][byCol],
+      at: r.rows[0][atCol]
+    });
+  } catch (error) {
+    console.error('[dip-section-approval] Error:', error);
+    res.status(500).json({ error: 'Failed to update DIP section approval' });
+  }
+}
+
+router.post('/:submissionId/dip-approve-section', authenticateToken, authenticateInternal,
+  (req, res) => _handleDipApproval(req, res, true));
+router.post('/:submissionId/dip-unapprove-section', authenticateToken, authenticateInternal,
+  (req, res) => _handleDipApproval(req, res, false));
+
 router.get('/:submissionId/auto-route-preview', authenticateToken, authenticateInternal, async (req, res) => {
   try {
     const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
