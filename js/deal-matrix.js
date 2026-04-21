@@ -220,7 +220,12 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
 // The Approved field writes to <baseField>_approved via matrixValidateAndSave.
 // Requested field is display-only in the matrix (captured at submission).
 // ═══════════════════════════════════════════════════════════════════
-function renderRequestedApprovedField(baseField, label, requestedVal, approvedVal, inputType, canEdit, options) {
+function renderRequestedApprovedField(baseField, label, requestedVal, approvedVal, inputType, canEdit, options, showApproved) {
+  // 2026-04-21: showApproved defaults to true for backwards compat. Pass false
+  // for broker pre-submission views — renders Requested only in a single-column
+  // wider layout. Approved column (Daksfirst's offer) is RM-stage info and
+  // has no reason to appear to a broker filling out their initial ask.
+  if (showApproved === undefined) showApproved = true;
   const requestedField = baseField + '_requested';
   const approvedField = baseField + '_approved';
 
@@ -280,6 +285,16 @@ function renderRequestedApprovedField(baseField, label, requestedVal, approvedVa
         .replace(/<label[^>]*>.*?<\/label>/, '')
         .replace(/margin-bottom:12px/, 'margin-bottom:0')
     : `<div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;">${sanitizeHtml(requestedDisplay)}</div>`;
+
+  // 2026-04-21: single-column layout when showApproved=false (broker pre-submit).
+  // No "Requested" heading needed — it's the only value the broker is entering,
+  // so the field label itself ("Loan Amount", "LTV", etc.) is self-explanatory.
+  if (!showApproved) {
+    return `<div style="margin-bottom:14px;">
+      <label style="${labelStyle}">${sanitizeHtml(label)}</label>
+      ${requestedInput}
+    </div>`;
+  }
 
   return `<div style="margin-bottom:14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
@@ -549,6 +564,14 @@ export async function renderDealMatrix(deal) {
   const canEdit = isInternalUser
     ? EDITABLE_ROLES.includes(role)
     : (EDITABLE_ROLES.includes(role) && brokerEditableStages.includes(currentStage));
+
+  // 2026-04-21: Broker's pre-submission view hides RM-only material.
+  // Specifically: Approved columns (Daksfirst's offer), Rate (priced by RM),
+  // the entire Fee Schedule (RM sets fees), and Day Zero (depends on fees).
+  // Post-submission — broker sees both Requested + Approved read-only.
+  // Internal roles always see the full view.
+  const isPreSubmission = !isInternalUser && brokerEditableStages.includes(currentStage);
+  const showApproved = !isPreSubmission;
 
   // Safe number helpers
   const num = (v) => v != null ? Number(v) : 0;
@@ -2312,26 +2335,26 @@ export async function renderDealMatrix(deal) {
                 'loan_amount', 'Loan Amount (£)',
                 deal.loan_amount_requested ?? deal.loan_amount,
                 deal.loan_amount_approved ?? deal.loan_amount,
-                'money', canEdit
+                'money', canEdit, null, showApproved
               )}
               ${renderRequestedApprovedField(
                 'ltv', 'LTV (%)',
                 deal.ltv_requested,
                 deal.ltv_approved ?? deal.ltv_requested,
-                'text', canEdit
+                'text', canEdit, null, showApproved
               )}
               ${renderRequestedApprovedField(
                 'term_months', 'Term (months)',
                 deal.term_months_requested ?? deal.term_months,
                 deal.term_months_approved ?? deal.term_months,
-                'text', canEdit
+                'text', canEdit, null, showApproved
               )}
-              ${renderRequestedApprovedField(
+              ${isPreSubmission ? '' : renderRequestedApprovedField(
                 'rate', 'Rate (%/month)',
                 deal.rate_requested,
                 // Default to 1.10% when neither side is set (Daksfirst default rate)
                 deal.rate_approved ?? deal.rate_requested ?? '1.10',
-                'text', isInternalUser && canEdit
+                'text', isInternalUser && canEdit, null, showApproved
               )}
               ${renderRequestedApprovedField(
                 'interest_servicing', 'Interest Servicing',
@@ -2342,7 +2365,8 @@ export async function renderDealMatrix(deal) {
                   { value: 'retained', label: 'Retained (deducted upfront)' },
                   { value: 'serviced', label: 'Serviced (monthly payments)' },
                   { value: 'rolled', label: 'Rolled Up' }
-                ]
+                ],
+                showApproved
               )}
 
               <!-- Retained Interest Months — sub-parameter of Interest Servicing.
@@ -2363,21 +2387,12 @@ export async function renderDealMatrix(deal) {
                 </div>
               </div>
 
-              <!-- Day Zero Calculation — live readout.
-                   Formula: Net Advance = Loan − Retained Interest (if retained) − Arrangement Fee
-                   Retained Interest = loan × monthly rate × retained months (only when servicing = retained)
-                   Updated by window._updateDayZeroPanel() on any relevant field change. -->
-              <div id="day-zero-panel" style="margin-top:14px;padding:12px 14px;background:linear-gradient(135deg, rgba(212,168,83,0.06), rgba(212,168,83,0.02));border:1px solid rgba(212,168,83,0.25);border-radius:8px;">
-                <div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Day Zero \u2014 Net Advance to Borrower</div>
-                <div id="day-zero-rows" style="display:grid;grid-template-columns:1fr auto;row-gap:4px;font-size:12px;color:#CBD5E1;">
-                  <div>Gross Loan (Approved)</div><div id="dz-gross" style="text-align:right;color:#F1F5F9;font-weight:600;">\u2014</div>
-                  <div id="dz-retained-label" style="color:#94A3B8;">Less: Retained Interest</div><div id="dz-retained" style="text-align:right;color:#F87171;">\u2014</div>
-                  <div style="color:#94A3B8;">Less: Arrangement Fee</div><div id="dz-arr" style="text-align:right;color:#F87171;">\u2014</div>
-                  <div style="color:#94A3B8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;font-weight:600;">= Net Advance on Day 1</div>
-                  <div id="dz-net" style="text-align:right;color:#34D399;font-weight:700;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;">\u2014</div>
-                </div>
-                <div id="dz-explain" style="font-size:10px;color:#64748B;margin-top:8px;font-style:italic;">\u2014</div>
-              </div>
+              <!-- 2026-04-21: Day Zero panel MOVED out of Loan Structure.
+                   It now renders AFTER the Fee Schedule section below, because
+                   Day Zero depends on fees (arrangement fee) to compute Net
+                   Advance — showing it before fees are entered produced
+                   meaningless dashes. Also fully hidden pre-submission via
+                   the same isPreSubmission guard as Fee Schedule. -->
 
               <!-- Operational date — not negotiable, single value -->
               <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.04);">
@@ -2389,10 +2404,14 @@ export async function renderDealMatrix(deal) {
         </div>
 
         <!-- Fees (moved from s7 2026-04-20 — lives with Loan Structure and Day Zero to form a single
-             Loan Economics block. DIP Loan Terms approval gate covers this entire section. -->
+             Loan Economics block. DIP Loan Terms approval gate covers this entire section.
+             2026-04-21: hidden entirely for broker pre-submission (isPreSubmission) —
+             RM fills fees, broker doesn't need to see them until RM has set them. -->
+        ${isPreSubmission ? '' : `
         ${renderFieldRow('fees', 'Fee Schedule', `Arrangement: ${deal.arrangement_fee_pct ? fmtPct(deal.arrangement_fee_pct) + '%' : '2.00%'}, Broker: ${deal.broker_fee_pct ? fmtPct(deal.broker_fee_pct) + '%' : 'TBA'}, DIP: £${deal.dip_fee ?? 1000}, Commit: £${deal.commitment_fee || 'auto'}`,
-          ['not-started', 'not-started', 'not-started', 'not-started'])}
+          ['not-started', 'not-started', 'not-started', 'not-started'])}`}
 
+        ${isPreSubmission ? '' : `
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-fees">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
@@ -2429,6 +2448,27 @@ export async function renderDealMatrix(deal) {
             </div>
           </div>
         </div>
+
+        <!-- 2026-04-21: Day Zero panel — moved from inside Loan Structure.
+             Renders ONLY when Fee Schedule is visible (i.e., post-submission or
+             internal user), and only when loan_amount_approved is populated
+             (per _updateDayZeroPanel's internal gate). Logically belongs here:
+             Day Zero = Gross Loan − Retained Interest − Arrangement Fee, all of
+             which come from the Approved column + Fee Schedule above. -->
+        <div style="padding:8px 26px 14px 50px">
+          <div id="day-zero-panel" style="padding:12px 14px;background:linear-gradient(135deg, rgba(212,168,83,0.06), rgba(212,168,83,0.02));border:1px solid rgba(212,168,83,0.25);border-radius:8px;">
+            <div style="font-size:9px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Day Zero \u2014 Net Advance to Borrower</div>
+            <div id="day-zero-rows" style="display:grid;grid-template-columns:1fr auto;row-gap:4px;font-size:12px;color:#CBD5E1;">
+              <div>Gross Loan (Approved)</div><div id="dz-gross" style="text-align:right;color:#F1F5F9;font-weight:600;">\u2014</div>
+              <div id="dz-retained-label" style="color:#94A3B8;">Less: Retained Interest</div><div id="dz-retained" style="text-align:right;color:#F87171;">\u2014</div>
+              <div style="color:#94A3B8;">Less: Arrangement Fee</div><div id="dz-arr" style="text-align:right;color:#F87171;">\u2014</div>
+              <div style="color:#94A3B8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;font-weight:600;">= Net Advance on Day 1</div>
+              <div id="dz-net" style="text-align:right;color:#34D399;font-weight:700;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;">\u2014</div>
+            </div>
+            <div id="dz-explain" style="font-size:10px;color:#64748B;margin-top:8px;font-style:italic;">\u2014</div>
+          </div>
+        </div>
+        `}
 
         <!-- M4d 2026-04-20: Use of Funds extracted to its own section (rendered before Loan Terms).
              Rationale: RM needs purpose + exit understood BEFORE pricing loan terms. -->

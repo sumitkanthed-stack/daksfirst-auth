@@ -2223,7 +2223,15 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'property_tenure', 'occupancy_status', 'current_use',
       'purchase_price', 'use_of_funds', 'refurb_scope', 'refurb_cost',
       'deposit_source', 'concurrent_transactions',
-      'estimated_net_worth', 'source_of_wealth'
+      'estimated_net_worth', 'source_of_wealth',
+      // 2026-04-21: broker-editable Requested-column variants. UI now renders
+      // Requested as editable (Max Loan pill, LTV auto-calc). Previously the
+      // whitelist only accepted the legacy flat keys (loan_amount, term_months,
+      // interest_servicing, exit_strategy) — saves of _requested variants from
+      // the Matrix UI returned "No valid fields to update". Rate Requested
+      // stays RM-only per lender-side pricing policy.
+      'loan_amount_requested', 'term_months_requested',
+      'interest_servicing_requested', 'exit_strategy_requested'
     ];
 
     const rmFields = [
