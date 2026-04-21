@@ -2061,8 +2061,20 @@ export async function renderDealMatrix(deal) {
                     ? (faChim.toFixed(0) + ' m\u00B2 <span style="font-size:9px;color:#94A3B8;font-weight:400;">(' + Math.round(faChim * 10.764).toLocaleString() + ' sqft)</span>' + faVariance + gardenLine)
                     : (gardenLine || '\u2014');
                   const ctBand = p.chimnie_council_tax_band ? 'Band ' + sanitizeHtml(p.chimnie_council_tax_band) : '\u2014';
-                  const rebuildDisplay = p.chimnie_rebuild_cost_estimate
-                    ? fmtMoney(p.chimnie_rebuild_cost_estimate) +
+                  // Rebuild cost: show total + £/sqft (computed from floor area).
+                  // £/sqft makes variance across properties directly comparable — e.g.
+                  // ground-floor flat at £387/sqft vs terrace house at £211/sqft tells
+                  // a very different construction-cost story than the raw totals.
+                  const rebuildTotal = Number(p.chimnie_rebuild_cost_estimate) || 0;
+                  const rebuildSqm = Number(p.chimnie_floor_area_sqm) || 0;
+                  const rebuildPsf = (rebuildTotal > 0 && rebuildSqm > 0)
+                    ? rebuildTotal / (rebuildSqm * 10.764)
+                    : null;
+                  const rebuildDisplay = rebuildTotal > 0
+                    ? fmtMoney(rebuildTotal) +
+                      (rebuildPsf
+                        ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">\u00A3' + Math.round(rebuildPsf).toLocaleString() + '/sqft</div>'
+                        : '') +
                       ((p.chimnie_rebuild_cost_basic && p.chimnie_rebuild_cost_luxury)
                         ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Basic ' + fmtMoney(p.chimnie_rebuild_cost_basic) + ' \u00B7 Lux ' + fmtMoney(p.chimnie_rebuild_cost_luxury) + '</div>'
                         : '')
