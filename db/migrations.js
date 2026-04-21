@@ -863,6 +863,55 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_5y_value_change_pct NUMERIC(6,2)`,
       // Urban/rural classifier (area demographic proxy)
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_is_urban BOOLEAN`,
+
+      // ═══ Chimnie Tier 1+2 (2026-04-21) — additional high-signal fields ═══
+      // Sale/ownership signals
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_sale_propensity VARCHAR(15)`,       // '<1y','1-2y','2-5y','5-10y','10+y'
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avg_proximal_value NUMERIC(15,2)`,  // avg value of comps in postcode
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_estimated_listing_value NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_prebuild BOOLEAN`,                   // planning granted, not built — HARD DECLINE
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_has_farmland BOOLEAN`,              // HARD DECLINE — agricultural
+      // Flat-specific
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_flat_storey_count INT`,             // storeys in the block
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_estimated_floor_level INT`,         // which floor this flat is on
+      // Outdoor value-add
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_has_garden BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_grounds_area_sqm NUMERIC(10,2)`,
+      // Subsidence / tree hazard (climate + structural risk)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_subsidence_risk_2030 VARCHAR(20)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_subsidence_risk_2050 VARCHAR(20)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_subsidence_risk_2080 VARCHAR(20)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_tree_hazard_index NUMERIC(6,3)`,    // tree_fall risk within 10m
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_closest_tree_distance_m NUMERIC(6,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_closest_tree_height_m NUMERIC(6,2)`,
+      // Radon — health/disclosure liability
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_radon_affected BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_radon_protection_level VARCHAR(40)`,
+      // Flood context (beyond the % probability)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_distance_from_coast_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_distance_from_river_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_elevation_min_m NUMERIC(7,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_elevation_max_m NUMERIC(7,2)`,
+      // Noise (residential re-sale signal)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_noise_road_db NUMERIC(5,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_noise_rail_db NUMERIC(5,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_noise_air_db NUMERIC(5,2)`,
+      // Additional planning constraints
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_ancient_woodland BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_common_land BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_historic_parks BOOLEAN`,
+      // University proximity (student BTL context)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_university_name VARCHAR(200)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_university_distance_m INT`,
+      // Rebuild cost by finish tier (insurance strategy)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rebuild_cost_basic NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rebuild_cost_modern NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rebuild_cost_luxury NUMERIC(15,2)`,
+      // Connected property risk (for multi-unit / parent-flat deals)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_connected_property_risk VARCHAR(40)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_parent_uprn VARCHAR(20)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_sibling_uprn_count INT`,             // how many flats share our parent_uprn
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_subproperty_uprn_count INT`,        // how many subproperties we ourselves contain
       // Full payload + audit
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_data JSONB DEFAULT '{}'::jsonb`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_at TIMESTAMPTZ`,

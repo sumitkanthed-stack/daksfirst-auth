@@ -330,7 +330,75 @@ function extractFlatFields(data) {
     // 5-year value trajectory — compute % change from historical monthly series.
     // historical_property_values shape (from schema): object with monthly keys,
     // OR an array of {date, value} pairs. Handle both; return null if absent.
-    chimnie_5y_value_change_pct: _computeFiveYearChange(get(data, 'property.value.sale.historical_property_values'))
+    chimnie_5y_value_change_pct: _computeFiveYearChange(get(data, 'property.value.sale.historical_property_values')),
+
+    // ═══ Tier 1 + 2 (2026-04-21) ═══
+    // Sale/ownership signals
+    chimnie_sale_propensity: get(data, 'property.value.sale.sale_propensity') || null,
+    chimnie_avg_proximal_value: get(data, 'property.value.sale.average_proximal_property_value') ?? null,
+    chimnie_estimated_listing_value: get(data, 'property.value.sale.estimated_listing_sale_value') ?? null,
+    chimnie_prebuild: _boolOrNull(get(data, 'property.attributes.prebuild')
+                               ?? get(data, 'property.attributes.status.prebuild')),
+    chimnie_has_farmland: _boolOrNull(get(data, 'property.outdoor.farmland')
+                                  ?? get(data, 'property.attributes.outdoor.farmland')),
+    // Flat-specific
+    chimnie_flat_storey_count: get(data, 'property.attributes.status.flat_storey_count_declared_only')
+                            ?? get(data, 'premium.property.attributes.status.flat_storey_count_declared_and_predicted')
+                            ?? get(data, 'property.attributes.flat_storey_count')
+                            ?? null,
+    chimnie_estimated_floor_level: get(data, 'premium.property.attributes.status.estimated_floor_level') ?? null,
+    // Outdoor value-add
+    chimnie_has_garden: _boolOrNull(get(data, 'premium.property.outdoor.garden')
+                                ?? get(data, 'property.outdoor.garden')
+                                ?? get(data, 'property.attributes.outdoor.garden')),
+    chimnie_grounds_area_sqm: get(data, 'premium.property.outdoor.grounds_area')
+                           ?? get(data, 'premium.property.outdoor.size_of_grounds_declared_and_predicted')
+                           ?? null,
+    // Subsidence forecast (2030 / 2050 / 2080)
+    chimnie_subsidence_risk_2030: get(data, 'surroundings.environment.subsidence.subsidence_risk.2030') || null,
+    chimnie_subsidence_risk_2050: get(data, 'surroundings.environment.subsidence.subsidence_risk.2050') || null,
+    chimnie_subsidence_risk_2080: get(data, 'surroundings.environment.subsidence.subsidence_risk.2080') || null,
+    // Tree hazard — imminent subsidence trigger
+    chimnie_tree_hazard_index: get(data, 'premium.property.outdoor.tree_hazard_index') ?? null,
+    chimnie_closest_tree_distance_m: get(data, 'premium.property.outdoor.closest_tree_distance') ?? null,
+    chimnie_closest_tree_height_m: get(data, 'premium.property.outdoor.closest_tree_height') ?? null,
+    // Radon
+    chimnie_radon_affected: _boolOrNull(get(data, 'surroundings.environment.land.radon.affected')),
+    chimnie_radon_protection_level: get(data, 'surroundings.environment.land.radon.level_of_protection_required') || null,
+    // Flood context
+    chimnie_distance_from_coast_m: get(data, 'surroundings.environment.flood.distance_from_coast') ?? null,
+    chimnie_distance_from_river_m: get(data, 'surroundings.environment.flood.distance_from_river') ?? null,
+    chimnie_elevation_min_m: get(data, 'surroundings.environment.land.property_elevation_min') ?? null,
+    chimnie_elevation_max_m: get(data, 'surroundings.environment.land.property_elevation_max') ?? null,
+    // Noise
+    chimnie_noise_road_db: get(data, 'surroundings.environment.noise.noise_road_db') ?? null,
+    chimnie_noise_rail_db: get(data, 'surroundings.environment.noise.noise_rail_db') ?? null,
+    chimnie_noise_air_db: get(data, 'surroundings.environment.noise.noise_air_db') ?? null,
+    // Additional planning constraints
+    chimnie_in_ancient_woodland: _boolOrNull(get(data, 'surroundings.environment.land.ancient_woodland.affected')),
+    chimnie_in_common_land: _boolOrNull(get(data, 'surroundings.environment.land.common_land.affected')),
+    chimnie_in_historic_parks: _boolOrNull(get(data, 'surroundings.environment.land.historic_parks_and_gardens.affected')),
+    // University proximity
+    chimnie_nearest_university_name: get(data, 'surroundings.facilities.education.nearest_university.name') || null,
+    chimnie_nearest_university_distance_m: get(data, 'surroundings.facilities.education.nearest_university.distance') ?? null,
+    // Rebuild cost tiers
+    chimnie_rebuild_cost_basic: get(data, 'premium.value.rebuild.basic_finish_rebuild_cost_estimate') ?? null,
+    chimnie_rebuild_cost_modern: get(data, 'premium.value.rebuild.modern_finish_rebuild_cost_estimate') ?? null,
+    chimnie_rebuild_cost_luxury: get(data, 'premium.value.rebuild.luxury_finish_rebuild_cost_estimate') ?? null,
+    // Connected property risk
+    chimnie_connected_property_risk: get(data, 'premium.ownership.connected_property_risk') || null,
+    chimnie_parent_uprn: (() => {
+      const v = get(data, 'plus.property.attributes.status.parent_uprn');
+      return v != null ? String(v) : null;
+    })(),
+    chimnie_sibling_uprn_count: (() => {
+      const s = get(data, 'plus.property.attributes.status.sibling_uprns');
+      return Array.isArray(s) ? s.length : null;
+    })(),
+    chimnie_subproperty_uprn_count: (() => {
+      const s = get(data, 'plus.property.attributes.status.subproperties');
+      return Array.isArray(s) ? s.length : null;
+    })()
   };
 }
 

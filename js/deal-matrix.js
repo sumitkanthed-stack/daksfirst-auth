@@ -1958,7 +1958,13 @@ export async function renderDealMatrix(deal) {
                   const kpi = (label, value, extraStyle) => '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;letter-spacing:.3px;">' + label + '</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;' + (extraStyle || '') + '">' + value + '</span></div>';
                   // Red-flag chips
                   const flags = [];
+                  // Tier 1 hard-decline signals — surface FIRST so they catch the eye.
+                  if (p.chimnie_prebuild === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.2);padding:2px 7px;border-radius:3px;font-weight:700;border:1px solid #F87171;">\u26A0 PREBUILD — not constructed</span>');
+                  if (p.chimnie_has_farmland === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.2);padding:2px 7px;border-radius:3px;font-weight:700;border:1px solid #F87171;">\u26A0 FARMLAND — excluded asset</span>');
                   if (p.chimnie_overseas_ownership === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Overseas owner</span>');
+                  if (p.chimnie_connected_property_risk && p.chimnie_connected_property_risk !== 'none' && p.chimnie_connected_property_risk !== 'None') {
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Connected risk: ' + sanitizeHtml(p.chimnie_connected_property_risk) + '</span>');
+                  }
                   if (p.chimnie_company_ownership === true) flags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Company-owned</span>');
                   if (p.chimnie_is_listed === true) flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Listed bldg</span>');
                   // 2026-04-21: case-insensitive — Chimnie returns lowercase 'brick', 'stone', 'timber'
@@ -1987,9 +1993,16 @@ export async function renderDealMatrix(deal) {
 
                   // Row 3 builders — physical + bills
                   const typeLabel = p.chimnie_property_subtype || p.chimnie_property_type || '\u2014';
-                  const typeDetail = (p.chimnie_classification && p.chimnie_classification !== 'Residential')
+                  // Floor level for flats (e.g. "Floor 2 of 5") — only show when we have storey data
+                  const floorLevelLine = (p.chimnie_estimated_floor_level != null && p.chimnie_flat_storey_count != null)
+                    ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Floor ' + p.chimnie_estimated_floor_level + ' of ' + p.chimnie_flat_storey_count + '</div>'
+                    : (p.chimnie_estimated_floor_level != null
+                      ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Floor ' + p.chimnie_estimated_floor_level + '</div>'
+                      : '');
+                  const classificationLine = (p.chimnie_classification && p.chimnie_classification !== 'Residential')
                     ? '<div style="font-size:9px;color:#FBBF24;font-weight:600;margin-top:2px;">' + sanitizeHtml(p.chimnie_classification) + '</div>'
                     : '';
+                  const typeDetail = floorLevelLine + classificationLine;
                   const bedsBaths = (p.chimnie_bedrooms != null || p.chimnie_bathrooms != null)
                     ? ((p.chimnie_bedrooms != null ? p.chimnie_bedrooms + ' bed' : '?') + ' \u00B7 ' + (p.chimnie_bathrooms != null ? p.chimnie_bathrooms + ' bath' : '?'))
                     : '\u2014';
@@ -2003,9 +2016,14 @@ export async function renderDealMatrix(deal) {
                       faVariance = '<div style="font-size:9px;color:#FBBF24;font-weight:600;margin-top:2px;">\u26A0 ' + (vPct > 0 ? '+' : '') + vPct.toFixed(1) + '% vs EPC</div>';
                     }
                   }
+                  // Garden / grounds line — value-add signal for exit pricing
+                  const groundsSqm = Number(p.chimnie_grounds_area_sqm) || 0;
+                  const gardenLine = (p.chimnie_has_garden === true || groundsSqm > 0)
+                    ? '<div style="font-size:9px;color:#34D399;font-weight:500;margin-top:2px;">\u273F Garden' + (groundsSqm > 0 ? ' \u00B7 ' + Math.round(groundsSqm).toLocaleString() + ' m\u00B2 grounds' : '') + '</div>'
+                    : '';
                   const faDisplay = faChim > 0
-                    ? (faChim.toFixed(0) + ' m\u00B2 <span style="font-size:9px;color:#94A3B8;font-weight:400;">(' + Math.round(faChim * 10.764).toLocaleString() + ' sqft)</span>' + faVariance)
-                    : '\u2014';
+                    ? (faChim.toFixed(0) + ' m\u00B2 <span style="font-size:9px;color:#94A3B8;font-weight:400;">(' + Math.round(faChim * 10.764).toLocaleString() + ' sqft)</span>' + faVariance + gardenLine)
+                    : (gardenLine || '\u2014');
                   const ctBand = p.chimnie_council_tax_band ? 'Band ' + sanitizeHtml(p.chimnie_council_tax_band) : '\u2014';
                   const rebuildDisplay = p.chimnie_rebuild_cost_estimate
                     ? fmtMoney(p.chimnie_rebuild_cost_estimate)
@@ -2087,6 +2105,19 @@ export async function renderDealMatrix(deal) {
                     ? '<div style="font-size:10px;color:#64748B;margin-top:6px;">' + metaBits.join(' \u00B7 ') + '</div>'
                     : '';
 
+                  // ── Property Relationships (flat in a block) ──
+                  // Shows the block structure for flats: parent UPRN + sibling count.
+                  // Important for multi-property deals on the same block (concentration risk).
+                  const hasRelationships = p.chimnie_parent_uprn || (p.chimnie_sibling_uprn_count != null && p.chimnie_sibling_uprn_count > 0) || (p.chimnie_subproperty_uprn_count != null && p.chimnie_subproperty_uprn_count > 0);
+                  const relationshipsStrip = hasRelationships
+                    ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(201,162,39,0.05);border:1px solid rgba(201,162,39,0.18);border-radius:4px;font-size:10px;color:#94A3B8;">' +
+                        '<span style="color:#C9A227;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;font-size:9px;">Property Relationships</span>' +
+                        (p.chimnie_parent_uprn ? ' \u00B7 Parent block <code style="color:#F1F5F9;">' + sanitizeHtml(p.chimnie_parent_uprn) + '</code>' : '') +
+                        (p.chimnie_sibling_uprn_count ? ' \u00B7 ' + p.chimnie_sibling_uprn_count + ' sibling unit' + (p.chimnie_sibling_uprn_count === 1 ? '' : 's') + ' in block' : '') +
+                        (p.chimnie_subproperty_uprn_count ? ' \u00B7 ' + p.chimnie_subproperty_uprn_count + ' sub-units contained' : '') +
+                      '</div>'
+                    : '';
+
                   // Inline summary for the collapsed state — three highest-signal
                   // numbers so the RM can eyeball the property without expanding.
                   const summaryBits = [];
@@ -2103,9 +2134,13 @@ export async function renderDealMatrix(deal) {
                     // Collapsible body — toggled by window._toggleChimniePanel
                     '<div id="chimnie-body-' + p.id + '" style="display:' + chimnieBodyDisplay + ';">' +
                       metaStrip +
+                      relationshipsStrip +
                       // Row 1 — valuation + risk
                       '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                        kpi('AVM', fmtMoney(p.chimnie_avm_mid) + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '') + varianceBadge) +
+                        kpi('AVM', fmtMoney(p.chimnie_avm_mid)
+                          + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '')
+                          + (p.chimnie_avg_proximal_value ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Area comps avg: ' + fmtMoney(p.chimnie_avg_proximal_value) + '</div>' : '')
+                          + varianceBadge) +
                         kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
                         kpi('Rental p.c.m.', fmtMoney(p.chimnie_rental_pcm)) +
                         kpi('Flood', '<span style="color:' + floodColor + ';">' + floodLabel + '</span><div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">R/S ' + fmtPct(floodRS) + ' \u00B7 SW ' + fmtPct(floodSW) + '</div>') +
@@ -2122,7 +2157,9 @@ export async function renderDealMatrix(deal) {
                       '</div>' +
                       // Row 2 — transaction history + legal
                       '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                        kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
+                        kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price)
+                          + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')
+                          + (p.chimnie_sale_propensity ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Sale propensity: <span style="color:#F1F5F9;">' + sanitizeHtml(p.chimnie_sale_propensity) + '</span></div>' : '')) +
                         kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
                         kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
                         kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
@@ -2227,6 +2264,65 @@ export async function renderDealMatrix(deal) {
                     }
                   }
 
+                  // ── Row 5 builders (Tier 1+2 — climate / structural / health / noise) ──
+                  // Subsidence forecast 2050 — climate-driven. Chimnie uses categorical strings.
+                  const subs50 = p.chimnie_subsidence_risk_2050;
+                  const subsColour = (() => {
+                    const s = (subs50 || '').toLowerCase();
+                    if (!s) return '#94A3B8';
+                    if (s.includes('high')) return '#F87171';
+                    if (s.includes('medium') || s.includes('moderate')) return '#FBBF24';
+                    if (s.includes('low') || s.includes('negligible')) return '#34D399';
+                    return '#94A3B8';
+                  })();
+                  const subsidenceCell = subs50
+                    ? '<span style="color:' + subsColour + ';">' + sanitizeHtml(subs50) + '</span>' +
+                      (p.chimnie_subsidence_risk_2080 ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">2080: ' + sanitizeHtml(p.chimnie_subsidence_risk_2080) + '</div>' : '')
+                    : '\u2014';
+
+                  // Tree hazard — value only meaningful when trees are close AND tall
+                  const treeDist = _num(p.chimnie_closest_tree_distance_m);
+                  const treeHeight = _num(p.chimnie_closest_tree_height_m);
+                  const treeHazard = _num(p.chimnie_tree_hazard_index);
+                  const treeColour = treeHazard == null ? '#94A3B8'
+                                   : treeHazard > 1.0 ? '#F87171'
+                                   : treeHazard > 0.3 ? '#FBBF24' : '#34D399';
+                  const treeCell = (treeDist != null && treeDist > 0)
+                    ? '<span style="color:' + treeColour + ';">' + treeDist.toFixed(0) + 'm away</span>' +
+                      (treeHeight ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + treeHeight.toFixed(1) + 'm tall · idx ' + (treeHazard != null ? treeHazard.toFixed(2) : '\u2014') + '</div>' : '')
+                    : '<span style="color:#34D399;font-weight:400;">None &lt; 10m</span>';
+
+                  // Radon — show level of protection required if affected
+                  const radonCell = p.chimnie_radon_affected === true
+                    ? '<span style="color:#FBBF24;">Affected</span>' +
+                      (p.chimnie_radon_protection_level ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + sanitizeHtml(p.chimnie_radon_protection_level) + '</div>' : '')
+                    : p.chimnie_radon_affected === false
+                      ? '<span style="color:#34D399;font-weight:400;">Clear</span>'
+                      : '\u2014';
+
+                  // Noise (road) — >65 dB starts to affect re-sale
+                  const noiseRoad = _num(p.chimnie_noise_road_db);
+                  const noiseColour = noiseRoad == null ? '#94A3B8'
+                                    : noiseRoad > 65 ? '#F87171'
+                                    : noiseRoad > 55 ? '#FBBF24' : '#34D399';
+                  const noiseCell = noiseRoad != null
+                    ? '<span style="color:' + noiseColour + ';">' + noiseRoad.toFixed(0) + ' dB</span>' +
+                      '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">road · rail ' + (_num(p.chimnie_noise_rail_db) != null ? _num(p.chimnie_noise_rail_db).toFixed(0) + 'dB' : '\u2014') + '</div>'
+                    : '\u2014';
+
+                  // Elevation + distance from river/coast context
+                  const elevMin = _num(p.chimnie_elevation_min_m);
+                  const elevMax = _num(p.chimnie_elevation_max_m);
+                  const distRiver = _num(p.chimnie_distance_from_river_m);
+                  const distCoast = _num(p.chimnie_distance_from_coast_m);
+                  const elevCell = (elevMin != null || distRiver != null)
+                    ? (elevMin != null ? elevMin.toFixed(0) + (elevMax != null && Math.abs(elevMax - elevMin) > 0.5 ? '\u2013' + elevMax.toFixed(0) : '') + 'm ASL' : '\u2014') +
+                      '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' +
+                        (distRiver != null ? 'River ' + (distRiver < 1000 ? distRiver + 'm' : (distRiver / 1000).toFixed(1) + 'km') : '') +
+                        (distCoast != null && distCoast < 50000 ? ' · Coast ' + (distCoast < 1000 ? distCoast + 'm' : (distCoast / 1000).toFixed(1) + 'km') : '') +
+                      '</div>'
+                    : '\u2014';
+
                   // ── Red-flag chips (area-level) ──
                   const areaFlags = [];
                   if (daysSell != null && daysSell > 120) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Slow exit (' + daysSell + 'd)</span>');
@@ -2235,6 +2331,9 @@ export async function renderDealMatrix(deal) {
                   if (wealthNat != null && wealthNat < 30) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Low-wealth area</span>');
                   if (p.chimnie_in_green_belt === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Green belt</span>');
                   if (p.chimnie_in_aonb === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">AONB</span>');
+                  if (p.chimnie_in_ancient_woodland === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Ancient woodland</span>');
+                  if (p.chimnie_in_common_land === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Common land</span>');
+                  if (p.chimnie_in_historic_parks === true) areaFlags.push('<span style="font-size:9px;color:#C9A227;background:rgba(201,162,39,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Historic park/garden</span>');
                   if (p.chimnie_near_historic_landfill === true) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Historic landfill</span>');
                   if (p.chimnie_in_coal_mining_area === true) areaFlags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Coal mining area</span>');
                   if (p.chimnie_in_world_heritage === true) areaFlags.push('<span style="font-size:9px;color:#C9A227;background:rgba(201,162,39,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">UNESCO World Heritage</span>');
@@ -2244,6 +2343,10 @@ export async function renderDealMatrix(deal) {
                   const nearestPrimaryOfsted = (p.chimnie_nearest_primary_ofsted || '').toLowerCase();
                   if (nearestPrimaryOfsted === 'inadequate' || nearestPrimaryOfsted === 'serious weaknesses') {
                     areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Poor local school</span>');
+                  }
+                  // Tree hazard flag — only when actually close and tall (hazard index > 1)
+                  if (treeHazard != null && treeHazard > 1.0) {
+                    areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Subsidence-risk tree</span>');
                   }
                   const areaFlagsHtml = areaFlags.length > 0 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' + areaFlags.join('') + '</div>' : '';
 
@@ -2330,10 +2433,27 @@ export async function renderDealMatrix(deal) {
                         kpi('Total HHI (MSOA)', fmtMoney(p.chimnie_total_hhi_msoa) + (p.chimnie_total_hhi_msoa ? '<span style="font-size:9px;color:#94A3B8;font-weight:400;"> /yr</span>' : '')) +
                         kpi('Disposable HHI', fmtMoney(p.chimnie_disposable_hhi_msoa) + (p.chimnie_disposable_hhi_msoa ? '<span style="font-size:9px;color:#94A3B8;font-weight:400;"> /yr</span>' : '')) +
                       '</div>' +
-                      // Row 4 — Schools
-                      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                        kpi('Nearest Primary', primaryCell) +
-                        kpi('Best Secondary (within 5km)', secondaryCell) +
+                      // Row 4 — Schools + nearest university (student-BTL context)
+                      (() => {
+                        const uniName = p.chimnie_nearest_university_name;
+                        const uniDist = _num(p.chimnie_nearest_university_distance_m);
+                        const uniCell = (uniName || uniDist != null)
+                          ? '<div style="font-size:11px;">' + sanitizeHtml(uniName || '\u2014') + '</div>' +
+                            '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + (uniDist != null ? (uniDist < 1000 ? uniDist + 'm' : (uniDist / 1000).toFixed(1) + 'km') : '\u2014') + '</div>'
+                          : '\u2014';
+                        return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                          kpi('Nearest Primary', primaryCell) +
+                          kpi('Best Secondary (within 5km)', secondaryCell) +
+                          kpi('Nearest University', uniCell) +
+                        '</div>';
+                      })() +
+                      // Row 5 — Climate / structural / health / noise (Tier 1+2)
+                      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Subsidence 2050', subsidenceCell) +
+                        kpi('Tree Hazard', treeCell) +
+                        kpi('Radon', radonCell) +
+                        kpi('Noise (road)', noiseCell) +
+                        kpi('Elevation / Water', elevCell) +
                       '</div>' +
                       areaFlagsHtml +
                     '</div>' + // close area-body
