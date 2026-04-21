@@ -915,10 +915,13 @@ async function runMigrations() {
 
       // ═══ Chimnie Tier 3 (2026-04-21) — images, EPC retrofit, heating, extensions, solar, outbuildings ═══
       // Images — URLs to listing + floorplan images hosted by Chimnie's source portals
-      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_listing_image_url TEXT`,             // first listing image URL
-      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_image_url TEXT`,           // first floorplan URL
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_listing_image_url TEXT`,             // first listing image URL (legacy — still populated)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_image_url TEXT`,           // first floorplan URL (legacy)
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_image_count INT`,                    // total listing images available
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_count INT`,
+      // 2026-04-21: store up to 12 listing URLs + 4 floorplan URLs so we can render a strip
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_listing_image_urls JSONB`,           // array of listing image URLs (up to 12)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_image_urls JSONB`,         // array of floorplan URLs (up to 4)
       // EPC retrofit recommendations (MEES compliance path)
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_epc_recommendations JSONB`,          // array of {description, cost, co2_saving, ...}
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_environment_impact_current INT`,     // rating A-G as number (A=100, G=1)

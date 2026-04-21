@@ -401,7 +401,16 @@ function extractFlatFields(data) {
     })(),
 
     // ═══ Tier 3 (2026-04-21) ═══
-    // Images — listings + floorplans arrays; promote first URL + count to flat cols
+    // Images — listings + floorplans arrays. Promote:
+    //  - full URL array (up to 12 listing, 4 floorplan) for render strip
+    //  - first URL + count for backward compat / fast access
+    chimnie_listing_image_urls: (() => {
+      const arr = get(data, 'property.images.listing_images') || get(data, 'property.attributes.images.listing_images');
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      // Each item could be a plain URL string OR an object with .url (defensive)
+      const urls = arr.map(i => typeof i === 'string' ? i : (i?.url || null)).filter(Boolean);
+      return urls.length > 0 ? urls.slice(0, 12) : null;
+    })(),
     chimnie_listing_image_url: (() => {
       const arr = get(data, 'property.images.listing_images') || get(data, 'property.attributes.images.listing_images');
       return (Array.isArray(arr) && arr.length > 0) ? (typeof arr[0] === 'string' ? arr[0] : arr[0]?.url || null) : null;
@@ -409,6 +418,12 @@ function extractFlatFields(data) {
     chimnie_image_count: (() => {
       const arr = get(data, 'property.images.listing_images') || get(data, 'property.attributes.images.listing_images');
       return Array.isArray(arr) ? arr.length : null;
+    })(),
+    chimnie_floorplan_image_urls: (() => {
+      const arr = get(data, 'property.images.floorplan_images') || get(data, 'property.attributes.images.floorplan_images');
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const urls = arr.map(i => typeof i === 'string' ? i : (i?.url || null)).filter(Boolean);
+      return urls.length > 0 ? urls.slice(0, 4) : null;
     })(),
     chimnie_floorplan_image_url: (() => {
       const arr = get(data, 'property.images.floorplan_images') || get(data, 'property.attributes.images.floorplan_images');

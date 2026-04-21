@@ -2157,27 +2157,44 @@ export async function renderDealMatrix(deal) {
                       '</div>'
                     : '';
 
-                  // ── Property images + floorplan thumbnails (Tier 3) ──
-                  // Chimnie aggregates listing images from the source portal. Display first
-                  // image + floorplan as clickable thumbnails. "+N more" if additional images.
+                  // ── Property images + floorplan thumbnails (Tier 3, multi-image) ──
+                  // Horizontal strip of up to 6 listing images + all floorplans, each clickable
+                  // to open the full-size image in a new tab. Uses the promoted URL arrays
+                  // with fallback to the legacy single-URL column.
                   const imgCount = Number(p.chimnie_image_count) || 0;
                   const fpCount = Number(p.chimnie_floorplan_count) || 0;
-                  const imageStrip = (p.chimnie_listing_image_url || p.chimnie_floorplan_image_url)
-                    ? '<div style="display:flex;gap:10px;align-items:center;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                        (p.chimnie_listing_image_url
-                          ? '<a href="' + sanitizeHtml(p.chimnie_listing_image_url) + '" target="_blank" rel="noopener" style="text-decoration:none;flex-shrink:0;" title="Open full image in new tab">' +
-                            '<img src="' + sanitizeHtml(p.chimnie_listing_image_url) + '" alt="Listing image" loading="lazy" style="width:120px;height:80px;object-fit:cover;border-radius:4px;border:1px solid rgba(96,165,250,0.2);display:block;" onerror="this.style.display=\'none\'">' +
-                          '</a>' : '')
-                        +
-                        (p.chimnie_floorplan_image_url
-                          ? '<a href="' + sanitizeHtml(p.chimnie_floorplan_image_url) + '" target="_blank" rel="noopener" style="text-decoration:none;flex-shrink:0;" title="Open floorplan in new tab">' +
-                            '<img src="' + sanitizeHtml(p.chimnie_floorplan_image_url) + '" alt="Floorplan" loading="lazy" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid rgba(96,165,250,0.2);display:block;background:#fff;" onerror="this.style.display=\'none\'">' +
-                          '</a>' : '')
-                        +
-                        '<div style="font-size:10px;color:#94A3B8;line-height:1.5;">' +
-                          (imgCount > 1 ? '<div><strong style="color:#F1F5F9;">' + imgCount + '</strong> listing image' + (imgCount === 1 ? '' : 's') + '</div>' : imgCount === 1 ? '<div>1 listing image</div>' : '') +
+                  const listingUrls = Array.isArray(p.chimnie_listing_image_urls)
+                    ? p.chimnie_listing_image_urls
+                    : (p.chimnie_listing_image_url ? [p.chimnie_listing_image_url] : []);
+                  const floorplanUrls = Array.isArray(p.chimnie_floorplan_image_urls)
+                    ? p.chimnie_floorplan_image_urls
+                    : (p.chimnie_floorplan_image_url ? [p.chimnie_floorplan_image_url] : []);
+                  const displayListings = listingUrls.slice(0, 6);
+                  const remainingListings = Math.max(0, imgCount - displayListings.length);
+
+                  const buildThumb = (url, kind, isFirst) => {
+                    const w = isFirst ? 120 : 72;
+                    const h = isFirst ? 80 : 54;
+                    const bg = kind === 'floorplan' ? 'background:#fff;' : '';
+                    return '<a href="' + sanitizeHtml(url) + '" target="_blank" rel="noopener" style="text-decoration:none;flex-shrink:0;" title="Open ' + kind + ' in new tab">' +
+                      '<img src="' + sanitizeHtml(url) + '" alt="' + kind + '" loading="lazy" style="width:' + w + 'px;height:' + h + 'px;object-fit:cover;border-radius:4px;border:1px solid rgba(96,165,250,0.2);display:block;' + bg + '" onerror="this.style.display=\'none\'">' +
+                    '</a>';
+                  };
+
+                  const imageStrip = (displayListings.length > 0 || floorplanUrls.length > 0)
+                    ? '<div style="display:flex;gap:6px;align-items:center;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;overflow-x:auto;">' +
+                        displayListings.map((url, i) => buildThumb(url, 'listing', i === 0)).join('') +
+                        (remainingListings > 0
+                          ? '<div style="flex-shrink:0;width:72px;height:54px;border-radius:4px;border:1px dashed rgba(96,165,250,0.3);display:flex;align-items:center;justify-content:center;color:#60A5FA;font-size:11px;font-weight:700;background:rgba(96,165,250,0.04);">+' + remainingListings + '</div>'
+                          : '') +
+                        (floorplanUrls.length > 0
+                          ? '<div style="width:1px;height:54px;background:rgba(255,255,255,0.08);margin:0 4px;flex-shrink:0;"></div>' +
+                            floorplanUrls.map(url => buildThumb(url, 'floorplan', false)).join('')
+                          : '') +
+                        '<div style="font-size:10px;color:#94A3B8;line-height:1.5;margin-left:auto;white-space:nowrap;padding-left:8px;">' +
+                          (imgCount > 0 ? '<div><strong style="color:#F1F5F9;">' + imgCount + '</strong> photo' + (imgCount === 1 ? '' : 's') + '</div>' : '') +
                           (fpCount > 0 ? '<div><strong style="color:#F1F5F9;">' + fpCount + '</strong> floorplan' + (fpCount === 1 ? '' : 's') + '</div>' : '') +
-                          '<div style="font-style:italic;margin-top:2px;">click to open full size</div>' +
+                          '<div style="font-style:italic;margin-top:2px;font-size:9px;">click to open</div>' +
                         '</div>' +
                       '</div>'
                     : '';
