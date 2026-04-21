@@ -1944,16 +1944,73 @@ export async function renderDealMatrix(deal) {
                   // Red-flag chips
                   const flags = [];
                   if (p.chimnie_overseas_ownership === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Overseas owner</span>');
+                  if (p.chimnie_company_ownership === true) flags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Company-owned</span>');
                   if (p.chimnie_is_listed === true) flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Listed bldg</span>');
                   // 2026-04-21: case-insensitive — Chimnie returns lowercase 'brick', 'stone', 'timber'
                   const constructionLower = String(p.chimnie_construction_material || '').toLowerCase();
                   if (constructionLower && !['brick', 'stone'].includes(constructionLower)) {
                     flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Non-std: ' + sanitizeHtml(p.chimnie_construction_material) + '</span>');
                   }
+                  // Occupancy flag — vacant is a risk signal (no rental income, possible long void period)
+                  const occupancyLower = String(p.chimnie_occupancy_status || '').toLowerCase();
+                  if (occupancyLower === 'vacant' || occupancyLower.includes('vacant')) {
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Vacant</span>');
+                  } else if (occupancyLower && occupancyLower !== 'owner-occupied' && occupancyLower !== 'tenanted') {
+                    flags.push('<span style="font-size:9px;color:#94A3B8;background:rgba(148,163,184,0.10);padding:2px 7px;border-radius:3px;font-weight:700;">Occ: ' + sanitizeHtml(p.chimnie_occupancy_status) + '</span>');
+                  }
+                  // Flood target detail — "Buildings" is materially worse than "Grounds"
+                  const floodCat = String(p.chimnie_flood_risk_surface_cat || '').toLowerCase();
+                  if (floodCat === 'buildings') {
+                    flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Flood target: Buildings</span>');
+                  } else if (floodCat === 'grounds') {
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.08);padding:2px 7px;border-radius:3px;font-weight:600;">Flood target: Grounds</span>');
+                  }
                   const flagsHtml = flags.length > 0 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' + flags.join('') + '</div>' : '';
+
+                  // Row 3 builders — physical + bills
+                  const typeLabel = p.chimnie_property_subtype || p.chimnie_property_type || '\u2014';
+                  const typeDetail = (p.chimnie_classification && p.chimnie_classification !== 'Residential')
+                    ? '<div style="font-size:9px;color:#FBBF24;font-weight:600;margin-top:2px;">' + sanitizeHtml(p.chimnie_classification) + '</div>'
+                    : '';
+                  const bedsBaths = (p.chimnie_bedrooms != null || p.chimnie_bathrooms != null)
+                    ? ((p.chimnie_bedrooms != null ? p.chimnie_bedrooms + ' bed' : '?') + ' \u00B7 ' + (p.chimnie_bathrooms != null ? p.chimnie_bathrooms + ' bath' : '?'))
+                    : '\u2014';
+                  // Cross-check Chimnie floor area vs EPC floor area — flag >10% variance (possible survey divergence)
+                  const faChim = Number(p.chimnie_floor_area_sqm) || 0;
+                  const faEpc = Number(p.epc_floor_area) || 0;
+                  let faVariance = '';
+                  if (faChim > 0 && faEpc > 0) {
+                    const vPct = ((faChim - faEpc) / faEpc) * 100;
+                    if (Math.abs(vPct) > 10) {
+                      faVariance = '<div style="font-size:9px;color:#FBBF24;font-weight:600;margin-top:2px;">\u26A0 ' + (vPct > 0 ? '+' : '') + vPct.toFixed(1) + '% vs EPC</div>';
+                    }
+                  }
+                  const faDisplay = faChim > 0
+                    ? (faChim.toFixed(0) + ' m\u00B2 <span style="font-size:9px;color:#94A3B8;font-weight:400;">(' + Math.round(faChim * 10.764).toLocaleString() + ' sqft)</span>' + faVariance)
+                    : '\u2014';
+                  const ctBand = p.chimnie_council_tax_band ? 'Band ' + sanitizeHtml(p.chimnie_council_tax_band) : '\u2014';
+                  const rebuildDisplay = p.chimnie_rebuild_cost_estimate
+                    ? fmtMoney(p.chimnie_rebuild_cost_estimate)
+                    : '\u2014';
+                  // PTAL placeholder — to be wired in Phase 2 via TfL dataset (London only)
+                  const isLondon = (p.chimnie_region || '').toLowerCase() === 'london';
+                  const ptalDisplay = isLondon
+                    ? '<span style="color:#94A3B8;font-weight:400;" title="PTAL (Public Transport Accessibility Level) — TfL dataset integration pending (Phase 2)">\u2014 <span style="font-size:9px;">(Phase 2)</span></span>'
+                    : '<span style="color:#64748B;font-weight:400;" title="PTAL applies to London only">n/a</span>';
+
+                  // Metadata strip — identifiers + location, small font at top
+                  const metaBits = [];
+                  if (p.chimnie_uprn) metaBits.push('UPRN <code style="color:#F1F5F9;">' + sanitizeHtml(p.chimnie_uprn) + '</code>');
+                  if (p.chimnie_region) metaBits.push(sanitizeHtml(p.chimnie_region));
+                  if (p.chimnie_postcode) metaBits.push(sanitizeHtml(p.chimnie_postcode));
+                  const metaStrip = metaBits.length > 0
+                    ? '<div style="font-size:10px;color:#64748B;margin-top:6px;">' + metaBits.join(' \u00B7 ') + '</div>'
+                    : '';
 
                   return '<div id="chimnie-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(96,165,250,0.03);border:1px solid rgba(96,165,250,0.2);border-radius:6px;">' +
                     headerRow +
+                    metaStrip +
+                    // Row 1 — valuation + risk
                     '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
                       kpi('AVM', fmtMoney(p.chimnie_avm_mid) + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '') + varianceBadge) +
                       kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
@@ -1970,11 +2027,21 @@ export async function renderDealMatrix(deal) {
                         return '<span style="color:' + colour + ';">' + n + suffix + '</span>';
                       })()) +
                     '</div>' +
+                    // Row 2 — transaction history + legal
                     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
                       kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
                       kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
                       kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
                       kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
+                    '</div>' +
+                    // Row 3 — physical attributes + bills + rebuild + PTAL (2026-04-21)
+                    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                      kpi('Type', sanitizeHtml(typeLabel) + typeDetail) +
+                      kpi('Beds / Baths', bedsBaths) +
+                      kpi('Floor Area', faDisplay) +
+                      kpi('Council Tax', ctBand) +
+                      kpi('Rebuild Cost', rebuildDisplay) +
+                      kpi('PTAL', ptalDisplay) +
                     '</div>' +
                     flagsHtml +
                   '</div>';
