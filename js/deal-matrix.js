@@ -7463,8 +7463,10 @@ export async function renderDealMatrix(deal) {
 
     if (statusEl) {
       const tierName = tierLabels[readiness.tier] || 'Submission';
-      // If deal is already past received stage, show submitted status instead of "More Info Needed"
-      const alreadySubmitted = currentStage && currentStage !== 'received';
+      // 2026-04-21: alreadySubmitted now correctly excludes 'draft' alongside
+      // 'received' — both are pre-submit stages. Previously a draft deal at
+      // 100% completeness showed "Submitted — Under Review" falsely.
+      const alreadySubmitted = currentStage && !['draft', 'received'].includes(currentStage);
       if (alreadySubmitted) {
         statusEl.textContent = 'Submitted — Under Review';
         statusEl.style.color = '#E8C97A';
@@ -7682,8 +7684,11 @@ export async function renderDealMatrix(deal) {
   // Initial completeness calculation on load
   setTimeout(calculateCompleteness, 500);
 
-  // ── If deal is already past 'received' stage, disable submit button and action buttons for brokers ──
-  if (currentStage !== 'received' && !isInternalUser) {
+  // ── If deal is past pre-submit stages, disable submit button and show read-only banner for brokers ──
+  // 2026-04-21: 'draft' is also pre-submit (like 'received'). Previously this
+  // gate was `currentStage !== 'received'` so DRAFT deals got the "Submitted
+  // — Matrix is read-only" banner falsely + the disabled button state.
+  if (!['draft', 'received'].includes(currentStage) && !isInternalUser) {
     setTimeout(() => {
       const btn = document.getElementById('matrix-submit-review-btn');
       if (btn) {
