@@ -1897,11 +1897,22 @@ export async function renderDealMatrix(deal) {
                   const fmtMoney = (n) => n != null && !isNaN(n) ? '\u00A3' + Math.round(Number(n)).toLocaleString() : '\u2014';
                   const fmtPct = (n) => n != null && !isNaN(n) ? Number(n).toFixed(2) + '%' : '\u2014';
                   const pillBg = '#1e3a5f';
-                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">' +
-                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                  // ── Collapse/expand state — mirrors EPC Property Intelligence panel ──
+                  // Default collapsed when: data fetched AND property is verified (EPC accepted).
+                  // Default open in every other case so RM sees the data after fetching / refreshing.
+                  const chimnieCollapsed = fetched && verified;
+                  const chimnieBodyDisplay = chimnieCollapsed ? 'none' : 'block';
+                  const chimnieSummaryDisplay = chimnieCollapsed ? 'inline' : 'none';
+                  const chimnieChevronRotate = chimnieCollapsed ? '' : 'transform:rotate(90deg);';
+
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleChimniePanel(' + p.id + ')">' +
+                    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                      '<span id="chimnie-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + chimnieChevronRotate + 'transition:transform 0.15s;">\u25B6</span>' +
                       '<span style="font-size:10px;color:#60A5FA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Chimnie Intelligence</span>' +
                       (p.chimnie_exact_match === true ? '<span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.12);padding:1px 6px;border-radius:3px;font-weight:700;">\u2713 EXACT MATCH</span>' :
                        p.chimnie_exact_match === false ? '<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:1px 6px;border-radius:3px;font-weight:700;">\u26A0 FUZZY MATCH</span>' : '') +
+                      // Inline summary — shown only when collapsed. Built below after kpi vars are ready; slot in here.
+                      '<span id="chimnie-summary-' + p.id + '" style="display:' + chimnieSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">__SUMMARY__</span>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       (fetched ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(fetched).toLocaleDateString('en-GB') + '</span>' : '') +
@@ -1909,9 +1920,13 @@ export async function renderDealMatrix(deal) {
                     '</div>' +
                   '</div>';
                   if (!fetched) {
+                    // No data yet — replace the summary placeholder with empty string
+                    const notFetchedHeader = headerRow.replace('__SUMMARY__', '');
                     return '<div id="chimnie-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(96,165,250,0.03);border:1px dashed rgba(96,165,250,0.25);border-radius:6px;">' +
-                      headerRow +
-                      '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No Chimnie data yet. Click Fetch to pull AVM, flood risk, crime percentile, rental estimate, ownership flags, and the full property dossier.</div>' +
+                      notFetchedHeader +
+                      '<div id="chimnie-body-' + p.id + '" style="display:block;">' +
+                        '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No Chimnie data yet. Click Fetch to pull AVM, flood risk, crime percentile, rental estimate, ownership flags, and the full property dossier.</div>' +
+                      '</div>' +
                     '</div>';
                   }
                   // Summary row — AVM / LTV / Flood / Crime
@@ -2072,43 +2087,57 @@ export async function renderDealMatrix(deal) {
                     ? '<div style="font-size:10px;color:#64748B;margin-top:6px;">' + metaBits.join(' \u00B7 ') + '</div>'
                     : '';
 
+                  // Inline summary for the collapsed state — three highest-signal
+                  // numbers so the RM can eyeball the property without expanding.
+                  const summaryBits = [];
+                  if (p.chimnie_avm_mid) summaryBits.push('\u00B7 ' + fmtMoney(p.chimnie_avm_mid));
+                  if (p.chimnie_ptal) summaryBits.push('PTAL ' + p.chimnie_ptal);
+                  if (floodLabel) summaryBits.push('Flood ' + floodLabel);
+                  if (p.chimnie_overseas_ownership === true) summaryBits.push('\u26A0 Overseas');
+                  const summaryText = summaryBits.join(' \u00B7 ');
+                  // Inject the summary into the header's placeholder slot
+                  const finalHeaderRow = headerRow.replace('__SUMMARY__', sanitizeHtml(summaryText));
+
                   return '<div id="chimnie-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(96,165,250,0.03);border:1px solid rgba(96,165,250,0.2);border-radius:6px;">' +
-                    headerRow +
-                    metaStrip +
-                    // Row 1 — valuation + risk
-                    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                      kpi('AVM', fmtMoney(p.chimnie_avm_mid) + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '') + varianceBadge) +
-                      kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
-                      kpi('Rental p.c.m.', fmtMoney(p.chimnie_rental_pcm)) +
-                      kpi('Flood', '<span style="color:' + floodColor + ';">' + floodLabel + '</span><div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">R/S ' + fmtPct(floodRS) + ' \u00B7 SW ' + fmtPct(floodSW) + '</div>') +
-                      kpi('Crime %ile', (() => {
-                        if (p.chimnie_crime_percentile_total == null) return '\u2014';
-                        const n = Math.round(Number(p.chimnie_crime_percentile_total));
-                        // Proper English ordinal suffix: 1st, 2nd, 3rd, 4th, 11th-13th, etc.
-                        const mod10 = n % 10, mod100 = n % 100;
-                        const suffix = (mod100 >= 11 && mod100 <= 13) ? 'th'
-                                     : mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th';
-                        const colour = n >= 75 ? '#34D399' : n >= 40 ? '#FBBF24' : '#F87171';
-                        return '<span style="color:' + colour + ';">' + n + suffix + '</span>';
-                      })()) +
-                    '</div>' +
-                    // Row 2 — transaction history + legal
-                    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                      kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
-                      kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
-                      kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
-                      kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
-                    '</div>' +
-                    // Row 3 — physical attributes + bills + rebuild + PTAL (2026-04-21)
-                    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                      kpi('Type', sanitizeHtml(typeLabel) + typeDetail) +
-                      kpi('Beds / Baths', bedsBaths) +
-                      kpi('Floor Area', faDisplay) +
-                      kpi('Council Tax', ctBand) +
-                      kpi('Rebuild Cost', rebuildDisplay) +
-                      kpi('Transit', transitDisplay) +
-                    '</div>' +
-                    flagsHtml +
+                    finalHeaderRow +
+                    // Collapsible body — toggled by window._toggleChimniePanel
+                    '<div id="chimnie-body-' + p.id + '" style="display:' + chimnieBodyDisplay + ';">' +
+                      metaStrip +
+                      // Row 1 — valuation + risk
+                      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('AVM', fmtMoney(p.chimnie_avm_mid) + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '') + varianceBadge) +
+                        kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
+                        kpi('Rental p.c.m.', fmtMoney(p.chimnie_rental_pcm)) +
+                        kpi('Flood', '<span style="color:' + floodColor + ';">' + floodLabel + '</span><div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">R/S ' + fmtPct(floodRS) + ' \u00B7 SW ' + fmtPct(floodSW) + '</div>') +
+                        kpi('Crime %ile', (() => {
+                          if (p.chimnie_crime_percentile_total == null) return '\u2014';
+                          const n = Math.round(Number(p.chimnie_crime_percentile_total));
+                          // Proper English ordinal suffix: 1st, 2nd, 3rd, 4th, 11th-13th, etc.
+                          const mod10 = n % 10, mod100 = n % 100;
+                          const suffix = (mod100 >= 11 && mod100 <= 13) ? 'th'
+                                       : mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th';
+                          const colour = n >= 75 ? '#34D399' : n >= 40 ? '#FBBF24' : '#F87171';
+                          return '<span style="color:' + colour + ';">' + n + suffix + '</span>';
+                        })()) +
+                      '</div>' +
+                      // Row 2 — transaction history + legal
+                      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
+                        kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
+                        kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
+                        kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
+                      '</div>' +
+                      // Row 3 — physical attributes + bills + rebuild + PTAL (2026-04-21)
+                      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Type', sanitizeHtml(typeLabel) + typeDetail) +
+                        kpi('Beds / Baths', bedsBaths) +
+                        kpi('Floor Area', faDisplay) +
+                        kpi('Council Tax', ctBand) +
+                        kpi('Rebuild Cost', rebuildDisplay) +
+                        kpi('Transit', transitDisplay) +
+                      '</div>' +
+                      flagsHtml +
+                    '</div>' + // close chimnie-body
                   '</div>';
                 })();
 
@@ -8196,6 +8225,27 @@ window._togglePropPanel = function(propertyId) {
   const body = document.getElementById('prop-body-' + propertyId);
   const chevron = document.getElementById('prop-chevron-' + propertyId);
   const summary = document.getElementById('prop-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Toggle Chimnie panel expand/collapse (2026-04-21) ──────────────────────
+// Mirrors _togglePropPanel for the Chimnie Intelligence sub-panel. Flips the
+// body display and rotates the chevron; inline summary is shown only when
+// collapsed so RM gets a one-line view without expanding.
+window._toggleChimniePanel = function(propertyId) {
+  const body = document.getElementById('chimnie-body-' + propertyId);
+  const chevron = document.getElementById('chimnie-chevron-' + propertyId);
+  const summary = document.getElementById('chimnie-summary-' + propertyId);
   if (!body) return;
   const isCollapsed = body.style.display === 'none';
   if (isCollapsed) {
