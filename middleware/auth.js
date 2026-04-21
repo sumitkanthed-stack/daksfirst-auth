@@ -11,7 +11,14 @@ function authenticateToken(req, res, next) {
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    // 2026-04-21: return 401 (not 403) for invalid/expired tokens.
+    // 401 = credentials invalid → client should refresh token / re-auth.
+    // 403 = credentials valid but wrong role → permission denied, no refresh.
+    // Previously returning 403 caused fetchWithAuth (post Fix B 401/403 split)
+    // to silently pass the error to the caller as a permission failure rather
+    // than triggering token refresh + re-auth modal. Users hit an expired
+    // token and saw "Invalid or expired token" toast with no recovery path.
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
