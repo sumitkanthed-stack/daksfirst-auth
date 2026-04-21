@@ -904,18 +904,23 @@ router.get('/deals/:submissionId/parse-progress', authenticateToken, async (req,
 // Helper: Apply confirmed candidates to deal (transaction)
 // ─────────────────────────────────────────────────────────────────────────────
 async function applyConfirmedCandidates(client, dealId, candidates, assignments) {
-  // ─── IDEMPOTENT CONFIRM (2026-04-21) ───
-  // Wipe ALL existing deal_borrowers for this deal before re-applying broker's
-  // confirmed assignments. Previously, retries (hotfix failures, network drops,
-  // broker re-submits) accumulated duplicate rows — saw id 219 "Gold Medal
-  // Properties Limited" AND id 222 "GOLD MEDAL PROPERTIES LTD" on the same deal
-  // with the same company_number 16607286 because we never checked existing DB
-  // state. Matches the `deal_properties` wipe pattern at the end of this
-  // function. CH-verified children (directors/PSCs) get re-inserted when the
-  // broker runs Companies House verification on the corporate — that's a
-  // separate explicit step in the UI.
-  await client.query(`DELETE FROM deal_borrowers WHERE deal_id = $1`, [dealId]);
-  console.log(`[confirm-candidates] wiped existing deal_borrowers for deal ${dealId} — idempotent re-apply`);
+  // ─── IDEMPOTENT CONFIRM — NARROW WIPE (2026-04-21, revised) ───
+  // Earlier version wiped ALL deal_borrowers for the deal. That was too
+  // aggressive — it destroyed KYC progress (kyc_status='submitted'/'verified'),
+  // CH-verified children populated by `_populateChChildrenRecursive`, and any
+  // manual edits the RM had made. Narrower pattern (mirrors the older
+  // /parse-confirmed path at lines 593-596): only wipe rows that are both
+  // unverified-at-CH AND un-KYC'd. This keeps real onboarding work safe while
+  // still making re-confirms idempotent for fresh candidate rows.
+  const wipeResult = await client.query(
+    `DELETE FROM deal_borrowers
+     WHERE deal_id = $1
+       AND kyc_status = 'pending'
+       AND ch_verified_at IS NULL
+     RETURNING id, full_name, role`,
+    [dealId]
+  );
+  console.log(`[confirm-candidates] narrow-wiped ${wipeResult.rowCount} unverified/un-KYC'd rows for deal ${dealId} (preserved KYC'd and CH-verified rows)`);
 
   // Defensive dedup + guard rails on the assignments themselves, in case the
   // broker accidentally assigned two variants of the same entity to different
@@ -1202,6 +1207,15 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
       updateData.push(`borrower_company = $${paramIndex++}`);
       updateValues.push(corpCandidate.name || '');
       updateData.push(`borrower_type = 'corporate'`);
+      // 2026-04-21 Step 1: sync company_name + company_number to deal_submissions
+      // so the DIP/ITS validator's `conditional` block for corporates can find
+      // these fields. Previously the writer only wrote borrower_name/company/type
+      // — the flat company_name and company_number columns stayed null, which
+      // made Borrower/KYC gate fail completeness for corporate borrowers.
+      updateData.push(`company_name = $${paramIndex++}`);
+      updateValues.push(corpCandidate.name || '');
+      updateData.push(`company_number = $${paramIndex++}`);
+      updateValues.push(corpCandidate.company_number || null);
     }
   } else if (primaryInd) {
     const indCandidate = candidates.individuals.find(c => c.id === primaryInd.candidate_id);
