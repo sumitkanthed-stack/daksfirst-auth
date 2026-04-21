@@ -2,6 +2,16 @@ import { API_BASE } from './config.js';
 import { showScreen, showToast, formatNumber, formatPct, formatDate, sanitizeHtml } from './utils.js';
 import { getAuthToken, fetchWithAuth } from './auth.js';
 import { getCurrentUser, getCurrentRole, setAllAdminDeals, getAllAdminDeals, setCurrentDealId } from './state.js';
+// 2026-04-21: shared display helpers — stage label with under_review synthesis,
+// primary property (sorted portfolio), primary borrower name. Single source of
+// truth across Snapshot, Matrix header, Deal Progress bar, broker/admin deals lists.
+import {
+  deriveDisplayStage,
+  getStageLabel,
+  getPrimaryPropertyAddress,
+  getPrimaryBorrowerName,
+  isPrimaryBorrowerCorporate
+} from './deal-display.js';
 
 /**
  * Show admin panel
@@ -279,12 +289,13 @@ export function renderPipelineRows(deals, tbody, stageLabels) {
       ? `<strong>${sanitizeHtml(deal.broker_name)}</strong>${deal.broker_company ? `<br><span class="pipe-sub">${sanitizeHtml(deal.broker_company)}</span>` : ''}`
       : '<span class="pipe-empty">-</span>';
 
-    // Security
-    const address = deal.security_address || '-';
-    const shortAddr = address.length > 35 ? sanitizeHtml(address.substring(0, 35)) + '...' : sanitizeHtml(address);
+    // Security — portfolio-aware via shared helper (falls back to flat security_address)
+    const address = getPrimaryPropertyAddress(deal, { maxLen: 35, includeCount: true });
+    const shortAddr = sanitizeHtml(address);
+    const fullAddr = deal.security_address || address;
     const assetTypes = { residential: 'Resi', commercial: 'Comm', mixed_use: 'Mixed', land: 'Land', hmo: 'HMO', development: 'Dev', flat: 'Flat', mufb: 'MUFB' };
     const assetLabel = assetTypes[deal.asset_type] || deal.asset_type || '';
-    const securityDisplay = `<span title="${sanitizeHtml(address)}">${shortAddr}</span>${deal.security_postcode || assetLabel ? `<br><span class="pipe-sub">${sanitizeHtml(deal.security_postcode || '')}${deal.security_postcode && assetLabel ? ' · ' : ''}${assetLabel ? '<span class="pipe-tag">' + sanitizeHtml(assetLabel) + '</span>' : ''}</span>` : ''}`;
+    const securityDisplay = `<span title="${sanitizeHtml(fullAddr)}">${shortAddr}</span>${deal.security_postcode || assetLabel ? `<br><span class="pipe-sub">${sanitizeHtml(deal.security_postcode || '')}${deal.security_postcode && assetLabel ? ' · ' : ''}${assetLabel ? '<span class="pipe-tag">' + sanitizeHtml(assetLabel) + '</span>' : ''}</span>` : ''}`;
 
     // Notional (loan amount + current value)
     const loanAmt = deal.loan_amount ? `£${formatNumber(deal.loan_amount)}` : '-';
@@ -306,9 +317,9 @@ export function renderPipelineRows(deals, tbody, stageLabels) {
     // Drawdown
     const drawdownDisplay = deal.drawdown_date ? formatDate(deal.drawdown_date) : '<span class="pipe-empty">TBC</span>';
 
-    // Stage
-    const stage = deal.deal_stage || 'received';
-    const stageDisplay = `<span class="stage-badge stage-${stage}">${sanitizeHtml(stageLabels[stage] || stage)}</span>`;
+    // Stage — derived label via shared helper (handles under_review synthesis)
+    const stage = deriveDisplayStage(deal);
+    const stageDisplay = `<span class="stage-badge stage-${stage}">${sanitizeHtml(getStageLabel(deal))}</span>`;
 
     // Team (RM, Credit, Compliance)
     const rmName = deal.rm_first ? `${sanitizeHtml(deal.rm_first)} ${sanitizeHtml(deal.rm_last)}` : null;

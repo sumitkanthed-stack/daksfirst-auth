@@ -11,6 +11,8 @@ import { getCurrentRole } from './state.js';
 import { floatingProgress } from './floating-progress.js';
 import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
+// 2026-04-21: shared display helpers for consistent stage labels across views.
+import { getStageLabel } from './deal-display.js';
 
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
 // Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
@@ -698,7 +700,7 @@ export async function renderDealMatrix(deal) {
       <div style="width:1px;height:24px;background:rgba(255,255,255,0.06)"></div>
       <div style="display:flex;flex-direction:column;gap:0">
         <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94A3B8">Stage</span>
-        <span style="font-size:12px;font-weight:600;color:#D4A853">${sanitizeHtml(currentStage.replace(/_/g, ' ').toUpperCase())}</span>
+        <span style="font-size:12px;font-weight:600;color:#D4A853">${sanitizeHtml(getStageLabel(deal).toUpperCase())}</span>
       </div>
     </div>
 

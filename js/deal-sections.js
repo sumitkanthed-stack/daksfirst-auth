@@ -7,6 +7,20 @@ import { fetchWithAuth } from './auth.js';
 import { getCurrentRole, getCurrentUser } from './state.js';
 import { showToast, sanitizeHtml, formatNumber, formatPct, formatDate } from './utils.js';
 import { floatingProgress } from './floating-progress.js';
+// 2026-04-21: shared display helpers. Single source of truth for stage
+// synthesis, stage labels, portfolio reads, and primary borrower display.
+import {
+  deriveDisplayStage,
+  getStageLabel,
+  getStagePipelineOrder,
+  getAllStageLabels,
+  getSortedProperties,
+  getPortfolioValuation,
+  getPrimaryPropertyAddress,
+  getPrimaryPostcodeArea,
+  getPrimaryBorrowerName,
+  isPrimaryBorrowerCorporate
+} from './deal-display.js';
 
 // ═══════════════════════════════════════════════════════════════
 // ROLE GATING — show/hide sections based on current user role
@@ -82,81 +96,33 @@ export function renderSnapshot(deal, role) {
   const fmtMoney = (v) => num(v) ? '£' + num(v).toLocaleString() : '-';
   const fmtPctVal = (v) => num(v) ? num(v).toFixed(1) + '%' : '-';
 
-  // 2026-04-21: portfolio-aware reads. deal_properties is the canonical
-  // source now; flat deal.security_address / deal.current_value are legacy
-  // fallbacks for older deals. Same data source across broker/RM/Credit.
-  //
-  // Sort deterministically so Broker and RM always see the same "headline"
-  // property. Primary order: market value descending (most valuable security
-  // is the headline). Tiebreaker: alphabetical by address. Without this, the
-  // API's natural row order could differ between sessions — saw it first
-  // on a 3-property Gold Medal deal: broker view led with "Apartment No. 82"
-  // while RM view led with "129 Rannoch Road".
-  const props = Array.isArray(deal.properties) ? deal.properties.filter(p => p && (p.address || p.market_value)) : [];
-  props.sort((a, b) => {
-    const av = num(a.market_value) || 0;
-    const bv = num(b.market_value) || 0;
-    if (av !== bv) return bv - av;
-    return String(a.address || '').localeCompare(String(b.address || ''));
-  });
-  const portfolioValuation = props.reduce((sum, p) => sum + (num(p.market_value) || 0), 0);
-  const portfolioAddresses = props.map(p => p.address).filter(Boolean);
+  // 2026-04-21 refactor: portfolio + stage derivation moved to deal-display.js
+  // so every view (snapshot, matrix header, deals list, Deal Progress bar)
+  // derives from the same helpers. Single source of truth.
+  const props = getSortedProperties(deal);
+  const portfolioVal = getPortfolioValuation(deal);
 
-  // Address — canonical from deal.properties[], fall back to flat field
+  // Address — canonical headline via helper (sorted by market_value desc)
   const addrEl = document.getElementById('detail-property-address');
   if (addrEl) {
-    let rawAddr;
-    if (portfolioAddresses.length > 0) {
-      rawAddr = portfolioAddresses.join('; ');
-    } else if (deal.security_address) {
-      rawAddr = deal.security_address;
-    } else {
-      rawAddr = 'Property address pending';
-    }
-    const postcode = deal.security_postcode || (props[0] && props[0].postcode) || '';
-    const pcArea = postcode ? postcode.split(' ')[0] : '';
-    const parts = rawAddr.split(';').map(s => s.trim()).filter(Boolean);
-    let displayAddr;
-    if (parts.length > 1) {
-      const first = parts[0].length > 60 ? parts[0].substring(0, 57) + '...' : parts[0];
-      displayAddr = `${first} (+${parts.length - 1} more)`;
-    } else {
-      displayAddr = rawAddr.length > 80 ? rawAddr.substring(0, 77) + '...' : rawAddr;
-    }
-    if (pcArea) {
-      displayAddr += ` · ${pcArea}`;
-    }
+    const headline = getPrimaryPropertyAddress(deal, { maxLen: 80 });
+    const pcArea = getPrimaryPostcodeArea(deal);
+    const displayAddr = pcArea ? `${headline} · ${pcArea}` : headline;
     addrEl.textContent = sanitizeHtml(displayAddr);
-    addrEl.title = sanitizeHtml(rawAddr);
+    // Full address list on hover (for multi-property deals)
+    const fullAddr = props.length > 0
+      ? props.map(p => p.address).filter(Boolean).join('; ')
+      : (deal.security_address || '');
+    if (fullAddr) addrEl.title = sanitizeHtml(fullAddr);
   }
 
-  // Stage badge — brokers see simplified labels.
-  // 2026-04-21: added 'draft' (brand-new deal, broker still editing) and
-  // synthetic 'under_review' (info_gathering + assigned_rm populated).
-  // Broker-visible labels stay simple; internal roles see the internal name.
-  const isExternal = ['broker', 'borrower'].includes(role);
-  const stageLabels = {
-    draft: 'Draft',
-    received: 'Submitted',
-    info_gathering: isExternal ? 'Submitted' : 'Info Gathering',
-    under_review: 'Under Review',
-    assigned: isExternal ? 'Under Review' : 'Assigned',
-    dip_issued: 'DIP Issued',
-    ai_termsheet: 'Indicative Termsheet',
-    fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
-    bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
-    borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
-    completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
-  };
+  // Stage badge — label comes from shared helper (consistent with deals list,
+  // Deal Progress bar, Matrix header). Stage also synthesised there.
   const rawStage = deal.deal_stage || 'draft';
-  // Synthesise 'under_review' when stage=info_gathering AND an RM has been
-  // assigned — that's "someone is actually looking at the deal" signal.
-  const stage = (rawStage === 'info_gathering' && deal.assigned_rm)
-    ? 'under_review'
-    : rawStage;
+  const stage = deriveDisplayStage(deal);
   const stageEl = document.getElementById('detail-stage-badge');
   if (stageEl) {
-    stageEl.textContent = stageLabels[stage] || stage;
+    stageEl.textContent = getStageLabel(deal);
     stageEl.className = 'stage-badge stage-' + stage;
     stageEl.style.cssText = 'padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;';
   }
@@ -178,10 +144,8 @@ export function renderSnapshot(deal, role) {
     }
   }
 
-  // Calculate loan & LTV.
-  // 2026-04-21: portfolio-aware — valuation reads from deal_properties sum
-  // before falling back to legacy flat deal.current_value.
-  const dVal = portfolioValuation || num(deal.current_value);
+  // Calculate loan & LTV. Valuation comes from helper (portfolio or flat fallback).
+  const dVal = portfolioVal;
   const dPurchase = num(deal.purchase_price);
   const dRefurb = num(deal.refurb_cost);
 
@@ -230,12 +194,11 @@ export function renderSnapshot(deal, role) {
   set('snap-term', deal.term_months ? deal.term_months + ' months' : '-');
   set('snap-rate', num(deal.rate_requested) ? num(deal.rate_requested).toFixed(2) + '% /mo' : '-');
 
-  // Borrower - show company name for corporate, personal name otherwise
+  // Borrower display via helper (reads canonical deal.borrowers[] with flat fallback)
+  const bName = getPrimaryBorrowerName(deal);
+  const isCorporate = isPrimaryBorrowerCorporate(deal);
   const bType = (deal.borrower_type || 'individual').toLowerCase();
-  const isCorporate = ['corporate', 'spv', 'ltd', 'llp'].includes(bType);
-  const borrowerDisplay = isCorporate
-    ? (deal.company_name || deal.borrower_company || deal.borrower_name || 'N/A') + ' (' + bType.toUpperCase() + ')'
-    : (deal.borrower_name || 'N/A');
+  const borrowerDisplay = isCorporate ? `${bName} (CORPORATE)` : bName;
   set('snap-borrower', borrowerDisplay);
 
   set('snap-exit', deal.exit_strategy ? (deal.exit_strategy.length > 40 ? deal.exit_strategy.substring(0, 40) + '...' : deal.exit_strategy) : '-');
@@ -266,29 +229,14 @@ export function renderSnapshot(deal, role) {
   set('detail-date', dateValue ? formatDate(dateValue) : '-');
   set('detail-ref-id', deal.submission_id ? deal.submission_id.substring(0, 8) : '-');
 
-  // 2026-04-21: Stage pipeline rebuilt with Draft at position 0 and synthetic
-  // under_review between info_gathering and dip_issued. Same stage labels used
-  // by the stage badge, so the full pipeline is consistent.
+  // Stage pipeline via shared helper. getStagePipelineOrder() + getAllStageLabels()
+  // keep broker/RM/Credit views aligned.
   const pipeline = document.getElementById('snapshot-pipeline');
   if (pipeline) {
-    const stageOrder = [
-      'draft',
-      'received',           // broker submitted, no RM assigned yet
-      'under_review',       // synthetic: info_gathering + assigned_rm
-      'dip_issued',
-      'ai_termsheet',
-      'fee_pending',
-      'fee_paid',
-      'underwriting',
-      'bank_submitted',
-      'bank_approved',
-      'borrower_accepted',
-      'legal_instructed',
-      'completed'
-    ];
-    // If the raw stage is info_gathering without an RM, show Submitted/received
-    // position as active. If with RM, under_review position is active (handled
-    // above by the rawStage → stage remap).
+    const stageOrder = getStagePipelineOrder();
+    const allLabels = getAllStageLabels();
+    // For pipeline: if rawStage is info_gathering without RM, show 'received'
+    // position active (deal has been submitted but no RM assigned yet).
     let displayStage = stage;
     if (rawStage === 'info_gathering' && !deal.assigned_rm) displayStage = 'received';
     const currentIdx = stageOrder.indexOf(displayStage);
@@ -299,7 +247,7 @@ export function renderSnapshot(deal, role) {
       const bg = isCurrent ? '#D4A853' : isDone ? '#34D399' : 'rgba(255,255,255,0.06)';
       const color = (isCurrent || isDone) ? '#111827' : '#64748B';
       const fw = isCurrent ? 'font-weight:700;' : '';
-      phtml += `<span style="padding:3px 10px;border-radius:10px;font-size:10px;background:${bg};color:${color};${fw}">${stageLabels[s] || s}</span>`;
+      phtml += `<span style="padding:3px 10px;border-radius:10px;font-size:10px;background:${bg};color:${color};${fw}">${allLabels[s] || s}</span>`;
       if (i < stageOrder.length - 1) phtml += '<span style="color:rgba(255,255,255,0.06);font-size:10px;">&rarr;</span>';
     });
     pipeline.innerHTML = phtml;

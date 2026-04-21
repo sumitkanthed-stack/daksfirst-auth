@@ -283,10 +283,46 @@ router.get('/', authenticateToken, async (req, res) => {
     const { userId, role } = req.user;
     let result;
 
+    // 2026-04-21: include portfolio properties + primary borrower summary so
+    // the shared display helpers (deal-display.js) work on list views the
+    // same way they work on deal-detail. Without this, list views fall back
+    // to legacy flat security_address / borrower_name and portfolio deals
+    // like Gold Medal (property data in deal_properties) show '-' in the
+    // Security column.
+    const propertiesSubquery = `
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'address', address,
+          'postcode', postcode,
+          'market_value', market_value,
+          'property_type', property_type,
+          'tenure', tenure
+        ) ORDER BY market_value DESC NULLS LAST, address ASC)
+        FROM deal_properties
+        WHERE deal_id = d.id
+      ), '[]'::json) AS properties
+    `;
+    const borrowersSubquery = `
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'id', id,
+          'role', role,
+          'full_name', full_name,
+          'borrower_type', borrower_type,
+          'company_name', company_name,
+          'company_number', company_number,
+          'parent_borrower_id', parent_borrower_id
+        ) ORDER BY role = 'primary' DESC, id ASC)
+        FROM deal_borrowers
+        WHERE deal_id = d.id AND parent_borrower_id IS NULL
+      ), '[]'::json) AS borrowers
+    `;
+
     if (['admin', 'credit', 'compliance', 'rm'].includes(role)) {
       // Internal staff see all deals
       result = await pool.query(
-        `SELECT d.*, u.first_name AS broker_first, u.last_name AS broker_last, u.email AS broker_email
+        `SELECT d.*, u.first_name AS broker_first, u.last_name AS broker_last, u.email AS broker_email,
+                ${propertiesSubquery}, ${borrowersSubquery}
          FROM deal_submissions d
          LEFT JOIN users u ON d.user_id = u.id
          ORDER BY d.created_at DESC`
@@ -294,7 +330,10 @@ router.get('/', authenticateToken, async (req, res) => {
     } else {
       // Brokers / borrowers see only their own
       result = await pool.query(
-        `SELECT * FROM deal_submissions WHERE user_id = $1 ORDER BY created_at DESC`,
+        `SELECT d.*, ${propertiesSubquery}, ${borrowersSubquery}
+         FROM deal_submissions d
+         WHERE d.user_id = $1
+         ORDER BY d.created_at DESC`,
         [userId]
       );
     }
