@@ -2141,6 +2141,200 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 })();
 
+                // ═══ Area Intelligence panel (2026-04-21) ═══
+                // Separate expandable panel for neighbourhood-level data: sales
+                // market velocity, rental market, wealth percentiles, schools,
+                // planning constraints, 5y value trajectory. Distinct from
+                // Chimnie Intelligence which is property-specific.
+                const areaHtml = (() => {
+                  if (!isInternalUser) return '';
+                  const fetched = p.chimnie_fetched_at;
+                  if (!fetched) return ''; // Area data sits inside Chimnie response — no data until Chimnie fetched
+
+                  // Collapse behaviour mirrors EPC + Chimnie
+                  const areaCollapsed = fetched && verified;
+                  const areaBodyDisplay = areaCollapsed ? 'none' : 'block';
+                  const areaSummaryDisplay = areaCollapsed ? 'inline' : 'none';
+                  const areaChevronRotate = areaCollapsed ? '' : 'transform:rotate(90deg);';
+
+                  // ── Helpers (colour coding + formatting) ──
+                  const fmtInt = (n) => n != null && !isNaN(n) ? Math.round(Number(n)).toLocaleString() : '\u2014';
+                  const fmtMoney = (n) => n != null && !isNaN(n) ? '\u00A3' + Math.round(Number(n)).toLocaleString() : '\u2014';
+                  const fmtPct = (n, dp) => n != null && !isNaN(n) ? Number(n).toFixed(dp != null ? dp : 1) + '%' : '\u2014';
+                  const ordinal = (n) => {
+                    if (n == null) return '\u2014';
+                    const r = Math.round(Number(n));
+                    const mod10 = r % 10, mod100 = r % 100;
+                    const suffix = (mod100 >= 11 && mod100 <= 13) ? 'th'
+                                 : mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th';
+                    return r + suffix;
+                  };
+
+                  // Market velocity colours
+                  const daysSell = Number(p.chimnie_area_days_to_sell) || null;
+                  const daysSellColour = daysSell == null ? '#94A3B8'
+                                       : daysSell < 60 ? '#34D399' : daysSell < 120 ? '#FBBF24' : '#F87171';
+                  const daysRent = Number(p.chimnie_area_days_to_rent) || null;
+                  const daysRentColour = daysRent == null ? '#94A3B8'
+                                       : daysRent < 21 ? '#34D399' : daysRent < 45 ? '#FBBF24' : '#F87171';
+                  const salesYoY = p.chimnie_area_sales_yoy;
+                  const yoyColour = salesYoY == null ? '#94A3B8'
+                                  : salesYoY > 0 ? '#34D399' : salesYoY > -10 ? '#FBBF24' : '#F87171';
+                  const yoyArrow = salesYoY == null ? '' : salesYoY > 0 ? '\u25B2 ' : salesYoY < 0 ? '\u25BC ' : '\u2013 ';
+                  const yoyDisplay = salesYoY == null ? '\u2014'
+                                   : '<span style="color:' + yoyColour + ';">' + yoyArrow + (salesYoY > 0 ? '+' : '') + salesYoY + '%</span>';
+
+                  // Wealth percentile — national
+                  const wealthNat = Number(p.chimnie_wealth_pct_national) || null;
+                  const wealthColour = wealthNat == null ? '#94A3B8'
+                                     : wealthNat >= 75 ? '#34D399' : wealthNat >= 40 ? '#FBBF24' : '#F87171';
+
+                  // 5y value trajectory
+                  const fiveY = p.chimnie_5y_value_change_pct;
+                  const fiveYColour = fiveY == null ? '#94A3B8'
+                                    : fiveY > 0 ? '#34D399' : fiveY > -5 ? '#FBBF24' : '#F87171';
+                  const fiveYArrow = fiveY == null ? '' : fiveY > 0 ? '\u25B2 ' : fiveY < 0 ? '\u25BC ' : '';
+
+                  // Ofsted colour
+                  const ofstedColour = (r) => {
+                    const rl = (r || '').toLowerCase();
+                    if (rl.includes('outstanding')) return '#34D399';
+                    if (rl.includes('good')) return '#A3E635';
+                    if (rl.includes('requires improvement')) return '#FBBF24';
+                    if (rl.includes('inadequate') || rl.includes('serious')) return '#F87171';
+                    return '#94A3B8';
+                  };
+
+                  // Price/sqft context — compare area avg to implied property £/sqft (AVM ÷ floor area)
+                  const areaPricePerSqft = Number(p.chimnie_area_price_per_sqft) || null;
+                  const propFloorAreaSqft = (Number(p.chimnie_floor_area_sqm) || 0) * 10.764;
+                  const propPricePerSqft = (Number(p.chimnie_avm_mid) && propFloorAreaSqft > 0)
+                    ? Number(p.chimnie_avm_mid) / propFloorAreaSqft : null;
+                  let psfVariance = null;
+                  let psfVarianceBadge = '';
+                  if (areaPricePerSqft && propPricePerSqft) {
+                    psfVariance = ((propPricePerSqft - areaPricePerSqft) / areaPricePerSqft) * 100;
+                    const absV = Math.abs(psfVariance);
+                    if (absV > 25) {
+                      psfVarianceBadge = '<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:1px 6px;border-radius:3px;font-weight:700;margin-left:4px;">\u26A0 ' + (psfVariance > 0 ? '+' : '') + psfVariance.toFixed(0) + '% vs area</span>';
+                    } else if (absV > 10) {
+                      psfVarianceBadge = '<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.08);padding:1px 6px;border-radius:3px;font-weight:600;margin-left:4px;">\u00B1' + absV.toFixed(0) + '% vs area</span>';
+                    }
+                  }
+
+                  // ── Red-flag chips (area-level) ──
+                  const areaFlags = [];
+                  if (daysSell != null && daysSell > 120) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Slow exit (' + daysSell + 'd)</span>');
+                  if (daysRent != null && daysRent > 45) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Slow re-let (' + daysRent + 'd)</span>');
+                  if (salesYoY != null && salesYoY < -10) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Declining market (' + salesYoY + '% YoY)</span>');
+                  if (wealthNat != null && wealthNat < 30) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Low-wealth area</span>');
+                  if (p.chimnie_in_green_belt === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Green belt</span>');
+                  if (p.chimnie_in_aonb === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">AONB</span>');
+                  if (p.chimnie_near_historic_landfill === true) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Historic landfill</span>');
+                  if (p.chimnie_in_coal_mining_area === true) areaFlags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Coal mining area</span>');
+                  if (p.chimnie_in_world_heritage === true) areaFlags.push('<span style="font-size:9px;color:#C9A227;background:rgba(201,162,39,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">UNESCO World Heritage</span>');
+                  if (p.chimnie_sssi_affected === true) areaFlags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">SSSI</span>');
+                  if (p.chimnie_scheduled_monument_affected === true) areaFlags.push('<span style="font-size:9px;color:#C9A227;background:rgba(201,162,39,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Scheduled monument</span>');
+                  // Ofsted red flag — only when the nearest primary is poor
+                  const nearestPrimaryOfsted = (p.chimnie_nearest_primary_ofsted || '').toLowerCase();
+                  if (nearestPrimaryOfsted === 'inadequate' || nearestPrimaryOfsted === 'serious weaknesses') {
+                    areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Poor local school</span>');
+                  }
+                  const areaFlagsHtml = areaFlags.length > 0 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' + areaFlags.join('') + '</div>' : '';
+
+                  // ── Inline summary (shown when collapsed) ──
+                  const areaSummaryBits = [];
+                  if (p.chimnie_local_authority) areaSummaryBits.push(sanitizeHtml(p.chimnie_local_authority));
+                  if (daysSell != null) areaSummaryBits.push(daysSell + 'd sell');
+                  if (daysRent != null) areaSummaryBits.push(daysRent + 'd rent');
+                  if (salesYoY != null) areaSummaryBits.push((salesYoY > 0 ? '+' : '') + salesYoY + '% YoY');
+                  if (wealthNat != null) areaSummaryBits.push('Wealth ' + ordinal(wealthNat) + ' %ile');
+                  const areaSummaryText = areaSummaryBits.join(' \u00B7 ');
+
+                  // ── Kpi helper (reuse style from Chimnie panel) ──
+                  const kpi = (label, value, extraStyle) => '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;letter-spacing:.3px;">' + label + '</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;' + (extraStyle || '') + '">' + value + '</span></div>';
+
+                  // Wealth percentiles — show all 3 tiers as a single cell value
+                  const wealthCell = (() => {
+                    const nat = p.chimnie_wealth_pct_national;
+                    const la = p.chimnie_wealth_pct_local_authority;
+                    const pd = p.chimnie_wealth_pct_postcode_district;
+                    if (nat == null && la == null && pd == null) return '\u2014';
+                    return '<span style="color:' + wealthColour + ';">Nat ' + ordinal(nat) + '</span>' +
+                      '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' +
+                        (la != null ? 'LA ' + ordinal(la) : '') +
+                        (pd != null ? ' \u00B7 PC ' + ordinal(pd) : '') +
+                      '</div>';
+                  })();
+
+                  // School cell helpers
+                  const primaryCell = (() => {
+                    if (!p.chimnie_nearest_primary_name && !p.chimnie_nearest_primary_distance_m) return '\u2014';
+                    const dist = Number(p.chimnie_nearest_primary_distance_m);
+                    const distLabel = dist ? (dist < 1000 ? dist + 'm' : (dist / 1000).toFixed(1) + 'km') : '';
+                    const ofsted = p.chimnie_nearest_primary_ofsted;
+                    return '<div style="font-size:11px;">' + sanitizeHtml(p.chimnie_nearest_primary_name || '\u2014') + '</div>' +
+                      '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + distLabel +
+                      (ofsted ? ' \u00B7 <span style="color:' + ofstedColour(ofsted) + ';font-weight:700;">' + sanitizeHtml(ofsted) + '</span>' : '') + '</div>';
+                  })();
+                  const secondaryCell = (() => {
+                    if (!p.chimnie_best_secondary_name) return '\u2014';
+                    const dist = Number(p.chimnie_best_secondary_distance_m);
+                    const distLabel = dist ? (dist < 1000 ? dist + 'm' : (dist / 1000).toFixed(1) + 'km') : '';
+                    const ofsted = p.chimnie_best_secondary_ofsted;
+                    const att8 = p.chimnie_best_secondary_att8;
+                    return '<div style="font-size:11px;">' + sanitizeHtml(p.chimnie_best_secondary_name || '\u2014') + '</div>' +
+                      '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + distLabel +
+                      (ofsted ? ' \u00B7 <span style="color:' + ofstedColour(ofsted) + ';font-weight:700;">' + sanitizeHtml(ofsted) + '</span>' : '') +
+                      (att8 != null ? ' \u00B7 Att8 ' + Number(att8).toFixed(1) : '') +
+                      '</div>';
+                  })();
+
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleAreaPanel(' + p.id + ')">' +
+                    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                      '<span id="area-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + areaChevronRotate + 'transition:transform 0.15s;">\u25B6</span>' +
+                      '<span style="font-size:10px;color:#C9A227;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Area Intelligence</span>' +
+                      '<span id="area-summary-' + p.id + '" style="display:' + areaSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">\u00B7 ' + sanitizeHtml(areaSummaryText) + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                      '<span style="font-size:9px;color:#64748B;">' + sanitizeHtml(p.chimnie_postcode_district || '') + (p.chimnie_is_urban === true ? ' \u00B7 Urban' : p.chimnie_is_urban === false ? ' \u00B7 Rural' : '') + '</span>' +
+                    '</div>' +
+                  '</div>';
+
+                  return '<div id="area-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(201,162,39,0.03);border:1px solid rgba(201,162,39,0.22);border-radius:6px;">' +
+                    headerRow +
+                    '<div id="area-body-' + p.id + '" style="display:' + areaBodyDisplay + ';">' +
+                      // Row 1 — Market velocity (sales + rental)
+                      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Days to Sell', daysSell != null ? '<span style="color:' + daysSellColour + ';">' + daysSell + 'd</span>' : '\u2014') +
+                        kpi('Days to Rent', daysRent != null ? '<span style="color:' + daysRentColour + ';">' + daysRent + 'd</span>' : '\u2014') +
+                        kpi('Sales (12m)', fmtInt(p.chimnie_area_sales_12m)) +
+                        kpi('Sales YoY', yoyDisplay) +
+                        kpi('Avg Years Owned', p.chimnie_area_avg_years_owned != null ? Number(p.chimnie_area_avg_years_owned).toFixed(1) + 'y' : '\u2014') +
+                      '</div>' +
+                      // Row 2 — Pricing context + trajectory
+                      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Area £/sqft', areaPricePerSqft ? '\u00A3' + Math.round(areaPricePerSqft).toLocaleString() : '\u2014') +
+                        kpi('This Property £/sqft', propPricePerSqft ? '\u00A3' + Math.round(propPricePerSqft).toLocaleString() + psfVarianceBadge : '\u2014') +
+                        kpi('5y Trajectory', fiveY != null ? '<span style="color:' + fiveYColour + ';">' + fiveYArrow + (fiveY > 0 ? '+' : '') + fiveY.toFixed(1) + '%</span>' : '\u2014') +
+                        kpi('Local Authority', sanitizeHtml(p.chimnie_local_authority || '\u2014')) +
+                      '</div>' +
+                      // Row 3 — Wealth + demographics
+                      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Wealth %ile', wealthCell) +
+                        kpi('Total HHI (MSOA)', fmtMoney(p.chimnie_total_hhi_msoa) + (p.chimnie_total_hhi_msoa ? '<span style="font-size:9px;color:#94A3B8;font-weight:400;"> /yr</span>' : '')) +
+                        kpi('Disposable HHI', fmtMoney(p.chimnie_disposable_hhi_msoa) + (p.chimnie_disposable_hhi_msoa ? '<span style="font-size:9px;color:#94A3B8;font-weight:400;"> /yr</span>' : '')) +
+                      '</div>' +
+                      // Row 4 — Schools
+                      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        kpi('Nearest Primary', primaryCell) +
+                        kpi('Best Secondary (within 5km)', secondaryCell) +
+                      '</div>' +
+                      areaFlagsHtml +
+                    '</div>' + // close area-body
+                  '</div>';
+                })();
+
                 return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;cursor:pointer;" onclick="window._togglePropPanel(' + p.id + ')">' +
                     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
@@ -2162,7 +2356,8 @@ export async function renderDealMatrix(deal) {
                   (priceHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
                   '</div>' + // close prop-body
                 '</div>' +
-                chimnieHtml;
+                chimnieHtml +
+                areaHtml;
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -8246,6 +8441,26 @@ window._toggleChimniePanel = function(propertyId) {
   const body = document.getElementById('chimnie-body-' + propertyId);
   const chevron = document.getElementById('chimnie-chevron-' + propertyId);
   const summary = document.getElementById('chimnie-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Toggle Area Intelligence panel (2026-04-21) ────────────────────────────
+// Same pattern as Chimnie toggle. Separate from Chimnie panel because the two
+// tell different stories: Chimnie = this property; Area = this neighbourhood.
+window._toggleAreaPanel = function(propertyId) {
+  const body = document.getElementById('area-body-' + propertyId);
+  const chevron = document.getElementById('area-chevron-' + propertyId);
+  const summary = document.getElementById('area-summary-' + propertyId);
   if (!body) return;
   const isCollapsed = body.style.display === 'none';
   if (isCollapsed) {

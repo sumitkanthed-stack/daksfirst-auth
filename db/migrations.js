@@ -819,6 +819,50 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_station_name VARCHAR(120)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_station_distance_m INT`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_ptal VARCHAR(5)`,  // '0','1a','1b','2','3','4','5','6a','6b' or NULL for non-London
+
+      // ═══ Area Intelligence (2026-04-21) ═══
+      // Surrounds this property's neighbourhood, NOT the property itself. Drives
+      // the separate "Area Intelligence" panel (market velocity, wealth, schools,
+      // planning constraints). All columns queryable; full nested census data
+      // stays in chimnie_data JSONB.
+
+      // Location
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_local_authority VARCHAR(100)`,    // e.g. "Hammersmith and Fulham"
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_postcode_district VARCHAR(10)`,    // e.g. "W6"
+      // Sales market velocity (exit-via-sale viability)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_sales_12m INT`,               // sales in postcode district last 12m
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_sales_yoy INT`,               // change in 12m sales volume
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_price_per_sqft NUMERIC(10,2)`,// avg £/sqft for this property type in area
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_days_to_sell INT`,            // avg days on market
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_avg_years_owned NUMERIC(5,2)`,// avg holding period (50y rolling)
+      // Rental market velocity (BTL exit viability)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_area_days_to_rent INT`,            // avg void period
+      // Wealth percentiles — higher = wealthier
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_wealth_pct_national NUMERIC(5,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_wealth_pct_local_authority NUMERIC(5,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_wealth_pct_postcode_district NUMERIC(5,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_total_hhi_msoa INT`,               // MSOA total household income (£/yr)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_disposable_hhi_msoa INT`,          // MSOA disposable household income (£/yr)
+      // Schools (nearest primary + best nearby secondary)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_primary_name VARCHAR(200)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_primary_distance_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_primary_ofsted VARCHAR(30)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_best_secondary_name VARCHAR(200)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_best_secondary_distance_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_best_secondary_ofsted VARCHAR(30)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_best_secondary_att8 NUMERIC(5,2)`, // GCSE attainment8 score
+      // Planning constraints (affect exit options — redevelopment / extension / conversion)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_green_belt BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_aonb BOOLEAN`,                  // Area of Outstanding Natural Beauty
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_near_historic_landfill BOOLEAN`,   // contamination risk
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_coal_mining_area BOOLEAN`,      // subsidence / stability
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_in_world_heritage BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_sssi_affected BOOLEAN`,            // Site of Special Scientific Interest
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_scheduled_monument_affected BOOLEAN`,
+      // 5-year value trajectory (% change computed from historical_property_values in JSONB)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_5y_value_change_pct NUMERIC(6,2)`,
+      // Urban/rural classifier (area demographic proxy)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_is_urban BOOLEAN`,
       // Full payload + audit
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_data JSONB DEFAULT '{}'::jsonb`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_at TIMESTAMPTZ`,

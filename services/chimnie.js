@@ -279,8 +279,94 @@ function extractFlatFields(data) {
     // compute that separately from TfL's free PTAL dataset in Phase 2.
     // Confirmed by Wiseguy 2026-04-21: only `nearest_train_station.distance` available.
     chimnie_nearest_station_name: get(data, 'surroundings.facilities.transport.nearest_train_station.name') || null,
-    chimnie_nearest_station_distance_m: get(data, 'surroundings.facilities.transport.nearest_train_station.distance') || null
+    chimnie_nearest_station_distance_m: get(data, 'surroundings.facilities.transport.nearest_train_station.distance') || null,
+
+    // ═══ Area Intelligence (2026-04-21) ═══
+    // Location — check both nested paths. Verified 2026-04-21 that some fields
+    // live under `property.attributes.status.*` not just `property.attributes.*`.
+    chimnie_local_authority: get(data, 'property.attributes.ltla')
+                          ?? get(data, 'property.attributes.status.ltla')
+                          ?? null,
+    chimnie_postcode_district: get(data, 'plus.property.attributes.status.postcode_district') || null,
+    chimnie_is_urban: (() => {
+      const v = get(data, 'property.attributes.is_urban') ?? get(data, 'property.attributes.status.is_urban');
+      return typeof v === 'boolean' ? v : null;
+    })(),
+
+    // Sales market velocity — drives exit-via-sale viability
+    chimnie_area_sales_12m: get(data, 'surroundings.values.sale.sales_nearby_12m') ?? null,
+    chimnie_area_sales_yoy: get(data, 'surroundings.values.sale.sales_yoy') ?? null,
+    chimnie_area_price_per_sqft: get(data, 'surroundings.values.sale.price_per_sqft') ?? null,
+    chimnie_area_days_to_sell: get(data, 'surroundings.values.sale.days_to_sell') ?? null,
+    chimnie_area_avg_years_owned: get(data, 'surroundings.values.sale.average_years_owned') ?? null,
+    // Rental market velocity — BTL exit viability
+    chimnie_area_days_to_rent: get(data, 'surroundings.values.rental.days_to_rent') ?? null,
+
+    // Wealth percentiles (higher = wealthier). Chimnie uses `_score` for percentile 0-100.
+    chimnie_wealth_pct_national: get(data, 'premium.ownership.household_wealth_percentile.total_score') ?? null,
+    chimnie_wealth_pct_local_authority: get(data, 'premium.ownership.household_wealth_percentile.local_authority_score') ?? null,
+    chimnie_wealth_pct_postcode_district: get(data, 'premium.ownership.household_wealth_percentile.postcode_district_score') ?? null,
+    chimnie_total_hhi_msoa: get(data, 'premium.ownership.total_hhi_msoa') ?? null,
+    chimnie_disposable_hhi_msoa: get(data, 'premium.ownership.disposable_hhi_msoa') ?? null,
+
+    // Schools — nearest primary + best nearby secondary
+    chimnie_nearest_primary_name: get(data, 'surroundings.facilities.education.nearest_primary.name') || null,
+    chimnie_nearest_primary_distance_m: get(data, 'surroundings.facilities.education.nearest_primary.distance') ?? null,
+    chimnie_nearest_primary_ofsted: get(data, 'surroundings.facilities.education.nearest_primary.ofsted_rating') || null,
+    chimnie_best_secondary_name: get(data, 'surroundings.facilities.education.best_nearby_secondary.name') || null,
+    chimnie_best_secondary_distance_m: get(data, 'surroundings.facilities.education.best_nearby_secondary.distance') ?? null,
+    chimnie_best_secondary_ofsted: get(data, 'surroundings.facilities.education.best_nearby_secondary.ofsted_rating') || null,
+    chimnie_best_secondary_att8: get(data, 'surroundings.facilities.education.best_nearby_secondary.att8scr') ?? null,
+
+    // Planning constraints — affect redevelopment / conversion / extension exits
+    chimnie_in_green_belt: _boolOrNull(get(data, 'surroundings.environment.land.green_belt.affected')),
+    chimnie_in_aonb: _boolOrNull(get(data, 'surroundings.environment.land.aonb.affected')),
+    chimnie_near_historic_landfill: _boolOrNull(get(data, 'surroundings.environment.land.historic_landfill.affected')),
+    chimnie_in_coal_mining_area: _boolOrNull(get(data, 'surroundings.environment.land.in_coal_mining_reporting_area')),
+    chimnie_in_world_heritage: _boolOrNull(get(data, 'surroundings.environment.land.world_heritage_sites.affected')),
+    chimnie_sssi_affected: _boolOrNull(get(data, 'surroundings.environment.land.sssi.affected')),
+    chimnie_scheduled_monument_affected: _boolOrNull(get(data, 'surroundings.environment.land.scheduled_monuments.affected')),
+
+    // 5-year value trajectory — compute % change from historical monthly series.
+    // historical_property_values shape (from schema): object with monthly keys,
+    // OR an array of {date, value} pairs. Handle both; return null if absent.
+    chimnie_5y_value_change_pct: _computeFiveYearChange(get(data, 'property.value.sale.historical_property_values'))
   };
+}
+
+// Coerce to boolean, preserving null when the source was truly absent.
+function _boolOrNull(v) {
+  return typeof v === 'boolean' ? v : null;
+}
+
+// Compute % change from the earliest to latest value in a historical series.
+// The TfL schema says "5-year history of predicted property value with monthly
+// granularity" — format could be either an ordered array of [{date, value}] or
+// an object keyed by YYYY-MM. Handle both.
+function _computeFiveYearChange(hist) {
+  if (!hist) return null;
+  let values = [];
+  if (Array.isArray(hist)) {
+    // Array of {date, value} or {ym, v} — try common shapes
+    values = hist
+      .map(row => {
+        if (!row) return null;
+        const v = row.value ?? row.v ?? row.price ?? row[Object.keys(row)[1]];
+        return (typeof v === 'number') ? v : (typeof v === 'string' ? parseFloat(v) : null);
+      })
+      .filter(v => v != null && isFinite(v));
+  } else if (typeof hist === 'object') {
+    // Object keyed by date
+    values = Object.values(hist)
+      .map(v => (typeof v === 'number') ? v : (typeof v === 'string' ? parseFloat(v) : null))
+      .filter(v => v != null && isFinite(v));
+  }
+  if (values.length < 2) return null;
+  const first = values[0];
+  const last = values[values.length - 1];
+  if (!first || first <= 0) return null;
+  const pct = ((last - first) / first) * 100;
+  return Math.round(pct * 100) / 100;  // 2dp
 }
 
 module.exports = {
