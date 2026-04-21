@@ -704,8 +704,10 @@ export async function renderDealMatrix(deal) {
       </div>` : ''}
     </div>
 
-    <!-- SUBMIT FOR REVIEW — prominent CTA for brokers -->
-    ${!isInternalUser && currentStage === 'received' ? `
+    <!-- SUBMIT FOR REVIEW — prominent CTA for brokers.
+         2026-04-21: 'draft' treated as pre-submit alongside 'received' so brokers
+         see the CTA on brand-new deals (which are created in 'draft' stage). -->
+    ${!isInternalUser && ['draft', 'received'].includes(currentStage) ? `
     <div id="matrix-submit-cta" style="padding:14px 26px;background:rgba(52,211,153,0.1);border-bottom:2px solid rgba(52,211,153,0.2);">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div style="flex:1;min-width:240px;">
@@ -719,7 +721,7 @@ export async function renderDealMatrix(deal) {
       </div>
     </div>
     ` : ''}
-    ${!isInternalUser && currentStage !== 'received' ? `
+    ${!isInternalUser && !['draft', 'received'].includes(currentStage) ? `
     <div style="padding:10px 26px;background:rgba(212,168,83,0.1);border-bottom:2px solid rgba(212,168,83,0.2);text-align:center;">
       <span style="font-size:12px;font-weight:600;color:#E8C97A;">&#x2713; Deal submitted for review — Matrix is read-only</span>
     </div>
@@ -7393,8 +7395,9 @@ export async function renderDealMatrix(deal) {
     }
 
     // Enable/disable submit button based on readiness
+    // 2026-04-21: accept 'draft' as pre-submit alongside 'received'
     const submitCta = document.querySelector('#matrix-submit-cta button');
-    if (submitCta && currentStage === 'received') {
+    if (submitCta && ['draft', 'received'].includes(currentStage)) {
       if (readiness.ready) {
         submitCta.disabled = false;
         submitCta.style.opacity = '1';
