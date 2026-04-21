@@ -1888,6 +1888,87 @@ export async function renderDealMatrix(deal) {
                 const summaryDisplay = verified ? 'inline' : 'none';
                 const chevronRotate = verified ? '' : 'transform:rotate(90deg);';
 
+                // ═══ Chimnie Intelligence panel (2026-04-21) ═══
+                // Separate expandable panel below the EPC/LR property intelligence.
+                // Internal users only (paid API — broker can't trigger).
+                const chimnieHtml = (() => {
+                  if (!isInternalUser) return '';
+                  const fetched = p.chimnie_fetched_at;
+                  const fmtMoney = (n) => n != null && !isNaN(n) ? '\u00A3' + Math.round(Number(n)).toLocaleString() : '\u2014';
+                  const fmtPct = (n) => n != null && !isNaN(n) ? Number(n).toFixed(2) + '%' : '\u2014';
+                  const pillBg = '#1e3a5f';
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                      '<span style="font-size:10px;color:#60A5FA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Chimnie Intelligence</span>' +
+                      (p.chimnie_exact_match === true ? '<span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.12);padding:1px 6px;border-radius:3px;font-weight:700;">\u2713 EXACT MATCH</span>' :
+                       p.chimnie_exact_match === false ? '<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:1px 6px;border-radius:3px;font-weight:700;">\u26A0 FUZZY MATCH</span>' : '') +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                      (fetched ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(fetched).toLocaleDateString('en-GB') + '</span>' : '') +
+                      '<button onclick="event.stopPropagation();window._chimnieLookup(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (fetched ? 'rgba(96,165,250,0.12)' : '#60A5FA') + ';color:' + (fetched ? '#60A5FA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (fetched ? 'Refresh' : 'Fetch') + '</button>' +
+                    '</div>' +
+                  '</div>';
+                  if (!fetched) {
+                    return '<div id="chimnie-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(96,165,250,0.03);border:1px dashed rgba(96,165,250,0.25);border-radius:6px;">' +
+                      headerRow +
+                      '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No Chimnie data yet. Click Fetch to pull AVM, flood risk, crime percentile, rental estimate, ownership flags, and the full property dossier.</div>' +
+                    '</div>';
+                  }
+                  // Summary row — AVM / LTV / Flood / Crime
+                  const avmRange = (p.chimnie_avm_low && p.chimnie_avm_high)
+                    ? fmtMoney(p.chimnie_avm_low) + '\u2013' + fmtMoney(p.chimnie_avm_high)
+                    : null;
+                  const confColor = p.chimnie_avm_confidence === 'High' ? '#34D399'
+                                  : p.chimnie_avm_confidence === 'Medium' ? '#FBBF24'
+                                  : p.chimnie_avm_confidence === 'Low' ? '#F87171' : '#94A3B8';
+                  // Flood risk thresholds (Daksfirst policy — tune later)
+                  const floodRS = Number(p.chimnie_flood_risk_rivers_sea) || 0;
+                  const floodSW = Number(p.chimnie_flood_risk_surface_water) || 0;
+                  const floodMax = Math.max(floodRS, floodSW);
+                  const floodColor = floodMax > 1 ? '#F87171' : floodMax > 0.1 ? '#FBBF24' : '#34D399';
+                  const floodLabel = floodMax > 1 ? 'HIGH' : floodMax > 0.1 ? 'MEDIUM' : 'LOW';
+                  // Cross-check broker vs Chimnie MV
+                  const brokerMV = Number(p.market_value) || 0;
+                  const chimnieMid = Number(p.chimnie_avm_mid) || 0;
+                  let varianceBadge = '';
+                  if (brokerMV > 0 && chimnieMid > 0) {
+                    const variance = ((brokerMV - chimnieMid) / chimnieMid) * 100;
+                    const absV = Math.abs(variance);
+                    if (absV > 15) {
+                      varianceBadge = '<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:1px 6px;border-radius:3px;font-weight:700;margin-left:4px;">\u26A0 Broker ' + (variance > 0 ? '+' : '') + variance.toFixed(1) + '% vs AVM</span>';
+                    } else if (absV > 5) {
+                      varianceBadge = '<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.08);padding:1px 6px;border-radius:3px;font-weight:600;margin-left:4px;">\u00B1' + absV.toFixed(1) + '% vs AVM</span>';
+                    }
+                  }
+                  const kpi = (label, value, extraStyle) => '<div><span style="font-size:9px;color:#64748B;text-transform:uppercase;display:block;margin-bottom:2px;letter-spacing:.3px;">' + label + '</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;' + (extraStyle || '') + '">' + value + '</span></div>';
+                  // Red-flag chips
+                  const flags = [];
+                  if (p.chimnie_overseas_ownership === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Overseas owner</span>');
+                  if (p.chimnie_is_listed === true) flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Listed bldg</span>');
+                  if (p.chimnie_construction_material && !['Brick','Stone'].includes(p.chimnie_construction_material)) {
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Non-std: ' + sanitizeHtml(p.chimnie_construction_material) + '</span>');
+                  }
+                  const flagsHtml = flags.length > 0 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' + flags.join('') + '</div>' : '';
+
+                  return '<div id="chimnie-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(96,165,250,0.03);border:1px solid rgba(96,165,250,0.2);border-radius:6px;">' +
+                    headerRow +
+                    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                      kpi('AVM', fmtMoney(p.chimnie_avm_mid) + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '') + varianceBadge) +
+                      kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
+                      kpi('Rental p.c.m.', fmtMoney(p.chimnie_rental_pcm)) +
+                      kpi('Flood', '<span style="color:' + floodColor + ';">' + floodLabel + '</span><div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">R/S ' + fmtPct(floodRS) + ' \u00B7 SW ' + fmtPct(floodSW) + '</div>') +
+                      kpi('Crime %ile', p.chimnie_crime_percentile_total != null ? Number(p.chimnie_crime_percentile_total).toFixed(0) + 'th' : '\u2014') +
+                    '</div>' +
+                    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                      kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
+                      kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
+                      kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
+                      kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
+                    '</div>' +
+                    flagsHtml +
+                  '</div>';
+                })();
+
                 return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;cursor:pointer;" onclick="window._togglePropPanel(' + p.id + ')">' +
                     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
@@ -1908,7 +1989,8 @@ export async function renderDealMatrix(deal) {
                   (epcHtml ? '<div style="margin-bottom:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + epcHtml + '</div>' : '') +
                   (priceHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
                   '</div>' + // close prop-body
-                '</div>';
+                '</div>' +
+                chimnieHtml;
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -7981,6 +8063,53 @@ window._togglePropPanel = function(propertyId) {
     body.style.display = 'none';
     if (summary) summary.style.display = 'inline';
     if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Chimnie lookup — paid property-intelligence fetch (2026-04-21) ──────────
+// Calls POST /api/deals/:submissionId/properties/:propertyId/chimnie-lookup,
+// which hits the Chimnie API, stores flat columns + raw JSONB, and returns
+// the extracted fields. Refreshes the deal in-place to re-render the panel.
+window._chimnieLookup = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching...'; btn.style.opacity = '0.6'; }
+
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/chimnie-lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'address' })
+    });
+
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text || 'Empty response from server' }; }
+
+    if (!res.ok) {
+      const msg = data.error || 'Chimnie lookup failed';
+      // 429 = monthly cap hit; 402 = no credits left; 502 = Chimnie error
+      if (res.status === 429) {
+        alert('Monthly Chimnie credit cap reached: ' + msg + '\n\nRaise CHIMNIE_MONTHLY_CAP_CREDITS in Render env vars to lift.');
+      } else if (res.status === 402 || res.status === 502) {
+        alert('Chimnie API error (' + res.status + '): ' + msg);
+      } else {
+        alert('Lookup failed (' + res.status + '): ' + msg);
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Fetch'; btn.style.opacity = '1'; }
+      return;
+    }
+
+    if (data.flat && data.flat.chimnie_exact_match === false) {
+      // Soft warning — data is still returned, but match wasn't unambiguous
+      console.warn('[chimnie] Fuzzy match returned. Review broker address vs resolved property.');
+    }
+
+    // Refresh the deal in place so the new flat columns flow into the panel
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[chimnie-lookup] Error:', err);
+    alert('Chimnie lookup error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Fetch'; btn.style.opacity = '1'; }
   }
 };
 

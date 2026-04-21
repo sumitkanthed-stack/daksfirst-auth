@@ -613,4 +613,136 @@ router.post('/:submissionId/properties/:propertyId/select-epc', authenticateToke
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  CHIMNIE PROPERTY INTELLIGENCE LOOKUP (2026-04-21)
+//  Pulls the full Chimnie dossier for a property (AVM + comps + flood + crime
+//  + ownership + construction + rental + rebuild cost). Internal users only —
+//  broker doesn't trigger paid API calls. Monthly credit cap stops runaway spend.
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId, propertyId } = req.params;
+    const { method } = req.body || {};  // optional: 'address' (default) or 'uprn'
+
+    // Internal users only — this is a paid call, brokers can't trigger.
+    if (!config.INTERNAL_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Chimnie lookup is available to internal users only' });
+    }
+
+    // Resolve deal + property
+    const dealResult = await pool.query(
+      `SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealResult.rows[0].id;
+
+    const propResult = await pool.query(
+      `SELECT id, address, postcode, chimnie_uprn FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      [propertyId, dealId]
+    );
+    if (propResult.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+    const prop = propResult.rows[0];
+
+    if (!prop.address && !prop.postcode && !prop.chimnie_uprn) {
+      return res.status(400).json({ error: 'Property has no address, postcode, or UPRN to look up' });
+    }
+
+    // Monthly spend cap — sum credits used this calendar month across all deals.
+    // Prevents a buggy loop or rogue frontend from draining the account balance.
+    const capResult = await pool.query(`
+      SELECT COALESCE(SUM(chimnie_credits_used), 0)::int AS total_this_month
+      FROM deal_properties
+      WHERE chimnie_fetched_at >= DATE_TRUNC('month', NOW())
+    `);
+    const usedThisMonth = capResult.rows[0].total_this_month || 0;
+    if (usedThisMonth >= config.CHIMNIE_MONTHLY_CAP_CREDITS) {
+      return res.status(429).json({
+        error: `Monthly Chimnie credit cap reached (${usedThisMonth} / ${config.CHIMNIE_MONTHLY_CAP_CREDITS}). Raise CHIMNIE_MONTHLY_CAP_CREDITS env var to lift.`,
+        used_this_month: usedThisMonth,
+        cap: config.CHIMNIE_MONTHLY_CAP_CREDITS
+      });
+    }
+
+    // Call Chimnie
+    const chimnie = require('../services/chimnie');
+    let result, lookupMethod;
+    if (method === 'uprn' && prop.chimnie_uprn) {
+      result = await chimnie.lookupByUprn(prop.chimnie_uprn);
+      lookupMethod = 'uprn';
+    } else {
+      // Full-address lookup: concatenate address + postcode so Chimnie's
+      // fuzzy matcher has both parts. If the stored address already contains
+      // the postcode, this is harmless (still a valid query).
+      const addressQuery = prop.postcode
+        ? `${prop.address || ''}, ${prop.postcode}`.trim().replace(/^,\s*/, '')
+        : (prop.address || '');
+      result = await chimnie.lookupByAddress(addressQuery);
+      lookupMethod = 'address';
+    }
+
+    if (!result.success) {
+      // Log the failed call but don't write anything to the property row
+      await logAudit(dealId, 'chimnie_lookup_failed', null, prop.address || prop.postcode,
+        { propertyId, method: lookupMethod, error: result.error, status: result.status },
+        req.user.userId);
+      return res.status(result.status || 502).json({
+        error: result.error,
+        status: result.status
+      });
+    }
+
+    // Extract flat fields for indexed columns
+    const flat = chimnie.extractFlatFields(result.data);
+
+    // Build UPDATE statement
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    for (const [col, val] of Object.entries(flat)) {
+      sets.push(`${col} = $${i}`); vals.push(val); i++;
+    }
+    // Raw payload + audit columns
+    sets.push(`chimnie_data = $${i}`); vals.push(JSON.stringify(result.data)); i++;
+    sets.push(`chimnie_fetched_at = NOW()`);
+    sets.push(`chimnie_fetched_by = $${i}`); vals.push(req.user.userId); i++;
+    sets.push(`chimnie_lookup_method = $${i}`); vals.push(lookupMethod); i++;
+    // Credit usage — Chimnie doesn't return cost in response (that we know of);
+    // assume 1 credit per property lookup for now. Will tune if they expose a cost field.
+    sets.push(`chimnie_credits_used = COALESCE(chimnie_credits_used, 0) + 1`);
+    sets.push(`updated_at = NOW()`);
+    vals.push(propertyId);
+
+    await pool.query(
+      `UPDATE deal_properties SET ${sets.join(', ')} WHERE id = $${i}`,
+      vals
+    );
+
+    await logAudit(dealId, 'chimnie_lookup', null, prop.address || prop.postcode,
+      {
+        propertyId, method: lookupMethod,
+        exact_match: flat.chimnie_exact_match,
+        avm_mid: flat.chimnie_avm_mid,
+        avm_confidence: flat.chimnie_avm_confidence
+      },
+      req.user.userId);
+
+    // Return the flat extracted fields + a small marker that the JSONB blob landed.
+    // Don't send the full 300-field payload back — let the frontend fetch only
+    // what it needs via GET /deals/:id (matrix already refreshes from there).
+    res.json({
+      success: true,
+      method: lookupMethod,
+      flat,
+      raw_size_bytes: JSON.stringify(result.data).length,
+      credits_used_this_month: usedThisMonth + 1,
+      credits_cap: config.CHIMNIE_MONTHLY_CAP_CREDITS
+    });
+
+  } catch (error) {
+    console.error('[chimnie-lookup] Error:', error);
+    res.status(500).json({ error: 'Chimnie lookup failed: ' + error.message });
+  }
+});
+
 module.exports = router;

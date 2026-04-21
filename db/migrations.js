@@ -769,7 +769,58 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_verified_at TIMESTAMPTZ`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS property_verified_by INT`,
       // Tracks which EPC alternative was manually selected (empty for auto-match)
-      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_selected_lmk_key VARCHAR(100)`
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS epc_selected_lmk_key VARCHAR(100)`,
+
+      // ═══ Chimnie Property Intelligence API (2026-04-21) ═══
+      // ~20 flat indexed columns for fast matrix rendering + SQL filtering.
+      // Full ~300-field payload lives in chimnie_data JSONB below — query via
+      // `->` operators when a column we didn't promote is needed for underwriting.
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_uprn VARCHAR(20)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_exact_match BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_classification VARCHAR(30)`,      // Residential/Commercial/Dual Use/Parent Shell/Other
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_property_type VARCHAR(30)`,       // Terraced/Semi-detached/Detached/Apartment/Maisonette/Other
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_property_subtype VARCHAR(60)`,    // e.g. 'Ground floor apartment'
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_region VARCHAR(40)`,              // London, South East, etc.
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_postcode VARCHAR(12)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_bedrooms INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_bathrooms INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floor_area_sqm NUMERIC(10,2)`,
+      // Valuation
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_mid NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_low NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_high NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_confidence VARCHAR(10)`,       // High/Medium/Low
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_last_sale_price NUMERIC(15,2)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_last_sale_date DATE`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_years_owned INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rental_pcm NUMERIC(10,2)`,
+      // Ownership (lending-critical)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_lease_type VARCHAR(20)`,          // freehold/leasehold
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_overseas_ownership BOOLEAN`,      // RED FLAG
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_company_ownership BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_occupancy_status VARCHAR(30)`,
+      // Building attributes (UW gates)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_is_listed BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_construction_material VARCHAR(20)`,// Brick/Stone/Timber
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_date_of_construction INT`,         // year
+      // Flood risk (lending-critical — Daksfirst policy has a flood gate)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_flood_risk_rivers_sea NUMERIC(6,3)`,   // % probability/year
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_flood_risk_surface_water NUMERIC(6,3)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_flood_risk_surface_cat VARCHAR(20)`,    // No Risk/Buildings/Grounds
+      // Crime
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_crime_percentile_total NUMERIC(5,2)`,    // higher = fewer crimes
+      // Bills
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_council_tax_band VARCHAR(5)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_epc_current VARCHAR(5)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_epc_potential VARCHAR(5)`,
+      // Rebuild cost (for insurance reinstatement clause)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rebuild_cost_estimate NUMERIC(15,2)`,
+      // Full payload + audit
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_data JSONB DEFAULT '{}'::jsonb`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_at TIMESTAMPTZ`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_by INT REFERENCES users(id)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_credits_used INT DEFAULT 0`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_lookup_method VARCHAR(20)`  // 'address'|'uprn'
     ];
     for (const sql of propertySearchColumns) {
       try { await pool.query(sql); } catch (e) { /* column may already exist */ }

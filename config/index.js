@@ -85,6 +85,15 @@ module.exports = {
   EPC_API_KEY: process.env.EPC_API_KEY || '',
   EPC_API_EMAIL: process.env.EPC_API_EMAIL || '',
 
+  // Chimnie Property Intelligence API (paid tier) — 2026-04-21
+  //   Auth: ?api_key=xxx query parameter. Base URL: https://api.chimnie.com.
+  //   Cost: per-call credit spend; see /info/credits for remaining balance.
+  //   Monthly cap stops runaway spend on bugs — set in credits (not GBP).
+  CHIMNIE_API_KEY: process.env.CHIMNIE_API_KEY || '',
+  CHIMNIE_BASE_URL: process.env.CHIMNIE_BASE_URL || 'https://api.chimnie.com',
+  CHIMNIE_TIMEOUT_MS: parseInt(process.env.CHIMNIE_TIMEOUT_MS || '15000', 10),
+  CHIMNIE_MONTHLY_CAP_CREDITS: parseInt(process.env.CHIMNIE_MONTHLY_CAP_CREDITS || '5000', 10),
+
   // Twilio SMS
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
