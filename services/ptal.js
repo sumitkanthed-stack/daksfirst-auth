@@ -31,7 +31,10 @@
 const fs = require('fs');
 const path = require('path');
 const proj4 = require('proj4');
-const KDBush = require('kdbush');
+// kdbush v4+ is ESM-only; when loaded via CJS require() the constructor lives
+// on `.default`. Older versions exposed it directly. Handle both.
+const _kdbushModule = require('kdbush');
+const KDBush = _kdbushModule.default || _kdbushModule;
 
 // ─── Coordinate reference systems ────────────────────────────────────────────
 // WGS84 is the global lat/lng standard (what Chimnie returns).
