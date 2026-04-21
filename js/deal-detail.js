@@ -8,7 +8,7 @@ import { switchDetailTab } from './onboarding.js';
 import { renderDealSections } from './deal-sections.js';
 // 2026-04-21: shared display helpers — Deal Progress bar now uses the same
 // stage derivation + labels as Snapshot, deals list, and Matrix header.
-import { deriveDisplayStage, getStageLabel, getStagePipelineOrder, getAllStageLabels } from './deal-display.js';
+import { deriveDisplayStage, getStageLabel, getStagePipelineOrder, getAllStageLabels, getLoanPurposeLabel, requiresRefurbDetail } from './deal-display.js';
 
 /**
  * Show deal detail screen
@@ -1465,11 +1465,23 @@ export function renderInternalWorkflowControls(deal) {
               const purpose = deal.loan_purpose;
               const uof = deal.use_of_funds;
               if (!purpose && !uof) return 'Purpose + use of funds not yet set.';
-              return (purpose ? String(purpose).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—') + (uof ? ' · ' + (uof.length > 60 ? uof.substring(0, 60) + '…' : uof) : '');
+              // Use shared helper so summary uses friendly label (same as PDF)
+              const purposeLabel = purpose ? getLoanPurposeLabel(purpose) : '—';
+              return purposeLabel + (uof ? ' · ' + (uof.length > 60 ? uof.substring(0, 60) + '…' : uof) : '');
             },
             complete: () => {
+              // 2026-04-21: validate loan_purpose is in the enum, require use_of_funds
+              // detail, AND require refurb_scope when purpose is light/heavy refurb.
               if (!deal.loan_purpose) return { ok: false, reason: 'Loan purpose required' };
               if (!deal.use_of_funds || !String(deal.use_of_funds).trim()) return { ok: false, reason: 'Use of Funds detail required' };
+              if (requiresRefurbDetail(deal.loan_purpose)) {
+                if (!deal.refurb_scope || !String(deal.refurb_scope).trim()) {
+                  return { ok: false, reason: 'Refurb scope required for refurbishment loans' };
+                }
+                if (!deal.refurb_cost || Number(deal.refurb_cost) <= 0) {
+                  return { ok: false, reason: 'Refurb cost required for refurbishment loans' };
+                }
+              }
               return { ok: true };
             }
           },

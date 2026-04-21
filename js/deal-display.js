@@ -24,6 +24,47 @@ const CORPORATE_TYPES = ['corporate', 'spv', 'ltd', 'llp', 'trust', 'partnership
 const PRE_DIP_STAGES = ['draft', 'received', 'info_gathering', 'under_review'];
 
 // ═══════════════════════════════════════════════════════════════════
+// LOAN PURPOSE — controlled vocabulary
+// ═══════════════════════════════════════════════════════════════════
+// Shared enum for the broker-facing loan purpose dropdown. UK bridging
+// standard categories. Used on the day-zero deal creation wizard AND the
+// Matrix Use of Funds section so the same options render consistently.
+//
+// Ordering: most common first (acquisition / refinance), refurb categories
+// grouped, edge cases at the end.
+export const LOAN_PURPOSE_OPTIONS = [
+  { value: 'acquisition',      label: 'Acquisition — property purchase' },
+  { value: 'refinance',        label: 'Refinance — clear existing lender' },
+  { value: 'bridge_to_sale',   label: 'Bridge to sale — short-term, exit via sale' },
+  { value: 'bridge_to_let',    label: 'Bridge to let — refinance onto BTL' },
+  { value: 'light_refurb',     label: 'Light refurbishment (<15% of value, no planning)' },
+  { value: 'heavy_refurb',     label: 'Heavy refurbishment / conversion' },
+  { value: 'development_exit', label: 'Development exit (finished stock)' },
+  { value: 'auction_purchase', label: 'Auction purchase (28-day completion)' },
+  { value: 'cash_out',         label: 'Equity release / cash-out' },
+  { value: 'chain_break',      label: 'Chain break' },
+  { value: 'other',            label: 'Other (explain below)' }
+];
+
+const LOAN_PURPOSE_MAP = Object.fromEntries(LOAN_PURPOSE_OPTIONS.map(o => [o.value, o.label]));
+
+/**
+ * Get the human-readable label for a loan_purpose code. Falls back to the
+ * code itself if unknown. Use this wherever the stored value needs display.
+ */
+export function getLoanPurposeLabel(code) {
+  if (!code) return '';
+  return LOAN_PURPOSE_MAP[code] || code;
+}
+
+/**
+ * Purposes that require refurbishment detail (scope + cost) from broker.
+ */
+export function requiresRefurbDetail(loanPurpose) {
+  return ['light_refurb', 'heavy_refurb'].includes(loanPurpose);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // STAGE SYNTHESIS
 // ═══════════════════════════════════════════════════════════════════
 

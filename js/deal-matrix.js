@@ -12,7 +12,7 @@ import { floatingProgress } from './floating-progress.js';
 import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
 // 2026-04-21: shared display helpers for consistent stage labels across views.
-import { getStageLabel } from './deal-display.js';
+import { getStageLabel, LOAN_PURPOSE_OPTIONS } from './deal-display.js';
 
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
 // Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
@@ -2556,15 +2556,11 @@ export async function renderDealMatrix(deal) {
               </div>
               <p style="font-size:11px;color:#94A3B8;margin:0 0 12px 0;font-style:italic;">Approve purpose + use of funds BEFORE moving to Loan Terms. Loan pricing depends on the money story.</p>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
-                ${renderEditableField('loan_purpose', 'Loan Purpose', deal.loan_purpose, 'select', canEdit, [
-                  { value: 'purchase', label: 'Purchase' }, { value: 'refinance', label: 'Refinance' },
-                  { value: 'refurbishment', label: 'Refurbishment' }, { value: 'capital_raise', label: 'Capital Raise' },
-                  { value: 'auction', label: 'Auction Purchase' }, { value: 'other', label: 'Other' }
-                ])}
+                ${renderEditableField('loan_purpose', 'Loan Purpose *', deal.loan_purpose, 'select', canEdit, LOAN_PURPOSE_OPTIONS)}
                 ${renderEditableField('deposit_source', 'Deposit Source', deal.deposit_source, 'text', canEdit)}
-                ${renderEditableField('use_of_funds', 'Use of Funds Detail', deal.use_of_funds, 'textarea', canEdit)}
-                ${renderEditableField('refurb_scope', 'Refurb Scope', deal.refurb_scope, 'textarea', canEdit)}
-                ${renderEditableField('refurb_cost', 'Refurb Cost (£)', deal.refurb_cost, 'money', canEdit)}
+                ${renderEditableField('use_of_funds', 'Use of Funds Detail *', deal.use_of_funds, 'textarea', canEdit)}
+                ${renderEditableField('refurb_scope', 'Refurb Scope' + (['light_refurb','heavy_refurb'].includes(deal.loan_purpose) ? ' *' : ''), deal.refurb_scope, 'textarea', canEdit)}
+                ${renderEditableField('refurb_cost', 'Refurb Cost (£)' + (['light_refurb','heavy_refurb'].includes(deal.loan_purpose) ? ' *' : ''), deal.refurb_cost, 'money', canEdit)}
                 ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
               </div>
             </div>
