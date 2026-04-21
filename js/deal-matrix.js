@@ -7003,9 +7003,26 @@ export async function renderDealMatrix(deal) {
 
   // ── Stage-aware validation tiers ──
   // DIP = simple (broker fills basics), ITS = detailed, Formal = comprehensive
+  //
+  // 2026-04-21 Step 2 (Option Y): read borrower_type from the canonical
+  // deal_borrowers primary row FIRST (confirmed at Gate 3 in the broker flow),
+  // falling back to flat deal_submissions field + HTML input only when no
+  // hierarchical borrowers exist yet.
   const isCorporate = () => {
+    const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+    // Canonical: deal_borrowers primary row (post-Phase G hierarchical model)
+    if (deal.borrowers && deal.borrowers.length > 0) {
+      const primary = deal.borrowers.find(b => b.role === 'primary' && !b.parent_borrower_id)
+                   || deal.borrowers.find(b => b.role === 'primary');
+      if (primary && primary.borrower_type) {
+        return _corpTypes.includes((primary.borrower_type || '').toLowerCase());
+      }
+    }
+    // Fallback 1: HTML input (pre-confirm flow, broker still editing)
     const bt = document.getElementById('mf-borrower_type')?.value;
-    return bt && bt !== 'individual';
+    if (bt) return bt !== 'individual';
+    // Fallback 2: flat deal_submissions field
+    return _corpTypes.includes((deal.borrower_type || '').toLowerCase());
   };
 
   const STAGE_VALIDATION = {
@@ -7385,11 +7402,42 @@ export async function renderDealMatrix(deal) {
     const tier = getValidationTier();
     const tierSections = STAGE_VALIDATION[tier] || STAGE_VALIDATION.dip;
 
-    // Collect ALL fields (required + nice) for each validation section at this tier
+    // Collect the fields that DETERMINE completeness for a section at this tier.
+    // Step 2 (2026-04-21): this now means required + conditional-that-apply.
+    // Nice fields are informational — they no longer block "complete" status
+    // (e.g., a corporate borrower doesn't need to supply a date-of-birth to
+    // pass Borrower/KYC). Use getTierDisplayFields() if you want the full set
+    // including nice for display/counting purposes.
     function getTierFields(sectionName) {
       const cfg = tierSections[sectionName];
       if (!cfg) return [];
-      return [...(cfg.required || []), ...(cfg.nice || [])];
+      const fields = [...(cfg.required || [])];
+      if (Array.isArray(cfg.conditional)) {
+        for (const cond of cfg.conditional) {
+          // `when` predicate — include fields only if the predicate returns true
+          if (typeof cond.when === 'function') {
+            try { if (cond.when()) fields.push(...(cond.fields || [])); } catch (_) {}
+          } else if (Array.isArray(cond.atLeastOne)) {
+            // atLeastOne semantics: include all candidates; fieldHasValue passes
+            // if any one is set (getPillStatus's per-field check handles this
+            // naturally because "filled" count uses fieldHasValue per key).
+            fields.push(...(cond.atLeastOne || []));
+          } else if (Array.isArray(cond.fields)) {
+            // Unconditional conditional (no `when`, no `atLeastOne`) — include fields
+            fields.push(...cond.fields);
+          }
+        }
+      }
+      return Array.from(new Set(fields));
+    }
+
+    // Used ONLY for informational display (e.g., "X/Y fields" counter)
+    // Includes required + conditional-that-apply + nice.
+    function getTierDisplayFields(sectionName) {
+      const required = getTierFields(sectionName);
+      const cfg = tierSections[sectionName];
+      const nice = cfg ? (cfg.nice || []) : [];
+      return Array.from(new Set([...required, ...nice]));
     }
 
     // Map section names → section header IDs
@@ -7403,9 +7451,17 @@ export async function renderDealMatrix(deal) {
       'AML & Source of Funds': 's2'  // AML fields roll up into s2 header
     };
 
-    // Map field rows → which validation sections they draw from, and which specific fields
+    // Map field rows → which validation sections they draw from, and which specific fields.
+    // 2026-04-21 Step 2: primary-borrower is now borrower-type-aware. Corporate
+    // borrowers are measured against corporate fields (name, type, company_name,
+    // company_number); individual borrowers against individual fields
+    // (name, type, email, phone, dob, nationality). Consumes isCorporate()
+    // which reads from the canonical deal_borrowers primary row first.
+    const _primaryBorrowerFields = isCorporate()
+      ? ['borrower_name', 'borrower_type', 'company_name', 'company_number']
+      : ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'];
     const ROW_SECTION_MAP = {
-      'primary-borrower': { section: 'Borrower / KYC', fields: ['borrower_name', 'borrower_type', 'borrower_email', 'borrower_phone', 'borrower_dob', 'borrower_nationality'] },
+      'primary-borrower': { section: 'Borrower / KYC', fields: _primaryBorrowerFields },
       'guarantors': { section: null, fields: [] },
       'financial-summary': { section: 'Borrower Financials', fields: ['estimated_net_worth', 'source_of_wealth'] },
       'assets': { section: null, fields: [] },
@@ -7580,46 +7636,71 @@ export async function renderDealMatrix(deal) {
       if (arrow) arrow.style.transform = 'rotate(0deg)';
     } else {
       // Expand — lazy-load CH data on first open
+      // 2026-04-21: split into independent try/catch per panel so a failure in
+      // the reconciliation panel does NOT stomp the successfully-rendered
+      // ch-matrix-panel with "Failed to load" (previous bug — user saw Cohort
+      // Capital rich panel rendering correctly while Gold Medal showed
+      // "Failed to load" because reconciliation threw on empty borrowers[0]).
       if (!window._chVerifiedLoaded && companyNumber) {
         const panel = document.getElementById('ch-matrix-panel');
         const reconPanel = document.getElementById('ch-reconciliation-panel');
+
+        // ── Panel 1: CH Matrix Panel (rich verification — primary content) ──
         if (panel) {
           panel.innerHTML = '<div style="padding:12px;text-align:center;color:#94A3B8;font-size:12px;">Loading Companies House data...</div>';
           try {
             await renderFullVerification(companyNumber, panel);
-            // Also load reconciliation
-            if (reconPanel && submissionId) {
-              const [chResp, bResp] = await Promise.all([
-                fetchWithAuth(`${API_BASE}/api/companies-house/verify/${companyNumber}`),
-                fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers`)
-              ]);
-              const chData = await chResp.json();
-              const bData = await bResp.json();
-              if (chData.verification?.found && bData.borrowers?.length > 0) {
-                // Reconciliation only makes sense for INDIVIDUALS who could legitimately be officers
-                // of the primary company. Exclude:
-                //   - corporate entities (a company is not a person and can't be a director here)
-                //   - guarantors and their children (they belong to a separate party)
-                //   - joint borrowers and their children (officers of a different company)
-                const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
-                const _isCorpType = (t) => _corpTypes.includes((t || '').toLowerCase());
-                const _primaryOnly = bData.borrowers.filter(b => {
-                  if (b.role === 'guarantor' || b.role === 'joint') return false;
-                  if (_isCorpType(b.borrower_type)) return false;
-                  if (b.parent_borrower_id) {
-                    const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
-                    if (parent && (parent.role === 'guarantor' || parent.role === 'joint')) return false;
-                  }
-                  return true;
-                });
-                renderReconciliation(reconPanel, chData.verification, _primaryOnly, submissionId);
-              }
-            }
-            window._chVerifiedLoaded = true;
           } catch (e) {
-            panel.innerHTML = '<div style="padding:12px;color:#F87171;font-size:12px;">Failed to load — click to retry</div>';
+            console.error('[ch-matrix-panel] renderFullVerification failed:', e && (e.stack || e.message || e));
+            panel.innerHTML = '<div style="padding:12px;color:#F87171;font-size:12px;">CH data failed to load — ' + (e && e.message ? sanitizeHtml(e.message) : 'unknown error') + ' — click panel header to retry</div>';
           }
         }
+
+        // ── Panel 2: Reconciliation Panel (independent — does NOT affect panel 1) ──
+        if (reconPanel && submissionId) {
+          try {
+            const [chResp, bResp] = await Promise.all([
+              fetchWithAuth(`${API_BASE}/api/companies-house/verify/${companyNumber}`),
+              fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers`)
+            ]);
+            // Guard .json() in case of 304-with-empty-body / bad JSON
+            let chData = {}, bData = {};
+            try { chData = await chResp.json(); } catch (je) { console.warn('[ch-reconciliation] CH json parse:', je.message); }
+            try { bData = await bResp.json(); } catch (je) { console.warn('[ch-reconciliation] borrowers json parse:', je.message); }
+
+            if (chData.verification?.found && bData.borrowers?.length > 0) {
+              // Reconciliation only makes sense for INDIVIDUALS who could legitimately be officers
+              // of the primary company. Exclude:
+              //   - corporate entities (a company is not a person and can't be a director here)
+              //   - guarantors and their children (they belong to a separate party)
+              //   - joint borrowers and their children (officers of a different company)
+              const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+              const _isCorpType = (t) => _corpTypes.includes((t || '').toLowerCase());
+              const _primaryOnly = bData.borrowers.filter(b => {
+                if (b.role === 'guarantor' || b.role === 'joint') return false;
+                if (_isCorpType(b.borrower_type)) return false;
+                if (b.parent_borrower_id) {
+                  const parent = bData.borrowers.find(p => p.id === b.parent_borrower_id);
+                  if (parent && (parent.role === 'guarantor' || parent.role === 'joint')) return false;
+                }
+                return true;
+              });
+              // Only render if there are actually individuals to reconcile against.
+              // Empty list is LEGAL (corporate-only deals, UBO-only deals) and must NOT throw.
+              if (_primaryOnly.length > 0) {
+                renderReconciliation(reconPanel, chData.verification, _primaryOnly, submissionId);
+              } else {
+                reconPanel.innerHTML = '';  // leave blank, no reconciliation applicable
+              }
+            }
+          } catch (e) {
+            console.error('[ch-reconciliation-panel] load failed:', e && (e.stack || e.message || e));
+            // Deliberately NOT overwriting ch-matrix-panel — keep rich CH data visible.
+            reconPanel.innerHTML = '<div style="padding:12px;color:#FBBF24;font-size:11px;">Role reconciliation could not load (CH data above is fine) — ' + (e && e.message ? sanitizeHtml(e.message) : 'unknown error') + '</div>';
+          }
+        }
+
+        window._chVerifiedLoaded = true;
       }
       detail.style.maxHeight = '4000px';
       if (arrow) arrow.style.transform = 'rotate(180deg)';
@@ -7901,14 +7982,20 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
   });
 
   // Check if all already verified
-  if (matches.every(m => m.alreadyVerified)) {
+  // 2026-04-21: guard against empty borrowers[] — .every() on [] returns true
+  // vacuously, then borrowers[0].ch_verified_by crashes on undefined. Happens
+  // on corporate-only deals or when _primaryOnly filter drops all rows.
+  if (matches.length > 0 && matches.every(m => m.alreadyVerified)) {
+    const first = borrowers[0] || {};
+    const verifiedByLabel = first.ch_verified_by ? 'RM' : 'system';
+    const verifiedAtLabel = first.ch_verified_at ? new Date(first.ch_verified_at).toLocaleDateString() : 'unknown date';
     container.innerHTML = `
       <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:14px 16px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="color:#34D399;font-size:16px;">&#10003;</span>
           <div>
             <span style="font-size:13px;font-weight:700;color:#34D399;">All Borrower Roles Verified</span>
-            <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Verified by ${borrowers[0].ch_verified_by ? 'RM' : 'system'} on ${new Date(borrowers[0].ch_verified_at).toLocaleDateString()}</div>
+            <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Verified by ${verifiedByLabel} on ${verifiedAtLabel}</div>
           </div>
         </div>
       </div>
