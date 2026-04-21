@@ -7951,6 +7951,14 @@ window._chMatrixVerify = async function(companyNumber, submissionId) {
  * Auto-matches borrowers against directors/PSCs by name similarity
  */
 function renderReconciliation(container, chData, borrowers, submissionId) {
+  // 2026-04-21 Fix A: role-verification is an internal (RM/credit/compliance)
+  // task, not a broker task. Brokers should see the data but not the confirm
+  // controls — otherwise clicking the button POSTs to the RM-only endpoint,
+  // gets 403, and (pre-Fix B) falsely logs them out.
+  const _internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+  const _userRole = (typeof getCurrentRole === 'function' ? getCurrentRole() : null) || '';
+  const _isInternalUser = _internalRoles.includes(String(_userRole).toLowerCase());
+
   const officers = chData.officers || [];
   const pscs = chData.pscs || [];
 
@@ -8046,7 +8054,8 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
                 <span style="font-size:14px;color:${matchColor};">${matchIcon}</span>
               </td>
               <td style="padding:8px 12px;">
-                <select id="ch-role-${idx}" style="padding:5px 8px;background:#0f1729;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:11px;font-weight:600;">
+                <select id="ch-role-${idx}" ${_isInternalUser ? '' : 'disabled'}
+                  style="padding:5px 8px;background:#0f1729;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:11px;font-weight:600;${_isInternalUser ? '' : 'opacity:0.6;cursor:not-allowed;'}">
                   ${roleOptions.map(r => `<option value="${r}" ${r === m.suggestedRole ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
                 </select>
               </td>
@@ -8062,11 +8071,16 @@ function renderReconciliation(container, chData, borrowers, submissionId) {
       </table>
 
       <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:flex-end;gap:8px;">
-        <button id="ch-confirm-roles-btn"
-          style="padding:8px 20px;font-size:12px;font-weight:700;background:#34D399;color:#111;border:none;border-radius:6px;cursor:pointer;transition:background .15s;"
-          onmouseover="this.style.background='#2DD48A'" onmouseout="this.style.background='#34D399'">
-          Confirm All Roles &#10003;
-        </button>
+        ${_isInternalUser
+          ? `<button id="ch-confirm-roles-btn"
+              style="padding:8px 20px;font-size:12px;font-weight:700;background:#34D399;color:#111;border:none;border-radius:6px;cursor:pointer;transition:background .15s;"
+              onmouseover="this.style.background='#2DD48A'" onmouseout="this.style.background='#34D399'">
+              Confirm All Roles &#10003;
+            </button>`
+          : `<div style="padding:6px 12px;font-size:11px;color:#94A3B8;background:rgba(148,163,184,0.08);border:1px solid rgba(148,163,184,0.18);border-radius:6px;">
+              &#9432; Awaiting RM verification — your broker view is read-only for this step.
+            </div>`
+        }
       </div>
     </div>
   `;

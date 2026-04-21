@@ -40,8 +40,14 @@ export async function fetchWithAuth(url, options = {}) {
 
   let response = await fetch(url, options);
 
-  // If 401/403, try to refresh token and retry once
-  if ((response.status === 401 || response.status === 403) && token) {
+  // 2026-04-21: Split 401 vs 403 handling.
+  // 401 = token invalid/expired → refresh + retry; if refresh fails, show re-auth modal.
+  // 403 = token valid but user lacks permission for THIS action → DO NOT treat
+  //       as session expired. Return the response as-is so caller can show a
+  //       specific error. Previously lumping 403 with 401 forced legitimately-
+  //       authenticated users into a fake logout when they hit role-gated
+  //       endpoints (e.g. broker clicking an RM-only reconciliation button).
+  if (response.status === 401 && token) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
       const newToken = getAuthToken();
@@ -59,6 +65,7 @@ export async function fetchWithAuth(url, options = {}) {
       });
     }
   }
+  // 403 is returned to caller unchanged — no refresh, no modal.
 
   return response;
 }
