@@ -2170,14 +2170,19 @@ export async function renderDealMatrix(deal) {
                     return r + suffix;
                   };
 
+                  // 2026-04-21: Postgres NUMERIC columns come back from pg as STRINGS
+                  // to preserve precision. Coerce every one to Number before math / .toFixed.
+                  // Use `?? null` pattern so explicit 0 and false survive correctly.
+                  const _num = (v) => (v == null || v === '') ? null : (isNaN(Number(v)) ? null : Number(v));
+
                   // Market velocity colours
-                  const daysSell = Number(p.chimnie_area_days_to_sell) || null;
+                  const daysSell = _num(p.chimnie_area_days_to_sell);
                   const daysSellColour = daysSell == null ? '#94A3B8'
                                        : daysSell < 60 ? '#34D399' : daysSell < 120 ? '#FBBF24' : '#F87171';
-                  const daysRent = Number(p.chimnie_area_days_to_rent) || null;
+                  const daysRent = _num(p.chimnie_area_days_to_rent);
                   const daysRentColour = daysRent == null ? '#94A3B8'
                                        : daysRent < 21 ? '#34D399' : daysRent < 45 ? '#FBBF24' : '#F87171';
-                  const salesYoY = p.chimnie_area_sales_yoy;
+                  const salesYoY = _num(p.chimnie_area_sales_yoy);
                   const yoyColour = salesYoY == null ? '#94A3B8'
                                   : salesYoY > 0 ? '#34D399' : salesYoY > -10 ? '#FBBF24' : '#F87171';
                   const yoyArrow = salesYoY == null ? '' : salesYoY > 0 ? '\u25B2 ' : salesYoY < 0 ? '\u25BC ' : '\u2013 ';
@@ -2185,12 +2190,12 @@ export async function renderDealMatrix(deal) {
                                    : '<span style="color:' + yoyColour + ';">' + yoyArrow + (salesYoY > 0 ? '+' : '') + salesYoY + '%</span>';
 
                   // Wealth percentile — national
-                  const wealthNat = Number(p.chimnie_wealth_pct_national) || null;
+                  const wealthNat = _num(p.chimnie_wealth_pct_national);
                   const wealthColour = wealthNat == null ? '#94A3B8'
                                      : wealthNat >= 75 ? '#34D399' : wealthNat >= 40 ? '#FBBF24' : '#F87171';
 
                   // 5y value trajectory
-                  const fiveY = p.chimnie_5y_value_change_pct;
+                  const fiveY = _num(p.chimnie_5y_value_change_pct);
                   const fiveYColour = fiveY == null ? '#94A3B8'
                                     : fiveY > 0 ? '#34D399' : fiveY > -5 ? '#FBBF24' : '#F87171';
                   const fiveYArrow = fiveY == null ? '' : fiveY > 0 ? '\u25B2 ' : fiveY < 0 ? '\u25BC ' : '';
