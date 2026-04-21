@@ -2402,7 +2402,10 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'loan_amount_requested', 'term_months_requested', 'interest_servicing_requested',
       'exit_strategy_requested',
       // M2a: New fee columns
-      'dip_fee', 'exit_fee_pct', 'extension_fee_pct'
+      'dip_fee', 'exit_fee_pct', 'extension_fee_pct',
+      // 2026-04-21: RM-authored DIP Conditions — separate from broker-facing
+      // additional_notes. Only dip_notes appears on the DIP preview / PDF.
+      'dip_notes'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;

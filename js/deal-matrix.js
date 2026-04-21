@@ -2506,7 +2506,12 @@ export async function renderDealMatrix(deal) {
               </div>
               <div style="display:grid;grid-template-columns:1fr;gap:8px;">
                 ${renderEditableField('exit_strategy', 'Exit Plan', deal.exit_strategy, 'textarea', canEdit)}
-                ${renderEditableField('additional_notes', 'Additional Notes', deal.additional_notes, 'textarea', canEdit)}
+                ${renderEditableField('additional_notes', 'Additional Notes (internal — not on DIP)', deal.additional_notes, 'textarea', canEdit)}
+                ${isInternalUser ? `<div style="margin-top:6px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.1);">
+                  <div style="font-size:10px;color:#C9A227;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚖ DIP Conditions (RM-only)</div>
+                  <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;font-style:italic;">Text written here appears on the DIP document sent to the broker. Keep internal chatter in Additional Notes above.</div>
+                  ${renderEditableField('dip_notes', 'DIP Conditions', deal.dip_notes, 'textarea', canEdit)}
+                </div>` : ''}
               </div>
             </div>
           </div>

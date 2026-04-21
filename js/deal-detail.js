@@ -831,17 +831,21 @@ export function renderInternalWorkflowControls(deal) {
            kept below so legacy readers that inspect its .value still resolve
            when Issue DIP fires. -->
       ${(() => {
-        const notesText = String(deal.dip_notes || deal.additional_notes || '').trim();
+        // 2026-04-21: Source ONLY from deal.dip_notes — the dedicated DB column for
+        // RM-authored conditions that appear in the DIP. The separate additional_notes
+        // field holds internal chatter (email threads, Q&A with legal, team memos)
+        // that must NOT leak into the DIP. Keep them strictly separate.
+        const notesText = String(deal.dip_notes || '').trim();
         if (!notesText) {
           return `<div style="margin-top:16px;margin-bottom:16px;font-size:11px;color:#9ca3af;font-style:italic;padding:10px 14px;border:1px dashed #374151;border-radius:6px;">
-            No DIP conditions or additional notes recorded. Add via the matrix (Exit / AML → Additional Notes).
+            No DIP conditions recorded. Add them via the matrix (DIP Conditions field). Internal/audit notes live under Additional Notes and are NOT included on the DIP.
           </div>
           <textarea id="dip-notes" style="display:none;"></textarea>`;
         }
         return `<div style="margin-top:16px;margin-bottom:16px;background:#0f1b2e;border:1px solid #1f2937;border-radius:6px;padding:12px 14px;">
-          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:8px;">DIP Conditions / RM Notes</div>
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:8px;">DIP Conditions (appear on DIP)</div>
           <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;line-height:1.5;font-family:inherit;">${sanitizeHtml(notesText)}</div>
-          <div style="font-size:10px;color:#6b7280;margin-top:8px;font-style:italic;">Source: matrix. To edit, update Additional Notes in the matrix (Exit / AML section).</div>
+          <div style="font-size:10px;color:#6b7280;margin-top:8px;font-style:italic;">Source: matrix → DIP Conditions. Internal/audit notes are stored separately under Additional Notes and excluded from the DIP.</div>
         </div>
         <textarea id="dip-notes" style="display:none;">${sanitizeHtml(notesText)}</textarea>`;
       })()}
@@ -1580,8 +1584,10 @@ export function renderInternalWorkflowControls(deal) {
           {
             key: 'conditions', label: 'Conditions & Notes',
             summary: () => {
-              const notes = deal.dip_notes || deal.additional_notes;
-              if (!notes || !notes.trim()) return 'No conditions noted (approve as-is or add notes).';
+              // Use ONLY dip_notes — additional_notes is internal-only and
+              // must not drive the Conditions gate summary.
+              const notes = deal.dip_notes;
+              if (!notes || !notes.trim()) return 'No DIP conditions added (approve as-is or add via matrix → DIP Conditions).';
               return notes.length > 80 ? notes.substring(0, 80) + '…' : notes;
             },
             // Conditions is free-text — always allowed to approve (even if empty).

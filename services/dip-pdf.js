@@ -1558,6 +1558,19 @@ function buildDipHtml(deal, dipData, options) {
         <li>Evidence of source of deposit &amp; funds</li>
         <li>Payment of all applicable fees</li>
       </ol>
+      ${(() => {
+        // 2026-04-21: RM-authored transaction-specific conditions. Sourced from
+        // deal.dip_notes only (NOT additional_notes, which is internal-only and
+        // must never appear on the DIP). Strictly additive — when dip_notes is
+        // empty, this block produces nothing and the PDF is byte-identical to
+        // the pre-2026-04-21 output.
+        const rmConditions = String((deal && deal.dip_notes) || '').trim();
+        if (!rmConditions) return '';
+        return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7ec;">
+          <div style="font-size:9.5px;font-weight:700;color:#0f2a4a;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:5px;">Transaction-Specific Conditions</div>
+          <div style="font-size:9.5px;color:#222;white-space:pre-wrap;line-height:1.5;">${esc(rmConditions)}</div>
+        </div>`;
+      })()}
     </div>
   </div>
 
