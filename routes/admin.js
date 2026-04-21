@@ -16,10 +16,17 @@ router.get('/deals', authenticateToken, authenticateAdmin, async (req, res) => {
     const { status, asset_type, broker, page = 1, limit = 20 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
+    // 2026-04-21: include portfolio properties + top-level borrowers so the
+    // shared display helpers (js/deal-display.js) can derive the primary
+    // property address and primary borrower name the same way on the Admin
+    // deals table as they do on Snapshot/Matrix. Same subquery pattern as
+    // routes/deals.js list endpoint.
     let query = `SELECT ds.id, ds.submission_id, ds.status, ds.deal_stage,
                         ds.borrower_name, ds.borrower_company, ds.borrower_type,
+                        ds.company_name, ds.company_number,
                         ds.broker_name, ds.broker_company,
-                        ds.loan_amount, ds.current_value, ds.purchase_price, ds.ltv_requested,
+                        ds.loan_amount, ds.loan_amount_requested, ds.loan_amount_approved,
+                        ds.current_value, ds.purchase_price, ds.ltv_requested, ds.ltv_approved,
                         ds.security_address, ds.security_postcode,
                         ds.asset_type, ds.term_months, ds.rate_requested, ds.exit_strategy,
                         ds.interest_servicing, ds.loan_purpose,
@@ -32,7 +39,29 @@ router.get('/deals', authenticateToken, authenticateAdmin, async (req, res) => {
                         rm.first_name as rm_first, rm.last_name as rm_last,
                         cr.first_name as credit_first, cr.last_name as credit_last,
                         co.first_name as comp_first, co.last_name as comp_last,
-                        u.first_name as submitter_first, u.last_name as submitter_last
+                        u.first_name as submitter_first, u.last_name as submitter_last,
+                        COALESCE((
+                          SELECT json_agg(json_build_object(
+                            'address', address,
+                            'postcode', postcode,
+                            'market_value', market_value,
+                            'property_type', property_type,
+                            'tenure', tenure
+                          ) ORDER BY market_value DESC NULLS LAST, address ASC)
+                          FROM deal_properties WHERE deal_id = ds.id
+                        ), '[]'::json) AS properties,
+                        COALESCE((
+                          SELECT json_agg(json_build_object(
+                            'id', id,
+                            'role', role,
+                            'full_name', full_name,
+                            'borrower_type', borrower_type,
+                            'company_name', company_name,
+                            'company_number', company_number,
+                            'parent_borrower_id', parent_borrower_id
+                          ) ORDER BY role = 'primary' DESC, id ASC)
+                          FROM deal_borrowers WHERE deal_id = ds.id AND parent_borrower_id IS NULL
+                        ), '[]'::json) AS borrowers
                  FROM deal_submissions ds
                  LEFT JOIN users rm ON ds.assigned_rm = rm.id
                  LEFT JOIN users cr ON ds.assigned_credit = cr.id
