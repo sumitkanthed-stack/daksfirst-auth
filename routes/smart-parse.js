@@ -904,6 +904,19 @@ router.get('/deals/:submissionId/parse-progress', authenticateToken, async (req,
 // Helper: Apply confirmed candidates to deal (transaction)
 // ─────────────────────────────────────────────────────────────────────────────
 async function applyConfirmedCandidates(client, dealId, candidates, assignments) {
+  // ─── IDEMPOTENT CONFIRM (2026-04-21) ───
+  // Wipe ALL existing deal_borrowers for this deal before re-applying broker's
+  // confirmed assignments. Previously, retries (hotfix failures, network drops,
+  // broker re-submits) accumulated duplicate rows — saw id 219 "Gold Medal
+  // Properties Limited" AND id 222 "GOLD MEDAL PROPERTIES LTD" on the same deal
+  // with the same company_number 16607286 because we never checked existing DB
+  // state. Matches the `deal_properties` wipe pattern at the end of this
+  // function. CH-verified children (directors/PSCs) get re-inserted when the
+  // broker runs Companies House verification on the corporate — that's a
+  // separate explicit step in the UI.
+  await client.query(`DELETE FROM deal_borrowers WHERE deal_id = $1`, [dealId]);
+  console.log(`[confirm-candidates] wiped existing deal_borrowers for deal ${dealId} — idempotent re-apply`);
+
   // Defensive dedup + guard rails on the assignments themselves, in case the
   // broker accidentally assigned two variants of the same entity to different
   // roles (e.g. two Gold Medal candidates pre-dedup, one as Primary, one as
@@ -999,15 +1012,30 @@ async function applyConfirmedCandidates(client, dealId, candidates, assignments)
   // ── Write individuals ──
   for (const { assignment, candidate } of indByKey.values()) {
     const { role } = assignment;
+
+    // ─── SKIP DIRECTORS / PSCs (2026-04-21) ───
+    // Directors and PSCs are canonically sourced from Companies House via the
+    // recursive inserter in routes/borrowers.js (`_populateChChildrenRecursive`).
+    // Writing them here too creates duplicate rows (saw CENCI, Alessandra
+    // inserted twice — once from candidate confirm, once from CH verify).
+    // If the broker wants to promote a director or PSC to a guarantor, they
+    // select role='pg_from_ubo' or 'third_party_guarantor' explicitly — pure
+    // 'director' / 'psc' roles are informational only and belong to CH verify.
+    if (role === 'director' || role === 'psc') {
+      console.log(`[confirm-candidates] SKIP ${candidate.name} (role=${role}) — directors/PSCs come from Companies House verify, not candidate confirm`);
+      continue;
+    }
+
     let parentBorrowerId = null;
     if (assignment.linked_to_corporate_candidate_id) {
       parentBorrowerId = corpIdMap[assignment.linked_to_corporate_candidate_id] || null;
     }
     // Fallback: if no link provided but we wrote exactly one corporate,
     // parent to that corporate. Common case for simple corporate + UBO deals.
+    // 2026-04-21: 'director' removed (directors now skipped entirely above).
     if (!parentBorrowerId && Object.keys(corpIdMap).length > 0) {
       const uniqueIds = Array.from(new Set(Object.values(corpIdMap)));
-      if (uniqueIds.length === 1 && (role === 'ubo' || role === 'director' || role === 'pg_from_ubo')) {
+      if (uniqueIds.length === 1 && (role === 'ubo' || role === 'pg_from_ubo')) {
         parentBorrowerId = uniqueIds[0];
         console.log(`[confirm-candidates] auto-linked individual ${candidate.name} to sole corporate id=${parentBorrowerId} (no explicit link set)`);
       }

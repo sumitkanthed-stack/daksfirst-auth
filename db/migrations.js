@@ -689,9 +689,14 @@ async function runMigrations() {
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_wealth TEXT`,
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS source_of_funds TEXT`,
       // G5.3 — Personal Guarantee election per guarantor (2026-04-20)
-      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_status VARCHAR(20) DEFAULT 'required'`, // 'required' | 'waived' | 'limited'
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_status VARCHAR(20)`,                     // NULL | 'required' | 'waived' | 'limited' (default changed to NULL 2026-04-21)
       `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_limit_amount NUMERIC(15,2)`,             // set when pg_status='limited'
-      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_notes TEXT`                              // reasoning for waive/limit
+      `ALTER TABLE deal_borrowers ADD COLUMN IF NOT EXISTS pg_notes TEXT`,                             // reasoning for waive/limit
+      // ── 2026-04-21 ── Fix DEFAULT: was 'required' which incorrectly flagged
+      // every CH-discovered director/PSC as a Personal Guarantor. Drop the
+      // default so pg_status is NULL unless the broker explicitly ticks PG.
+      `ALTER TABLE deal_borrowers ALTER COLUMN pg_status DROP DEFAULT`,
+      `UPDATE deal_borrowers SET pg_status = NULL WHERE role IN ('director', 'psc') AND pg_status = 'required'`
     ];
     for (const sql of personColumns) {
       try { await pool.query(sql); } catch (e) { /* column may already exist */ }
