@@ -3155,6 +3155,20 @@ export async function renderDealMatrix(deal) {
           }
         }
 
+        // 2026-04-21: parallel branch for loan_amount_requested → ltv_requested
+        // (broker-editable Requested column; mirrors legacy loan_amount branch
+        // above so typing a Requested amount also updates Requested LTV).
+        if (fieldKey === 'loan_amount_requested' && _valuation > 0) {
+          const loanVal = parseFloat(stripCommas(String(value))) || 0;
+          if (loanVal > 0) {
+            const ltv = ((loanVal / _valuation) * 100).toFixed(2);
+            const el2 = document.getElementById('mf-ltv_requested');
+            if (el2) { el2.value = ltv; _flashBorder('mf-ltv_requested'); }
+            deal.ltv_requested = ltv;
+            _silentSave('ltv_requested', ltv);
+          }
+        }
+
         if (fieldKey === 'loan_amount_approved' && _valuation > 0) {
           const loanVal = parseFloat(stripCommas(String(value))) || 0;
           if (loanVal > 0) {
@@ -3233,6 +3247,24 @@ export async function renderDealMatrix(deal) {
       if (el) el.style.borderColor = '#F87171';
       showToast('Connection error saving field', 'error');
     }
+  };
+
+  // 2026-04-21: Apply Max Loan quick-fill. Writes the computed max into the
+  // Loan Amount Requested input, saves it, and cascades LTV recalc via
+  // matrixSaveField.
+  window._applyMaxLoan = function(maxLoan) {
+    if (!maxLoan || maxLoan <= 0) return;
+    const el = document.getElementById('mf-loan_amount_requested');
+    const formatted = formatWithCommas(String(maxLoan));
+    if (el) {
+      el.value = formatted;
+      el.style.borderColor = '#34D399';
+      setTimeout(() => { el.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
+    }
+    deal.loan_amount_requested = maxLoan;
+    // Trigger the normal save path — this also recalculates LTV requested
+    // and updates the loan-limit-indicator.
+    window.matrixSaveField('loan_amount_requested', String(maxLoan));
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3392,9 +3424,20 @@ export async function renderDealMatrix(deal) {
     el.style.background = bgColor;
     el.style.border = '1px solid ' + borderColor;
 
-    el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;">'
+    // 2026-04-21: "Use Max" quick-fill button — broker can accept the platform's
+    // max allowable loan in one click instead of typing it. Writes into the
+    // editable Requested column (loan_amount_requested), which triggers the
+    // cascading LTV recalc via matrixSaveField.
+    const useMaxButton = maxLoan > 0 && canEdit
+      ? '<button onclick="window._applyMaxLoan(' + maxLoan + ')" style="padding:4px 10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;cursor:pointer;" title="Auto-fill Requested Loan Amount with £' + maxLoan.toLocaleString() + '">Use Max &#8594; Requested</button>'
+      : '';
+
+    el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
       + '<span style="color:#94A3B8;">Max Allowable Loan:</span>'
+      + '<div style="display:flex;gap:8px;align-items:center;">'
+      + useMaxButton
       + '<span style="font-weight:700;color:' + amtColor + ';">£' + maxLoan.toLocaleString() + '</span>'
+      + '</div>'
       + '</div>'
       + '<div style="font-size:9px;color:#64748B;margin-top:3px;">Based on ' + binding
       + (maxOnVal ? ' · Val: £' + valuation.toLocaleString() + ' × 75% = £' + maxOnVal.toLocaleString() : '')
@@ -3436,6 +3479,18 @@ export async function renderDealMatrix(deal) {
       if (el && 'value' in el) return _num(el.value);
       return 0;
     };
+
+    // 2026-04-21: Day Zero is an Approved-side calculation. Pre-DIP (no
+    // loan_amount_approved) the panel would render dashes — adds noise to the
+    // broker's view without informational value. Hide entirely until RM has
+    // entered an Approved loan amount; the panel reappears automatically on
+    // next _updateDayZeroPanel() call (fired from matrixSaveField).
+    const _approvedLoan = _readField('mf-loan_amount_approved') || _num(deal.loan_amount_approved);
+    if (!_approvedLoan || _approvedLoan <= 0) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = '';
 
     const loan = _readField('mf-loan_amount_approved') || _num(deal.loan_amount_approved) || _num(deal.loan_amount);
     const rate = _readField('mf-rate_approved') || _num(deal.rate_approved) || _num(deal.rate_requested) || 1.10;
