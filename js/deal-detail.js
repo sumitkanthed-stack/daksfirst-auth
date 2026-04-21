@@ -825,11 +825,26 @@ export function renderInternalWorkflowControls(deal) {
         <div style="text-align:center;padding:60px 20px;color:#9ca3af;font-size:13px;">Loading DIP preview…</div>
       </div>
 
-      <!-- ═══ RM NOTES (standalone — not in preview; saved with DIP) ═══ -->
-      <div style="margin-top:16px;margin-bottom:16px;">
-        <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
-        <textarea id="dip-notes" placeholder="Special conditions, valuation requirements, additional info needed..." style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;min-height:80px;">${sanitizeHtml(deal.dip_notes || deal.additional_notes || '')}</textarea>
-      </div>
+      <!-- ═══ RM NOTES (display-only — matrix is canonical) ═══
+           Shown as read-only text, NOT a textarea. Any edit happens in the matrix
+           (dip_notes / additional_notes columns). A hidden mirror keeps the existing
+           `#dip-notes` id alive for legacy readers that may still inspect its value
+           when Issue DIP fires. -->
+      ${(() => {
+        const notesText = String(deal.dip_notes || deal.additional_notes || '').trim();
+        if (!notesText) {
+          return `<div style="margin-top:16px;margin-bottom:16px;font-size:11px;color:#9ca3af;font-style:italic;padding:10px 14px;border:1px dashed #374151;border-radius:6px;">
+            No DIP conditions or additional notes recorded. Add via the matrix (Exit / AML → Additional Notes).
+          </div>
+          <textarea id="dip-notes" style="display:none;"></textarea>`;
+        }
+        return `<div style="margin-top:16px;margin-bottom:16px;background:#0f1b2e;border:1px solid #1f2937;border-radius:6px;padding:12px 14px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:8px;">DIP Conditions / RM Notes</div>
+          <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;line-height:1.5;font-family:inherit;">${sanitizeHtml(notesText)}</div>
+          <div style="font-size:10px;color:#6b7280;margin-top:8px;font-style:italic;">Source: matrix. To edit, update Additional Notes in the matrix (Exit / AML section).</div>
+        </div>
+        <textarea id="dip-notes" style="display:none;">${sanitizeHtml(notesText)}</textarea>`;
+      })()}
 
       <!-- Legacy editable body removed 2026-04-21. Matrix is SSOT; preview above is canonical DIP render.
            All original markup is kept inside this hidden wrapper so legacy DOM lookups
