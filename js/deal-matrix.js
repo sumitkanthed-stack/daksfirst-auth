@@ -2219,12 +2219,21 @@ export async function renderDealMatrix(deal) {
                   const daysRent = _num(p.chimnie_area_days_to_rent);
                   const daysRentColour = daysRent == null ? '#94A3B8'
                                        : daysRent < 21 ? '#34D399' : daysRent < 45 ? '#FBBF24' : '#F87171';
+                  // 2026-04-21: Chimnie sales_yoy is an absolute COUNT delta (sales this
+                  // 12m minus sales previous 12m), NOT a percentage. Compute the real
+                  // percentage from that delta + current count for meaningful comparison.
                   const salesYoY = _num(p.chimnie_area_sales_yoy);
-                  const yoyColour = salesYoY == null ? '#94A3B8'
-                                  : salesYoY > 0 ? '#34D399' : salesYoY > -10 ? '#FBBF24' : '#F87171';
-                  const yoyArrow = salesYoY == null ? '' : salesYoY > 0 ? '\u25B2 ' : salesYoY < 0 ? '\u25BC ' : '\u2013 ';
+                  const salesCur = _num(p.chimnie_area_sales_12m);
+                  // If we have both: previous_total = current - delta, so pct = delta / previous_total
+                  const salesYoYPct = (salesYoY != null && salesCur != null && (salesCur - salesYoY) > 0)
+                    ? (salesYoY / (salesCur - salesYoY)) * 100
+                    : null;
+                  const yoyColour = salesYoYPct == null ? '#94A3B8'
+                                  : salesYoYPct > 0 ? '#34D399' : salesYoYPct > -10 ? '#FBBF24' : '#F87171';
+                  const yoyArrow = salesYoYPct == null ? '' : salesYoYPct > 0 ? '\u25B2 ' : salesYoYPct < 0 ? '\u25BC ' : '\u2013 ';
                   const yoyDisplay = salesYoY == null ? '\u2014'
-                                   : '<span style="color:' + yoyColour + ';">' + yoyArrow + (salesYoY > 0 ? '+' : '') + salesYoY + '%</span>';
+                                   : '<span style="color:' + yoyColour + ';">' + yoyArrow + (salesYoY > 0 ? '+' : '') + salesYoY + '</span>' +
+                                     (salesYoYPct != null ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + (salesYoYPct > 0 ? '+' : '') + salesYoYPct.toFixed(1) + '% vs prev 12m</div>' : '');
 
                   // Wealth percentile — national
                   const wealthNat = _num(p.chimnie_wealth_pct_national);
@@ -2327,7 +2336,7 @@ export async function renderDealMatrix(deal) {
                   const areaFlags = [];
                   if (daysSell != null && daysSell > 120) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Slow exit (' + daysSell + 'd)</span>');
                   if (daysRent != null && daysRent > 45) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Slow re-let (' + daysRent + 'd)</span>');
-                  if (salesYoY != null && salesYoY < -10) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Declining market (' + salesYoY + '% YoY)</span>');
+                  if (salesYoYPct != null && salesYoYPct < -10) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Declining market (' + salesYoYPct.toFixed(1) + '% YoY)</span>');
                   if (wealthNat != null && wealthNat < 30) areaFlags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Low-wealth area</span>');
                   if (p.chimnie_in_green_belt === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Green belt</span>');
                   if (p.chimnie_in_aonb === true) areaFlags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">AONB</span>');
@@ -2352,10 +2361,11 @@ export async function renderDealMatrix(deal) {
 
                   // ── Inline summary (shown when collapsed) ──
                   const areaSummaryBits = [];
-                  if (p.chimnie_local_authority) areaSummaryBits.push(sanitizeHtml(p.chimnie_local_authority));
+                  const laDisplay = p.local_authority || p.chimnie_local_authority;
+                  if (laDisplay) areaSummaryBits.push(sanitizeHtml(laDisplay));
                   if (daysSell != null) areaSummaryBits.push(daysSell + 'd sell');
                   if (daysRent != null) areaSummaryBits.push(daysRent + 'd rent');
-                  if (salesYoY != null) areaSummaryBits.push((salesYoY > 0 ? '+' : '') + salesYoY + '% YoY');
+                  if (salesYoYPct != null) areaSummaryBits.push((salesYoYPct > 0 ? '+' : '') + salesYoYPct.toFixed(0) + '% YoY');
                   if (wealthNat != null) areaSummaryBits.push('Wealth ' + ordinal(wealthNat) + ' %ile');
                   const areaSummaryText = areaSummaryBits.join(' \u00B7 ');
 
@@ -2425,7 +2435,7 @@ export async function renderDealMatrix(deal) {
                         kpi('Area £/sqft', areaPricePerSqft ? '\u00A3' + Math.round(areaPricePerSqft).toLocaleString() : '\u2014') +
                         kpi('This Property £/sqft', propPricePerSqft ? '\u00A3' + Math.round(propPricePerSqft).toLocaleString() + psfVarianceBadge : '\u2014') +
                         kpi('5y Trajectory', fiveY != null ? '<span style="color:' + fiveYColour + ';">' + fiveYArrow + (fiveY > 0 ? '+' : '') + fiveY.toFixed(1) + '%</span>' : '\u2014') +
-                        kpi('Local Authority', sanitizeHtml(p.chimnie_local_authority || '\u2014')) +
+                        kpi('Local Authority', sanitizeHtml(p.local_authority || p.chimnie_local_authority || '\u2014')) +
                       '</div>' +
                       // Row 3 — Wealth + demographics
                       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
