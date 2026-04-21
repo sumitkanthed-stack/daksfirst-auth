@@ -825,10 +825,10 @@ export function renderInternalWorkflowControls(deal) {
         <div style="text-align:center;padding:60px 20px;color:#9ca3af;font-size:13px;">Loading DIP preview…</div>
       </div>
 
-      <!-- ═══ RM NOTES (display-only — matrix is canonical) ═══
-           Shown as read-only text, NOT a textarea. Any edit happens in the matrix
-           (dip_notes / additional_notes columns). A hidden mirror keeps the existing
-           `#dip-notes` id alive for legacy readers that may still inspect its value
+      <!-- RM NOTES (display-only - matrix is canonical). Shown as read-only
+           text, not a textarea. Edit happens in the matrix (dip_notes /
+           additional_notes columns). A hidden textarea#dip-notes stub is
+           kept below so legacy readers that inspect its .value still resolve
            when Issue DIP fires. -->
       ${(() => {
         const notesText = String(deal.dip_notes || deal.additional_notes || '').trim();
