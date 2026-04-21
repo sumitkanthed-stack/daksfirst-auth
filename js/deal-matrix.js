@@ -2733,38 +2733,13 @@ export async function renderDealMatrix(deal) {
     </div>
   `;
   } // end showDocsIssued
-  // ═══════════════════════════════════════════════════════════════════
-  // DOCUMENT REPOSITORY (within Matrix — categorised view of uploaded docs)
-  // ═══════════════════════════════════════════════════════════════════
 
-  html += `
-    <div style="padding:16px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#1a2332">
-      <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:10px">Document Repository</div>
-
-      <!-- Category tabs -->
-      <div style="display:flex;gap:1px;margin-bottom:10px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;overflow:hidden">
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#111827;color:#F1F5F9;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('all')">All</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('kyc')">KYC/ID</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('financial')">Financial</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('property')">Property</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;border-right:1px solid rgba(255,255,255,0.06);transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('legal')">Legal</button>
-        <button style="flex:1;padding:8px 12px;font-size:9px;font-weight:600;cursor:pointer;background:#1a2332;color:#64748B;transition:all .12s" onclick="window.matrixSwitchRepoTab && window.matrixSwitchRepoTab('issued')">Issued Docs</button>
-      </div>
-
-      <!-- Document table placeholder -->
-      <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:12px;font-size:9px;color:#64748B;text-align:center">
-        <div style="font-size:14px;margin-bottom:4px;font-weight:700">D</div>
-        Documents will appear here once uploaded
-      </div>
-
-      <!-- Upload drop zone -->
-      <div style="border:2px dashed rgba(255,255,255,0.06);border-radius:7px;padding:12px;text-align:center;background:#111827;cursor:pointer;transition:all .12s;margin-top:10px">
-        <div style="font-size:18px">📁</div>
-        <div style="font-size:10px;color:#64748B;font-weight:500;margin-top:2px">Drop documents here or click to upload</div>
-        <div style="font-size:8px;color:#94A3B8;margin-top:1px">PDF, Word, Excel, images supported</div>
-      </div>
-    </div>
-  `;
+  // 2026-04-21: Matrix-internal Document Repository block DELETED.
+  // It was a cosmetic duplicate (category tabs + placeholder "Documents will
+  // appear here" text + static drop zone) of the real DR accordion on the
+  // Dashboard. Real DR lives at #section-doc-repo with live doc list, upload
+  // button, AI Parse & Review button, and category filter tabs. Single source
+  // of truth for all document-related actions.
 
   // ═══════════════════════════════════════════════════════════════════
   // AUTO-FILL BAR (BOTTOM)
@@ -2809,12 +2784,14 @@ export async function renderDealMatrix(deal) {
     <!-- ACTION BUTTONS BAR -->
     <div style="padding:12px 26px;border-top:1px solid rgba(255,255,255,0.06);background:#111827;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="document.getElementById('matrix-parse-file-input').click()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Upload supporting documents">Upload Documents</button>
-        ${isInternalUser || currentStage === 'received' ? `
+        <!-- 2026-04-21: Upload Documents + AI Parse & Review buttons moved to
+             Document Repository section. Matrix bottom retains only matrix-workflow
+             actions (Paste for RM, Submit, Open Incomplete). Keeps cause/effect
+             tight: "matrix is complete → submit matrix". -->
+        ${isInternalUser || ['draft', 'received'].includes(currentStage) ? `
         <button onclick="document.getElementById('matrix-paste-modal').style.display='block'" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Paste broker text for AI parsing">Paste Broker Pack</button>
         ` : ''}
-        <button onclick="window.matrixParseForReview && window.matrixParseForReview()" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#D4A853;color:#fff;cursor:pointer;transition:all .12s" title="Claude reads the uploaded pack, extracts every corporate, individual, property and loan fact it finds (with reasoning), then opens a review panel where you assign each one to a role before the Matrix is populated.">AI Parse &amp; Review</button>
-        ${currentStage === 'received' ? `
+        ${['draft', 'received'].includes(currentStage) ? `
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:#34D399;color:#fff;cursor:pointer;transition:all .12s" title="Step 4: Submit deal for RM review">Submit for Review</button>
         ` : `
         <button id="matrix-submit-review-btn" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;background:rgba(52,211,153,0.2);color:#34D399;cursor:default;transition:all .12s" disabled>✅ Submitted for Review</button>
@@ -3231,16 +3208,24 @@ export async function renderDealMatrix(deal) {
           }
         }
 
-        // Legacy: ltv_requested → loan_amount back-solve (if user edits the requested LTV
-        // on an older deal, keep loan_amount in sync for backward compat)
+        // ltv_requested → loan_amount back-solve.
+        // Keeps legacy flat loan_amount in sync AND — 2026-04-21 — also updates
+        // the broker-editable loan_amount_requested column shown in the new
+        // single-column pre-submission UI. Mirrors the forward branch above.
         if (fieldKey === 'ltv_requested' && _valuation > 0) {
           const ltvVal = parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
           if (ltvVal > 0) {
             const loan = Math.round((ltvVal / 100) * _valuation);
+            // Update legacy flat field input (backward compat with older deals)
             const el2 = document.getElementById('mf-loan_amount');
             if (el2) { el2.value = formatWithCommas(String(loan)); _flashBorder('mf-loan_amount'); }
             deal.loan_amount = loan;
             _silentSave('loan_amount', loan);
+            // 2026-04-21: also update the Requested column for the new UI
+            const el3 = document.getElementById('mf-loan_amount_requested');
+            if (el3) { el3.value = formatWithCommas(String(loan)); _flashBorder('mf-loan_amount_requested'); }
+            deal.loan_amount_requested = loan;
+            _silentSave('loan_amount_requested', loan);
           }
         }
 

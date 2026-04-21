@@ -30,6 +30,34 @@ export function applyRoleGating(role) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// STAGE GATING — hide sections that are only relevant post-DIP
+// ═══════════════════════════════════════════════════════════════
+// 2026-04-21: Fee payment tracking (section-fee) has no meaning before
+// RM has issued the DIP — the fee schedule row just shows "Fee schedule
+// will appear once loan terms are confirmed" placeholder. Hide it entirely
+// until the deal reaches dip_issued or later. This gate is orthogonal to
+// role gating — both must pass for the section to render.
+export function applyStageGating(deal) {
+  const stage = (deal && deal.deal_stage) || 'draft';
+  const preDipStages = ['draft', 'received', 'info_gathering'];
+  const isPreDip = preDipStages.includes(stage);
+
+  const feeSection = document.getElementById('section-fee');
+  if (feeSection) {
+    if (isPreDip) {
+      feeSection.classList.add('hidden-section');
+    } else {
+      // Role gating already ran; only reveal if role permits
+      const allowedRoles = (feeSection.dataset.roles || '').split(',').map(r => r.trim());
+      const role = (typeof getCurrentRole === 'function' ? getCurrentRole() : null) || '';
+      if (allowedRoles.includes(role)) {
+        feeSection.classList.remove('hidden-section');
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SECTION TOGGLE
 // ═══════════════════════════════════════════════════════════════
 window.toggleDealSection = function(sectionId) {
@@ -54,18 +82,29 @@ export function renderSnapshot(deal, role) {
   const fmtMoney = (v) => num(v) ? '£' + num(v).toLocaleString() : '-';
   const fmtPctVal = (v) => num(v) ? num(v).toFixed(1) + '%' : '-';
 
-  // Address — truncate long multi-property addresses, emphasise location
+  // 2026-04-21: portfolio-aware reads. deal_properties is the canonical
+  // source now; flat deal.security_address / deal.current_value are legacy
+  // fallbacks for older deals. Same data source across broker/RM/Credit.
+  const props = Array.isArray(deal.properties) ? deal.properties.filter(p => p && (p.address || p.market_value)) : [];
+  const portfolioValuation = props.reduce((sum, p) => sum + (num(p.market_value) || 0), 0);
+  const portfolioAddresses = props.map(p => p.address).filter(Boolean);
+
+  // Address — canonical from deal.properties[], fall back to flat field
   const addrEl = document.getElementById('detail-property-address');
   if (addrEl) {
-    const rawAddr = deal.security_address || 'N/A';
-    const postcode = deal.security_postcode || '';
-    // Extract area from postcode (e.g. "W6 9RH" → "W6")
+    let rawAddr;
+    if (portfolioAddresses.length > 0) {
+      rawAddr = portfolioAddresses.join('; ');
+    } else if (deal.security_address) {
+      rawAddr = deal.security_address;
+    } else {
+      rawAddr = 'Property address pending';
+    }
+    const postcode = deal.security_postcode || (props[0] && props[0].postcode) || '';
     const pcArea = postcode ? postcode.split(' ')[0] : '';
-    // If address is very long (multi-property), truncate and count
     const parts = rawAddr.split(';').map(s => s.trim()).filter(Boolean);
     let displayAddr;
     if (parts.length > 1) {
-      // Show first property truncated + count + location
       const first = parts[0].length > 60 ? parts[0].substring(0, 57) + '...' : parts[0];
       displayAddr = `${first} (+${parts.length - 1} more)`;
     } else {
@@ -75,20 +114,33 @@ export function renderSnapshot(deal, role) {
       displayAddr += ` · ${pcArea}`;
     }
     addrEl.textContent = sanitizeHtml(displayAddr);
-    addrEl.title = sanitizeHtml(rawAddr); // full address on hover
+    addrEl.title = sanitizeHtml(rawAddr);
   }
 
-  // Stage badge — brokers see simplified labels
+  // Stage badge — brokers see simplified labels.
+  // 2026-04-21: added 'draft' (brand-new deal, broker still editing) and
+  // synthetic 'under_review' (info_gathering + assigned_rm populated).
+  // Broker-visible labels stay simple; internal roles see the internal name.
   const isExternal = ['broker', 'borrower'].includes(role);
   const stageLabels = {
-    received: 'Received', assigned: isExternal ? 'Received' : 'Assigned', dip_issued: 'DIP Issued',
-    info_gathering: isExternal ? 'DIP Requested' : 'Info Gathering', ai_termsheet: 'Indicative Termsheet',
+    draft: 'Draft',
+    received: 'Submitted',
+    info_gathering: isExternal ? 'Submitted' : 'Info Gathering',
+    under_review: 'Under Review',
+    assigned: isExternal ? 'Under Review' : 'Assigned',
+    dip_issued: 'DIP Issued',
+    ai_termsheet: 'Indicative Termsheet',
     fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
     bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
     borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
     completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
   };
-  const stage = deal.deal_stage || 'received';
+  const rawStage = deal.deal_stage || 'draft';
+  // Synthesise 'under_review' when stage=info_gathering AND an RM has been
+  // assigned — that's "someone is actually looking at the deal" signal.
+  const stage = (rawStage === 'info_gathering' && deal.assigned_rm)
+    ? 'under_review'
+    : rawStage;
   const stageEl = document.getElementById('detail-stage-badge');
   if (stageEl) {
     stageEl.textContent = stageLabels[stage] || stage;
@@ -104,12 +156,28 @@ export function renderSnapshot(deal, role) {
     statusEl.textContent = deal.status ? deal.status.charAt(0).toUpperCase() + deal.status.slice(1) : 'Active';
   }
 
-  // Calculate loan & LTV
-  const dVal = num(deal.current_value);
+  // Calculate loan & LTV.
+  // 2026-04-21: portfolio-aware — valuation reads from deal_properties sum
+  // before falling back to legacy flat deal.current_value.
+  const dVal = portfolioValuation || num(deal.current_value);
   const dPurchase = num(deal.purchase_price);
   const dRefurb = num(deal.refurb_cost);
-  let dLoan = num(deal.loan_amount);
-  let dLtv = num(deal.ltv_requested);
+
+  // 2026-04-21: stage-aware loan amount:
+  //   pre-DIP stages (draft, received, info_gathering, under_review):
+  //     show loan_amount_requested (broker's ask) with label "Requested Amount"
+  //   post-DIP stages (dip_issued onwards):
+  //     show loan_amount_approved (what Daksfirst offered) with label "Approved Amount"
+  //   Legacy fallback: loan_amount (flat) if neither side is populated.
+  const preDipStages = ['draft', 'received', 'info_gathering', 'under_review'];
+  const isPreDip = preDipStages.includes(stage);
+  const loanLabel = isPreDip ? 'Requested Amount' : 'Approved Amount';
+  let dLoan = isPreDip
+    ? (num(deal.loan_amount_requested) || num(deal.loan_amount))
+    : (num(deal.loan_amount_approved) || num(deal.loan_amount_requested) || num(deal.loan_amount));
+  let dLtv = isPreDip
+    ? num(deal.ltv_requested)
+    : (num(deal.ltv_approved) || num(deal.ltv_requested));
 
   if (!dLoan && (dVal || dPurchase)) {
     const maxLtv = dVal ? dVal * 0.75 : Infinity;
@@ -124,6 +192,9 @@ export function renderSnapshot(deal, role) {
 
   // Snapshot grid cells
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  // Stage-aware loan label (id added to HTML 2026-04-21)
+  const loanLabelEl = document.getElementById('snap-loan-label');
+  if (loanLabelEl) loanLabelEl.textContent = loanLabel;
   set('snap-loan', dLoan ? fmtMoney(dLoan) : '-');
   set('snap-ltv', dLtv ? fmtPctVal(dLtv) : '-');
 
@@ -146,18 +217,63 @@ export function renderSnapshot(deal, role) {
   set('snap-borrower', borrowerDisplay);
 
   set('snap-exit', deal.exit_strategy ? (deal.exit_strategy.length > 40 ? deal.exit_strategy.substring(0, 40) + '...' : deal.exit_strategy) : '-');
-  set('detail-date', deal.created_at ? formatDate(deal.created_at) : '-');
+
+  // 2026-04-21: stage-aware date label + value.
+  //   Draft                              → Created: <created_at>
+  //   Submitted / Info Gathering         → Submitted: <submitted_at || created_at>
+  //   Under Review                       → Submitted: <submitted_at || created_at>
+  //   DIP Issued                         → DIP Issued: <dip_issued_at || submitted_at>
+  //   Later stages                       → reuse most relevant timestamp
+  const dateLabelEl = document.getElementById('detail-date-label');
+  let dateLabel, dateValue;
+  if (stage === 'draft') {
+    dateLabel = 'Created';
+    dateValue = deal.created_at;
+  } else if (stage === 'dip_issued' || stage === 'ai_termsheet') {
+    dateLabel = 'DIP Issued';
+    dateValue = deal.dip_issued_at || deal.submitted_at || deal.created_at;
+  } else if (['received', 'info_gathering', 'under_review', 'assigned'].includes(stage)) {
+    dateLabel = 'Submitted';
+    dateValue = deal.submitted_at || deal.created_at;
+  } else {
+    // Post-DIP stages: last-known activity
+    dateLabel = 'Last Updated';
+    dateValue = deal.updated_at || deal.created_at;
+  }
+  if (dateLabelEl) dateLabelEl.textContent = dateLabel;
+  set('detail-date', dateValue ? formatDate(dateValue) : '-');
   set('detail-ref-id', deal.submission_id ? deal.submission_id.substring(0, 8) : '-');
 
-  // Stage pipeline
+  // 2026-04-21: Stage pipeline rebuilt with Draft at position 0 and synthetic
+  // under_review between info_gathering and dip_issued. Same stage labels used
+  // by the stage badge, so the full pipeline is consistent.
   const pipeline = document.getElementById('snapshot-pipeline');
   if (pipeline) {
-    const stageOrder = ['received', 'assigned', 'info_gathering', 'dip_issued', 'ai_termsheet', 'fee_pending', 'fee_paid', 'underwriting', 'bank_submitted', 'bank_approved', 'borrower_accepted', 'legal_instructed', 'completed'];
-    const currentIdx = stageOrder.indexOf(stage);
+    const stageOrder = [
+      'draft',
+      'received',           // broker submitted, no RM assigned yet
+      'under_review',       // synthetic: info_gathering + assigned_rm
+      'dip_issued',
+      'ai_termsheet',
+      'fee_pending',
+      'fee_paid',
+      'underwriting',
+      'bank_submitted',
+      'bank_approved',
+      'borrower_accepted',
+      'legal_instructed',
+      'completed'
+    ];
+    // If the raw stage is info_gathering without an RM, show Submitted/received
+    // position as active. If with RM, under_review position is active (handled
+    // above by the rawStage → stage remap).
+    let displayStage = stage;
+    if (rawStage === 'info_gathering' && !deal.assigned_rm) displayStage = 'received';
+    const currentIdx = stageOrder.indexOf(displayStage);
     let phtml = '<span style="font-size:10px;color:#94A3B8;font-weight:600;margin-right:4px;">STAGE</span>';
     stageOrder.forEach((s, i) => {
-      const isCurrent = s === stage;
-      const isDone = i < currentIdx;
+      const isCurrent = s === displayStage;
+      const isDone = currentIdx > -1 && i < currentIdx;
       const bg = isCurrent ? '#D4A853' : isDone ? '#34D399' : 'rgba(255,255,255,0.06)';
       const color = (isCurrent || isDone) ? '#111827' : '#64748B';
       const fw = isCurrent ? 'font-weight:700;' : '';
@@ -229,6 +345,14 @@ export async function renderDocRepo(submissionId, role, filterCategory) {
   }
   if (actionBtns) {
     let btns = '';
+    // 2026-04-21: consolidated doc-action buttons live here (moved from the
+    // Matrix-internal DR block which is now deleted).
+    // Upload — always visible. Triggers the existing hidden file input.
+    btns += `<button onclick="document.getElementById('file-input').click()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#D4A853;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#C49540'" onmouseout="this.style.background='#D4A853'">&#128206; Upload Documents</button>`;
+    // AI Parse & Review — whole-deal candidate extraction. Delegates to
+    // window.matrixParseForReview (defined in deal-matrix.js).
+    btns += `<button onclick="window.matrixParseForReview && window.matrixParseForReview()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#7C3AED;color:#FFF;transition:background .15s;" onmouseover="this.style.background='#6D28D9'" onmouseout="this.style.background='#7C3AED'" title="Claude reads the full pack, extracts every corporate, individual, property and loan fact with reasoning, then opens a review panel so you assign each one to a role before the Matrix is populated.">&#10024; AI Parse &amp; Review</button>`;
+    // Existing contextual per-document buttons (kept for the old flow)
     if (unconfirmedCount > 0) {
       btns += `<button onclick="window.confirmAllDocCategories && window.confirmAllDocCategories()" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#10B981;color:#0B1120;transition:background .15s;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">&#10003; Confirm All (${unconfirmedCount})</button>`;
     }
@@ -965,6 +1089,10 @@ window.sendDealNote = function() {
 export async function renderDealSections(deal, role) {
   // 1. Role gating
   applyRoleGating(role);
+
+  // 1b. Stage gating (2026-04-21) — hide section-fee and similar post-DIP-only
+  // sections until the deal has actually reached the relevant stage.
+  applyStageGating(deal);
 
   // 2. Snapshot
   renderSnapshot(deal, role);

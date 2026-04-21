@@ -787,14 +787,14 @@
                 </div>
               </div>
               <div id="snapshot-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:rgba(255,255,255,0.06);">
-                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Loan Amount</div><div id="snap-loan" style="font-size:16px;font-weight:700;color:#D4A853;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div id="snap-loan-label" style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Loan Amount</div><div id="snap-loan" style="font-size:16px;font-weight:700;color:#D4A853;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Day 1 LTV</div><div id="snap-ltv" style="font-size:16px;font-weight:700;color:#10B981;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Property Value</div><div id="snap-value" style="font-size:16px;font-weight:700;color:#D4A853;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Term</div><div id="snap-term" style="font-size:16px;font-weight:700;color:#F1F5F9;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Rate</div><div id="snap-rate" style="font-size:16px;font-weight:700;color:#F1F5F9;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Borrower</div><div id="snap-borrower" style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:3px;">-</div></div>
                 <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Exit Strategy</div><div id="snap-exit" style="font-size:13px;font-weight:600;color:#F1F5F9;margin-top:3px;">-</div></div>
-                <div style="background:#0F172A;padding:12px 16px;"><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Submitted</div><div id="detail-date" style="font-size:13px;font-weight:500;color:#CBD5E1;margin-top:3px;">-</div></div>
+                <div style="background:#0F172A;padding:12px 16px;"><div id="detail-date-label" style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Created</div><div id="detail-date" style="font-size:13px;font-weight:500;color:#CBD5E1;margin-top:3px;">-</div></div>
               </div>
               <div id="snapshot-pipeline" style="padding:10px 20px;display:flex;gap:4px;align-items:center;background:#0F172A;flex-wrap:wrap;">
                 <span style="font-size:10px;color:#64748b;font-weight:600;margin-right:4px;">STAGE</span>
@@ -871,7 +871,7 @@
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('parser')">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div style="width:32px;height:32px;border-radius:8px;background:rgba(168,85,247,0.1);color:#A855F7;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:'Inter',sans-serif;">P</div>
-                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted data from documents and emails</div></div>
+                <div><div style="font-size:14px;font-weight:700;color:#F1F5F9;">Per-Document Parser</div><div style="font-size:11px;color:#64748b;">AI-extracted fields for one document at a time. Click "View Parsed" on any document above.</div></div>
               </div>
               <div class="deal-section-chevron" id="chev-parser">&#9658;</div>
             </div>
