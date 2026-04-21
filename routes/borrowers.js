@@ -264,7 +264,22 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
     `SELECT id, full_name, ch_match_data FROM deal_borrowers WHERE parent_borrower_id = $1`,
     [parentRowId]
   );
-  const existingByName = new Map(childRows.rows.map(c => [(c.full_name || '').toLowerCase().trim(), c]));
+  // ─── 2026-04-21 — token-sorted name key (mirrors claude-parser._normaliseNameKey) ───
+  // Was: simple lowercase+trim — treated "Alessandra CENCI" and "CENCI, Alessandra"
+  // as different people, so CH officer insert would create a duplicate of the
+  // UBO row written earlier by candidate confirm. Now uses the same sort-tokens
+  // logic that AI Parse uses, so variants of the same person collapse.
+  const _normaliseNameKey = (name) => {
+    if (!name) return '';
+    return String(name)
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter(t => t && !['mr','mrs','ms','miss','dr','prof','sir','dame','lord','lady'].includes(t))
+      .sort()
+      .join(' ');
+  };
+  const existingByName = new Map(childRows.rows.map(c => [_normaliseNameKey(c.full_name), c]));
   const existingNames = new Set(existingByName.keys());
 
   let officersInserted = 0;
@@ -274,7 +289,7 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
   // Insert directors / secretaries / LLP members as 'director' children
   const officers = Array.isArray(verification.officers) ? verification.officers : [];
   for (const o of officers) {
-    const nameKey = (o.name || '').toLowerCase().trim();
+    const nameKey = _normaliseNameKey(o.name);
     if (!nameKey || existingNames.has(nameKey)) continue;
     const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
     const mappedRole = roleMap[o.officer_role] || 'director';
@@ -311,7 +326,7 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
   // Insert PSCs as children; queue corporate PSCs for recursion (incl. existing ones not yet recursed)
   const pscs = Array.isArray(verification.pscs) ? verification.pscs : [];
   for (const p of pscs) {
-    const nameKey = (p.name || '').toLowerCase().trim();
+    const nameKey = _normaliseNameKey(p.name);
     if (!nameKey) continue;
     const pscKindStr = String(p.kind || '').toLowerCase();
     const isCorporatePsc = pscKindStr.includes('corporate-entity') || pscKindStr.includes('legal-person');
