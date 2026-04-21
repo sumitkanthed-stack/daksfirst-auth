@@ -3276,22 +3276,24 @@ export async function renderDealMatrix(deal) {
     }
   };
 
-  // 2026-04-21: Apply Max Loan quick-fill. Writes the computed max into the
-  // Loan Amount Requested input, saves it, and cascades LTV recalc via
-  // matrixSaveField.
-  window._applyMaxLoan = function(maxLoan) {
+  // 2026-04-21: Apply Max Loan quick-fill. Role-aware target column:
+  //   target='requested' → writes loan_amount_requested (broker's ask)
+  //   target='approved'  → writes loan_amount_approved  (RM's offer)
+  // Defaults to 'requested' for backward compat.
+  window._applyMaxLoan = function(maxLoan, target) {
     if (!maxLoan || maxLoan <= 0) return;
-    const el = document.getElementById('mf-loan_amount_requested');
+    const column = (target === 'approved') ? 'loan_amount_approved' : 'loan_amount_requested';
+    const el = document.getElementById('mf-' + column);
     const formatted = formatWithCommas(String(maxLoan));
     if (el) {
       el.value = formatted;
       el.style.borderColor = '#34D399';
       setTimeout(() => { el.style.borderColor = 'rgba(255,255,255,0.06)'; }, 1200);
     }
-    deal.loan_amount_requested = maxLoan;
-    // Trigger the normal save path — this also recalculates LTV requested
-    // and updates the loan-limit-indicator.
-    window.matrixSaveField('loan_amount_requested', String(maxLoan));
+    deal[column] = maxLoan;
+    // Trigger the normal save path — matrixSaveField also recalculates the
+    // corresponding LTV column and updates the loan-limit-indicator.
+    window.matrixSaveField(column, String(maxLoan));
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -3451,12 +3453,14 @@ export async function renderDealMatrix(deal) {
     el.style.background = bgColor;
     el.style.border = '1px solid ' + borderColor;
 
-    // 2026-04-21: "Use Max" quick-fill button — broker can accept the platform's
-    // max allowable loan in one click instead of typing it. Writes into the
-    // editable Requested column (loan_amount_requested), which triggers the
-    // cascading LTV recalc via matrixSaveField.
+    // 2026-04-21: "Use Max" quick-fill button. Role-aware target column:
+    //   broker (external) → writes to loan_amount_requested (their ask)
+    //   RM/internal       → writes to loan_amount_approved  (their offer)
+    // Button label reflects the target so the user knows what'll change.
+    const _useMaxTarget = isInternalUser ? 'approved' : 'requested';
+    const _useMaxLabel = isInternalUser ? 'Use Max &#8594; Approved' : 'Use Max &#8594; Requested';
     const useMaxButton = maxLoan > 0 && canEdit
-      ? '<button onclick="window._applyMaxLoan(' + maxLoan + ')" style="padding:4px 10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;cursor:pointer;" title="Auto-fill Requested Loan Amount with £' + maxLoan.toLocaleString() + '">Use Max &#8594; Requested</button>'
+      ? '<button onclick="window._applyMaxLoan(' + maxLoan + ', \'' + _useMaxTarget + '\')" style="padding:4px 10px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.12);color:#34D399;border:1px solid rgba(52,211,153,0.3);border-radius:5px;cursor:pointer;" title="Auto-fill Loan Amount ' + _useMaxTarget.charAt(0).toUpperCase() + _useMaxTarget.slice(1) + ' with £' + maxLoan.toLocaleString() + '">' + _useMaxLabel + '</button>'
       : '';
 
     el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
