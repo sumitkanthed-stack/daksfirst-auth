@@ -7764,6 +7764,17 @@ export async function renderDealMatrix(deal) {
             <span style="font-size:13px;font-weight:700;color:#E8C97A;">&#10003; Deal submitted for RM review${data.notification_sent ? ' — RM has been notified' : ''}</span>
           </div>`;
         }
+
+        // 2026-04-21: full re-render after submit so ALL stage-dependent UI
+        // reflects the new state (info_gathering). Previously the function
+        // only did manual DOM updates for the submit button + CTA banner,
+        // leaving the top STAGE badge, stage pipeline, 'This deal is a
+        // draft' banner, Matrix Completeness footer, and bottom Deal
+        // Progress bar all stale. _refreshDealInPlace re-fetches deal and
+        // re-renders the whole detail view with currentStage='info_gathering'.
+        setTimeout(() => {
+          try { _refreshDealInPlace(deal.submission_id); } catch (_) {}
+        }, 800);
       } else {
         const err = await resp.json().catch(() => ({}));
         showToast(err.error || 'Failed to submit for review', 'error');
