@@ -7127,9 +7127,14 @@ export async function renderDealMatrix(deal) {
   };
 
   // Resolve which tier we're in based on deal stage
+  // 2026-04-21: 'draft' added to DIP tier. Deals start in 'draft' while the
+  // broker fills the Matrix pre-submission; previously this fell through to
+  // the formal tier which demanded every field (7 Loan Terms + 4 Fees + ITS-
+  // grade Borrower/KYC) and made every new deal look 'incomplete' by ~11 fields
+  // before the broker had even started.
   function getValidationTier() {
     const stage = currentStage || 'received';
-    if (['received', 'info_gathering'].includes(stage)) return 'dip';
+    if (['received', 'info_gathering', 'draft'].includes(stage)) return 'dip';
     if (['dip_issued', 'ai_termsheet', 'fee_pending'].includes(stage)) return 'its';
     return 'formal'; // underwriting, bank_submission, etc.
   }
