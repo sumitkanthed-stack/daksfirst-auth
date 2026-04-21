@@ -791,7 +791,15 @@ function buildDipHtml(deal, dipData, options) {
   const ratePerMonth = parseFloat(deal.rate_approved || deal.rate_requested || 0.95);
   const retainedMonths = deal.retained_interest_months || dipData.retained_months || 6;
   const arrangementFeePct = parseFloat(deal.arrangement_fee_pct || dipData.arrangement_fee_pct || 2);
-  const commitmentFee = parseFloat(deal.commitment_fee || dipData.fee_commitment || 0);
+  // 2026-04-21: commitmentFee defaults to £5,000 (lender's standard policy)
+  // when the column is null / undefined / '' — deliberately setting 0 stays 0.
+  // brokerFeePct defaults to 0 — broker fee only appears on the DIP when
+  // explicitly entered in the matrix. Day Zero waterfall reflects the actual
+  // matrix value (so no phantom broker fee on deals without a broker).
+  const _cfRaw = (deal.commitment_fee !== null && deal.commitment_fee !== undefined && deal.commitment_fee !== '')
+    ? deal.commitment_fee
+    : (dipData.fee_commitment !== null && dipData.fee_commitment !== undefined && dipData.fee_commitment !== '' ? dipData.fee_commitment : null);
+  const commitmentFee = (_cfRaw === null) ? 5000 : (parseFloat(_cfRaw) || 0);
   const dipFee = parseFloat(deal.dip_fee || dipData.fee_onboarding || 1000);
   const brokerFeePct = parseFloat(deal.broker_fee_pct || dipData.broker_fee_pct || 0);
   const minValueCovenant = parseFloat(deal.min_value_covenant || dipData.min_value_covenant || 0);
@@ -1118,7 +1126,9 @@ function buildDipHtml(deal, dipData, options) {
     background: #fef9e7;
     border: 1px solid #c9a456;
     border-radius: 3px;
-    padding: 8px 12px;
+    padding: 6px 10px;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .cf-treatment .cf-title {
     font-size: 9px;
@@ -1127,8 +1137,8 @@ function buildDipHtml(deal, dipData, options) {
     letter-spacing: 0.6px;
     margin-bottom: 5px;
   }
-  .cf-treatment ul { margin: 0; padding-left: 15px; font-size: 9px; line-height: 1.5; }
-  .cf-treatment ul li { margin-bottom: 3px; color: #3a3a3a; }
+  .cf-treatment ul { margin: 0; padding-left: 13px; font-size: 8.5px; line-height: 1.4; }
+  .cf-treatment ul li { margin-bottom: 2px; color: #3a3a3a; }
   .cf-treatment ul li strong { color: #0f2a4a; }
 
   /* Conditions precedent */
@@ -1494,22 +1504,20 @@ function buildDipHtml(deal, dipData, options) {
           <tr class="highlight"><td><strong>Onboarding / DIP Fee</strong></td><td class="amt">${fmtGBP(dipFee)}</td><td>On DIP acceptance</td><td>Required before Credit Review</td></tr>
           <tr><td><strong>Commitment Fee</strong></td><td class="amt">${fmtGBP(commitmentFee)}</td><td>On Termsheet acceptance</td><td>Required before Underwriting</td></tr>
           <tr><td><strong>Arrangement Fee</strong></td><td class="amt">${fmtGBP(grossLoan * arrangementFeePct / 100)} (${arrangementFeePct.toFixed(2)}%)</td><td>On completion</td><td>Deducted from the gross loan</td></tr>
-          ${brokerFeePct > 0 && deal.broker_id ? `
+          ${brokerFeePct > 0 ? `
           <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ of which paid to Introducing Broker</td><td class="amt">${fmtGBP(grossLoan * brokerFeePct / 100)} (${brokerFeePct.toFixed(2)}%)</td><td>On completion</td><td>Paid to Broker from within the Arrangement Fee &mdash; NOT additional to Borrower</td></tr>
           <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ retained by Lender (net arrangement fee)</td><td class="amt">${fmtGBP(grossLoan * (arrangementFeePct - brokerFeePct) / 100)} (${(arrangementFeePct - brokerFeePct).toFixed(2)}%)</td><td>On completion</td><td>Lender's share of the Arrangement Fee</td></tr>` : ''}
           <tr><td><strong>Exit Fee</strong></td><td class="amt">1.00% of loan</td><td>On redemption</td><td>Payable at exit</td></tr>
           <tr><td><strong>Extension Fee</strong></td><td class="amt">1.00% of loan</td><td>If term extended</td><td>Per extension period agreed</td></tr>
         </tbody>
       </table>
-      ${brokerFeePct > 0 && deal.broker_id ? `
-      <div class="fee-note" style="background:#eef4ff; border-left: 3px solid #0f2a4a; padding:6px 10px; border-radius:0 3px 3px 0; font-style:normal;">
-        <strong>Arrangement Fee split.</strong> The Arrangement Fee of ${arrangementFeePct.toFixed(2)}% is borne by the Borrower as a single deduction from the gross loan. Of this, ${brokerFeePct.toFixed(2)}% is paid by the Lender to the Introducing Broker on completion; the balance of ${(arrangementFeePct - brokerFeePct).toFixed(2)}% is retained by the Lender. <em>The Broker Fee is not an additional charge to the Borrower.</em>
+      ${brokerFeePct > 0 ? `
+      <div class="fee-note" style="background:#eef4ff; border-left: 3px solid #0f2a4a; padding:5px 9px; border-radius:0 3px 3px 0; font-style:normal; font-size:8.5px;">
+        <strong>Arrangement Fee split.</strong> Of the ${arrangementFeePct.toFixed(2)}% Arrangement Fee (single deduction from gross loan), ${brokerFeePct.toFixed(2)}% is paid by the Lender to the Introducing Broker on completion; the balance of ${(arrangementFeePct - brokerFeePct).toFixed(2)}% is retained by the Lender. <em>Broker Fee is not additional to the Borrower.</em>
       </div>` : ''}
-      <div class="cf-treatment">
-        <div class="cf-title">COMMITMENT FEE — TREATMENT ON DEAL OUTCOME</div>
-        ${adminConfig.cf_treatment_clause_html || FALLBACK_CF}
-      </div>
-      <div class="fee-note"><strong>Third-party costs</strong> (valuation, Lender's solicitors) are borne directly by the Borrower. Estimates provided at Term Sheet stage once valuer and solicitors are instructed.</div>
+      <!-- 2026-04-21: CF treatment + third-party costs moved to page 3 (before
+           Conditions Precedent) to prevent overflow into the page 2 footer.
+           Page 2 keeps only the fee table + arrangement fee split note. -->
     </div>
   </div>
 
@@ -1539,6 +1547,20 @@ function buildDipHtml(deal, dipData, options) {
     <div class="brand-right">
       <div class="deal-ref">Deal Ref: ${esc(dealRef)}</div>
       <div class="issued">Page 3 of 3</div>
+    </div>
+  </div>
+
+  <!-- COMMITMENT FEE TREATMENT + THIRD-PARTY COSTS
+       2026-04-21: moved from end of Fee Schedule on page 2 to here on page 3 to prevent
+       overflow into page 2 footer when the fee table + broker-split note is rendered. -->
+  <div class="section">
+    <div class="section-bar">COMMITMENT FEE &amp; THIRD-PARTY COSTS</div>
+    <div class="section-body">
+      <div class="cf-treatment">
+        <div class="cf-title">COMMITMENT FEE — TREATMENT ON DEAL OUTCOME</div>
+        ${adminConfig.cf_treatment_clause_html || FALLBACK_CF}
+      </div>
+      <div class="fee-note" style="margin-top:6px;"><strong>Third-party costs</strong> (valuation, Lender's solicitors) are borne directly by the Borrower. Estimates provided at Term Sheet stage once valuer and solicitors are instructed.</div>
     </div>
   </div>
 
