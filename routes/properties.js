@@ -697,10 +697,15 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
 
     // 2026-04-21: compute PTAL (London only) from Chimnie's lat/lng. Free local
     // lookup against TfL's 2015 PTAL grid — no external call, no cost, <1ms.
+    // Verified path via live payload inspection: lat/lng live at
+    // property.attributes.status.{latitude,longitude}, NOT at property.attributes.
     try {
       const ptalService = require('../services/ptal');
-      const lat = require('../services/chimnie')._get(result.data, 'property.attributes.latitude');
-      const lng = require('../services/chimnie')._get(result.data, 'property.attributes.longitude');
+      const chimnieGet = require('../services/chimnie')._get;
+      const lat = chimnieGet(result.data, 'property.attributes.status.latitude')
+               ?? chimnieGet(result.data, 'property.attributes.latitude');  // fallback if schema shifts
+      const lng = chimnieGet(result.data, 'property.attributes.status.longitude')
+               ?? chimnieGet(result.data, 'property.attributes.longitude');
       if (lat != null && lng != null) {
         const ptalResult = ptalService.getPtalForLatLng(Number(lat), Number(lng));
         if (ptalResult && ptalResult.in_london && ptalResult.ptal) {
@@ -708,7 +713,12 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
           console.log(`[ptal] ${prop.postcode || prop.address} → PTAL ${ptalResult.ptal} (${ptalResult.distance_m}m to nearest grid cell)`);
         } else {
           flat.chimnie_ptal = null;  // non-London or no grid match
+          if (ptalResult && !ptalResult.in_london) {
+            console.log(`[ptal] ${prop.postcode || prop.address} → outside London bbox (lat ${lat}, lng ${lng})`);
+          }
         }
+      } else {
+        console.warn(`[ptal] No lat/lng in Chimnie payload for ${prop.postcode || prop.address}`);
       }
     } catch (ptalErr) {
       // Non-fatal — log and continue. Chimnie data still lands.
