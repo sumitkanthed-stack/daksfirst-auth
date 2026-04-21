@@ -1995,30 +1995,72 @@ export async function renderDealMatrix(deal) {
                   const rebuildDisplay = p.chimnie_rebuild_cost_estimate
                     ? fmtMoney(p.chimnie_rebuild_cost_estimate)
                     : '\u2014';
-                  // Transit cell — shows nearest train/TFL station distance universally (Chimnie-provided),
-                  // plus PTAL placeholder for London properties (Phase 2 via TfL dataset).
-                  // Format: "250m \u00B7 Hammersmith" with PTAL note if London.
+                  // Transit cell — shows PTAL for London (TfL dataset) as the primary score,
+                  // with nearest train/TFL station name + distance (Chimnie) as context.
+                  // PTAL 0–1b = red (Very Poor / Poor), 2–3 = amber (Moderate),
+                  // 4 = yellow-green (Good), 5–6b = green (Very Good / Excellent).
                   const isLondon = (p.chimnie_region || '').toLowerCase() === 'london';
                   const stationName = p.chimnie_nearest_station_name;
                   const stationDistance = Number(p.chimnie_nearest_station_distance_m) || 0;
-                  let transitDisplay;
+                  const ptal = p.chimnie_ptal;
+
+                  // PTAL colour + label
+                  const ptalColour = (() => {
+                    if (!ptal) return '#94A3B8';
+                    if (['0','1a','1b'].includes(ptal)) return '#F87171';      // red
+                    if (['2','3'].includes(ptal)) return '#FBBF24';            // amber
+                    if (ptal === '4') return '#A3E635';                        // yellow-green
+                    if (['5','6a','6b'].includes(ptal)) return '#34D399';      // green
+                    return '#94A3B8';
+                  })();
+                  const ptalWord = (() => {
+                    if (!ptal) return '';
+                    if (ptal === '0') return 'None';
+                    if (ptal === '1a') return 'Very Poor';
+                    if (ptal === '1b') return 'Poor';
+                    if (ptal === '2') return 'Poor';
+                    if (ptal === '3') return 'Moderate';
+                    if (ptal === '4') return 'Good';
+                    if (ptal === '5') return 'Very Good';
+                    if (ptal === '6a') return 'Excellent';
+                    if (ptal === '6b') return 'Excellent+';
+                    return '';
+                  })();
+
+                  // Station sub-line: only built if Chimnie returned station data
+                  let stationSub = '';
                   if (stationDistance > 0) {
-                    // Format distance nicely — under 1km in metres, else km to 1dp
                     const distLabel = stationDistance < 1000
                       ? stationDistance + 'm'
                       : (stationDistance / 1000).toFixed(1) + 'km';
-                    // Walk-time proxy: ~80m/min comfortable walking pace
                     const walkMin = Math.round(stationDistance / 80);
-                    // Colour: excellent <500m green, good <1km amber, poor >1km red (very rough proxy)
+                    stationSub = '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' +
+                      (stationName ? sanitizeHtml(stationName) + ' \u00B7 ' : '') +
+                      distLabel + ' \u00B7 ~' + walkMin + ' min walk</div>';
+                  }
+
+                  let transitDisplay;
+                  if (ptal) {
+                    // London property with a computed PTAL
+                    transitDisplay = '<span style="color:' + ptalColour + ';">PTAL ' + sanitizeHtml(ptal) + '</span>' +
+                      (ptalWord ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;font-style:italic;">' + ptalWord + '</div>' : '') +
+                      stationSub;
+                  } else if (isLondon) {
+                    // In London but PTAL lookup failed (off the grid — e.g. Thames, park)
+                    transitDisplay = '<span style="color:#94A3B8;font-weight:400;">PTAL n/a</span>' + stationSub;
+                  } else if (stationDistance > 0) {
+                    // Non-London: PTAL doesn't apply. Show station distance as the headline.
+                    const distLabel = stationDistance < 1000
+                      ? stationDistance + 'm'
+                      : (stationDistance / 1000).toFixed(1) + 'km';
+                    const walkMin = Math.round(stationDistance / 80);
                     const distColour = stationDistance < 500 ? '#34D399'
                                      : stationDistance < 1000 ? '#FBBF24'
                                      : '#F87171';
                     transitDisplay = '<span style="color:' + distColour + ';">' + distLabel + '</span>' +
-                      (stationName ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + sanitizeHtml(stationName) + ' \u00B7 ~' + walkMin + ' min walk</div>' : '') +
-                      (isLondon ? '<div style="font-size:9px;color:#64748B;font-weight:400;font-style:italic;margin-top:2px;">PTAL: \u2014 (Phase 2)</div>' : '');
+                      (stationName ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + sanitizeHtml(stationName) + ' \u00B7 ~' + walkMin + ' min walk</div>' : '');
                   } else {
-                    transitDisplay = '<span style="color:#94A3B8;font-weight:400;">\u2014</span>' +
-                      (isLondon ? '<div style="font-size:9px;color:#64748B;font-weight:400;font-style:italic;margin-top:2px;">PTAL: (Phase 2)</div>' : '');
+                    transitDisplay = '<span style="color:#94A3B8;font-weight:400;">\u2014</span>';
                   }
 
                   // Metadata strip — identifiers + location, small font at top

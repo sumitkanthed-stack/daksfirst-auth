@@ -815,9 +815,10 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_epc_potential VARCHAR(5)`,
       // Rebuild cost (for insurance reinstatement clause)
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_rebuild_cost_estimate NUMERIC(15,2)`,
-      // Transit (2026-04-21) — nearest train/TFL station (PTAL deferred to Phase 2)
+      // Transit (2026-04-21) — nearest train/TFL station (Chimnie) + PTAL (TfL)
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_station_name VARCHAR(120)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_nearest_station_distance_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_ptal VARCHAR(5)`,  // '0','1a','1b','2','3','4','5','6a','6b' or NULL for non-London
       // Full payload + audit
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_data JSONB DEFAULT '{}'::jsonb`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_at TIMESTAMPTZ`,

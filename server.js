@@ -63,6 +63,10 @@ app.get('/api/health', async (req, res) => {
   const pool = require('./db/pool');
   let dbOk = false;
   try { await pool.query('SELECT 1'); dbOk = true; } catch (e) { /* ignore */ }
+  // PTAL service — reports how many grid cells loaded, so we can verify the
+  // TfL dataset is present without hitting a property endpoint.
+  let ptalStatus = { loaded: false, cells: 0 };
+  try { ptalStatus = require('./services/ptal').getStatus(); } catch (_) {}
   res.json({
     status: 'ok',
     version: '2.1.0',
@@ -70,7 +74,9 @@ app.get('/api/health', async (req, res) => {
     database: dbOk ? 'connected' : 'disconnected',
     webhook: config.N8N_WEBHOOK_URL ? 'configured' : 'not configured',
     onedrive: (config.AZURE_CLIENT_ID && config.AZURE_TENANT_ID && config.AZURE_CLIENT_SECRET) ? 'configured' : 'not configured',
-    companies_house: config.COMPANIES_HOUSE_API_KEY ? 'configured' : 'not configured'
+    companies_house: config.COMPANIES_HOUSE_API_KEY ? 'configured' : 'not configured',
+    chimnie: config.CHIMNIE_API_KEY ? 'configured' : 'not configured',
+    ptal: ptalStatus.loaded ? `${ptalStatus.cells.toLocaleString()} cells loaded` : 'not loaded'
   });
 });
 

@@ -695,6 +695,26 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
     // Extract flat fields for indexed columns
     const flat = chimnie.extractFlatFields(result.data);
 
+    // 2026-04-21: compute PTAL (London only) from Chimnie's lat/lng. Free local
+    // lookup against TfL's 2015 PTAL grid — no external call, no cost, <1ms.
+    try {
+      const ptalService = require('../services/ptal');
+      const lat = require('../services/chimnie')._get(result.data, 'property.attributes.latitude');
+      const lng = require('../services/chimnie')._get(result.data, 'property.attributes.longitude');
+      if (lat != null && lng != null) {
+        const ptalResult = ptalService.getPtalForLatLng(Number(lat), Number(lng));
+        if (ptalResult && ptalResult.in_london && ptalResult.ptal) {
+          flat.chimnie_ptal = ptalResult.ptal;
+          console.log(`[ptal] ${prop.postcode || prop.address} → PTAL ${ptalResult.ptal} (${ptalResult.distance_m}m to nearest grid cell)`);
+        } else {
+          flat.chimnie_ptal = null;  // non-London or no grid match
+        }
+      }
+    } catch (ptalErr) {
+      // Non-fatal — log and continue. Chimnie data still lands.
+      console.warn('[ptal] Lookup failed (non-fatal):', ptalErr.message);
+    }
+
     // Build UPDATE statement
     const sets = [];
     const vals = [];
