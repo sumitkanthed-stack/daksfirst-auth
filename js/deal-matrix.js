@@ -1945,7 +1945,9 @@ export async function renderDealMatrix(deal) {
                   const flags = [];
                   if (p.chimnie_overseas_ownership === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Overseas owner</span>');
                   if (p.chimnie_is_listed === true) flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u24D8 Listed bldg</span>');
-                  if (p.chimnie_construction_material && !['Brick','Stone'].includes(p.chimnie_construction_material)) {
+                  // 2026-04-21: case-insensitive — Chimnie returns lowercase 'brick', 'stone', 'timber'
+                  const constructionLower = String(p.chimnie_construction_material || '').toLowerCase();
+                  if (constructionLower && !['brick', 'stone'].includes(constructionLower)) {
                     flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Non-std: ' + sanitizeHtml(p.chimnie_construction_material) + '</span>');
                   }
                   const flagsHtml = flags.length > 0 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' + flags.join('') + '</div>' : '';
@@ -1957,7 +1959,16 @@ export async function renderDealMatrix(deal) {
                       kpi('Confidence', '<span style="color:' + confColor + ';">' + (p.chimnie_avm_confidence || '\u2014') + '</span>') +
                       kpi('Rental p.c.m.', fmtMoney(p.chimnie_rental_pcm)) +
                       kpi('Flood', '<span style="color:' + floodColor + ';">' + floodLabel + '</span><div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">R/S ' + fmtPct(floodRS) + ' \u00B7 SW ' + fmtPct(floodSW) + '</div>') +
-                      kpi('Crime %ile', p.chimnie_crime_percentile_total != null ? Number(p.chimnie_crime_percentile_total).toFixed(0) + 'th' : '\u2014') +
+                      kpi('Crime %ile', (() => {
+                        if (p.chimnie_crime_percentile_total == null) return '\u2014';
+                        const n = Math.round(Number(p.chimnie_crime_percentile_total));
+                        // Proper English ordinal suffix: 1st, 2nd, 3rd, 4th, 11th-13th, etc.
+                        const mod10 = n % 10, mod100 = n % 100;
+                        const suffix = (mod100 >= 11 && mod100 <= 13) ? 'th'
+                                     : mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th';
+                        const colour = n >= 75 ? '#34D399' : n >= 40 ? '#FBBF24' : '#F87171';
+                        return '<span style="color:' + colour + ';">' + n + suffix + '</span>';
+                      })()) +
                     '</div>' +
                     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
                       kpi('Last Sale', fmtMoney(p.chimnie_last_sale_price) + (p.chimnie_last_sale_date ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + new Date(p.chimnie_last_sale_date).toLocaleDateString('en-GB') + (p.chimnie_years_owned ? ' \u00B7 ' + p.chimnie_years_owned + 'y held' : '') + '</div>' : '')) +
