@@ -278,11 +278,15 @@ function renderRequestedApprovedField(baseField, label, requestedVal, approvedVa
     .replace(/<label[^>]*>.*?<\/label>/, '')  // strip the inner label (we have our own above)
     .replace(/margin-bottom:12px/, 'margin-bottom:0'); // remove outer margin
 
-  // 2026-04-21: Requested column is also editable now (when canEdit=true).
-  // Broker's initial "ask" can be entered directly in the matrix on draft deals
-  // instead of requiring a separate submission form. Caller gates canEdit by
-  // role where appropriate (e.g. rate_requested uses isInternalUser && canEdit).
-  const requestedInput = canEdit
+  // 2026-04-21: Requested column is the broker's ASK. Editable by external
+  // users (broker/borrower) only. For internal users (RM/admin/credit/
+  // compliance), Requested is READ-ONLY — they work in the Approved column.
+  // Previously both columns were editable for canEdit=true, which let RM
+  // overwrite the broker's submitted ask.
+  const _role = (typeof getCurrentRole === 'function') ? getCurrentRole() : null;
+  const _isExternal = !['admin', 'rm', 'credit', 'compliance'].includes(_role || '');
+  const requestedEditable = canEdit && _isExternal;
+  const requestedInput = requestedEditable
     ? renderEditableField(requestedField, '', requestedVal, inputType, canEdit, options)
         .replace(/<label[^>]*>.*?<\/label>/, '')
         .replace(/margin-bottom:12px/, 'margin-bottom:0')
