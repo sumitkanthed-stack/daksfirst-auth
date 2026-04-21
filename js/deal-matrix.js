@@ -7183,13 +7183,29 @@ export async function renderDealMatrix(deal) {
     // If deal has borrowers in deal_borrowers, map to flat borrower field keys
     if (deal.borrowers && deal.borrowers.length > 0) {
       const primary = deal.borrowers.find(b => b.role === 'primary') || deal.borrowers[0];
+
+      // 2026-04-21: contact fields (email/phone) on a CORPORATE primary live
+      // on the UBO/director/PSC child rows, not on the corporate row itself.
+      // Walk children when primary is corporate so broker-entered contact info
+      // on any child satisfies the atLeastOne email/phone gate. DOB/nationality
+      // follow the same pattern — those are individual attributes that apply
+      // to the person behind the corporate, not the corporate itself.
+      const _primaryCorpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+      const _primaryIsCorp = _primaryCorpTypes.includes((primary.borrower_type || '').toLowerCase());
+      const _firstChildWith = (fieldName) => {
+        const child = deal.borrowers.find(b =>
+          b.parent_borrower_id === primary.id &&
+          b[fieldName] && String(b[fieldName]).trim() !== ''
+        );
+        return child ? child[fieldName] : null;
+      };
       const borrowerFieldMap = {
         'borrower_name': primary.full_name,
         'borrower_type': primary.borrower_type,
-        'borrower_email': primary.email,
-        'borrower_phone': primary.phone,
-        'borrower_dob': primary.date_of_birth,
-        'borrower_nationality': primary.nationality,
+        'borrower_email': primary.email || (_primaryIsCorp ? _firstChildWith('email') : null),
+        'borrower_phone': primary.phone || (_primaryIsCorp ? _firstChildWith('phone') : null),
+        'borrower_dob': primary.date_of_birth || (_primaryIsCorp ? _firstChildWith('date_of_birth') : null),
+        'borrower_nationality': primary.nationality || (_primaryIsCorp ? _firstChildWith('nationality') : null),
         'company_name': primary.company_name,
         'company_number': primary.company_number
       };
