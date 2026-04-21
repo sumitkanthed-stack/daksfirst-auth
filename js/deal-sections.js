@@ -85,7 +85,20 @@ export function renderSnapshot(deal, role) {
   // 2026-04-21: portfolio-aware reads. deal_properties is the canonical
   // source now; flat deal.security_address / deal.current_value are legacy
   // fallbacks for older deals. Same data source across broker/RM/Credit.
+  //
+  // Sort deterministically so Broker and RM always see the same "headline"
+  // property. Primary order: market value descending (most valuable security
+  // is the headline). Tiebreaker: alphabetical by address. Without this, the
+  // API's natural row order could differ between sessions — saw it first
+  // on a 3-property Gold Medal deal: broker view led with "Apartment No. 82"
+  // while RM view led with "129 Rannoch Road".
   const props = Array.isArray(deal.properties) ? deal.properties.filter(p => p && (p.address || p.market_value)) : [];
+  props.sort((a, b) => {
+    const av = num(a.market_value) || 0;
+    const bv = num(b.market_value) || 0;
+    if (av !== bv) return bv - av;
+    return String(a.address || '').localeCompare(String(b.address || ''));
+  });
   const portfolioValuation = props.reduce((sum, p) => sum + (num(p.market_value) || 0), 0);
   const portfolioAddresses = props.map(p => p.address).filter(Boolean);
 
