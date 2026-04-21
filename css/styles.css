@@ -803,6 +803,37 @@
     .dip-light-form [style*="background:#eff6ff"] { color: #1e40af !important; }
     .dip-light-form [style*="background:#e5e7eb"] { color: #6b7280 !important; }
 
+    /* ═══ DIP PREVIEW CONTAINER (2026-04-21) ═══
+       The preview injects the PDF's full HTML + <style> block into this container.
+       The PDF's navy banners and brand headers rely on their own CSS (`color:#fff`
+       on class selectors). Without the overrides below, the app's global
+       `.dip-light-form * { color: #1a1a2e !important }` would force every element
+       in the preview to dark text, making navy banners illegible. The rules below
+       restore the PDF's intended colours ONLY inside #dip-preview-container. */
+    #dip-preview-container .section-bar,
+    #dip-preview-container .section-bar *,
+    #dip-preview-container .brand,
+    #dip-preview-container .brand *,
+    #dip-preview-container .page-footer,
+    #dip-preview-container .page-footer *,
+    #dip-preview-container .ref-strip .badge { color: #ffffff !important; }
+    #dip-preview-container .brand-tagline,
+    #dip-preview-container .brand-right .issued { color: #c9a456 !important; }
+    #dip-preview-container .title-bar h1,
+    #dip-preview-container .sec-row .label strong,
+    #dip-preview-container .party-name,
+    #dip-preview-container .ref-strip .ref { color: #0f2a4a !important; }
+    #dip-preview-container .status.req { color: #2e8f4e !important; background: #e5f3ea !important; }
+    #dip-preview-container .title-bar .sub,
+    #dip-preview-container .party-role,
+    #dip-preview-container .parties-note,
+    #dip-preview-container .page-footer .policies { color: #6b7280 !important; }
+    /* Approve button inside .section-bar needs its inline colours preserved
+       — button specifies color in inline style; add explicit exceptions. */
+    #dip-preview-container .section-bar button[style*="background:#16a34a"] { color: #ffffff !important; }
+    #dip-preview-container .section-bar button[style*="background:#ffffff"] { color: #166534 !important; }
+    #dip-preview-container .section-bar .dip-approval-control span { color: inherit !important; }
+
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 768px) {
       .dashboard-header-content { flex-direction: column; gap: 12px; }

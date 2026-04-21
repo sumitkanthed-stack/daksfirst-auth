@@ -785,7 +785,11 @@ export function renderInternalWorkflowControls(deal) {
 
     const dipFormOpen = stage !== 'dip_issued'; // collapsed after issuance
     html += accordion('wf-dip-form', 'DIP Form', 'D', dipFormOpen);
-    html += `<div class="dip-light-form" style="background:#f0f5ff;padding:20px;border-radius:8px;border:2px solid #2563eb;">
+    // Preview-refactor 2026-04-21: outer chrome stripped (blue background + blue
+    // border removed) so the PDF-style preview sits cleanly on the page. The
+    // `dip-light-form` class is retained — its CSS forces dark text on the
+    // light background, needed by the broader dark-mode app theme.
+    html += `<div class="dip-light-form" style="padding:4px 0;">
 
       <!-- ═══ DIP HEADER WITH LOGO ═══ -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:12px;border-bottom:2px solid var(--primary);">
@@ -1579,73 +1583,86 @@ export function renderInternalWorkflowControls(deal) {
           const isApproved = !!deal[colApproved];
           if (isApproved) approvedCount++;
 
-          // Find all sections in the preview with this key — some keys (security,
-          // use_of_funds) tag multiple wrappers in the PDF template. Apply the
-          // colored left border to ALL matches so the visual state is consistent;
-          // attach the overlay button to only the first one to avoid duplicate controls.
+          // Find all matching sections in the preview — some keys (security,
+          // use_of_funds) tag multiple wrappers in the PDF template. For each,
+          // inject the approve control INTO the navy .section-bar header so the
+          // control reads as part of the section banner, not as a floating overlay.
           const allMatching = preview.querySelectorAll('[data-approval-section="' + sec.key + '"]');
           if (allMatching.length === 0) return;
 
-          // Colour strip indicating state — applied to every matching section
           const completeness = sec.complete ? sec.complete() : { ok: true };
-          let stripColor = '#d1d5db';
-          if (isApproved) stripColor = '#16a34a';
-          else if (!completeness.ok) stripColor = '#f59e0b';
 
-          allMatching.forEach(el => {
-            el.style.borderLeft = '4px solid ' + stripColor;
-          });
-
-          // Overlay button on the first matching section only
-          const sectionEl = allMatching[0];
-
-          // Make sure the section is a positioning context for the overlay
-          if (window.getComputedStyle(sectionEl).position === 'static') {
-            sectionEl.style.position = 'relative';
-          }
-          // Add extra top padding so the overlay doesn't cover the header
-          if (!sectionEl.dataset.dipOverlayPadded) {
-            sectionEl.style.paddingTop = (parseInt(window.getComputedStyle(sectionEl).paddingTop) || 0) + 36 + 'px';
-            sectionEl.dataset.dipOverlayPadded = '1';
-          }
-
-          // Remove any prior overlay (re-renders)
-          const priorOverlay = sectionEl.querySelector(':scope > .dip-approval-overlay');
-          if (priorOverlay) priorOverlay.remove();
-
-          // (completeness already computed above — drives both border colour and button state)
-          const btnLabel = isApproved ? '✓ Approved — click to unapprove' : 'Approve';
+          // Button state (shared across all matching sections for this key)
+          const btnLabel = isApproved ? '✓ Approved' : 'Approve';
           const btnEnabled = !issued && (isApproved || completeness.ok);
           const action = isApproved ? 'unapproveDipSection' : 'approveDipSection';
-          const btnBg = isApproved ? '#16a34a' : (btnEnabled ? '#ffffff' : '#f3f4f6');
-          const btnColor = isApproved ? '#ffffff' : (btnEnabled ? '#166534' : '#9ca3af');
-          const btnBorder = isApproved ? '#166534' : (btnEnabled ? '#86efac' : '#d1d5db');
+          // Inside the navy banner: white button when pending, solid green when approved,
+          // faded when disabled. Colours chosen to be legible against the navy bar.
+          const btnBg = isApproved ? '#16a34a' : (btnEnabled ? '#ffffff' : 'rgba(255,255,255,0.15)');
+          const btnColor = isApproved ? '#ffffff' : (btnEnabled ? '#166534' : 'rgba(255,255,255,0.5)');
+          const btnBorder = isApproved ? '#16a34a' : (btnEnabled ? '#ffffff' : 'rgba(255,255,255,0.3)');
           const btnCursor = btnEnabled ? 'pointer' : 'not-allowed';
           const btnTitle = issued
             ? 'DIP issued — approvals locked'
-            : (btnEnabled ? '' : 'Fill required fields in matrix first: ' + (completeness.reason || ''));
+            : (isApproved
+              ? 'Click to unapprove'
+              : (btnEnabled ? '' : 'Fill required fields in matrix first: ' + (completeness.reason || '')));
           const btnOnclick = btnEnabled
             ? `window.${action}('${deal.submission_id}', '${sec.key}')`
             : 'void 0';
           const stampText = isApproved && deal[colAt]
             ? new Date(deal[colAt]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
             : '';
-
-          const overlay = document.createElement('div');
-          overlay.className = 'dip-approval-overlay';
-          overlay.style.cssText = 'position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:8px;z-index:5;background:rgba(255,255,255,0.92);padding:4px 6px;border-radius:5px;border:1px solid ' + (isApproved ? '#bbf7d0' : '#e5e7eb') + ';box-shadow:0 1px 2px rgba(0,0,0,0.05);';
-
-          const numberBadge = '<span style="width:20px;height:20px;border-radius:50%;background:' + stripColor + ';color:white;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">' + (idx + 1) + '</span>';
-          const incompleteTag = (!isApproved && !completeness.ok)
-            ? '<span title="' + sanitizeHtml(completeness.reason || '') + '" style="font-size:10px;color:#b45309;font-weight:600;">⚠ ' + sanitizeHtml(completeness.reason || 'Incomplete') + '</span>'
+          const warnText = (!isApproved && !completeness.ok)
+            ? '⚠ ' + sanitizeHtml(completeness.reason || 'Incomplete')
             : '';
-          const stampHtml = stampText
-            ? '<span style="font-size:10px;color:#4b5563;">' + stampText + '</span>'
-            : '';
-          const btnHtml = '<button ' + (btnEnabled ? '' : 'disabled ') + 'onclick="' + btnOnclick + '" title="' + sanitizeHtml(btnTitle) + '" style="padding:4px 10px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:4px;font-size:10px;font-weight:700;cursor:' + btnCursor + ';white-space:nowrap;">' + btnLabel + '</button>';
 
-          overlay.innerHTML = numberBadge + incompleteTag + stampHtml + btnHtml;
-          sectionEl.prepend(overlay);
+          allMatching.forEach((sectionEl, matchIdx) => {
+            // Find the navy banner (.section-bar) — the sticky header at the top
+            // of every section in the PDF template.
+            const bar = sectionEl.querySelector(':scope > .section-bar');
+            if (!bar) return; // section has no banner; skip silently
+
+            // Flex-align the banner so text stays left, control sits right.
+            // Only apply once per bar to keep layout stable on re-renders.
+            if (!bar.dataset.dipApprovalFlex) {
+              bar.style.display = 'flex';
+              bar.style.alignItems = 'center';
+              bar.style.justifyContent = 'space-between';
+              bar.style.gap = '10px';
+              // Wrap naked text content so flex doesn't mangle it
+              const textWrap = document.createElement('span');
+              textWrap.className = 'section-bar-title';
+              // Move all existing child nodes into the wrapper
+              while (bar.firstChild) textWrap.appendChild(bar.firstChild);
+              bar.appendChild(textWrap);
+              bar.dataset.dipApprovalFlex = '1';
+            }
+
+            // Remove any prior approval control (re-renders)
+            const prior = bar.querySelector(':scope > .dip-approval-control');
+            if (prior) prior.remove();
+
+            // Only the FIRST matching section for each key gets the live button.
+            // Subsequent matches (e.g. second security section) get a read-only
+            // stamp so visual state is consistent without duplicate controls.
+            const ctrl = document.createElement('span');
+            ctrl.className = 'dip-approval-control';
+            ctrl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0;';
+
+            const warnHtml = (matchIdx === 0 && warnText)
+              ? '<span style="font-size:10px;color:#fcd34d;font-weight:600;letter-spacing:0;text-transform:none;white-space:nowrap;">' + warnText + '</span>'
+              : '';
+            const stampHtml = stampText
+              ? '<span style="font-size:10px;color:rgba(255,255,255,0.8);font-weight:400;letter-spacing:0;text-transform:none;">' + stampText + '</span>'
+              : '';
+            const btnHtml = (matchIdx === 0)
+              ? '<button ' + (btnEnabled ? '' : 'disabled ') + 'onclick="' + btnOnclick + '" title="' + sanitizeHtml(btnTitle) + '" style="padding:4px 12px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:4px;font-size:10px;font-weight:700;cursor:' + btnCursor + ';white-space:nowrap;letter-spacing:0.3px;text-transform:uppercase;">' + btnLabel + '</button>'
+              : '<span style="font-size:10px;color:rgba(255,255,255,0.65);font-weight:600;letter-spacing:0.3px;text-transform:uppercase;white-space:nowrap;">' + (isApproved ? '✓ Same as above' : '— ') + '</span>';
+
+            ctrl.innerHTML = warnHtml + stampHtml + btnHtml;
+            bar.appendChild(ctrl);
+          });
         });
 
         if (progress) {
