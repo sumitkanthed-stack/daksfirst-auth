@@ -2468,6 +2468,7 @@ export async function renderDealMatrix(deal) {
               <div>Gross Loan (Approved)</div><div id="dz-gross" style="text-align:right;color:#F1F5F9;font-weight:600;">\u2014</div>
               <div id="dz-retained-label" style="color:#94A3B8;">Less: Retained Interest</div><div id="dz-retained" style="text-align:right;color:#F87171;">\u2014</div>
               <div style="color:#94A3B8;">Less: Arrangement Fee</div><div id="dz-arr" style="text-align:right;color:#F87171;">\u2014</div>
+              <div id="dz-cf-credit-label" style="color:#94A3B8;display:none;">Plus: Commitment Fee credit <span style="font-size:10px;color:#64748B;">(already paid at Termsheet)</span></div><div id="dz-cf-credit" style="text-align:right;color:#34D399;display:none;">\u2014</div>
               <div style="color:#94A3B8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;font-weight:600;">= Net Advance on Day 1</div>
               <div id="dz-net" style="text-align:right;color:#34D399;font-weight:700;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;">\u2014</div>
             </div>
@@ -3243,7 +3244,9 @@ export async function renderDealMatrix(deal) {
         // M2b: Day Zero panel live-refresh on fee/rate/loan/months/servicing changes
         const _dzTrigger = ['loan_amount', 'loan_amount_approved', 'rate_requested', 'rate_approved',
           'ltv_approved', 'arrangement_fee_pct', 'retained_interest_months',
-          'interest_servicing', 'interest_servicing_approved'];
+          'interest_servicing', 'interest_servicing_approved',
+          // 2026-04-21: commitment_fee now feeds the Day Zero credit line
+          'commitment_fee'];
         if (_dzTrigger.includes(fieldKey) && typeof window._updateDayZeroPanel === 'function') {
           try { window._updateDayZeroPanel(); } catch (_) {}
         }
@@ -3542,14 +3545,32 @@ export async function renderDealMatrix(deal) {
 
     const retainedInterest = servicing === 'retained' ? loan * (rate / 100) * retainedMonths : 0;
     const arrangementFee = loan * (arrFeePct / 100);
-    const netAdvance = Math.max(0, loan - retainedInterest - arrangementFee);
+
+    // 2026-04-21: Commitment Fee is paid at Termsheet acceptance (before Day Zero)
+    // and credited against the Arrangement Fee on completion. So on Day 1 the
+    // borrower is effectively "up" by the commitment fee amount vs naive
+    // Loan − Retained − Arrangement. Read from the matrix input (live) then
+    // fall back to the deal object, then to the computed default (£5k policy).
+    const _computedCf = (typeof computeCommitmentFee === 'function')
+      ? computeCommitmentFee(loan)
+      : 5000;
+    const commitmentFee = _readField('mf-commitment_fee')
+      || _num(deal.commitment_fee)
+      || _computedCf
+      || 5000;
+
+    const netAdvance = Math.max(0, loan - retainedInterest - arrangementFee + commitmentFee);
 
     const _fmt = (n) => '£' + Math.round(n).toLocaleString();
     const setText = (id, s) => { const e = document.getElementById(id); if (e) e.textContent = s; };
+    const setDisplay = (id, shown) => { const e = document.getElementById(id); if (e) e.style.display = shown ? '' : 'none'; };
 
     setText('dz-gross', loan > 0 ? _fmt(loan) : '—');
     setText('dz-retained', retainedInterest > 0 ? '−' + _fmt(retainedInterest) : '—');
     setText('dz-arr', arrangementFee > 0 ? '−' + _fmt(arrangementFee) : '—');
+    setText('dz-cf-credit', commitmentFee > 0 ? '+' + _fmt(commitmentFee) : '—');
+    setDisplay('dz-cf-credit-label', commitmentFee > 0);
+    setDisplay('dz-cf-credit', commitmentFee > 0);
     setText('dz-net', loan > 0 ? _fmt(netAdvance) : '—');
 
     // Retained row styling — grey out when not applicable
@@ -3564,12 +3585,15 @@ export async function renderDealMatrix(deal) {
     // Explanation line
     const explain = document.getElementById('dz-explain');
     if (explain) {
+      const cfBit = commitmentFee > 0
+        ? ' Commitment Fee of £' + Math.round(commitmentFee).toLocaleString() + ' was paid at Termsheet acceptance and is credited back on Day 1 (net against the Arrangement Fee on completion).'
+        : '';
       if (loan <= 0) {
         explain.textContent = 'Set an Approved Loan amount to see the Day Zero calculation.';
       } else if (servicing === 'retained') {
-        explain.textContent = 'Formula: £' + Math.round(loan).toLocaleString() + ' × ' + rate.toFixed(3) + '%/mo × ' + retainedMonths + ' months = £' + Math.round(retainedInterest).toLocaleString() + ' retained; Arrangement ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '. Valuation/legal costs are paid separately by borrower.';
+        explain.textContent = 'Formula: £' + Math.round(loan).toLocaleString() + ' × ' + rate.toFixed(3) + '%/mo × ' + retainedMonths + ' months = £' + Math.round(retainedInterest).toLocaleString() + ' retained; Arrangement ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '.' + cfBit + ' Valuation/legal costs are paid separately by borrower.';
       } else {
-        explain.textContent = 'Interest Servicing is ' + servicing + ' — no upfront interest deduction. Arrangement Fee ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '.';
+        explain.textContent = 'Interest Servicing is ' + servicing + ' — no upfront interest deduction. Arrangement Fee ' + arrFeePct.toFixed(2) + '% = £' + Math.round(arrangementFee).toLocaleString() + '.' + cfBit;
       }
     }
   };
