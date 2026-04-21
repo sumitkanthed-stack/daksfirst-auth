@@ -290,7 +290,56 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
   const officers = Array.isArray(verification.officers) ? verification.officers : [];
   for (const o of officers) {
     const nameKey = _normaliseNameKey(o.name);
-    if (!nameKey || existingNames.has(nameKey)) continue;
+    if (!nameKey) continue;
+
+    // ─── 2026-04-21 Step 3: MERGE instead of SKIP ───
+    // If an existing child row matches (broker elected this person as UBO/PG
+    // via candidate confirm, or CH previously captured them as PSC), don't
+    // drop the CH officer facts. Merge them into ch_match_data with
+    // ch_officer_* namespaced keys so the row carries all role facets
+    // (UBO + Director + PSC) for the same person without overwriting the
+    // broker-assigned label.
+    if (existingNames.has(nameKey)) {
+      const existingChild = existingByName.get(nameKey);
+      const officerFacets = {
+        ch_officer_source: 'ch_officers_endpoint',
+        ch_officer_role: o.officer_role || null,
+        ch_officer_appointed_on: o.appointed_on || null,
+        ch_officer_resigned_on: o.resigned_on || null,
+        ch_officer_nationality: o.nationality || null,
+        ch_officer_country_of_residence: o.country_of_residence || null,
+        ch_officer_occupation: o.occupation || null,
+        ch_officer_date_of_birth: o.date_of_birth || null,
+        ch_officer_recursion_depth: depth,
+        ch_officer_merged_at: new Date().toISOString()
+      };
+      try {
+        // 2026-04-21 Step 3.5: also stamp CH verification on the existing row so
+        // the UI's allChVerified check flips true and the rich rendering fires
+        // automatically after CH verify (no manual click-through needed).
+        // ch_matched_role accumulates as comma-separated list — broker's label
+        // preserved, CH role appended only if not already present.
+        await pool.query(
+          `UPDATE deal_borrowers
+             SET ch_match_data = COALESCE(ch_match_data, '{}'::jsonb) || $1::jsonb,
+                 ch_verified_at = COALESCE(ch_verified_at, NOW()),
+                 ch_verified_by = COALESCE(ch_verified_by, $3::integer),
+                 ch_matched_role = CASE
+                   WHEN ch_matched_role IS NULL OR TRIM(ch_matched_role) = '' THEN $4
+                   WHEN POSITION(LOWER($4) IN LOWER(ch_matched_role)) > 0 THEN ch_matched_role
+                   ELSE ch_matched_role || ', ' || $4
+                 END,
+                 ch_match_confidence = COALESCE(NULLIF(ch_match_confidence, ''), 'ch_direct'),
+                 updated_at = NOW()
+           WHERE id = $2`,
+          [JSON.stringify(officerFacets), existingChild.id, userId, o.officer_role || 'director']
+        );
+        console.log(`[ch-recurse depth=${depth}] merged officer facets + CH-verified existing row id=${existingChild.id} (${o.name}, role=${o.officer_role})`);
+      } catch (e) {
+        console.warn(`[ch-recurse depth=${depth}] officer merge failed on id=${existingChild.id}:`, e.message);
+      }
+      continue;
+    }
     const roleMap = { director: 'director', 'llp-member': 'director', secretary: 'director' };
     const mappedRole = roleMap[o.officer_role] || 'director';
     const chData = {
@@ -356,10 +405,58 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
         })()
       : null;
 
-    // If existing — skip insert but still queue for recursion if corporate AND not yet recursed
+    // If existing — MERGE PSC facets into existing row, then handle corporate
+    // recursion / broker-trace as before. 2026-04-21 Step 3: previously this
+    // branch only handled corporate-PSC specific updates (recursion, trace flag)
+    // and otherwise skipped silently. Now it also captures PSC facets (natures
+    // of control, percentage, kind) for ALL existing matches so a person who
+    // is UBO + Director + PSC has all three facets on one row without
+    // overwriting the broker-assigned role label.
     if (existingNames.has(nameKey)) {
+      const existingChild = existingByName.get(nameKey);
+
+      // Always merge PSC facets under `ch_psc_*` namespace
+      const pscFacets = {
+        ch_psc_source: 'ch_psc_endpoint',
+        ch_psc_kind: p.kind || null,
+        ch_psc_notified_on: p.notified_on || null,
+        ch_psc_ceased_on: p.ceased_on || null,
+        ch_psc_natures_of_control: p.natures_of_control || [],
+        ch_psc_nationality: p.nationality || null,
+        ch_psc_country_of_residence: p.country_of_residence || null,
+        ch_psc_date_of_birth: p.date_of_birth || null,
+        ch_psc_is_corporate: isCorporatePsc,
+        ch_psc_own_company_number: pscOwnCompanyNumber,
+        ch_psc_identification: p.identification || null,
+        ch_psc_recursion_depth: depth,
+        ch_psc_merged_at: new Date().toISOString()
+      };
+      try {
+        // 2026-04-21 Step 3.5: also stamp CH verification on the existing row
+        // so allChVerified flips true and rich rendering fires. ch_matched_role
+        // accumulates — broker's label preserved, 'psc' appended if absent.
+        await pool.query(
+          `UPDATE deal_borrowers
+             SET ch_match_data = COALESCE(ch_match_data, '{}'::jsonb) || $1::jsonb,
+                 ch_verified_at = COALESCE(ch_verified_at, NOW()),
+                 ch_verified_by = COALESCE(ch_verified_by, $3::integer),
+                 ch_matched_role = CASE
+                   WHEN ch_matched_role IS NULL OR TRIM(ch_matched_role) = '' THEN 'psc'
+                   WHEN POSITION('psc' IN LOWER(ch_matched_role)) > 0 THEN ch_matched_role
+                   ELSE ch_matched_role || ', psc'
+                 END,
+                 ch_match_confidence = COALESCE(NULLIF(ch_match_confidence, ''), 'ch_direct'),
+                 updated_at = NOW()
+           WHERE id = $2`,
+          [JSON.stringify(pscFacets), existingChild.id, userId]
+        );
+        console.log(`[ch-recurse depth=${depth}] merged PSC facets + CH-verified existing row id=${existingChild.id} (${p.name})`);
+      } catch (e) {
+        console.warn(`[ch-recurse depth=${depth}] PSC merge failed on id=${existingChild.id}:`, e.message);
+      }
+
+      // Pre-existing behaviour: corporate-PSC recursion + broker-trace flagging
       if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
-        const existingChild = existingByName.get(nameKey);
         const existingChMatch = existingChild.ch_match_data || {};
         const alreadyRecursed = !!(existingChMatch.nested_verification);
         console.log(`[ch-recurse depth=${depth}] Existing corporate PSC detected: ${p.name} — alreadyRecursed=${alreadyRecursed}, will${alreadyRecursed ? ' NOT' : ''} queue for recursion`);
@@ -374,9 +471,7 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
         }
       } else if (isCorporatePsc) {
         console.log(`[ch-recurse depth=${depth}] Existing corporate PSC "${p.name}" NOT queued — reason: ownCoNum=${pscOwnCompanyNumber || 'missing'}, depth=${depth}/${MAX_RECURSION_DEPTH}`);
-        // If this existing corp PSC cannot be traced further, flag for broker
         if (_brokerTraceRequired) {
-          const existingChild = existingByName.get(nameKey);
           await pool.query(
             `UPDATE deal_borrowers SET ch_match_data = ch_match_data || $1::jsonb, updated_at = NOW() WHERE id = $2`,
             [JSON.stringify({ broker_trace_required: true, broker_trace_reason: _brokerTraceReason }), existingChild.id]
@@ -384,7 +479,7 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
           console.log(`[ch-recurse depth=${depth}] Flagged existing "${p.name}" for broker trace: ${_brokerTraceReason}`);
         }
       }
-      continue;  // skip the insert
+      continue;  // skip the insert — facets merged above
     }
     const chData = {
       source: 'ch_psc_endpoint',
