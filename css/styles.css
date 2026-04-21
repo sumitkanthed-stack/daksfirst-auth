@@ -833,6 +833,9 @@
     #dip-preview-container .section-bar button[style*="background:#16a34a"] { color: #ffffff !important; }
     #dip-preview-container .section-bar button[style*="background:#ffffff"] { color: #166534 !important; }
     #dip-preview-container .section-bar .dip-approval-control span { color: inherit !important; }
+    /* Waterfall "Net Advance to Borrower" total badge — navy background with
+       white text; the global dark-text override was making it invisible. */
+    #dip-preview-container .waterfall-row.total .amount { color: #ffffff !important; }
 
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 768px) {
