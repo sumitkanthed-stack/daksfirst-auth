@@ -58,24 +58,41 @@ export async function showDealDetail(dealId) {
     document.getElementById('detail-ref-id').textContent = dealId;
     document.getElementById('detail-date').textContent = formatDate(deal.created_at);
 
-    // Status badge
-    const statusEl = document.getElementById('detail-status-badge');
-    statusEl.className = `status-badge status-${deal.status}`;
-    statusEl.textContent = sanitizeHtml(deal.status.charAt(0).toUpperCase() + deal.status.slice(1));
-
-    // Stage badge
+    // 2026-04-21: Status + Stage badges now use shared deal-display helper.
+    // Previously deal-detail.js had its own duplicate stageLabels map that
+    // ran AFTER renderSnapshot and overwrote the badge with 'Info Gathering'
+    // for internal users. Now uses getStageLabel (same as Snapshot pipeline,
+    // deals list, Matrix header).
+    //
+    // NOTE: `stage` here is the RAW deal_stage (not derived). Downstream
+    // function logic uses `stage === 'assigned'`, 'received', 'dip_issued',
+    // 'info_gathering' etc. for business-logic gates — those need the raw
+    // DB value, not the synthesised display label. Use `getStageLabel(deal)`
+    // for display text only.
     const stage = deal.deal_stage || 'received';
+    const displayStage = deriveDisplayStage(deal);
+
+    // Status badge — hidden entirely for draft stage (stage badge already
+    // conveys the state); shown when deal has a workflow status to report.
+    const statusEl = document.getElementById('detail-status-badge');
+    if (statusEl) {
+      if (stage === 'draft') {
+        statusEl.style.display = 'none';
+      } else if (deal.status) {
+        statusEl.style.display = '';
+        statusEl.className = `status-badge status-${deal.status}`;
+        statusEl.textContent = sanitizeHtml(deal.status.charAt(0).toUpperCase() + deal.status.slice(1));
+      } else {
+        statusEl.style.display = 'none';
+      }
+    }
+
+    // Stage badge via helper — consistent across every view
     const stageEl = document.getElementById('detail-stage-badge');
-    const stageLabels = {
-      draft: 'Draft', received: 'Received', assigned: isInternal ? 'Assigned' : 'Received', dip_issued: 'DIP Issued',
-      info_gathering: isInternal ? 'Info Gathering' : 'DIP Requested', ai_termsheet: 'Indicative Termsheet',
-      fee_pending: 'Fee Pending', fee_paid: 'Fee Paid', underwriting: 'Underwriting',
-      bank_submitted: 'Bank Submitted', bank_approved: 'Bank Approved',
-      borrower_accepted: 'Borrower Accepted', legal_instructed: 'Legal Instructed',
-      completed: 'Completed', declined: 'Declined', withdrawn: 'Withdrawn'
-    };
-    stageEl.textContent = stageLabels[stage] || sanitizeHtml(stage);
-    stageEl.className = `stage-badge stage-${stage}`;
+    if (stageEl) {
+      stageEl.textContent = getStageLabel(deal);
+      stageEl.className = `stage-badge stage-${displayStage}`;
+    }
 
     // Show draft action bar for draft deals (broker can submit or delete)
     const isDraft = stage === 'draft';
