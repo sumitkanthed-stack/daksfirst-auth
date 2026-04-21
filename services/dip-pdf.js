@@ -1506,22 +1506,17 @@ function buildDipHtml(deal, dipData, options) {
           <tr><td><strong>Commitment Fee</strong></td><td class="amt">${fmtGBP(commitmentFee)}</td><td>On Termsheet acceptance</td><td>Credited against Arrangement Fee on completion</td></tr>
           <tr><td><strong>Arrangement Fee</strong></td><td class="amt">${fmtGBP(grossLoan * arrangementFeePct / 100)} (${arrangementFeePct.toFixed(2)}%)</td><td>On completion</td><td>Deducted from the gross loan (net of Commitment Fee credit)</td></tr>
           ${brokerFeePct > 0 ? `
-          <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ of which paid to Introducing Broker</td><td class="amt">${fmtGBP(grossLoan * brokerFeePct / 100)} (${brokerFeePct.toFixed(2)}%)</td><td>On completion</td><td>Paid to Broker from within the Arrangement Fee &mdash; NOT additional to Borrower</td></tr>
-          <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ retained by Lender (net arrangement fee)</td><td class="amt">${fmtGBP(grossLoan * (arrangementFeePct - brokerFeePct) / 100)} (${(arrangementFeePct - brokerFeePct).toFixed(2)}%)</td><td>On completion</td><td>Lender's share of the Arrangement Fee</td></tr>` : ''}
+          <tr class="sub-row"><td>&nbsp;&nbsp;&nbsp;↳ of which paid to Introducing Broker</td><td class="amt">${fmtGBP(grossLoan * brokerFeePct / 100)} (${brokerFeePct.toFixed(2)}%)</td><td>On completion</td><td>Paid by Lender from the Arrangement Fee — NOT additional to Borrower</td></tr>` : ''}
           <tr><td><strong>Exit Fee</strong></td><td class="amt">1.00% of loan</td><td>On redemption</td><td>Payable at exit</td></tr>
           <tr><td><strong>Extension Fee</strong></td><td class="amt">1.00% of loan</td><td>If term extended</td><td>Per extension period agreed</td></tr>
         </tbody>
       </table>
-      ${brokerFeePct > 0 ? `
-      <div class="fee-note" style="background:#eef4ff; border-left: 3px solid #0f2a4a; padding:5px 9px; border-radius:0 3px 3px 0; font-style:normal; font-size:8.5px;">
-        <strong>Arrangement Fee split.</strong> Of the ${arrangementFeePct.toFixed(2)}% Arrangement Fee (single deduction from gross loan), ${brokerFeePct.toFixed(2)}% is paid by the Lender to the Introducing Broker on completion; the balance of ${(arrangementFeePct - brokerFeePct).toFixed(2)}% is retained by the Lender. <em>Broker Fee is not additional to the Borrower.</em>
-      </div>` : ''}
-      <!-- 2026-04-21: CF treatment condensed to a single inline fine-print line so
-           it fits on page 2 without pushing into the footer. The full bulleted
-           treatment clause was too tall; this single-sentence summary covers the
-           three cases (completion / Borrower withdrawal / Daksfirst withdrawal). -->
+      <!-- 2026-04-21: removed the separate "retained by Lender" sub-row (derivable
+           from Arrangement - Broker) and the arrangement-fee-split fee-note
+           (info already in the Broker sub-row's trigger column). CF treatment
+           condensed below. All of it fits on page 2 without overflow. -->
       <div class="fee-note" style="margin-top:6px;font-size:8px;line-height:1.4;">
-        <strong>Commitment Fee treatment:</strong> credited against the Arrangement Fee on completion (no double charge); <strong>forfeited</strong> if the Borrower withdraws, misrepresents information, valuation does not support the lending, or KYC/AML is unsatisfactory; <em>may be refunded</em> at Daksfirst's discretion if Daksfirst withdraws for reasons within its own control. Third-party costs (valuation, Lender's solicitors) are borne directly by the Borrower; estimates provided at Term Sheet stage.
+        <strong>Commitment Fee treatment:</strong> credited against the Arrangement Fee on completion (no double charge); <strong>forfeited</strong> on Borrower withdrawal, misrepresentation, inadequate valuation, or failed KYC/AML; may be refunded at Daksfirst's discretion if Daksfirst withdraws for reasons within its control. Third-party costs (valuation, Lender's solicitors) are borne by the Borrower; estimates at Term Sheet stage.
       </div>
     </div>
   </div>
