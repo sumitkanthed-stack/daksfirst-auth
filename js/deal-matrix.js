@@ -1962,6 +1962,36 @@ export async function renderDealMatrix(deal) {
                   if (p.chimnie_prebuild === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.2);padding:2px 7px;border-radius:3px;font-weight:700;border:1px solid #F87171;">\u26A0 PREBUILD — not constructed</span>');
                   if (p.chimnie_has_farmland === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.2);padding:2px 7px;border-radius:3px;font-weight:700;border:1px solid #F87171;">\u26A0 FARMLAND — excluded asset</span>');
                   if (p.chimnie_overseas_ownership === true) flags.push('<span style="font-size:9px;color:#F87171;background:rgba(248,113,113,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Overseas owner</span>');
+                  // Tier 3 — heating/insurance/legal red flags
+                  const mainFuelLower = String(p.chimnie_main_fuel || '').toLowerCase();
+                  if (mainFuelLower && !mainFuelLower.includes('gas') && !mainFuelLower.includes('mains')) {
+                    // Off-grid heating (oil, LPG, electric-only) — affects tenant desirability + insurance
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Off-grid heating: ' + sanitizeHtml(p.chimnie_main_fuel) + '</span>');
+                  }
+                  if (p.chimnie_has_extension === true && p.chimnie_extension_count >= 1) {
+                    flags.push('<span style="font-size:9px;color:#94A3B8;background:rgba(148,163,184,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Extended (' + p.chimnie_extension_count + ') — verify authorised</span>');
+                  }
+                  if (p.chimnie_has_solar_panels === true) {
+                    flags.push('<span style="font-size:9px;color:#34D399;background:rgba(52,211,153,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u2600 Solar panels' + (p.chimnie_solar_panels_shared === true ? ' (shared)' : '') + '</span>');
+                  }
+                  if (p.chimnie_outbuildings_count != null && p.chimnie_outbuildings_count > 0) {
+                    const obArea = Number(p.chimnie_outbuildings_area_sqm) || 0;
+                    flags.push('<span style="font-size:9px;color:#60A5FA;background:rgba(96,165,250,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">' + p.chimnie_outbuildings_count + ' outbuilding' + (p.chimnie_outbuildings_count === 1 ? '' : 's') + (obArea > 0 ? ' · ' + Math.round(obArea) + ' m\u00B2' : '') + '</span>');
+                  }
+                  // Fire station distance flag — UK home insurance commonly increases premiums beyond 5 miles (~8km)
+                  const fireDist = Number(p.chimnie_fire_station_distance_m) || null;
+                  if (fireDist != null && fireDist > 8000) {
+                    flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Fire station ' + (fireDist / 1000).toFixed(1) + 'km — insurance loading</span>');
+                  }
+                  // Cross-property concentration — if another property IN THIS DEAL shares our parent UPRN
+                  if (p.chimnie_parent_uprn && deal.properties && deal.properties.length > 1) {
+                    const siblingsInDeal = deal.properties.filter(other =>
+                      other.id !== p.id && other.chimnie_parent_uprn === p.chimnie_parent_uprn
+                    );
+                    if (siblingsInDeal.length > 0) {
+                      flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.15);padding:2px 7px;border-radius:3px;font-weight:700;border:1px solid rgba(251,191,36,0.3);">\u26A0 Block concentration: ' + siblingsInDeal.length + ' sibling' + (siblingsInDeal.length === 1 ? '' : 's') + ' on this deal</span>');
+                    }
+                  }
                   if (p.chimnie_connected_property_risk && p.chimnie_connected_property_risk !== 'none' && p.chimnie_connected_property_risk !== 'None') {
                     flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Connected risk: ' + sanitizeHtml(p.chimnie_connected_property_risk) + '</span>');
                   }
@@ -2005,6 +2035,12 @@ export async function renderDealMatrix(deal) {
                   const typeDetail = floorLevelLine + classificationLine;
                   const bedsBaths = (p.chimnie_bedrooms != null || p.chimnie_bathrooms != null)
                     ? ((p.chimnie_bedrooms != null ? p.chimnie_bedrooms + ' bed' : '?') + ' \u00B7 ' + (p.chimnie_bathrooms != null ? p.chimnie_bathrooms + ' bath' : '?'))
+                      + ((p.chimnie_reception_rooms != null && p.chimnie_reception_rooms > 0) || (p.chimnie_total_rooms != null && p.chimnie_total_rooms > 0)
+                        ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' +
+                          (p.chimnie_reception_rooms != null && p.chimnie_reception_rooms > 0 ? p.chimnie_reception_rooms + ' reception' + (p.chimnie_reception_rooms === 1 ? '' : 's') : '') +
+                          (p.chimnie_total_rooms != null && p.chimnie_total_rooms > 0 ? (p.chimnie_reception_rooms ? ' \u00B7 ' : '') + p.chimnie_total_rooms + ' rooms total' : '') +
+                          '</div>'
+                        : '')
                     : '\u2014';
                   // Cross-check Chimnie floor area vs EPC floor area — flag >10% variance (possible survey divergence)
                   const faChim = Number(p.chimnie_floor_area_sqm) || 0;
@@ -2026,7 +2062,10 @@ export async function renderDealMatrix(deal) {
                     : (gardenLine || '\u2014');
                   const ctBand = p.chimnie_council_tax_band ? 'Band ' + sanitizeHtml(p.chimnie_council_tax_band) : '\u2014';
                   const rebuildDisplay = p.chimnie_rebuild_cost_estimate
-                    ? fmtMoney(p.chimnie_rebuild_cost_estimate)
+                    ? fmtMoney(p.chimnie_rebuild_cost_estimate) +
+                      ((p.chimnie_rebuild_cost_basic && p.chimnie_rebuild_cost_luxury)
+                        ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Basic ' + fmtMoney(p.chimnie_rebuild_cost_basic) + ' \u00B7 Lux ' + fmtMoney(p.chimnie_rebuild_cost_luxury) + '</div>'
+                        : '')
                     : '\u2014';
                   // Transit cell — shows PTAL for London (TfL dataset) as the primary score,
                   // with nearest train/TFL station name + distance (Chimnie) as context.
@@ -2118,6 +2157,54 @@ export async function renderDealMatrix(deal) {
                       '</div>'
                     : '';
 
+                  // ── Property images + floorplan thumbnails (Tier 3) ──
+                  // Chimnie aggregates listing images from the source portal. Display first
+                  // image + floorplan as clickable thumbnails. "+N more" if additional images.
+                  const imgCount = Number(p.chimnie_image_count) || 0;
+                  const fpCount = Number(p.chimnie_floorplan_count) || 0;
+                  const imageStrip = (p.chimnie_listing_image_url || p.chimnie_floorplan_image_url)
+                    ? '<div style="display:flex;gap:10px;align-items:center;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
+                        (p.chimnie_listing_image_url
+                          ? '<a href="' + sanitizeHtml(p.chimnie_listing_image_url) + '" target="_blank" rel="noopener" style="text-decoration:none;flex-shrink:0;" title="Open full image in new tab">' +
+                            '<img src="' + sanitizeHtml(p.chimnie_listing_image_url) + '" alt="Listing image" loading="lazy" style="width:120px;height:80px;object-fit:cover;border-radius:4px;border:1px solid rgba(96,165,250,0.2);display:block;" onerror="this.style.display=\'none\'">' +
+                          '</a>' : '')
+                        +
+                        (p.chimnie_floorplan_image_url
+                          ? '<a href="' + sanitizeHtml(p.chimnie_floorplan_image_url) + '" target="_blank" rel="noopener" style="text-decoration:none;flex-shrink:0;" title="Open floorplan in new tab">' +
+                            '<img src="' + sanitizeHtml(p.chimnie_floorplan_image_url) + '" alt="Floorplan" loading="lazy" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid rgba(96,165,250,0.2);display:block;background:#fff;" onerror="this.style.display=\'none\'">' +
+                          '</a>' : '')
+                        +
+                        '<div style="font-size:10px;color:#94A3B8;line-height:1.5;">' +
+                          (imgCount > 1 ? '<div><strong style="color:#F1F5F9;">' + imgCount + '</strong> listing image' + (imgCount === 1 ? '' : 's') + '</div>' : imgCount === 1 ? '<div>1 listing image</div>' : '') +
+                          (fpCount > 0 ? '<div><strong style="color:#F1F5F9;">' + fpCount + '</strong> floorplan' + (fpCount === 1 ? '' : 's') + '</div>' : '') +
+                          '<div style="font-style:italic;margin-top:2px;">click to open full size</div>' +
+                        '</div>' +
+                      '</div>'
+                    : '';
+
+                  // ── 5-year value sparkline (Tier 3 / structural) ──
+                  // Inline SVG polyline from chimnie_historical_values_compact array.
+                  // Shows trajectory SHAPE, not just the % change number. 80x20 px.
+                  const sparklineSvg = (() => {
+                    const vals = p.chimnie_historical_values_compact;
+                    if (!Array.isArray(vals) || vals.length < 2) return '';
+                    const w = 80, h = 20, pad = 1;
+                    const min = Math.min(...vals), max = Math.max(...vals);
+                    const range = (max - min) || 1;
+                    const points = vals.map((v, i) => {
+                      const x = pad + (i / (vals.length - 1)) * (w - 2 * pad);
+                      const y = pad + (1 - (v - min) / range) * (h - 2 * pad);
+                      return x.toFixed(1) + ',' + y.toFixed(1);
+                    }).join(' ');
+                    // Colour based on first vs last: green = rising, red = falling, grey = flat
+                    const change = vals[vals.length - 1] - vals[0];
+                    const colour = Math.abs(change / vals[0]) < 0.01 ? '#94A3B8'
+                                 : change > 0 ? '#34D399' : '#F87171';
+                    return '<svg width="' + w + '" height="' + h + '" style="vertical-align:middle;margin-left:4px;" aria-label="5 year value trajectory">' +
+                      '<polyline points="' + points + '" fill="none" stroke="' + colour + '" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+                    '</svg>';
+                  })();
+
                   // Inline summary for the collapsed state — three highest-signal
                   // numbers so the RM can eyeball the property without expanding.
                   const summaryBits = [];
@@ -2135,9 +2222,10 @@ export async function renderDealMatrix(deal) {
                     '<div id="chimnie-body-' + p.id + '" style="display:' + chimnieBodyDisplay + ';">' +
                       metaStrip +
                       relationshipsStrip +
+                      imageStrip +
                       // Row 1 — valuation + risk
                       '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +
-                        kpi('AVM', fmtMoney(p.chimnie_avm_mid)
+                        kpi('AVM', fmtMoney(p.chimnie_avm_mid) + sparklineSvg
                           + (avmRange ? '<div style="font-size:9px;color:#64748B;font-weight:400;margin-top:2px;">' + avmRange + '</div>' : '')
                           + (p.chimnie_avg_proximal_value ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Area comps avg: ' + fmtMoney(p.chimnie_avg_proximal_value) + '</div>' : '')
                           + varianceBadge) +
@@ -2162,7 +2250,27 @@ export async function renderDealMatrix(deal) {
                           + (p.chimnie_sale_propensity ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">Sale propensity: <span style="color:#F1F5F9;">' + sanitizeHtml(p.chimnie_sale_propensity) + '</span></div>' : '')) +
                         kpi('Tenure', sanitizeHtml(p.chimnie_lease_type || '\u2014')) +
                         kpi('Construction', sanitizeHtml((p.chimnie_construction_material || '\u2014') + (p.chimnie_date_of_construction ? ' \u00B7 ' + p.chimnie_date_of_construction : ''))) +
-                        kpi('EPC', sanitizeHtml((p.chimnie_epc_current || '\u2014') + (p.chimnie_epc_potential ? ' \u2192 ' + p.chimnie_epc_potential : ''))) +
+                        kpi('EPC', (() => {
+                          const current = p.chimnie_epc_current;
+                          const potential = p.chimnie_epc_potential;
+                          const recs = p.chimnie_epc_recommendations;
+                          const main = sanitizeHtml((current || '\u2014') + (potential ? ' \u2192 ' + potential : ''));
+                          // Compact retrofit summary: "3 recs · £5,400 retrofit"
+                          if (Array.isArray(recs) && recs.length > 0) {
+                            const totalCost = recs.reduce((s, r) => {
+                              const c = r?.cost ?? r?.indicative_cost ?? r?.cost_estimate ?? 0;
+                              if (typeof c === 'number') return s + c;
+                              if (typeof c === 'string') {
+                                const m = c.match(/£?([\d,]+)/);
+                                return m ? s + parseInt(m[1].replace(/,/g, ''), 10) : s;
+                              }
+                              return s;
+                            }, 0);
+                            const costStr = totalCost > 0 ? ' \u00B7 \u00A3' + totalCost.toLocaleString() : '';
+                            return main + '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + recs.length + ' retrofit rec' + (recs.length === 1 ? '' : 's') + costStr + '</div>';
+                          }
+                          return main;
+                        })()) +
                       '</div>' +
                       // Row 3 — physical attributes + bills + rebuild + PTAL (2026-04-21)
                       '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:4px;">' +

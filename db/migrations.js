@@ -912,6 +912,40 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_parent_uprn VARCHAR(20)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_sibling_uprn_count INT`,             // how many flats share our parent_uprn
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_subproperty_uprn_count INT`,        // how many subproperties we ourselves contain
+
+      // ═══ Chimnie Tier 3 (2026-04-21) — images, EPC retrofit, heating, extensions, solar, outbuildings ═══
+      // Images — URLs to listing + floorplan images hosted by Chimnie's source portals
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_listing_image_url TEXT`,             // first listing image URL
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_image_url TEXT`,           // first floorplan URL
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_image_count INT`,                    // total listing images available
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_floorplan_count INT`,
+      // EPC retrofit recommendations (MEES compliance path)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_epc_recommendations JSONB`,          // array of {description, cost, co2_saving, ...}
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_environment_impact_current INT`,     // rating A-G as number (A=100, G=1)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_environment_impact_potential INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_co2_emissions_current NUMERIC(8,2)`, // tonnes CO2 per year
+      // Heating
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_main_fuel VARCHAR(60)`,              // e.g. 'mains gas', 'electricity', 'oil', 'LPG'
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_primary_heating_source VARCHAR(200)`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_heating_types JSONB`,                // array of heating_types enum
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_has_mains_gas BOOLEAN`,
+      // Extensions (legal-due-diligence flag)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_has_extension BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_extension_count INT`,
+      // Insurance: fire station distance (material premium driver)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fire_station_distance_m INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fire_station_name VARCHAR(120)`,
+      // Solar (green credentials, EPC uplift)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_has_solar_panels BOOLEAN`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_solar_panels_shared BOOLEAN`,
+      // Outbuildings (annex / garden office — 15-25% of value contribution)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_outbuildings_count INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_outbuildings_area_sqm NUMERIC(10,2)`,
+      // Rooms (richer layout picture)
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_reception_rooms INT`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_total_rooms INT`,
+      // 5-year historical values — compact array of monthly values for sparkline rendering
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_historical_values_compact JSONB`,    // array of ~60 numbers, shape [v0, v1, ..., v59]
       // Full payload + audit
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_data JSONB DEFAULT '{}'::jsonb`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_fetched_at TIMESTAMPTZ`,

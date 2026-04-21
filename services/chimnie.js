@@ -398,8 +398,114 @@ function extractFlatFields(data) {
     chimnie_subproperty_uprn_count: (() => {
       const s = get(data, 'plus.property.attributes.status.subproperties');
       return Array.isArray(s) ? s.length : null;
-    })()
+    })(),
+
+    // ═══ Tier 3 (2026-04-21) ═══
+    // Images — listings + floorplans arrays; promote first URL + count to flat cols
+    chimnie_listing_image_url: (() => {
+      const arr = get(data, 'property.images.listing_images') || get(data, 'property.attributes.images.listing_images');
+      return (Array.isArray(arr) && arr.length > 0) ? (typeof arr[0] === 'string' ? arr[0] : arr[0]?.url || null) : null;
+    })(),
+    chimnie_image_count: (() => {
+      const arr = get(data, 'property.images.listing_images') || get(data, 'property.attributes.images.listing_images');
+      return Array.isArray(arr) ? arr.length : null;
+    })(),
+    chimnie_floorplan_image_url: (() => {
+      const arr = get(data, 'property.images.floorplan_images') || get(data, 'property.attributes.images.floorplan_images');
+      return (Array.isArray(arr) && arr.length > 0) ? (typeof arr[0] === 'string' ? arr[0] : arr[0]?.url || null) : null;
+    })(),
+    chimnie_floorplan_count: (() => {
+      const arr = get(data, 'property.images.floorplan_images') || get(data, 'property.attributes.images.floorplan_images');
+      return Array.isArray(arr) ? arr.length : null;
+    })(),
+
+    // EPC retrofit recommendations + environment impact (MEES compliance path)
+    chimnie_epc_recommendations: get(data, 'property.bills.energy.epc_recommendations')
+                              || get(data, 'bills.energy.epc_recommendations')
+                              || null,
+    chimnie_environment_impact_current: get(data, 'property.bills.energy.environment_impact_current')
+                                     ?? get(data, 'bills.energy.environment_impact_current')
+                                     ?? null,
+    chimnie_environment_impact_potential: get(data, 'property.bills.energy.environment_impact_potential')
+                                       ?? get(data, 'bills.energy.environment_impact_potential')
+                                       ?? null,
+    chimnie_co2_emissions_current: get(data, 'property.bills.energy.co2_emissions_current')
+                                ?? get(data, 'bills.energy.co2_emissions_current')
+                                ?? null,
+
+    // Heating
+    chimnie_main_fuel: get(data, 'property.bills.energy.main_fuel')
+                    || get(data, 'bills.energy.main_fuel')
+                    || null,
+    chimnie_primary_heating_source: get(data, 'property.bills.energy.primary_heating_source')
+                                 || get(data, 'bills.energy.primary_heating_source')
+                                 || null,
+    chimnie_heating_types: (() => {
+      const arr = get(data, 'property.bills.energy.heating_types') || get(data, 'bills.energy.heating_types');
+      return Array.isArray(arr) ? arr : null;
+    })(),
+    chimnie_has_mains_gas: _boolOrNull(get(data, 'property.bills.energy.mains_gas_flag_declared_and_predicted')
+                                   ?? get(data, 'property.bills.energy.mains_gas_flag_declared_only')
+                                   ?? get(data, 'bills.energy.mains_gas_flag_declared_and_predicted')
+                                   ?? get(data, 'bills.energy.mains_gas_flag_declared_only')),
+
+    // Extensions (authorisation / legal DD)
+    chimnie_has_extension: _boolOrNull(get(data, 'property.attributes.indoor.extension')
+                                   ?? get(data, 'property.indoor.extension')),
+    chimnie_extension_count: get(data, 'property.attributes.indoor.extension_count')
+                          ?? get(data, 'property.indoor.extension_count')
+                          ?? null,
+
+    // Fire station (insurance premium driver — some insurers have >5 mile threshold)
+    chimnie_fire_station_distance_m: get(data, 'surroundings.facilities.health.fire_station.distance') ?? null,
+    chimnie_fire_station_name: get(data, 'surroundings.facilities.health.fire_station.name') || null,
+
+    // Solar panels (EPC potential uplift, green mortgage eligibility)
+    chimnie_has_solar_panels: _boolOrNull(get(data, 'premium.property.outdoor.solar_panels.has_solar_panels')),
+    chimnie_solar_panels_shared: _boolOrNull(get(data, 'premium.property.outdoor.solar_panels.shared')),
+
+    // Outbuildings (annex / granny flat / garden office — can be 15-25% of value)
+    chimnie_outbuildings_count: get(data, 'premium.property.outdoor.outbuildings_summary.count') ?? null,
+    chimnie_outbuildings_area_sqm: get(data, 'premium.property.outdoor.outbuildings_summary.total_area_m2') ?? null,
+
+    // Rooms (reception + total)
+    chimnie_reception_rooms: get(data, 'property.attributes.indoor.reception_rooms')
+                          ?? get(data, 'property.indoor.reception_rooms')
+                          ?? null,
+    chimnie_total_rooms: get(data, 'property.attributes.indoor.total_rooms')
+                      ?? get(data, 'property.indoor.total_rooms')
+                      ?? null,
+
+    // Historical values compacted to an ordered array for sparkline rendering.
+    // Takes ~60 monthly values from 5-year history, strips dates, keeps just the prices.
+    chimnie_historical_values_compact: _compactHistoricalValues(get(data, 'property.value.sale.historical_property_values'))
   };
+}
+
+// Compact the historical values series to a simple ordered array [v0, v1, ..., v_n]
+// suitable for an SVG polyline. Returns null when no data.
+function _compactHistoricalValues(hist) {
+  if (!hist) return null;
+  let values = [];
+  if (Array.isArray(hist)) {
+    values = hist
+      .map(row => {
+        if (!row) return null;
+        const v = row.value ?? row.v ?? row.price ?? row[Object.keys(row)[1]];
+        return (typeof v === 'number') ? v : (typeof v === 'string' ? parseFloat(v) : null);
+      })
+      .filter(v => v != null && isFinite(v));
+  } else if (typeof hist === 'object') {
+    // Sort keys to preserve chronological order (YYYY-MM sorts naturally)
+    const sortedKeys = Object.keys(hist).sort();
+    values = sortedKeys
+      .map(k => hist[k])
+      .map(v => (typeof v === 'number') ? v : (typeof v === 'string' ? parseFloat(v) : null))
+      .filter(v => v != null && isFinite(v));
+  }
+  // Cap at 60 values to keep the JSONB reasonable; take most recent if longer
+  if (values.length > 60) values = values.slice(-60);
+  return values.length >= 2 ? values : null;
 }
 
 // Coerce to boolean, preserving null when the source was truly absent.
