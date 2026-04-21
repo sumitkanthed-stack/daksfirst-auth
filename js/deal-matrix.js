@@ -1951,11 +1951,14 @@ export async function renderDealMatrix(deal) {
                   if (constructionLower && !['brick', 'stone'].includes(constructionLower)) {
                     flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">Non-std: ' + sanitizeHtml(p.chimnie_construction_material) + '</span>');
                   }
-                  // Occupancy flag — vacant is a risk signal (no rental income, possible long void period)
+                  // Occupancy flag — vacant is a risk signal (no rental income, possible long void period).
+                  // 2026-04-21: Chimnie returns 'owner-occupier' (not 'owner-occupied'); match both spellings.
+                  // Only flag genuinely unusual occupancy — standard values produce no chip.
                   const occupancyLower = String(p.chimnie_occupancy_status || '').toLowerCase();
+                  const standardOccupancies = ['owner-occupier', 'owner-occupied', 'tenanted', 'tenant', 'rented', 'let'];
                   if (occupancyLower === 'vacant' || occupancyLower.includes('vacant')) {
                     flags.push('<span style="font-size:9px;color:#FBBF24;background:rgba(251,191,36,0.12);padding:2px 7px;border-radius:3px;font-weight:700;">\u26A0 Vacant</span>');
-                  } else if (occupancyLower && occupancyLower !== 'owner-occupied' && occupancyLower !== 'tenanted') {
+                  } else if (occupancyLower && !standardOccupancies.includes(occupancyLower) && !standardOccupancies.some(s => occupancyLower.includes(s))) {
                     flags.push('<span style="font-size:9px;color:#94A3B8;background:rgba(148,163,184,0.10);padding:2px 7px;border-radius:3px;font-weight:700;">Occ: ' + sanitizeHtml(p.chimnie_occupancy_status) + '</span>');
                   }
                   // Flood target detail — "Buildings" is materially worse than "Grounds"
@@ -1992,11 +1995,31 @@ export async function renderDealMatrix(deal) {
                   const rebuildDisplay = p.chimnie_rebuild_cost_estimate
                     ? fmtMoney(p.chimnie_rebuild_cost_estimate)
                     : '\u2014';
-                  // PTAL placeholder — to be wired in Phase 2 via TfL dataset (London only)
+                  // Transit cell — shows nearest train/TFL station distance universally (Chimnie-provided),
+                  // plus PTAL placeholder for London properties (Phase 2 via TfL dataset).
+                  // Format: "250m \u00B7 Hammersmith" with PTAL note if London.
                   const isLondon = (p.chimnie_region || '').toLowerCase() === 'london';
-                  const ptalDisplay = isLondon
-                    ? '<span style="color:#94A3B8;font-weight:400;" title="PTAL (Public Transport Accessibility Level) — TfL dataset integration pending (Phase 2)">\u2014 <span style="font-size:9px;">(Phase 2)</span></span>'
-                    : '<span style="color:#64748B;font-weight:400;" title="PTAL applies to London only">n/a</span>';
+                  const stationName = p.chimnie_nearest_station_name;
+                  const stationDistance = Number(p.chimnie_nearest_station_distance_m) || 0;
+                  let transitDisplay;
+                  if (stationDistance > 0) {
+                    // Format distance nicely — under 1km in metres, else km to 1dp
+                    const distLabel = stationDistance < 1000
+                      ? stationDistance + 'm'
+                      : (stationDistance / 1000).toFixed(1) + 'km';
+                    // Walk-time proxy: ~80m/min comfortable walking pace
+                    const walkMin = Math.round(stationDistance / 80);
+                    // Colour: excellent <500m green, good <1km amber, poor >1km red (very rough proxy)
+                    const distColour = stationDistance < 500 ? '#34D399'
+                                     : stationDistance < 1000 ? '#FBBF24'
+                                     : '#F87171';
+                    transitDisplay = '<span style="color:' + distColour + ';">' + distLabel + '</span>' +
+                      (stationName ? '<div style="font-size:9px;color:#94A3B8;font-weight:400;margin-top:2px;">' + sanitizeHtml(stationName) + ' \u00B7 ~' + walkMin + ' min walk</div>' : '') +
+                      (isLondon ? '<div style="font-size:9px;color:#64748B;font-weight:400;font-style:italic;margin-top:2px;">PTAL: \u2014 (Phase 2)</div>' : '');
+                  } else {
+                    transitDisplay = '<span style="color:#94A3B8;font-weight:400;">\u2014</span>' +
+                      (isLondon ? '<div style="font-size:9px;color:#64748B;font-weight:400;font-style:italic;margin-top:2px;">PTAL: (Phase 2)</div>' : '');
+                  }
 
                   // Metadata strip — identifiers + location, small font at top
                   const metaBits = [];
@@ -2041,7 +2064,7 @@ export async function renderDealMatrix(deal) {
                       kpi('Floor Area', faDisplay) +
                       kpi('Council Tax', ctBand) +
                       kpi('Rebuild Cost', rebuildDisplay) +
-                      kpi('PTAL', ptalDisplay) +
+                      kpi('Transit', transitDisplay) +
                     '</div>' +
                     flagsHtml +
                   '</div>';

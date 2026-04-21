@@ -273,7 +273,13 @@ function extractFlatFields(data) {
                         ?? null,
 
     // Rebuild cost (for insurance reinstatement clause)
-    chimnie_rebuild_cost_estimate: get(data, 'premium.property.value.rebuild.estimated_rebuild_cost.estimate') || null
+    chimnie_rebuild_cost_estimate: get(data, 'premium.property.value.rebuild.estimated_rebuild_cost.estimate') || null,
+
+    // Transit — nearest train/TFL station. Chimnie does NOT provide PTAL; we'll
+    // compute that separately from TfL's free PTAL dataset in Phase 2.
+    // Confirmed by Wiseguy 2026-04-21: only `nearest_train_station.distance` available.
+    chimnie_nearest_station_name: get(data, 'surroundings.facilities.transport.nearest_train_station.name') || null,
+    chimnie_nearest_station_distance_m: get(data, 'surroundings.facilities.transport.nearest_train_station.distance') || null
   };
 }
 
