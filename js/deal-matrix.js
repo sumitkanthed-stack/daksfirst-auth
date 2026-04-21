@@ -781,15 +781,28 @@ export async function renderDealMatrix(deal) {
                   }
                   return true;
                 });
-                // Split into two semantic groups:
-                //   chOfficers  = directors / PSCs / UBOs / shareholders that belong to the PRIMARY (top-level, no parent)
-                //                 — excludes officers of joint borrowers / guarantors (those live under their own parent row)
-                //   coBorrowers = primary / joint top-level co-borrowers (separate parties on the deal)
-                const chOfficers = nonGuarantors.filter(b =>
-                  ['director','psc','ubo','shareholder'].includes(b.role) && !b.parent_borrower_id
-                );
+                // 2026-04-21 fix — three bugs in filters:
+                // (1) chOfficers was requiring !b.parent_borrower_id which excludes
+                //     UBOs/Directors/PSCs correctly parented to the primary corporate
+                //     (Phase G hierarchical model). Fix: find the primary row first,
+                //     then pick its children in the officer-type roles.
+                // (2) allChVerified read from empty chOfficers → stayed false → UNVERIFIED
+                //     badge even on verified deals.
+                // (3) coBorrowers included role='primary' which made section D render
+                //     the primary row a SECOND time as "Joint Borrower" (duplicate).
+                //
+                // Split into semantic groups (corrected):
+                //   primaryRow  = the top-level PRIMARY corporate/individual row in deal_borrowers
+                //   chOfficers  = directors / PSCs / UBOs / shareholders under the primary row
+                //   coBorrowers = JOINT top-level co-borrowers only (primary rendered separately)
+                const primaryRow = allBorrowers.find(b => b.role === 'primary' && !b.parent_borrower_id);
+                const chOfficers = primaryRow
+                  ? allBorrowers.filter(b =>
+                      b.parent_borrower_id === primaryRow.id &&
+                      ['director','psc','ubo','shareholder'].includes(b.role))
+                  : [];
                 const coBorrowers = nonGuarantors.filter(b =>
-                  ['primary','joint'].includes(b.role) && !b.parent_borrower_id
+                  b.role === 'joint' && !b.parent_borrower_id
                 );
                 const allChVerified = chOfficers.length > 0 && chOfficers.every(b => b.ch_verified_at);
 
