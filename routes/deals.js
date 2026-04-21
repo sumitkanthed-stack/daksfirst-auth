@@ -8,7 +8,7 @@ const { authenticateInternal } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
 const { notifyDealEvent } = require('../services/notifications');
-const { generateDipPdf } = require('../services/dip-pdf');
+const { generateDipPdf, buildDipHtml } = require('../services/dip-pdf');
 // const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
@@ -1359,6 +1359,121 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
 //  TODO: Once template is confirmed correct, switch to canonical stored PDF
 //  serving from deal_documents to guarantee document integrity.
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  DIP PREVIEW HTML (2026-04-21) — returns the same HTML that generates the
+//  final PDF, but with data-approval-section attrs added to each section
+//  wrapper. Frontend renders this into the DIP Form container and overlays
+//  per-section approve/unapprove buttons. Zero drift between preview and PDF.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/:submissionId/dip-preview-html', authenticateToken, async (req, res) => {
+  try {
+    const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+    const dealId = deal.id;
+
+    // Access control — same rules as /dip-pdf
+    const internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+    const isInternal = internalRoles.includes(req.user.role);
+    const isOwner = deal.user_id === req.user.userId;
+    const isBorrower = deal.borrower_email === req.user.email || deal.borrower_invite_email === req.user.email;
+    if (!isInternal && !isOwner && !isBorrower) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // dipData from stored ai_termsheet_data
+    const dipData = typeof deal.ai_termsheet_data === 'string'
+      ? JSON.parse(deal.ai_termsheet_data) : (deal.ai_termsheet_data || {});
+
+    // Apply credit overrides (preview matches final issue-dip output)
+    if (dipData.credit_override_rate !== undefined) dipData.rate_monthly = dipData.credit_override_rate;
+    if (dipData.credit_override_ltv !== undefined) dipData.ltv = dipData.credit_override_ltv;
+    if (dipData.credit_override_arr_fee !== undefined) {
+      dipData.arrangement_fee = dipData.credit_override_arr_fee;
+      dipData.arrangement_fee_pct = dipData.credit_override_arr_fee;
+    }
+
+    // Borrowers for Parties block
+    const borrowersResult = await pool.query(
+      `SELECT id, full_name, role, email, kyc_status, borrower_type, company_number, company_name,
+              nationality, address, parent_borrower_id,
+              ch_verified_at, ch_matched_role, ch_match_confidence, ch_match_data,
+              pg_status, pg_limit_amount, pg_notes
+       FROM deal_borrowers WHERE deal_id = $1
+       ORDER BY
+         CASE role WHEN 'primary' THEN 1 WHEN 'joint' THEN 2 WHEN 'guarantor' THEN 3 WHEN 'director' THEN 4 ELSE 5 END,
+         parent_borrower_id NULLS FIRST, id`,
+      [dealId]
+    );
+
+    // Properties
+    const propertiesResult = await pool.query(
+      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note
+       FROM deal_properties WHERE deal_id = $1 ORDER BY market_value DESC NULLS LAST, id`,
+      [dealId]
+    );
+
+    const flatBorrowers = borrowersResult.rows.map(b => ({
+      name: b.full_name, role: b.role, email: b.email, kyc_verified: b.kyc_status === 'verified'
+    }));
+    const partiesGrouped = groupBorrowersForDip(borrowersResult.rows, deal);
+
+    const dipDataFull = {
+      ...dipData,
+      borrowers: flatBorrowers,
+      parties_grouped: partiesGrouped,
+      properties: propertiesResult.rows
+    };
+
+    // Build the HTML with approval-section attrs for in-app preview
+    const html = buildDipHtml(deal, dipDataFull, { forPreview: true });
+
+    // Current approval state per section — frontend renders overlay badges
+    const approvals = {
+      borrower: {
+        approved: !!deal.dip_borrower_approved,
+        approved_at: deal.dip_borrower_approved_at || null,
+        approved_by: deal.dip_borrower_approved_by || null
+      },
+      security: {
+        approved: !!deal.dip_security_approved,
+        approved_at: deal.dip_security_approved_at || null,
+        approved_by: deal.dip_security_approved_by || null
+      },
+      loan_terms: {
+        approved: !!deal.dip_loan_terms_approved,
+        approved_at: deal.dip_loan_terms_approved_at || null,
+        approved_by: deal.dip_loan_terms_approved_by || null
+      },
+      use_of_funds: {
+        approved: !!deal.dip_use_of_funds_approved,
+        approved_at: deal.dip_use_of_funds_approved_at || null,
+        approved_by: deal.dip_use_of_funds_approved_by || null
+      },
+      exit_strategy: {
+        approved: !!deal.dip_exit_strategy_approved,
+        approved_at: deal.dip_exit_strategy_approved_at || null,
+        approved_by: deal.dip_exit_strategy_approved_by || null
+      },
+      fees: {
+        approved: !!deal.dip_fees_approved,
+        approved_at: deal.dip_fees_approved_at || null,
+        approved_by: deal.dip_fees_approved_by || null
+      },
+      conditions: {
+        approved: !!deal.dip_conditions_approved,
+        approved_at: deal.dip_conditions_approved_at || null,
+        approved_by: deal.dip_conditions_approved_by || null
+      }
+    };
+
+    res.json({ html, approvals });
+  } catch (err) {
+    console.error('[dip-preview-html] Error:', err);
+    res.status(500).json({ error: 'Failed to build DIP preview' });
+  }
+});
+
 router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
   try {
     const dealResult = await pool.query(`SELECT * FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);

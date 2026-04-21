@@ -799,10 +799,39 @@ export function renderInternalWorkflowControls(deal) {
           <span style="background:#1e3a5f;color:#fff;padding:3px 8px;border-radius:4px;">Blue border = RM to confirm</span>
         </div>
       </div>
-      <p style="margin:0 0 16px;font-size:12px;color:#4b5563;">Review the borrower-submitted data and confirm the loan terms. Fields with blue borders require your input/confirmation.</p>
+      <p style="margin:0 0 12px;font-size:12px;color:#4b5563;">
+        <strong>Matrix is canonical.</strong> Edit figures and text in the matrix above — the preview below re-renders on refresh. Tick each section to approve; any matrix edit auto-revokes the relevant approval.
+      </p>
 
-      <!-- ═══ BORROWER DETAILS ═══ -->
-      <div style="background:#f9fafb;padding:14px;border-radius:6px;margin-bottom:16px;border:1px solid #e5e7eb;">
+      <!-- ═══ SECTION APPROVAL PROGRESS BAR ═══ -->
+      <div id="dip-preview-progress-bar" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f0f9ff;border:1px solid #7dd3fc;border-radius:6px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#0c4a6e;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
+          <span>⚖ DIP Section Approvals</span>
+          <span id="dip-preview-progress" style="font-size:11px;color:#0c4a6e;font-weight:600;letter-spacing:0;">— loading —</span>
+        </div>
+        <button onclick="window._refreshDipApprovals && window._refreshDipApprovals()" style="padding:4px 10px;background:#ffffff;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;" title="Pull the latest matrix state and re-render the preview">↻ Refresh</button>
+      </div>
+
+      <!-- ═══ DIP PDF PREVIEW (canonical form) ═══
+           Read-only render of the exact HTML that buildDipHtml() produces for the PDF.
+           Each section carries a data-approval-section attr; renderDipApprovalGates
+           overlays an approve/unapprove badge on every section. No editable fields here
+           — RM does all edits in the matrix above. -->
+      <div id="dip-preview-container" style="background:#ffffff;padding:20px;border-radius:6px;min-height:400px;color:#1a202c;border:1px solid #e5e7eb;">
+        <div style="text-align:center;padding:60px 20px;color:#9ca3af;font-size:13px;">Loading DIP preview…</div>
+      </div>
+
+      <!-- ═══ RM NOTES (standalone — not in preview; saved with DIP) ═══ -->
+      <div style="margin-top:16px;margin-bottom:16px;">
+        <label style="font-size:11px;color:#374151;display:block;margin-bottom:4px;font-weight:600;">DIP Conditions / RM Notes ${rmLabel}</label>
+        <textarea id="dip-notes" placeholder="Special conditions, valuation requirements, additional info needed..." style="width:100%;padding:8px;border-radius:4px;${rmField};font-size:13px;min-height:80px;">${sanitizeHtml(deal.dip_notes || deal.additional_notes || '')}</textarea>
+      </div>
+
+      <!-- Legacy editable body removed 2026-04-21. Matrix is SSOT; preview above is canonical DIP render.
+           All original markup is kept inside this hidden wrapper so legacy DOM lookups
+           (form state save/restore, calcDipLtv field listeners) still resolve without crashing. -->
+      <div style="display:none;" data-legacy-placeholder="dip-form-body">
+      <div><!-- legacy borrower-wrapper placeholder (matches original bg-gray div) -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <h5 style="margin:0;color:#374151;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Borrower &mdash; ${borrowerTypeLabel}</h5>
           ${borrowerTypeBadge}
@@ -1131,24 +1160,12 @@ export function renderInternalWorkflowControls(deal) {
         <strong style="font-size:12px;color:#92400e;">DIP Financial Summary (live):</strong>
         <div id="dip-summary" style="font-size:13px;margin-top:8px;color:#374151;"></div>
       </div>
+      </div><!-- /data-legacy-placeholder -->
 
-      <!-- ═══ M4b (Matrix-SSOT 2026-04-20): DIP Section Approval Gates ═══
-           Five sections that the RM must individually approve before Issue DIP fires.
-           Each card reads approval state from deal row (dip_<section>_approved / _by / _at).
-           Matrix edits to referenced fields auto-revoke the approval (server-side via AUTO_REVOKE_MAP). -->
-      ${stage !== 'dip_issued' && isInternal ? `<div style="background:#f0f9ff;padding:14px;border-radius:6px;margin-bottom:16px;border:2px solid #7dd3fc;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <h5 style="margin:0;color:#0c4a6e;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">\u2696 DIP Section Approvals</h5>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span id="dip-approval-progress" style="font-size:11px;color:#0c4a6e;font-weight:600;"></span>
-            <button onclick="window._refreshDipApprovals && window._refreshDipApprovals()" style="padding:4px 10px;background:#ffffff;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;" title="Pull the latest matrix state from the server">\u21BB Refresh</button>
-          </div>
-        </div>
-        <p style="margin:0 0 12px;font-size:11px;color:#475569;">
-          Matrix is canonical. Each section must be approved before Issue DIP fires. Any edit to matrix fields auto-revokes the relevant approval. Click Refresh if you just edited matrix values in another tab.
-        </p>
-        <div id="dip-section-approvals-grid" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
-      </div>` : ''}
+      <!-- M4d/preview-refactor 2026-04-21: dedicated Section Approvals grid REMOVED.
+           Approvals now overlay directly on [data-approval-section] elements inside
+           #dip-preview-container. Keep a hidden stub so legacy selectors don't crash. -->
+      <div id="dip-section-approvals-grid" style="display:none;"></div>
 
       <!-- M4d 2026-04-20: Pre-Issue Checklist removed — redundant with Section Approvals above.
            The 7 approval cards each enforce completeness on their referenced matrix fields.
@@ -1423,18 +1440,26 @@ export function renderInternalWorkflowControls(deal) {
         }
       };
 
-      // M4b: Render the 5 DIP Section Approval cards.
-      // Returns true if all 5 are approved (used by Issue DIP gate above).
+      // M4d/preview-refactor 2026-04-21: Render approval badges AS OVERLAYS on
+      // [data-approval-section] elements inside #dip-preview-container. The
+      // dedicated approvals grid is gone — each preview section gets its own
+      // approve/unapprove button pinned to the top-right corner.
+      // Returns true if all 7 sections are approved (used by Issue DIP gate).
       const renderDipApprovalGates = () => {
-        const grid = document.getElementById('dip-section-approvals-grid');
-        const progress = document.getElementById('dip-approval-progress');
-        if (!grid) return true; // Not visible (non-internal or post-issuance) — don't block issue
+        const preview = document.getElementById('dip-preview-container');
+        const progress = document.getElementById('dip-preview-progress');
+        if (!preview) return true; // form not rendered — don't block issue
+        // If preview HTML hasn't loaded yet (still the placeholder), defer to next render
+        const hasSections = preview.querySelectorAll('[data-approval-section]').length > 0;
+        if (!hasSections) {
+          if (progress) progress.textContent = '— loading preview —';
+          return false;
+        }
 
-        // M4d 2026-04-20: 7-card approval gates with completeness checks.
-        // Order matches the new matrix section order (commercial sequence):
+        // M4d 2026-04-20: 7-section completeness checks. Same shape as before —
+        // just the rendering is different (overlays instead of grid cards).
+        // Order matches the matrix section order (commercial sequence):
         //   Borrower → Security → Use of Funds → Exit Strategy → Loan Terms → Fees → Conditions.
-        // Each card includes a completeness check — Approve button disabled when
-        // required matrix fields are missing; tooltip explains what to fill.
         const SECTIONS = [
           {
             key: 'borrower', label: 'Borrower & Guarantors',
@@ -1546,58 +1571,116 @@ export function renderInternalWorkflowControls(deal) {
         ];
 
         let approvedCount = 0;
-        const cardsHtml = SECTIONS.map((sec, idx) => {
+        const issued = (deal.deal_stage === 'dip_issued');
+
+        SECTIONS.forEach((sec, idx) => {
           const colApproved = 'dip_' + sec.key + '_approved';
-          const colBy = colApproved + '_by';
           const colAt = colApproved + '_at';
           const isApproved = !!deal[colApproved];
           if (isApproved) approvedCount++;
 
-          // Completeness check (M4d): disable Approve if required matrix fields missing
+          // Find all sections in the preview with this key — some keys (security,
+          // use_of_funds) tag multiple wrappers in the PDF template. Apply the
+          // colored left border to ALL matches so the visual state is consistent;
+          // attach the overlay button to only the first one to avoid duplicate controls.
+          const allMatching = preview.querySelectorAll('[data-approval-section="' + sec.key + '"]');
+          if (allMatching.length === 0) return;
+
+          // Colour strip indicating state — applied to every matching section
           const completeness = sec.complete ? sec.complete() : { ok: true };
+          let stripColor = '#d1d5db';
+          if (isApproved) stripColor = '#16a34a';
+          else if (!completeness.ok) stripColor = '#f59e0b';
 
-          const stampHtml = isApproved
-            ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#166534;font-weight:600;">' +
-                '<span>\u2713 Approved</span>' +
-                (deal[colAt] ? '<span style="color:#4b5563;font-weight:400;"> \u00B7 ' + new Date(deal[colAt]).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) + '</span>' : '') +
-              '</div>'
-            : (completeness.ok
-              ? '<div style="font-size:11px;color:#9ca3af;font-weight:600;">Ready to approve</div>'
-              : '<div style="font-size:11px;color:#b45309;font-weight:600;">\u26A0 ' + sanitizeHtml(completeness.reason) + '</div>');
+          allMatching.forEach(el => {
+            el.style.borderLeft = '4px solid ' + stripColor;
+          });
 
-          // Button state: Unapprove (always enabled if approved), Approve (disabled when incomplete)
-          const btnLabel = isApproved ? 'Unapprove' : 'Approve';
-          const btnEnabled = isApproved || completeness.ok;
+          // Overlay button on the first matching section only
+          const sectionEl = allMatching[0];
+
+          // Make sure the section is a positioning context for the overlay
+          if (window.getComputedStyle(sectionEl).position === 'static') {
+            sectionEl.style.position = 'relative';
+          }
+          // Add extra top padding so the overlay doesn't cover the header
+          if (!sectionEl.dataset.dipOverlayPadded) {
+            sectionEl.style.paddingTop = (parseInt(window.getComputedStyle(sectionEl).paddingTop) || 0) + 36 + 'px';
+            sectionEl.dataset.dipOverlayPadded = '1';
+          }
+
+          // Remove any prior overlay (re-renders)
+          const priorOverlay = sectionEl.querySelector(':scope > .dip-approval-overlay');
+          if (priorOverlay) priorOverlay.remove();
+
+          // (completeness already computed above — drives both border colour and button state)
+          const btnLabel = isApproved ? '✓ Approved — click to unapprove' : 'Approve';
+          const btnEnabled = !issued && (isApproved || completeness.ok);
           const action = isApproved ? 'unapproveDipSection' : 'approveDipSection';
-
-          const btnBg = isApproved ? '#fef2f2' : (btnEnabled ? '#dcfce7' : '#f3f4f6');
-          const btnColor = isApproved ? '#991b1b' : (btnEnabled ? '#166534' : '#9ca3af');
-          const btnBorder = isApproved ? '#fecaca' : (btnEnabled ? '#86efac' : '#d1d5db');
+          const btnBg = isApproved ? '#16a34a' : (btnEnabled ? '#ffffff' : '#f3f4f6');
+          const btnColor = isApproved ? '#ffffff' : (btnEnabled ? '#166534' : '#9ca3af');
+          const btnBorder = isApproved ? '#166534' : (btnEnabled ? '#86efac' : '#d1d5db');
           const btnCursor = btnEnabled ? 'pointer' : 'not-allowed';
-          const btnTitle = btnEnabled ? '' : 'Fill required fields in matrix first: ' + (completeness.reason || '');
+          const btnTitle = issued
+            ? 'DIP issued — approvals locked'
+            : (btnEnabled ? '' : 'Fill required fields in matrix first: ' + (completeness.reason || ''));
           const btnOnclick = btnEnabled
             ? `window.${action}('${deal.submission_id}', '${sec.key}')`
             : 'void 0';
+          const stampText = isApproved && deal[colAt]
+            ? new Date(deal[colAt]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+            : '';
 
-          return '<div style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:' + (isApproved ? '#f0fdf4' : (completeness.ok ? '#ffffff' : '#fffbeb')) + ';border:1px solid ' + (isApproved ? '#bbf7d0' : (completeness.ok ? '#e5e7eb' : '#fde68a')) + ';border-radius:6px;">' +
-            '<div style="width:24px;height:24px;border-radius:50%;background:' + (isApproved ? '#16a34a' : (completeness.ok ? '#d1d5db' : '#f59e0b')) + ';color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">' + (idx + 1) + '</div>' +
-            '<div>' +
-              '<div style="font-size:12px;font-weight:700;color:#0f172a;">' + sanitizeHtml(sec.label) + '</div>' +
-              '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + sanitizeHtml(sec.summary()) + '</div>' +
-              stampHtml +
-            '</div>' +
-            '<button ' + (btnEnabled ? '' : 'disabled ') + 'onclick="' + btnOnclick + '" title="' + sanitizeHtml(btnTitle) + '" style="padding:6px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:5px;font-size:11px;font-weight:700;cursor:' + btnCursor + ';">' + btnLabel + '</button>' +
-          '</div>';
-        }).join('');
-        grid.innerHTML = cardsHtml;
+          const overlay = document.createElement('div');
+          overlay.className = 'dip-approval-overlay';
+          overlay.style.cssText = 'position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:8px;z-index:5;background:rgba(255,255,255,0.92);padding:4px 6px;border-radius:5px;border:1px solid ' + (isApproved ? '#bbf7d0' : '#e5e7eb') + ';box-shadow:0 1px 2px rgba(0,0,0,0.05);';
+
+          const numberBadge = '<span style="width:20px;height:20px;border-radius:50%;background:' + stripColor + ';color:white;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">' + (idx + 1) + '</span>';
+          const incompleteTag = (!isApproved && !completeness.ok)
+            ? '<span title="' + sanitizeHtml(completeness.reason || '') + '" style="font-size:10px;color:#b45309;font-weight:600;">⚠ ' + sanitizeHtml(completeness.reason || 'Incomplete') + '</span>'
+            : '';
+          const stampHtml = stampText
+            ? '<span style="font-size:10px;color:#4b5563;">' + stampText + '</span>'
+            : '';
+          const btnHtml = '<button ' + (btnEnabled ? '' : 'disabled ') + 'onclick="' + btnOnclick + '" title="' + sanitizeHtml(btnTitle) + '" style="padding:4px 10px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:4px;font-size:10px;font-weight:700;cursor:' + btnCursor + ';white-space:nowrap;">' + btnLabel + '</button>';
+
+          overlay.innerHTML = numberBadge + incompleteTag + stampHtml + btnHtml;
+          sectionEl.prepend(overlay);
+        });
 
         if (progress) {
-          const pct = (approvedCount / SECTIONS.length) * 100;
           const col = approvedCount === SECTIONS.length ? '#16a34a' : approvedCount > 0 ? '#ca8a04' : '#9ca3af';
           progress.innerHTML = '<span style="color:' + col + ';">' + approvedCount + ' / ' + SECTIONS.length + ' approved</span>';
         }
 
         return approvedCount === SECTIONS.length;
+      };
+
+      // ═══════════════════════════════════════════════════════════════════
+      // PREVIEW REFACTOR 2026-04-21: Fetch DIP preview HTML and inject into
+      // #dip-preview-container. The backend renders the exact same HTML template
+      // used for the final PDF, so what the RM sees is what the broker receives.
+      // After injection, renderDipApprovalGates() overlays approve buttons on
+      // every [data-approval-section] element.
+      // ═══════════════════════════════════════════════════════════════════
+      const renderDipFormPreview = async () => {
+        const container = document.getElementById('dip-preview-container');
+        if (!container) return;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/deals/${deal.submission_id}/dip-preview-html`, { method: 'GET' });
+          if (!res.ok) {
+            container.innerHTML = '<div style="padding:40px;text-align:center;color:#991b1b;font-size:13px;">Preview failed to load (HTTP ' + res.status + '). Refresh page or check backend.</div>';
+            return;
+          }
+          const body = await res.json();
+          // Inject the preview HTML. buildDipHtml returns a fragment suitable for
+          // embedding — it has no <html>/<body> wrapper when forPreview=true.
+          container.innerHTML = body.html || '<div style="padding:40px;text-align:center;color:#991b1b;">Preview returned no HTML.</div>';
+          // Re-render overlay badges now that sections exist
+          renderDipApprovalGates();
+        } catch (err) {
+          container.innerHTML = '<div style="padding:40px;text-align:center;color:#991b1b;font-size:13px;">Preview error: ' + sanitizeHtml(err.message) + '</div>';
+        }
       };
 
       // ═══════════════════════════════════════════════════════════════════
@@ -1797,11 +1880,13 @@ export function renderInternalWorkflowControls(deal) {
         }
       };
 
-      // Manual refresh button handler — pull latest matrix state and re-validate
+      // Manual refresh button handler — pull latest matrix state, re-render
+      // the preview (so any matrix edits are visible), and re-overlay approval badges.
       window._refreshDipApprovals = async () => {
         const btn = event && event.target;
         if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
         await refreshDealFromServer();
+        await renderDipFormPreview();          // re-render with fresh matrix data
         if (typeof validateDipChecklist === 'function') validateDipChecklist();
         if (btn) { btn.disabled = false; btn.innerHTML = '\u21BB Refresh'; }
       };
@@ -1884,7 +1969,12 @@ export function renderInternalWorkflowControls(deal) {
 
       // Run initial checklist validation — refresh deal from server first so
       // approval stamps + matrix-canonical fields reflect the latest state.
-      refreshDealFromServer().then(() => validateDipChecklist());
+      // Also kick off the preview fetch so the RM sees the canonical PDF render
+      // with approve badges overlaid on every section.
+      refreshDealFromServer().then(async () => {
+        await renderDipFormPreview();
+        validateDipChecklist();
+      });
     }, 100);
   }
 

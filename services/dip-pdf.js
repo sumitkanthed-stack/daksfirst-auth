@@ -773,6 +773,14 @@ function _g5RenderSecuritySection(dipData, deal) {
 // ═══════════════════════════════════════════════════════════════════
 
 function buildDipHtml(deal, dipData, options) {
+  // 2026-04-21: forPreview flag adds data-approval-section attributes to each
+  // <div class="section"> wrapper so the frontend can overlay approve/unapprove
+  // buttons on the rendered preview. PDF output (forPreview=false) strips these
+  // attrs and is byte-identical to the pre-2026-04-21 PDF.
+  const forPreview = !!(options && options.forPreview);
+  const _approvalAttr = (sectionKey) =>
+    forPreview ? ` data-approval-section="${sectionKey}"` : '';
+
   // Data extraction with Matrix-SSOT fallback
   const dealRef = dealRefFromId(deal.submission_id, deal.created_at);
   const grossLoan = parseFloat(deal.loan_amount_approved || deal.loan_amount || 0);
@@ -1337,12 +1345,12 @@ function buildDipHtml(deal, dipData, options) {
 
   <!-- PARTIES — _g5RenderPartiesSection outputs its own section-bar + body so
        we embed its HTML directly here. Wrapping in a .section would duplicate the bar. -->
-  <div class="section">
+  <div class="section"${_approvalAttr('borrower')}>
     ${partiesHtml || '<div class="section-bar">PARTIES TO THE FACILITY</div><div class="section-body"><div style="font-size:9.5px;color:#666;">Parties section pending G5 data.</div></div>'}
   </div>
 
   <!-- SECURITY STRUCTURE -->
-  <div class="section">
+  <div class="section"${_approvalAttr('security')}>
     <div class="section-bar">SECURITY &amp; GUARANTEE STRUCTURE</div>
     <div class="section-body">
       <div class="sec-row"><div class="label"><strong>First Legal Charge</strong> over ${properties.length} ${properties.length === 1 ? 'Property' : 'Properties'}</div><div class="status req">REQUIRED</div></div>
@@ -1352,8 +1360,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
-  <!-- SECURITY SCHEDULE -->
-  <div class="section">
+  <!-- SECURITY SCHEDULE — shares the 'security' approval gate with Structure above -->
+  <div class="section"${_approvalAttr('security')}>
     <div class="section-bar">SECURITY SCHEDULE — ${properties.length} ${properties.length === 1 ? 'PROPERTY' : 'PROPERTIES'}</div>
     <div class="section-body">
       <table class="sched-table">
@@ -1403,8 +1411,12 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
-  <!-- LOAN TERMS — moved from page 1 to leave room for Parties + Security + Schedule -->
-  <div class="section">
+  <!-- LOAN TERMS — moved from page 1 to leave room for Parties + Security + Schedule.
+       2026-04-21: Loan Purpose + Exit Strategy extracted into their own sections below
+       so the DIP approval overlay has discrete targets (gate #3 Use of Funds,
+       gate #4 Exit Strategy). PDF output still reads identically because each
+       section renders in order. -->
+  <div class="section"${_approvalAttr('loan_terms')}>
     <div class="section-bar">INDICATIVE LOAN TERMS</div>
     <div class="section-body">
       <div class="lt-grid">
@@ -1417,14 +1429,28 @@ function buildDipHtml(deal, dipData, options) {
         <div class="lt-cell"><div class="lt-label">Min Value Covenant</div><div class="lt-value">${fmtGBP(minValueCovenant || totalPortfolioValue)}</div><div class="lt-hint">Portfolio floor</div></div>
         <div class="lt-cell"><div class="lt-label">Interest Servicing</div><div class="lt-value" style="font-size:10.5px;">${interestServicing}</div></div>
         <div class="lt-cell"><div class="lt-label">Arrangement Fee</div><div class="lt-value">${arrangementFeePct.toFixed(2)}%</div></div>
-
-        <div class="lt-cell"><div class="lt-label">Loan Purpose</div><div class="lt-value" style="font-size:10.5px;">${esc(loanPurpose)}</div></div>
-        <div class="lt-cell" style="grid-column: span 3;"><div class="lt-label">Exit Strategy</div><div class="lt-value" style="font-size:10.5px;">${esc(exitStrategy)}</div></div>
       </div>
     </div>
   </div>
 
-  <!-- DAY ZERO WATERFALL -->
+  <!-- LOAN PURPOSE (Use of Funds gate #3) -->
+  <div class="section"${_approvalAttr('use_of_funds')}>
+    <div class="section-bar">LOAN PURPOSE</div>
+    <div class="section-body">
+      <div style="font-size:11px;color:#111827;font-weight:600;">${esc(loanPurpose)}</div>
+      ${deal.use_of_funds ? `<div style="margin-top:4px;font-size:10px;color:#4b5563;line-height:1.5;">${esc(deal.use_of_funds)}</div>` : ''}
+    </div>
+  </div>
+
+  <!-- EXIT STRATEGY (gate #4) -->
+  <div class="section"${_approvalAttr('exit_strategy')}>
+    <div class="section-bar">EXIT STRATEGY</div>
+    <div class="section-body">
+      <div style="font-size:11px;color:#111827;font-weight:600;">${esc(exitStrategy)}</div>
+    </div>
+  </div>
+
+  <!-- DAY ZERO WATERFALL — no separate approval gate (derived from Loan Terms + Fees) -->
   <div class="section">
     <div class="section-bar">DAY ZERO — NET ADVANCE ON COMPLETION</div>
     <div class="section-body" style="padding: 0;">
@@ -1443,8 +1469,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
-  <!-- USES OF NET LOAN -->
-  <div class="section">
+  <!-- USES OF NET LOAN — shares gate #3 Use of Funds with LOAN PURPOSE above -->
+  <div class="section"${_approvalAttr('use_of_funds')}>
     <div class="section-bar">USES OF NET LOAN</div>
     <div class="section-body">
       <table class="uses-table">
@@ -1458,8 +1484,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
-  <!-- FEE SCHEDULE -->
-  <div class="section">
+  <!-- FEE SCHEDULE (gate #6) -->
+  <div class="section"${_approvalAttr('fees')}>
     <div class="section-bar">FEE SCHEDULE</div>
     <div class="section-body">
       <table class="fee-table">
@@ -1516,8 +1542,8 @@ function buildDipHtml(deal, dipData, options) {
     </div>
   </div>
 
-  <!-- CONDITIONS PRECEDENT -->
-  <div class="section">
+  <!-- CONDITIONS PRECEDENT (gate #7) -->
+  <div class="section"${_approvalAttr('conditions')}>
     <div class="section-bar">CONDITIONS PRECEDENT</div>
     <div class="section-body">
       <ol class="cp-list">
@@ -1675,4 +1701,4 @@ async function generateDipPdf(deal, dipData = {}, options = {}) {
   }
 }
 
-module.exports = { generateDipPdf };
+module.exports = { generateDipPdf, buildDipHtml };
