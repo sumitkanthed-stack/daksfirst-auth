@@ -148,12 +148,21 @@ export function renderSnapshot(deal, role) {
     stageEl.style.cssText = 'padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;';
   }
 
-  // Status badge
+  // Status badge.
+  // 2026-04-21: hidden entirely when stage is 'draft' — for a draft, the
+  // stage badge already says "Draft" and a separate "Received" status badge
+  // creates cognitive dissonance. Shown again once the deal has a real
+  // workflow status to report.
   const statusEl = document.getElementById('detail-status-badge');
   if (statusEl) {
-    statusEl.className = 'status-badge status-' + deal.status;
-    statusEl.style.cssText = 'padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;';
-    statusEl.textContent = deal.status ? deal.status.charAt(0).toUpperCase() + deal.status.slice(1) : 'Active';
+    if (stage === 'draft') {
+      statusEl.style.display = 'none';
+    } else {
+      statusEl.style.display = '';
+      statusEl.className = 'status-badge status-' + deal.status;
+      statusEl.style.cssText = 'padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;';
+      statusEl.textContent = deal.status ? deal.status.charAt(0).toUpperCase() + deal.status.slice(1) : 'Active';
+    }
   }
 
   // Calculate loan & LTV.

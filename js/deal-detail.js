@@ -2645,9 +2645,14 @@ export function renderExternalWorkflowControls(deal) {
   const panel = document.getElementById('workflow-controls');
   if (!panel) return;
 
-  // Borrower/broker sees simplified stages — internal steps are hidden
+  // Borrower/broker sees simplified stages — internal steps are hidden.
+  // 2026-04-21: added 'draft' + 'under_review' so the Deal Progress bar
+  // matches the Snapshot stage pipeline (no more "Submitted" highlighted
+  // while the deal is actually in draft).
   const extStageLabels = {
+    draft: 'Draft',
     submitted: 'Submitted',
+    under_review: 'Under Review',
     dip_issued: 'DIP Issued',
     fee_required: 'Fee Required',
     processing: 'Processing',
@@ -2655,12 +2660,17 @@ export function renderExternalWorkflowControls(deal) {
     legal: 'Legal',
     completed: 'Completed'
   };
-  const extStageOrder = ['submitted', 'dip_issued', 'fee_required', 'processing', 'approved', 'legal', 'completed'];
+  const extStageOrder = ['draft', 'submitted', 'under_review', 'dip_issued', 'fee_required', 'processing', 'approved', 'legal', 'completed'];
 
-  // Map internal stages → simplified borrower stage
+  // Map internal stages → simplified borrower stage.
+  // 2026-04-21: 'draft' maps to itself (new). 'info_gathering' splits based on
+  // assigned_rm: without RM → submitted (waiting), with RM → under_review.
+  const hasRm = !!deal.assigned_rm;
   const stageMap = {
-    received: 'submitted', assigned: 'submitted',
-    info_gathering: 'submitted',
+    draft: 'draft',
+    received: 'submitted',
+    assigned: 'under_review',
+    info_gathering: hasRm ? 'under_review' : 'submitted',
     dip_issued: 'dip_issued',
     ai_termsheet: 'dip_issued',
     fee_pending: 'fee_required', fee_paid: 'processing',
@@ -2669,7 +2679,9 @@ export function renderExternalWorkflowControls(deal) {
     legal_instructed: 'legal',
     completed: 'completed'
   };
-  const extStage = stageMap[stage] || 'submitted';
+  // Default to 'draft' (not 'submitted') — a brand-new unmapped stage is more
+  // likely to be before-submit than after.
+  const extStage = stageMap[stage] || 'draft';
   const currentIdx = extStageOrder.indexOf(extStage);
 
   let html = `<h3 style="margin:0 0 16px;color:#F1F5F9;">Deal Progress</h3>`;
