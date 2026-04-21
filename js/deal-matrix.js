@@ -271,6 +271,16 @@ function renderRequestedApprovedField(baseField, label, requestedVal, approvedVa
     .replace(/<label[^>]*>.*?<\/label>/, '')  // strip the inner label (we have our own above)
     .replace(/margin-bottom:12px/, 'margin-bottom:0'); // remove outer margin
 
+  // 2026-04-21: Requested column is also editable now (when canEdit=true).
+  // Broker's initial "ask" can be entered directly in the matrix on draft deals
+  // instead of requiring a separate submission form. Caller gates canEdit by
+  // role where appropriate (e.g. rate_requested uses isInternalUser && canEdit).
+  const requestedInput = canEdit
+    ? renderEditableField(requestedField, '', requestedVal, inputType, canEdit, options)
+        .replace(/<label[^>]*>.*?<\/label>/, '')
+        .replace(/margin-bottom:12px/, 'margin-bottom:0')
+    : `<div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;">${sanitizeHtml(requestedDisplay)}</div>`;
+
   return `<div style="margin-bottom:14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
       <label style="${labelStyle}margin:0;">${sanitizeHtml(label)}</label>
@@ -279,7 +289,7 @@ function renderRequestedApprovedField(baseField, label, requestedVal, approvedVa
     <div style="display:grid;grid-template-columns:1fr auto 1.2fr;gap:10px;align-items:center;">
       <div>
         <div style="font-size:8px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-weight:600;">Requested</div>
-        <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;">${sanitizeHtml(requestedDisplay)}</div>
+        ${requestedInput}
       </div>
       <div style="color:#475569;font-size:14px;padding-top:16px;">→</div>
       <div>
@@ -7216,6 +7226,28 @@ export async function renderDealMatrix(deal) {
 
     // Also check the raw deal object for fields that may not have an input element
     if (deal[key] !== null && deal[key] !== undefined && String(deal[key]).trim() !== '') return true;
+
+    // 2026-04-21: paired-column check. Matrix-SSOT stores broker's ask in
+    // <field>_requested and RM's offer in <field>_approved. Validator keys
+    // like 'loan_amount', 'term_months', 'interest_servicing' pre-date the
+    // split and still use the base name — so a broker who fills only
+    // Requested (and hasn't had RM touch Approved) would fail completeness.
+    // Also handle the 'ltv_requested' → 'ltv_approved' pairing.
+    const pairedBaseFields = ['loan_amount', 'term_months', 'interest_servicing', 'rate'];
+    if (pairedBaseFields.includes(key)) {
+      const req = deal[`${key}_requested`];
+      const apr = deal[`${key}_approved`];
+      if (req != null && String(req).trim() !== '') return true;
+      if (apr != null && String(apr).trim() !== '') return true;
+    }
+    if (key === 'ltv_requested') {
+      const aprLtv = deal['ltv_approved'];
+      if (aprLtv != null && String(aprLtv).trim() !== '') return true;
+    }
+    if (key === 'rate_requested') {
+      const aprRate = deal['rate_approved'];
+      if (aprRate != null && String(aprRate).trim() !== '') return true;
+    }
 
     return false;
   }
