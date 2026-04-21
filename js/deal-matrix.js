@@ -2468,7 +2468,7 @@ export async function renderDealMatrix(deal) {
               <div>Gross Loan (Approved)</div><div id="dz-gross" style="text-align:right;color:#F1F5F9;font-weight:600;">\u2014</div>
               <div id="dz-retained-label" style="color:#94A3B8;">Less: Retained Interest</div><div id="dz-retained" style="text-align:right;color:#F87171;">\u2014</div>
               <div style="color:#94A3B8;">Less: Arrangement Fee</div><div id="dz-arr" style="text-align:right;color:#F87171;">\u2014</div>
-              <div id="dz-cf-credit-label" style="color:#94A3B8;display:none;">Plus: Commitment Fee credit <span style="font-size:10px;color:#64748B;">(already paid at Termsheet)</span></div><div id="dz-cf-credit" style="text-align:right;color:#34D399;display:none;">\u2014</div>
+              <div id="dz-cf-credit-label" style="color:#94A3B8;">Plus: Commitment Fee credit <span style="font-size:10px;color:#64748B;">(already paid at Termsheet)</span></div><div id="dz-cf-credit" style="text-align:right;color:#34D399;">\u2014</div>
               <div style="color:#94A3B8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;font-weight:600;">= Net Advance on Day 1</div>
               <div id="dz-net" style="text-align:right;color:#34D399;font-weight:700;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-top:4px;">\u2014</div>
             </div>
@@ -3568,9 +3568,10 @@ export async function renderDealMatrix(deal) {
     setText('dz-gross', loan > 0 ? _fmt(loan) : '—');
     setText('dz-retained', retainedInterest > 0 ? '−' + _fmt(retainedInterest) : '—');
     setText('dz-arr', arrangementFee > 0 ? '−' + _fmt(arrangementFee) : '—');
-    setText('dz-cf-credit', commitmentFee > 0 ? '+' + _fmt(commitmentFee) : '—');
-    setDisplay('dz-cf-credit-label', commitmentFee > 0);
-    setDisplay('dz-cf-credit', commitmentFee > 0);
+    // 2026-04-21: Commitment Fee credit row ALWAYS shows — default £5k policy
+    // applies to every deal, and the transparency of displaying it on every DIP
+    // is more valuable than hiding the row when it's zero.
+    setText('dz-cf-credit', commitmentFee > 0 ? '+' + _fmt(commitmentFee) : '+£0');
     setText('dz-net', loan > 0 ? _fmt(netAdvance) : '—');
 
     // Retained row styling — grey out when not applicable
