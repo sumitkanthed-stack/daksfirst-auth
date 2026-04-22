@@ -94,6 +94,14 @@ module.exports = {
   CHIMNIE_TIMEOUT_MS: parseInt(process.env.CHIMNIE_TIMEOUT_MS || '15000', 10),
   CHIMNIE_MONTHLY_CAP_CREDITS: parseInt(process.env.CHIMNIE_MONTHLY_CAP_CREDITS || '5000', 10),
 
+  // Daksfirst Alpha (risk modeling engine) — calls this service for deal scoring.
+  //   Alpha is deployed separately on Render (Frankfurt EEA for data residency).
+  //   Auth never sends PII; only sanitised feature vectors. If alpha is
+  //   unreachable, auth degrades gracefully — do not hard-fail deal flow.
+  ALPHA_BASE_URL: process.env.ALPHA_BASE_URL || '',
+  ALPHA_API_KEY: process.env.ALPHA_API_KEY || '',
+  ALPHA_WEBHOOK_SECRET: process.env.ALPHA_WEBHOOK_SECRET || '',
+
   // Twilio SMS
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
