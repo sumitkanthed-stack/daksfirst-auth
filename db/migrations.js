@@ -1283,6 +1283,48 @@ async function runMigrations() {
       console.log('[migrate] Note on candidates columns:', err.message.substring(0, 120));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  M1 — Credit Analysis Filing Cabinet (2026-04-22)
+    //  One append-only row per (deal, stage, engine) analysis ever performed.
+    //
+    //  Both engines (Anthropic/Claude Opus and in-house Alpha) write into this
+    //  table using a shared sanitised feature blob. RM feedback attaches as
+    //  richer JSONB (per-finding verdicts + overall 1-5 sliders + free text).
+    //
+    //  Auth does NOT decide anything here — this is a ledger that captures
+    //  engine outputs. The feature blob passed in `features_sent` has PII
+    //  stripped upstream (services/deal-feature-packager.js); the allowlist
+    //  drives which columns leave auth and which stay behind.
+    //
+    //  See memory: project_m1_m6_credit_analysis_roadmap.md
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS deal_stage_analyses (
+          id                  SERIAL PRIMARY KEY,
+          deal_id             INT           NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
+          stage_id            VARCHAR(50)   NOT NULL,
+          engine              VARCHAR(20)   NOT NULL CHECK (engine IN ('anthropic','alpha')),
+          model_version       VARCHAR(60),
+          feature_hash        CHAR(64)      NOT NULL,
+          features_sent       JSONB         NOT NULL,
+          response            JSONB         NOT NULL DEFAULT '{}'::jsonb,
+          cost_gbp            NUMERIC(8,4),
+          latency_ms          INTEGER,
+          triggered_by        VARCHAR(120),
+          triggered_at        TIMESTAMPTZ   DEFAULT NOW(),
+          rm_feedback         JSONB,
+          error               TEXT
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_dsa_deal_stage_engine ON deal_stage_analyses (deal_id, stage_id, engine);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_dsa_feature_hash      ON deal_stage_analyses (feature_hash);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_dsa_triggered_at      ON deal_stage_analyses (triggered_at DESC);`);
+      console.log('[migrate] ✓ deal_stage_analyses table + 3 indexes (M1 credit analysis ledger)');
+    } catch (err) {
+      console.log('[migrate] Note on deal_stage_analyses:', err.message.substring(0, 120));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
