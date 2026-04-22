@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const { authenticateToken, authenticateAdmin, authenticateInternal } = require('../middleware/auth');
 const { logAudit } = require('../services/audit');
+const alphaClient = require('../services/alpha-client');
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 
@@ -764,6 +765,41 @@ router.put('/config/delegated-authority', authenticateToken, authenticateAdmin, 
   } catch (error) {
     console.error('[admin-config] PUT error:', error);
     res.status(500).json({ error: 'Failed to update admin config' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: ALPHA PIPE SMOKE TEST
+//  GET /api/admin/alpha-ping
+//
+//  Calls daksfirst-alpha's /health endpoint via services/alpha-client and
+//  returns the result to the caller. Use to verify the auth <-> alpha pipe
+//  is wired correctly after config / env var changes.
+//
+//  Does NOT send any deal data. Body-less GET, X-API-Key header only.
+//  Admin-only: leaks alpha's internal state (model versions, db status).
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/alpha-ping', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const result = await alphaClient.ping();
+    // Always return 200 to the browser — the payload carries success/failure.
+    // If we returned the alpha status directly, a 503 from alpha (cold start,
+    // etc.) would look like a broken admin route. The shape lets the ops UI
+    // render "alpha reachable? yes/no" without error handling acrobatics.
+    res.json({
+      alpha_configured: !!process.env.ALPHA_BASE_URL,
+      probed_url: (process.env.ALPHA_BASE_URL || '').replace(/\/$/, '') + '/health',
+      checked_at: new Date().toISOString(),
+      ...result,
+    });
+  } catch (error) {
+    // alphaClient.ping() is fail-soft so this should never fire, but belt +
+    // braces: the route itself must not 500 under any circumstance.
+    console.error('[admin alpha-ping] unexpected error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'alpha-ping route crashed — check server logs',
+    });
   }
 });
 
