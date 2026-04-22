@@ -7,6 +7,7 @@ const { authenticateToken, authenticateAdmin, authenticateInternal } = require('
 const { logAudit } = require('../services/audit');
 const alphaClient = require('../services/alpha-client');
 const featurePackager = require('../services/deal-feature-packager');
+const outputEngine = require('../services/output-engine-dispatcher');
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 
@@ -982,6 +983,155 @@ router.get('/deals/:id/analyses', authenticateToken, authenticateAdmin, async (r
   } catch (error) {
     console.error('[admin list-analyses] error:', error);
     res.status(500).json({ success: false, error: 'failed to list analyses' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OE-3 — TRIGGER THE OUTPUT ENGINE (admin-only, 2026-04-22)
+//  POST /api/admin/deals/:id/run-output-engine
+//
+//  Body: { stage_id?: 'dip_submission'|... }  — defaults to 'dip_submission'
+//
+//  Flow:
+//    1. Package the deal via the same packager the M1 analyst uses.
+//    2. INSERT row in credit_analysis_outputs with status='running', get runId.
+//    3. POST the adapted envelope to the n8n "Credit Analysis - Admin Run"
+//       webhook. Envelope wraps all data under `.body` because the clone's
+//       `Code in JavaScript1` reads `$('Webhook').item.json.body`.
+//    4. Return 202 with { runId, dealId } — the n8n workflow runs async and
+//       posts the three DOCX blobs back to /api/webhook/output-engine/complete
+//       which UPDATEs the row to 'complete'.
+//
+//  If the n8n webhook returns non-2xx, we mark the run 'failed' synchronously
+//  and respond 502 with the upstream error.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/deals/:id/run-output-engine', authenticateToken, authenticateAdmin, async (req, res) => {
+  const startedAt = Date.now();
+  const dealId = parseInt(req.params.id, 10);
+  const stageId = (req.body && req.body.stage_id) || 'dip_submission';
+
+  if (!Number.isInteger(dealId) || dealId <= 0) {
+    return res.status(400).json({ success: false, error: 'invalid deal id' });
+  }
+
+  try {
+    // 1. Package
+    const pkg = await featurePackager.packageDealForStage(dealId, stageId);
+    if (!pkg.success) {
+      return res.status(404).json({ success: false, error: pkg.error });
+    }
+
+    // 2+3. Dispatch (row insert happens inside dispatch)
+    const triggeredBy = `user:${(req.user && req.user.userId) || 'unknown'}`;
+    const dispatchResult = await outputEngine.dispatch({
+      pkg,
+      dealId,
+      triggeredBy,
+    });
+
+    await logAudit(
+      dealId,
+      'output_engine_dispatch',
+      null,
+      `runId=${dispatchResult.runId || 'none'} stage=${stageId}`,
+      {
+        run_id: dispatchResult.runId,
+        feature_hash: pkg.feature_hash,
+        success: dispatchResult.success,
+        error: dispatchResult.error,
+      },
+      req.user && req.user.userId
+    );
+
+    if (!dispatchResult.success) {
+      return res.status(502).json({
+        success: false,
+        error: dispatchResult.error,
+        runId: dispatchResult.runId || null,
+      });
+    }
+
+    return res.status(202).json({
+      success: true,
+      runId: dispatchResult.runId,
+      deal_id: dealId,
+      stage_id: stageId,
+      feature_hash: pkg.feature_hash,
+      dispatch_ms: Date.now() - startedAt,
+    });
+  } catch (error) {
+    console.error('[admin run-output-engine] unexpected error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'run-output-engine crashed — check server logs',
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OE-3 — LIST OUTPUT ENGINE RUNS FOR A DEAL (admin-only)
+//  GET /api/admin/deals/:id/output-engine-runs
+//
+//  Returns the last N runs, newest first, with status + cost + timestamps.
+//  Intentionally does NOT return the base64 DOCX blobs to keep the list
+//  response small — use /output-engine-runs/:runId to fetch a single blob.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/deals/:id/output-engine-runs', authenticateToken, authenticateAdmin, async (req, res) => {
+  const dealId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(dealId) || dealId <= 0) {
+    return res.status(400).json({ success: false, error: 'invalid deal id' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, run_id, deal_id, status, feature_hash, cost_gbp,
+              model_version, n8n_execution_id, error,
+              triggered_by, triggered_at, completed_at,
+              (memo_docx_b64      IS NOT NULL) AS has_memo,
+              (termsheet_docx_b64 IS NOT NULL) AS has_termsheet,
+              (gbb_docx_b64       IS NOT NULL) AS has_gbb
+         FROM credit_analysis_outputs
+        WHERE deal_id = $1
+        ORDER BY triggered_at DESC, id DESC
+        LIMIT 50`,
+      [dealId]
+    );
+    res.json({ success: true, runs: rows });
+  } catch (error) {
+    console.error('[admin output-engine-runs] error:', error);
+    res.status(500).json({ success: false, error: 'failed to list output engine runs' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OE-3 — FETCH A SINGLE RUN (with DOCX blobs, admin-only)
+//  GET /api/admin/output-engine-runs/:runId
+//
+//  Returns the full row including the three base64 DOCX blobs. Used by the
+//  RM console to offer a "download" link per DOCX.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/output-engine-runs/:runId', authenticateToken, authenticateAdmin, async (req, res) => {
+  const { runId } = req.params;
+  if (!runId || !/^[0-9a-f-]{36}$/i.test(runId)) {
+    return res.status(400).json({ success: false, error: 'invalid runId' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, run_id, deal_id, status, feature_hash, cost_gbp,
+              model_version, n8n_execution_id, error,
+              memo_docx_b64, termsheet_docx_b64, gbb_docx_b64,
+              triggered_by, triggered_at, completed_at
+         FROM credit_analysis_outputs
+        WHERE run_id = $1
+        LIMIT 1`,
+      [runId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'run not found' });
+    }
+    res.json({ success: true, run: rows[0] });
+  } catch (error) {
+    console.error('[admin output-engine-run-get] error:', error);
+    res.status(500).json({ success: false, error: 'failed to load run' });
   }
 });
 
