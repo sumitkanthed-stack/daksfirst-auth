@@ -5,6 +5,7 @@ const pool = require('../db/pool');
 const config = require('../config');
 const { syncDealProperties } = require('../services/property-parser');
 const { deduplicateProperties } = require('../services/claude-parser');
+const outputEngine = require('../services/output-engine-dispatcher');
 
 const N8N_WEBHOOK_URL = config.N8N_WEBHOOK_URL || '';
 
@@ -257,6 +258,82 @@ router.post('/analysis-complete', verifyWebhookSecret, async (req, res) => {
   } catch (error) {
     console.error('[webhook-analysis] Error:', error);
     res.status(500).json({ error: 'Failed to store analysis results' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OUTPUT ENGINE COMPLETION CALLBACK (from n8n, OE-3, 2026-04-22)
+//  POST /api/webhook/output-engine/complete
+//
+//  n8n's terminal HTTP Request node POSTs here with the three base64 DOCX
+//  blobs after the workflow completes. Header-auth with WEBHOOK_SECRET
+//  (same scheme as /analysis-complete).
+//
+//  Body: {
+//    runId, status, memo_docx_b64, termsheet_docx_b64, gbb_docx_b64,
+//    cost_gbp, model_version, n8n_execution_id, error (only if failed)
+//  }
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/output-engine/complete', verifyWebhookSecret, async (req, res) => {
+  const {
+    runId,
+    status,
+    memo_docx_b64,
+    termsheet_docx_b64,
+    gbb_docx_b64,
+    cost_gbp,
+    model_version,
+    n8n_execution_id,
+    error,
+  } = req.body || {};
+
+  if (!runId || typeof runId !== 'string') {
+    return res.status(400).json({ error: 'runId is required' });
+  }
+
+  // Cheap sanity check on blob shape — reject obvious garbage early.
+  // A valid DOCX base64 is at least a few kB; a one-line "error" JSON
+  // stringified into a "docx" slot should not pass.
+  const looksLikeBlob = (s) => typeof s === 'string' && s.length > 1000;
+
+  try {
+    if (status === 'failed') {
+      await outputEngine.markRunFailed(runId, error || 'n8n reported failed without detail');
+      console.warn(`[output-engine-cb] runId=${runId} marked failed: ${String(error).slice(0, 200)}`);
+      return res.json({ success: true, stored: 'failed' });
+    }
+
+    if (!looksLikeBlob(memo_docx_b64) || !looksLikeBlob(termsheet_docx_b64) || !looksLikeBlob(gbb_docx_b64)) {
+      const sizes = {
+        memo:  memo_docx_b64      ? memo_docx_b64.length      : 0,
+        ts:    termsheet_docx_b64 ? termsheet_docx_b64.length : 0,
+        gbb:   gbb_docx_b64       ? gbb_docx_b64.length       : 0,
+      };
+      const errMsg = `callback missing or truncated DOCX blobs: ${JSON.stringify(sizes)}`;
+      console.error(`[output-engine-cb] runId=${runId} ${errMsg}`);
+      await outputEngine.markRunFailed(runId, errMsg);
+      return res.status(400).json({ error: errMsg });
+    }
+
+    await outputEngine.markRunComplete(runId, {
+      memo_docx_b64,
+      termsheet_docx_b64,
+      gbb_docx_b64,
+      cost_gbp,
+      model_version,
+      n8n_execution_id,
+    });
+
+    console.log(
+      `[output-engine-cb] runId=${runId} complete — ` +
+        `memo=${memo_docx_b64.length}b ts=${termsheet_docx_b64.length}b ` +
+        `gbb=${gbb_docx_b64.length}b cost=${cost_gbp || 'null'}`
+    );
+
+    return res.json({ success: true, stored: 'complete', runId });
+  } catch (err) {
+    console.error('[output-engine-cb] error:', err);
+    return res.status(500).json({ error: 'callback processing failed' });
   }
 });
 
