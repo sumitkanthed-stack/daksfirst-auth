@@ -6,6 +6,7 @@ const pool = require('../db/pool');
 const { authenticateToken, authenticateAdmin, authenticateInternal } = require('../middleware/auth');
 const { logAudit } = require('../services/audit');
 const alphaClient = require('../services/alpha-client');
+const featurePackager = require('../services/deal-feature-packager');
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 
@@ -800,6 +801,187 @@ router.get('/alpha-ping', authenticateToken, authenticateAdmin, async (req, res)
       success: false,
       error: 'alpha-ping route crashed — check server logs',
     });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  M1 — SEND A DEAL TO AN ANALYST ENGINE (admin-only)
+//  POST /api/admin/deals/:id/send-to-analyst
+//
+//  Body: { stage_id: 'dip_submission'|..., engine: 'anthropic'|'alpha' }
+//
+//  What it does:
+//    1. Packages the deal at the given stage (PII-sanitised allowlist).
+//    2. Dispatches the features to the chosen engine.
+//       - engine=alpha    : POST alpha /api/v1/ingest/deal today; when
+//                            alpha's models are live, switch to /score.
+//       - engine=anthropic: reserved for M2 — returns 501 today so the
+//                            route is safe to call but doesn't pretend.
+//    3. Inserts ONE append-only row in deal_stage_analyses with the
+//       features_sent, response, cost, latency, trigger, and any error.
+//    4. Returns the inserted row so the caller can render immediately.
+//
+//  Auth never evaluates, scores, or gates here. The engine's output is
+//  persisted verbatim and surfaced; decisions are the engine's business.
+//  See memory: feedback_auth_is_data_collector_not_decider.md.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/deals/:id/send-to-analyst', authenticateToken, authenticateAdmin, async (req, res) => {
+  const startedAt = Date.now();
+  const dealId = parseInt(req.params.id, 10);
+  const { stage_id: stageId, engine } = req.body || {};
+
+  // Basic validation — fail fast before doing work.
+  if (!Number.isInteger(dealId) || dealId <= 0) {
+    return res.status(400).json({ success: false, error: 'invalid deal id' });
+  }
+  if (!stageId || typeof stageId !== 'string') {
+    return res.status(400).json({ success: false, error: 'stage_id required' });
+  }
+  if (!engine || !['anthropic', 'alpha'].includes(engine)) {
+    return res.status(400).json({ success: false, error: "engine must be 'anthropic' or 'alpha'" });
+  }
+
+  try {
+    // 1. Package
+    const pkg = await featurePackager.packageDealForStage(dealId, stageId);
+    if (!pkg.success) {
+      return res.status(404).json({ success: false, error: pkg.error });
+    }
+
+    // 2. Dispatch
+    let engineResponse = null;
+    let engineError = null;
+    let engineLatencyMs = null;
+    let engineStatus = null;
+    let modelVersion = null;
+
+    if (engine === 'alpha') {
+      // Alpha's /ingest/deal Pydantic schema (verified against
+      // alpha-scaffold-2026-04-21/app/api/v1/ingest.py:27-34):
+      //   { source: str, deal_id: str, features: dict }
+      // We stash our richer context (stage_id, feature_hash, submission_id,
+      // packaged_at) INSIDE features as `_auth_envelope` so no data is lost
+      // but the top-level schema matches what alpha accepts today.
+      const alphaBody = {
+        source: 'daksfirst-auth',
+        deal_id: String(pkg.envelope.submission_id || pkg.envelope.deal_id),
+        features: {
+          ...pkg.envelope.features,
+          _auth_envelope: {
+            schema_version: pkg.envelope.schema_version,
+            stage_id: pkg.envelope.stage_id,
+            feature_hash: pkg.feature_hash,
+            packaged_at: pkg.envelope.packaged_at,
+            counts: pkg.envelope.counts,
+          },
+        },
+      };
+      const r = await alphaClient.alphaFetch(
+        'POST',
+        alphaClient.PATHS.INGEST_DEAL,
+        alphaBody,
+        { timeoutMs: 15000 }
+      );
+      engineLatencyMs = r.latency_ms;
+      engineStatus = r.status || null;
+      if (r.success) {
+        engineResponse = r.data || {};
+        modelVersion = (r.data && (r.data.model_version || r.data.pca_version)) || null;
+      } else {
+        engineError = r.error || 'alpha call failed';
+        engineResponse = r.data || { _raw: r.raw || null };
+      }
+    } else if (engine === 'anthropic') {
+      // M2 ships the Opus analyst. Today: store the packaged features
+      // with a stub response so the ledger is exercisable end-to-end.
+      engineError = 'anthropic analyst not wired yet — scheduled for M2';
+      engineResponse = { status: 'not_implemented', milestone: 'M2' };
+      engineLatencyMs = 0;
+    }
+
+    // 3. Persist
+    const inserted = await pool.query(
+      `INSERT INTO deal_stage_analyses
+        (deal_id, stage_id, engine, model_version, feature_hash,
+         features_sent, response, cost_gbp, latency_ms, triggered_by, error)
+       VALUES
+        ($1, $2, $3, $4, $5,
+         $6::jsonb, $7::jsonb, $8, $9, $10, $11)
+       RETURNING id, deal_id, stage_id, engine, model_version, feature_hash,
+                 cost_gbp, latency_ms, triggered_by, triggered_at, error`,
+      [
+        dealId,
+        stageId,
+        engine,
+        modelVersion,
+        pkg.feature_hash,
+        JSON.stringify(pkg.envelope.features),
+        JSON.stringify(engineResponse || {}),
+        null,                                                   // cost_gbp — M1 does not meter spend (M2 adds Anthropic metering)
+        engineLatencyMs,
+        `user:${req.user && req.user.userId ? req.user.userId : 'unknown'}`,
+        engineError,
+      ]
+    );
+
+    await logAudit(
+      dealId,
+      'analyst_dispatch',
+      null,
+      `engine=${engine} stage=${stageId}`,
+      {
+        analysis_id: inserted.rows[0].id,
+        feature_hash: pkg.feature_hash,
+        engine_status: engineStatus,
+        engine_error: engineError,
+      },
+      req.user && req.user.userId
+    );
+
+    return res.json({
+      success: !engineError,
+      analysis: inserted.rows[0],
+      feature_counts: pkg.envelope.counts,
+      engine_status: engineStatus,
+      engine_error: engineError,
+      total_latency_ms: Date.now() - startedAt,
+    });
+  } catch (error) {
+    console.error('[admin send-to-analyst] unexpected error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'send-to-analyst crashed — check server logs',
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  M1 — LIST ANALYSES FOR A DEAL (admin-only)
+//  GET /api/admin/deals/:id/analyses
+//
+//  Returns every (stage, engine) analysis ever recorded for this deal,
+//  newest first. Small convenience endpoint so the M3 matrix UI can read
+//  the ledger without every consumer writing the same query.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/deals/:id/analyses', authenticateToken, authenticateAdmin, async (req, res) => {
+  const dealId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(dealId) || dealId <= 0) {
+    return res.status(400).json({ success: false, error: 'invalid deal id' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, deal_id, stage_id, engine, model_version, feature_hash,
+              response, cost_gbp, latency_ms, triggered_by, triggered_at,
+              rm_feedback, error
+         FROM deal_stage_analyses
+        WHERE deal_id = $1
+        ORDER BY triggered_at DESC, id DESC`,
+      [dealId]
+    );
+    res.json({ success: true, analyses: rows });
+  } catch (error) {
+    console.error('[admin list-analyses] error:', error);
+    res.status(500).json({ success: false, error: 'failed to list analyses' });
   }
 });
 
