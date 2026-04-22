@@ -68,7 +68,17 @@ module.exports = {
   N8N_PARSE_WEBHOOK_URL: process.env.N8N_PARSE_WEBHOOK_URL || '',
   N8N_DATA_PARSE_URL: process.env.N8N_DATA_PARSE_URL || '',
   N8N_DATA_CLASSIFY_URL: process.env.N8N_DATA_CLASSIFY_URL || '',
+// Output Engine (OE-3, 2026-04-22)
+  //   Production webhook on the cloned "Credit Analysis - Admin Run" workflow
+  //   in n8n Cloud. Auth dispatcher POSTs the full feature envelope here and
+  //   n8n asynchronously posts three base64 DOCX blobs back to the auth
+  //   callback at /api/webhook/output-engine/complete.
+  N8N_OUTPUT_ENGINE_WEBHOOK_URL: process.env.N8N_OUTPUT_ENGINE_WEBHOOK_URL || '',
 
+  // Public base URL for THIS service (used when auth hands an n8n workflow
+  // an absolute callback URL to POST back to). Render is authoritative for
+  // webhook inbound; Vercel is frontend-only.
+  AUTH_PUBLIC_BASE_URL: process.env.AUTH_PUBLIC_BASE_URL || 'https://daksfirst-auth.onrender.com',
   // DocuSign
   DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',
   DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID || '',
