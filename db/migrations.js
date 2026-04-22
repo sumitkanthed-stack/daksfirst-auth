@@ -1324,7 +1324,42 @@ async function runMigrations() {
     } catch (err) {
       console.log('[migrate] Note on deal_stage_analyses:', err.message.substring(0, 120));
     }
-
+// ═══════════════════════════════════════════════════════════════════════════
+    //  CREDIT ANALYSIS OUTPUTS LEDGER (OE-3, 2026-04-22)
+    //
+    //  One row per "Run Credit Analysis" click. Stores base64 DOCX blobs
+    //  returned by the n8n Output Engine. See memory:
+    //    project_output_engine_oe1_sealed.md
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS credit_analysis_outputs (
+          id                  SERIAL PRIMARY KEY,
+          run_id              UUID          NOT NULL UNIQUE,
+          deal_id             INT           NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
+          deal_submission_id  UUID,
+          status              VARCHAR(20)   NOT NULL DEFAULT 'running'
+                              CHECK (status IN ('running','complete','failed')),
+          feature_hash        CHAR(64),
+          memo_docx_b64       TEXT,
+          termsheet_docx_b64  TEXT,
+          gbb_docx_b64        TEXT,
+          cost_gbp            NUMERIC(8,4),
+          model_version       VARCHAR(60),
+          n8n_execution_id    VARCHAR(60),
+          error               TEXT,
+          triggered_by        VARCHAR(120),
+          triggered_at        TIMESTAMPTZ   DEFAULT NOW(),
+          completed_at        TIMESTAMPTZ
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_deal_triggered ON credit_analysis_outputs (deal_id, triggered_at DESC);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_status         ON credit_analysis_outputs (status);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_run_id         ON credit_analysis_outputs (run_id);`);
+      console.log('[migrate] ✓ credit_analysis_outputs table + 3 indexes (OE-3 output ledger)');
+    } catch (err) {
+      console.log('[migrate] Note on credit_analysis_outputs:', err.message.substring(0, 120));
+    }
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
