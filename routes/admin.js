@@ -1135,4 +1135,56 @@ router.get('/output-engine-runs/:runId', authenticateToken, authenticateAdmin, a
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  OE-5 — DOWNLOAD A SINGLE DOCX FROM A RUN (admin-only)
+//  GET /api/admin/output-engine-runs/:runId/:type.docx
+//    :type ∈ { memo, termsheet, gbb }
+//
+//  Returns the decoded .docx binary with proper Word content-type so the
+//  browser prompts a download. The RM console uses this via an authed
+//  fetch → blob → synthetic <a download> click (bearer token can't live
+//  in a plain <a href>, hence the two-step).
+// ═══════════════════════════════════════════════════════════════════════════
+const OE5_DOC_COLS = {
+  memo: { col: 'memo_docx_b64', filename: 'credit-memo' },
+  termsheet: { col: 'termsheet_docx_b64', filename: 'initial-termsheet' },
+  gbb: { col: 'gbb_docx_b64', filename: 'gbb-approval-memo' },
+};
+router.get('/output-engine-runs/:runId/:type(memo|termsheet|gbb).docx', authenticateToken, authenticateAdmin, async (req, res) => {
+  const { runId, type } = req.params;
+  if (!runId || !/^[0-9a-f-]{36}$/i.test(runId)) {
+    return res.status(400).json({ success: false, error: 'invalid runId' });
+  }
+  const mapping = OE5_DOC_COLS[type];
+  if (!mapping) {
+    return res.status(400).json({ success: false, error: 'invalid doc type' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT deal_id, status, ${mapping.col} AS blob
+         FROM credit_analysis_outputs
+        WHERE run_id = $1
+        LIMIT 1`,
+      [runId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'run not found' });
+    }
+    const row = rows[0];
+    if (row.status !== 'complete' || !row.blob) {
+      return res.status(409).json({ success: false, error: `no ${type} available for run (status=${row.status})` });
+    }
+    const buf = Buffer.from(row.blob, 'base64');
+    const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const filename = `deal-${row.deal_id}-${mapping.filename}-${stamp}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(buf.length));
+    return res.end(buf);
+  } catch (error) {
+    console.error('[admin output-engine-doc-download] error:', error);
+    res.status(500).json({ success: false, error: 'failed to load document' });
+  }
+});
+
 module.exports = router;
