@@ -46,9 +46,15 @@ const AUTH_CALLBACK_BASE =
  * @param {object} options
  * @param {string} options.runId
  * @param {string} options.callbackUrl
+ * @param {string} options.callbackSecret  shared WEBHOOK_SECRET — n8n uses it
+ *                                         to HMAC-sign the callback body.
+ *                                         Sent in-envelope because n8n Cloud
+ *                                         Starter blocks Code-node $env access,
+ *                                         so Preamble Assembly can't read it
+ *                                         from n8n env vars.
  * @returns {object} envelope ready to POST to N8N_OUTPUT_ENGINE_WEBHOOK_URL
  */
-function buildN8nEnvelope(pkg, { runId, callbackUrl } = {}) {
+function buildN8nEnvelope(pkg, { runId, callbackUrl, callbackSecret } = {}) {
   if (!pkg || !pkg.envelope || !pkg.envelope.features) {
     throw new Error('[output-engine-dispatcher] invalid packager output');
   }
@@ -65,6 +71,13 @@ function buildN8nEnvelope(pkg, { runId, callbackUrl } = {}) {
     // ── Correlation / meta ──────────────────────────────────────────────
     runId,
     callbackUrl,
+    // HMAC-signing secret for the callback. n8n Preamble Assembly reads this
+    // and passes it through to Callback Assembly, which signs the callback
+    // body with it. Auth verifies the signature on receipt. TLS protects
+    // transit; n8n execution logs are admin-only (same trust surface as the
+    // Render/Vercel env stores). Added 2026-04-23 because n8n Cloud Starter
+    // blocks $env access in Code nodes — the previous fallback path is dead.
+    callbackSecret,
     submissionId: deal.submission_id,
     source: 'admin_run',
     timestamp: new Date().toISOString(),
@@ -248,7 +261,20 @@ async function dispatch({ pkg, dealId, triggeredBy }) {
   // the base path — not '/api/webhooks'.
   const callbackUrl = `${AUTH_CALLBACK_BASE}/api/webhook/output-engine/complete`;
 
-  const envelope = buildN8nEnvelope(pkg, { runId, callbackUrl });
+  // Guard: the secret MUST be configured, or signatures can't be verified.
+  // Fail fast rather than dispatch a run that can't complete.
+  if (!config.WEBHOOK_SECRET) {
+    return {
+      success: false,
+      error: 'WEBHOOK_SECRET not configured on auth — cannot sign callback',
+    };
+  }
+
+  const envelope = buildN8nEnvelope(pkg, {
+    runId,
+    callbackUrl,
+    callbackSecret: config.WEBHOOK_SECRET,
+  });
 
   try {
     const response = await fetch(N8N_OUTPUT_ENGINE_URL, {
