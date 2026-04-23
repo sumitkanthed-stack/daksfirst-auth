@@ -283,7 +283,7 @@ async function dispatch({ pkg, dealId, triggeredBy }) {
         'Content-Type': 'application/json',
         'X-Webhook-Secret': config.WEBHOOK_SECRET,
       },
-      body: JSON.stringify({ body: envelope }), // Web Portal Code reads `.body`
+      body: JSON.stringify(envelope),
       signal: AbortSignal.timeout(30000),
     });
 
