@@ -89,6 +89,7 @@ app.use('/api/deals', borrowersRoutes);
 app.use('/api/deals', propertiesRoutes);
 app.use('/api', brokerRoutes);        // Mounts /broker/*, /staff/*, /law-firms/*, /admin/broker/*
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/webhook-v2', require('./routes/output-engine-v2'));
 app.use('/api/smart-parse', smartParseRoutes);
 app.use('/api/docusign', docusignWebhookRoutes);
 app.use('/api/matrix', matrixRoutes);
