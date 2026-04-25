@@ -1194,6 +1194,42 @@ async function runMigrations() {
       console.log('[migrate] Note on admin_config:', err.message.substring(0, 100));
     }
 
+    // ── llm_model_config: admin-editable Anthropic model selection per call type
+    //   Read by the V5 Credit Analysis n8n canvas at workflow start.
+    //   Editable via /admin/models.html → PUT /api/admin/config/llm-config/:callType
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS llm_model_config (
+          call_type      TEXT PRIMARY KEY,
+          model          TEXT NOT NULL,
+          max_tokens     INT  NOT NULL,
+          temperature    NUMERIC(3,2) DEFAULT 0.00,
+          budget_gbp     NUMERIC(6,2) DEFAULT 5.00,
+          enabled        BOOLEAN DEFAULT TRUE,
+          notes          TEXT,
+          updated_by     INT REFERENCES users(id),
+          updated_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+
+      // Seed 6 canonical call types. ON CONFLICT DO NOTHING — never overwrite
+      // admin-edited values on redeploy.
+      await pool.query(`
+        INSERT INTO llm_model_config (call_type, model, max_tokens, temperature, budget_gbp, notes) VALUES
+          ('credit_memo',    'claude-sonnet-4-6',          8000, 0.00, 2.00, 'Call 1 — full credit memo (14 sections)'),
+          ('termsheet',      'claude-sonnet-4-6',          6000, 0.00, 1.50, 'Call 2 — indicative term sheet (11 sections)'),
+          ('gbb',            'claude-sonnet-4-6',          7000, 0.00, 1.75, 'Call 3 — GB funder placement memo (W1-W10 + B1-B7)'),
+          ('financial',      'claude-sonnet-4-6',          5000, 0.00, 1.25, 'Call 4 — financial summary + stress matrix'),
+          ('assembled',      'claude-sonnet-4-6',          6000, 0.00, 1.50, 'Call 5 — assembled credit committee briefing'),
+          ('briefing_haiku', 'claude-haiku-4-5-20251001',  1500, 0.00, 0.10, 'Optional Haiku one-page narrative briefing')
+        ON CONFLICT (call_type) DO NOTHING
+      `);
+
+      console.log('[migrate] ✓ llm_model_config table ready (6 call types seeded)');
+    } catch (err) {
+      console.log('[migrate] Note on llm_model_config:', err.message.substring(0, 120));
+    }
+
     try {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);
@@ -1324,42 +1360,7 @@ async function runMigrations() {
     } catch (err) {
       console.log('[migrate] Note on deal_stage_analyses:', err.message.substring(0, 120));
     }
-// ═══════════════════════════════════════════════════════════════════════════
-    //  CREDIT ANALYSIS OUTPUTS LEDGER (OE-3, 2026-04-22)
-    //
-    //  One row per "Run Credit Analysis" click. Stores base64 DOCX blobs
-    //  returned by the n8n Output Engine. See memory:
-    //    project_output_engine_oe1_sealed.md
-    // ═══════════════════════════════════════════════════════════════════════════
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS credit_analysis_outputs (
-          id                  SERIAL PRIMARY KEY,
-          run_id              UUID          NOT NULL UNIQUE,
-          deal_id             INT           NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
-          deal_submission_id  UUID,
-          status              VARCHAR(20)   NOT NULL DEFAULT 'running'
-                              CHECK (status IN ('running','complete','failed')),
-          feature_hash        CHAR(64),
-          memo_docx_b64       TEXT,
-          termsheet_docx_b64  TEXT,
-          gbb_docx_b64        TEXT,
-          cost_gbp            NUMERIC(8,4),
-          model_version       VARCHAR(60),
-          n8n_execution_id    VARCHAR(60),
-          error               TEXT,
-          triggered_by        VARCHAR(120),
-          triggered_at        TIMESTAMPTZ   DEFAULT NOW(),
-          completed_at        TIMESTAMPTZ
-        );
-      `);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_deal_triggered ON credit_analysis_outputs (deal_id, triggered_at DESC);`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_status         ON credit_analysis_outputs (status);`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cao_run_id         ON credit_analysis_outputs (run_id);`);
-      console.log('[migrate] ✓ credit_analysis_outputs table + 3 indexes (OE-3 output ledger)');
-    } catch (err) {
-      console.log('[migrate] Note on credit_analysis_outputs:', err.message.substring(0, 120));
-    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

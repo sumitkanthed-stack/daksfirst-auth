@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daksfirst — LLM Model Config</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #151a21;
+    --panel-2: #1c232c;
+    --border: #2a3340;
+    --ink: #e7ecf3;
+    --muted: #8a95a5;
+    --accent: #4ea1ff;
+    --ok: #3ecf8e;
+    --warn: #f4b740;
+    --err: #ef5b5b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  header a.back { color: var(--muted); text-decoration: none; font-size: 12px; }
+  header a.back:hover { color: var(--accent); }
+  main { padding: 20px 28px; max-width: 1200px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .card .card-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card .card-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .card .card-head .meta { color: var(--muted); font-size: 12px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--panel-2);
+  }
+  tr:last-child td { border-bottom: none; }
+  td.call-type { font-family: var(--mono); color: var(--accent); font-weight: 500; }
+  td.notes { color: var(--muted); font-size: 12px; max-width: 280px; }
+  input[type="number"], select, input[type="text"] {
+    background: #0b0e13;
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  input[type="number"] { width: 90px; text-align: right; }
+  select { min-width: 200px; }
+  input[type="text"] { width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input { accent-color: var(--accent); }
+  button.save {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button.save:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.save.ok { background: var(--ok); }
+  button.save.err { background: var(--err); }
+  .status-row {
+    padding: 10px 16px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .banner {
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .banner.err { background: rgba(239,91,91,0.1); border: 1px solid var(--err); color: var(--err); }
+  .banner.ok  { background: rgba(62,207,142,0.1); border: 1px solid var(--ok);  color: var(--ok);  }
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+  .hint code {
+    font-family: var(--mono);
+    background: var(--panel-2);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  .pricing {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>LLM Model Config</h1>
+    <div class="sub">Admin-editable Anthropic model selection for V5 Credit Analysis pipeline</div>
+  </div>
+  <div>
+    <span id="user-badge" class="sub">Loading…</span>
+    <a href="/" class="back" style="margin-left:16px">← Portal</a>
+  </div>
+</header>
+
+<main>
+  <div id="banner" class="banner" style="display:none"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Model Configuration per Call Type</h2>
+      <div class="meta" id="last-updated">—</div>
+    </div>
+    <table id="config-table">
+      <thead>
+        <tr>
+          <th>Call Type</th>
+          <th>Model</th>
+          <th>Max Tokens</th>
+          <th>Temp</th>
+          <th>Budget £</th>
+          <th>Enabled</th>
+          <th>Notes</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody id="config-tbody">
+        <tr><td colspan="8" style="text-align:center; color:var(--muted); padding:20px;">Loading…</td></tr>
+      </tbody>
+    </table>
+    <div class="status-row">
+      <div id="status-text">—</div>
+      <div class="pricing">Sonnet 4.6: $3 in / $15 out per MTok · Haiku 4.5: $1 in / $5 out per MTok</div>
+    </div>
+  </div>
+
+  <div class="hint">
+    Changes take effect on the next V5 pipeline run. The n8n canvas reads this config via
+    <code>GET /api/admin/config/llm-config</code> at the top of the workflow, then injects
+    <code>model</code> and <code>max_tokens</code> into each Anthropic Chat Model node via expressions like
+    <code>={{ $('Get LLM Config').item.json.config.credit_memo.model }}</code>.
+  </div>
+</main>
+
+<script>
+(function () {
+  // ─── Match the rest of the frontend: token in sessionStorage, API on Render ───
+  const TOKEN    = sessionStorage.getItem('daksfirst_token') || '';
+  const API_BASE = 'https://daksfirst-auth.onrender.com';
+
+  const banner     = document.getElementById('banner');
+  const tbody      = document.getElementById('config-tbody');
+  const statusText = document.getElementById('status-text');
+  const lastUp     = document.getElementById('last-updated');
+  const userBadge  = document.getElementById('user-badge');
+
+  let ALLOWED = [];
+
+  function showBanner(kind, msg) {
+    banner.className = 'banner ' + kind;
+    banner.textContent = msg;
+    banner.style.display = 'block';
+    if (kind === 'ok') setTimeout(() => { banner.style.display = 'none'; }, 3000);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('en-GB'); } catch { return iso; }
+  }
+
+  function escapeAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+
+  async function load() {
+    if (!TOKEN) {
+      showBanner('err', 'Not signed in. Open the main portal, sign in as admin, then return to this page.');
+      userBadge.textContent = 'Not signed in';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--muted); padding:20px;">No session</td></tr>';
+      return;
+    }
+
+    try {
+      const r = await fetch(API_BASE + '/api/admin/config/llm-config', {
+        headers: { 'Authorization': 'Bearer ' + TOKEN },
+      });
+      if (r.status === 401 || r.status === 403) {
+        showBanner('err', 'Session expired or you are not an admin. Sign in as admin and reload.');
+        userBadge.textContent = 'Auth failed';
+        return;
+      }
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to load');
+
+      ALLOWED = data.allowed_models || [];
+      render(data.rows || []);
+      userBadge.textContent = 'Admin session';
+      statusText.textContent = `${(data.rows || []).length} call types configured`;
+
+      const newest = (data.rows || []).reduce((a, b) =>
+        (a && a.updated_at > b.updated_at) ? a : b, null);
+      if (newest) lastUp.textContent = 'Last change: ' + fmtDate(newest.updated_at);
+    } catch (err) {
+      showBanner('err', 'Load failed: ' + err.message);
+    }
+  }
+
+  function render(rows) {
+    tbody.innerHTML = '';
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      tr.dataset.callType = row.call_type;
+
+      const modelOpts = ALLOWED.map(m =>
+        `<option value="${m}" ${m === row.model ? 'selected' : ''}>${m}</option>`).join('');
+
+      tr.innerHTML = `
+        <td class="call-type">${row.call_type}</td>
+        <td><select data-field="model">${modelOpts}</select></td>
+        <td><input type="number" data-field="max_tokens" min="100" max="32000" step="100" value="${row.max_tokens}"></td>
+        <td><input type="number" data-field="temperature" min="0" max="1" step="0.05" value="${parseFloat(row.temperature).toFixed(2)}"></td>
+        <td><input type="number" data-field="budget_gbp" min="0" max="999.99" step="0.05" value="${parseFloat(row.budget_gbp).toFixed(2)}"></td>
+        <td>
+          <label class="toggle">
+            <input type="checkbox" data-field="enabled" ${row.enabled ? 'checked' : ''}>
+            <span>${row.enabled ? 'on' : 'off'}</span>
+          </label>
+        </td>
+        <td class="notes"><input type="text" data-field="notes" value="${escapeAttr(row.notes)}"></td>
+        <td><button class="save" data-action="save">Save</button></td>
+      `;
+
+      const chk = tr.querySelector('input[type="checkbox"]');
+      chk.addEventListener('change', () => {
+        chk.nextElementSibling.textContent = chk.checked ? 'on' : 'off';
+      });
+
+      tr.querySelector('button.save').addEventListener('click', () => saveRow(tr));
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function saveRow(tr) {
+    const callType = tr.dataset.callType;
+    const btn = tr.querySelector('button.save');
+    const payload = {};
+    for (const el of tr.querySelectorAll('[data-field]')) {
+      const f = el.dataset.field;
+      if (el.type === 'checkbox') payload[f] = el.checked;
+      else if (el.type === 'number') payload[f] = el.value === '' ? null : Number(el.value);
+      else payload[f] = el.value;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    btn.classList.remove('ok', 'err');
+
+    try {
+      const r = await fetch(API_BASE + '/api/admin/config/llm-config/' + encodeURIComponent(callType), {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + TOKEN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || ('HTTP ' + r.status));
+
+      btn.classList.add('ok');
+      btn.textContent = 'Saved';
+      showBanner('ok', `${callType} updated`);
+      lastUp.textContent = 'Last change: ' + fmtDate(data.updated.updated_at);
+      setTimeout(() => { btn.classList.remove('ok'); btn.textContent = 'Save'; btn.disabled = false; }, 1400);
+    } catch (err) {
+      btn.classList.add('err');
+      btn.textContent = 'Failed';
+      showBanner('err', `${callType}: ${err.message}`);
+      setTimeout(() => { btn.classList.remove('err'); btn.textContent = 'Save'; btn.disabled = false; }, 2500);
+    }
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

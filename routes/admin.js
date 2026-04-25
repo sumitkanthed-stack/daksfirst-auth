@@ -7,7 +7,7 @@ const { authenticateToken, authenticateAdmin, authenticateInternal } = require('
 const { logAudit } = require('../services/audit');
 const alphaClient = require('../services/alpha-client');
 const featurePackager = require('../services/deal-feature-packager');
-const outputEngine = require('../services/output-engine-dispatcher');
+const anthropicAnalyst = require('../services/anthropic-analyst');
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 
@@ -771,6 +771,142 @@ router.put('/config/delegated-authority', authenticateToken, authenticateAdmin, 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: LLM MODEL CONFIG (V5 Credit Analysis)
+//  GET  /api/admin/config/llm-config
+//  PUT  /api/admin/config/llm-config/:callType
+//
+//  Controls which Anthropic model + max_tokens / temperature / budget
+//  the V5 n8n canvas uses for each of the 6 generation calls.
+//  Editable from /admin/models.html.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Allowlist — update when Anthropic releases a new approved model
+const ALLOWED_LLM_MODELS = [
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-haiku-4-5-20251001',
+];
+
+router.get('/config/llm-config', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT call_type, model, max_tokens, temperature, budget_gbp, enabled,
+             notes, updated_by, updated_at
+      FROM llm_model_config
+      ORDER BY call_type
+    `);
+
+    const byCallType = {};
+    for (const r of rows) {
+      byCallType[r.call_type] = {
+        model:       r.model,
+        max_tokens:  r.max_tokens,
+        temperature: parseFloat(r.temperature),
+        budget_gbp:  parseFloat(r.budget_gbp),
+        enabled:     r.enabled,
+        notes:       r.notes,
+        updated_by:  r.updated_by,
+        updated_at:  r.updated_at,
+      };
+    }
+
+    res.json({
+      ok: true,
+      config: byCallType,
+      rows,
+      allowed_models: ALLOWED_LLM_MODELS,
+    });
+  } catch (err) {
+    console.error('[admin/llm-config GET] error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.put('/config/llm-config/:callType', authenticateToken, authenticateAdmin, async (req, res) => {
+  const { callType } = req.params;
+  const { model, max_tokens, temperature, budget_gbp, enabled, notes } = req.body;
+
+  try {
+    const { rows: existing } = await pool.query(
+      'SELECT call_type FROM llm_model_config WHERE call_type = $1',
+      [callType]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ ok: false, error: `Unknown call_type: ${callType}` });
+    }
+
+    if (model !== undefined && !ALLOWED_LLM_MODELS.includes(model)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Model "${model}" not in allowlist. Allowed: ${ALLOWED_LLM_MODELS.join(', ')}`,
+      });
+    }
+    if (max_tokens !== undefined) {
+      const n = parseInt(max_tokens, 10);
+      if (!Number.isFinite(n) || n < 100 || n > 32000) {
+        return res.status(400).json({ ok: false, error: 'max_tokens must be integer 100–32000' });
+      }
+    }
+    if (temperature !== undefined) {
+      const t = parseFloat(temperature);
+      if (!Number.isFinite(t) || t < 0 || t > 1) {
+        return res.status(400).json({ ok: false, error: 'temperature must be 0.00–1.00' });
+      }
+    }
+    if (budget_gbp !== undefined) {
+      const b = parseFloat(budget_gbp);
+      if (!Number.isFinite(b) || b < 0 || b > 999.99) {
+        return res.status(400).json({ ok: false, error: 'budget_gbp must be 0.00–999.99' });
+      }
+    }
+
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    if (model       !== undefined) { sets.push(`model = $${i++}`);       vals.push(model); }
+    if (max_tokens  !== undefined) { sets.push(`max_tokens = $${i++}`);  vals.push(parseInt(max_tokens, 10)); }
+    if (temperature !== undefined) { sets.push(`temperature = $${i++}`); vals.push(parseFloat(temperature)); }
+    if (budget_gbp  !== undefined) { sets.push(`budget_gbp = $${i++}`);  vals.push(parseFloat(budget_gbp)); }
+    if (enabled     !== undefined) { sets.push(`enabled = $${i++}`);     vals.push(!!enabled); }
+    if (notes       !== undefined) { sets.push(`notes = $${i++}`);       vals.push(notes); }
+
+    if (sets.length === 0) {
+      return res.status(400).json({ ok: false, error: 'No editable fields supplied' });
+    }
+
+    sets.push(`updated_by = $${i++}`); vals.push(req.user.userId);
+    sets.push(`updated_at = NOW()`);
+
+    vals.push(callType);
+    const sql = `UPDATE llm_model_config SET ${sets.join(', ')} WHERE call_type = $${i} RETURNING *`;
+
+    const { rows } = await pool.query(sql, vals);
+    const row = rows[0];
+
+    await logAudit(null, 'llm_config_updated', null, callType,
+      { fields: Object.keys(req.body), by: req.user.userId }, req.user.userId);
+
+    res.json({
+      ok: true,
+      call_type: row.call_type,
+      updated: {
+        model:       row.model,
+        max_tokens:  row.max_tokens,
+        temperature: parseFloat(row.temperature),
+        budget_gbp:  parseFloat(row.budget_gbp),
+        enabled:     row.enabled,
+        notes:       row.notes,
+        updated_by:  row.updated_by,
+        updated_at:  row.updated_at,
+      },
+    });
+  } catch (err) {
+    console.error(`[admin/llm-config PUT ${callType}] error:`, err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ADMIN: ALPHA PIPE SMOKE TEST
 //  GET /api/admin/alpha-ping
 //
@@ -855,6 +991,7 @@ router.post('/deals/:id/send-to-analyst', authenticateToken, authenticateAdmin, 
     let engineLatencyMs = null;
     let engineStatus = null;
     let modelVersion = null;
+    let engineCostGbp = null;
 
     if (engine === 'alpha') {
       // Alpha's /ingest/deal Pydantic schema (verified against
@@ -893,11 +1030,21 @@ router.post('/deals/:id/send-to-analyst', authenticateToken, authenticateAdmin, 
         engineResponse = r.data || { _raw: r.raw || null };
       }
     } else if (engine === 'anthropic') {
-      // M2 ships the Opus analyst. Today: store the packaged features
-      // with a stub response so the ledger is exercisable end-to-end.
-      engineError = 'anthropic analyst not wired yet — scheduled for M2';
-      engineResponse = { status: 'not_implemented', milestone: 'M2' };
-      engineLatencyMs = 0;
+      // M2 (2026-04-22): Opus 4.6 reads the full feature envelope and
+      // returns a structured credit analysis with citations. The service
+      // enforces temperature 0, JSON-only output, and hallucination
+      // detection via the citation validator. Any unresolved citation
+      // path → row is marked with error='hallucinated_citation:<path>'.
+      // See services/anthropic-analyst.js + project_m2_anthropic_analyst_kickoff.md.
+      const a = await anthropicAnalyst.analyseDealStage(pkg.envelope, {
+        userId: req.user && req.user.userId,
+      });
+      engineResponse = a.response || {};
+      engineError = a.error;
+      engineLatencyMs = a.latency_ms;
+      engineStatus = a.error ? null : 200;
+      modelVersion = a.model_version;
+      engineCostGbp = a.cost_gbp;
     }
 
     // 3. Persist
@@ -918,7 +1065,7 @@ router.post('/deals/:id/send-to-analyst', authenticateToken, authenticateAdmin, 
         pkg.feature_hash,
         JSON.stringify(pkg.envelope.features),
         JSON.stringify(engineResponse || {}),
-        null,                                                   // cost_gbp — M1 does not meter spend (M2 adds Anthropic metering)
+        engineCostGbp,                                          // cost_gbp — Anthropic-metered in M2; alpha calls still null
         engineLatencyMs,
         `user:${req.user && req.user.userId ? req.user.userId : 'unknown'}`,
         engineError,
@@ -983,207 +1130,6 @@ router.get('/deals/:id/analyses', authenticateToken, authenticateAdmin, async (r
   } catch (error) {
     console.error('[admin list-analyses] error:', error);
     res.status(500).json({ success: false, error: 'failed to list analyses' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  OE-3 — TRIGGER THE OUTPUT ENGINE (admin-only, 2026-04-22)
-//  POST /api/admin/deals/:id/run-output-engine
-//
-//  Body: { stage_id?: 'dip_submission'|... }  — defaults to 'dip_submission'
-//
-//  Flow:
-//    1. Package the deal via the same packager the M1 analyst uses.
-//    2. INSERT row in credit_analysis_outputs with status='running', get runId.
-//    3. POST the adapted envelope to the n8n "Credit Analysis - Admin Run"
-//       webhook. Envelope wraps all data under `.body` because the clone's
-//       `Code in JavaScript1` reads `$('Webhook').item.json.body`.
-//    4. Return 202 with { runId, dealId } — the n8n workflow runs async and
-//       posts the three DOCX blobs back to /api/webhook/output-engine/complete
-//       which UPDATEs the row to 'complete'.
-//
-//  If the n8n webhook returns non-2xx, we mark the run 'failed' synchronously
-//  and respond 502 with the upstream error.
-// ═══════════════════════════════════════════════════════════════════════════
-router.post('/deals/:id/run-output-engine', authenticateToken, authenticateAdmin, async (req, res) => {
-  const startedAt = Date.now();
-  const dealId = parseInt(req.params.id, 10);
-  const stageId = (req.body && req.body.stage_id) || 'dip_submission';
-
-  if (!Number.isInteger(dealId) || dealId <= 0) {
-    return res.status(400).json({ success: false, error: 'invalid deal id' });
-  }
-
-  try {
-    // 1. Package
-    const pkg = await featurePackager.packageDealForStage(dealId, stageId);
-    if (!pkg.success) {
-      return res.status(404).json({ success: false, error: pkg.error });
-    }
-
-    // 2+3. Dispatch (row insert happens inside dispatch)
-    const triggeredBy = `user:${(req.user && req.user.userId) || 'unknown'}`;
-    const dispatchResult = await outputEngine.dispatch({
-      pkg,
-      dealId,
-      triggeredBy,
-    });
-
-    await logAudit(
-      dealId,
-      'output_engine_dispatch',
-      null,
-      `runId=${dispatchResult.runId || 'none'} stage=${stageId}`,
-      {
-        run_id: dispatchResult.runId,
-        feature_hash: pkg.feature_hash,
-        success: dispatchResult.success,
-        error: dispatchResult.error,
-      },
-      req.user && req.user.userId
-    );
-
-    if (!dispatchResult.success) {
-      return res.status(502).json({
-        success: false,
-        error: dispatchResult.error,
-        runId: dispatchResult.runId || null,
-      });
-    }
-
-    return res.status(202).json({
-      success: true,
-      runId: dispatchResult.runId,
-      deal_id: dealId,
-      stage_id: stageId,
-      feature_hash: pkg.feature_hash,
-      dispatch_ms: Date.now() - startedAt,
-    });
-  } catch (error) {
-    console.error('[admin run-output-engine] unexpected error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'run-output-engine crashed — check server logs',
-    });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  OE-3 — LIST OUTPUT ENGINE RUNS FOR A DEAL (admin-only)
-//  GET /api/admin/deals/:id/output-engine-runs
-//
-//  Returns the last N runs, newest first, with status + cost + timestamps.
-//  Intentionally does NOT return the base64 DOCX blobs to keep the list
-//  response small — use /output-engine-runs/:runId to fetch a single blob.
-// ═══════════════════════════════════════════════════════════════════════════
-router.get('/deals/:id/output-engine-runs', authenticateToken, authenticateAdmin, async (req, res) => {
-  const dealId = parseInt(req.params.id, 10);
-  if (!Number.isInteger(dealId) || dealId <= 0) {
-    return res.status(400).json({ success: false, error: 'invalid deal id' });
-  }
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, run_id, deal_id, status, feature_hash, cost_gbp,
-              model_version, n8n_execution_id, error,
-              triggered_by, triggered_at, completed_at,
-              (memo_docx_b64      IS NOT NULL) AS has_memo,
-              (termsheet_docx_b64 IS NOT NULL) AS has_termsheet,
-              (gbb_docx_b64       IS NOT NULL) AS has_gbb
-         FROM credit_analysis_outputs
-        WHERE deal_id = $1
-        ORDER BY triggered_at DESC, id DESC
-        LIMIT 50`,
-      [dealId]
-    );
-    res.json({ success: true, runs: rows });
-  } catch (error) {
-    console.error('[admin output-engine-runs] error:', error);
-    res.status(500).json({ success: false, error: 'failed to list output engine runs' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  OE-3 — FETCH A SINGLE RUN (with DOCX blobs, admin-only)
-//  GET /api/admin/output-engine-runs/:runId
-//
-//  Returns the full row including the three base64 DOCX blobs. Used by the
-//  RM console to offer a "download" link per DOCX.
-// ═══════════════════════════════════════════════════════════════════════════
-router.get('/output-engine-runs/:runId', authenticateToken, authenticateAdmin, async (req, res) => {
-  const { runId } = req.params;
-  if (!runId || !/^[0-9a-f-]{36}$/i.test(runId)) {
-    return res.status(400).json({ success: false, error: 'invalid runId' });
-  }
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, run_id, deal_id, status, feature_hash, cost_gbp,
-              model_version, n8n_execution_id, error,
-              memo_docx_b64, termsheet_docx_b64, gbb_docx_b64,
-              triggered_by, triggered_at, completed_at
-         FROM credit_analysis_outputs
-        WHERE run_id = $1
-        LIMIT 1`,
-      [runId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'run not found' });
-    }
-    res.json({ success: true, run: rows[0] });
-  } catch (error) {
-    console.error('[admin output-engine-run-get] error:', error);
-    res.status(500).json({ success: false, error: 'failed to load run' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  OE-5 — DOWNLOAD A SINGLE DOCX FROM A RUN (admin-only)
-//  GET /api/admin/output-engine-runs/:runId/:type.docx
-//    :type ∈ { memo, termsheet, gbb }
-//
-//  Returns the decoded .docx binary with proper Word content-type so the
-//  browser prompts a download. The RM console uses this via an authed
-//  fetch → blob → synthetic <a download> click (bearer token can't live
-//  in a plain <a href>, hence the two-step).
-// ═══════════════════════════════════════════════════════════════════════════
-const OE5_DOC_COLS = {
-  memo: { col: 'memo_docx_b64', filename: 'credit-memo' },
-  termsheet: { col: 'termsheet_docx_b64', filename: 'initial-termsheet' },
-  gbb: { col: 'gbb_docx_b64', filename: 'gbb-approval-memo' },
-};
-router.get('/output-engine-runs/:runId/:type(memo|termsheet|gbb).docx', authenticateToken, authenticateAdmin, async (req, res) => {
-  const { runId, type } = req.params;
-  if (!runId || !/^[0-9a-f-]{36}$/i.test(runId)) {
-    return res.status(400).json({ success: false, error: 'invalid runId' });
-  }
-  const mapping = OE5_DOC_COLS[type];
-  if (!mapping) {
-    return res.status(400).json({ success: false, error: 'invalid doc type' });
-  }
-  try {
-    const { rows } = await pool.query(
-      `SELECT deal_id, status, ${mapping.col} AS blob
-         FROM credit_analysis_outputs
-        WHERE run_id = $1
-        LIMIT 1`,
-      [runId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'run not found' });
-    }
-    const row = rows[0];
-    if (row.status !== 'complete' || !row.blob) {
-      return res.status(409).json({ success: false, error: `no ${type} available for run (status=${row.status})` });
-    }
-    const buf = Buffer.from(row.blob, 'base64');
-    const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const filename = `deal-${row.deal_id}-${mapping.filename}-${stamp}.docx`;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', String(buf.length));
-    return res.end(buf);
-  } catch (error) {
-    console.error('[admin output-engine-doc-download] error:', error);
-    res.status(500).json({ success: false, error: 'failed to load document' });
   }
 });
 
