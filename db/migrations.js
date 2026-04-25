@@ -1358,6 +1358,131 @@ async function runMigrations() {
       console.log('[migrate] Note on llm_model_config V5.1:', err.message.substring(0, 160));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  llm_prompts (2026-04-25): admin-editable prompt body store, append-only
+    //  versioned. Stores every system/user prompt body the V5 canvas pulls at
+    //  workflow start (risk-analysis rubric v2, credit-memo prompt, termsheet
+    //  prompt, etc.).
+    //
+    //  Append-only design:
+    //   - Every save is a new row (UNIQUE (prompt_key, version)).
+    //   - is_active flags the live version; partial unique index guarantees
+    //     exactly one active row per prompt_key.
+    //   - Old versions are retained forever for audit / rollback / regrade-under-
+    //     prior-rubric. Every risk_view row will reference the (prompt_key,
+    //     version) it was graded under.
+    //
+    //  No body seeding here — bodies are loaded by a follow-on step once the
+    //  macro context block v1 is drafted and the rubric v2 file has its final
+    //  deployed path. Schema-only migration is safe to ship today.
+    //
+    //  Read by V5 n8n canvas via GET /api/admin/config/llm-prompt/:key
+    //  Edited via /admin/prompts UI (POST creates new version, PATCH flips active).
+    //  See memory: project_risk_run_manual_trigger.md
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS llm_prompts (
+          id              SERIAL PRIMARY KEY,
+          prompt_key      TEXT NOT NULL,
+          version         INTEGER NOT NULL,
+          body            TEXT NOT NULL,
+          is_active       BOOLEAN NOT NULL DEFAULT FALSE,
+          description     TEXT,
+          parent_version  INTEGER,
+          changelog       TEXT,
+          edited_by       TEXT NOT NULL DEFAULT 'system',
+          edited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (prompt_key, version)
+        )
+      `);
+
+      // Partial unique index: at most one active version per prompt_key.
+      // Postgres treats NULLs in the WHERE clause correctly; flipping active
+      // is a 2-step transaction (UPDATE old → FALSE, UPDATE new → TRUE).
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS llm_prompts_one_active_per_key
+          ON llm_prompts (prompt_key) WHERE is_active = TRUE
+      `);
+
+      // Lookup index for the canvas hot path: GET /api/admin/config/llm-prompt/:key
+      // resolves to "the active row for this key". This index keeps that O(1).
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS llm_prompts_key_active_idx
+          ON llm_prompts (prompt_key, is_active)
+      `);
+
+      console.log('[migrate] ✓ llm_prompts table ready (append-only versioned, no body seed)');
+    } catch (err) {
+      console.log('[migrate] Note on llm_prompts:', err.message.substring(0, 160));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  risk_view (2026-04-25): append-only run-log of risk-analysis grading.
+    //  Every press of "Run Risk Analysis" on /deal/:id writes a fresh row.
+    //
+    //  Pinning rule (from feedback_matrix_is_canonical + project_risk_run_manual_trigger):
+    //   - rubric_prompt_id  → FK into llm_prompts(id), stamps the EXACT (key, version) used
+    //   - macro_prompt_id   → same, for the macro context block
+    //   - sensitivity_calculator_version → stamps the deterministic JS calculator hash/tag
+    //   - data_stage        → 'dip' | 'underwriting' | 'pre_completion'
+    //  Together these four make any historical row exactly reproducible.
+    //
+    //  Append-only: rows never UPDATE except for status transitions
+    //  (pending → running → success | failed) and cost telemetry settle.
+    //
+    //  Indexes:
+    //   - (deal_id, triggered_at DESC) → Risk View tab pulls latest + history
+    //   - (status) → admin can filter stuck 'running' rows
+    //
+    //  Read by: GET /api/deals/:id/risk-runs (Risk View tab on apply.daksfirst.com)
+    //  Written by: portal trigger route (creates pending row), n8n callback
+    //  (settles status + grades + telemetry).
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS risk_view (
+          id                              SERIAL PRIMARY KEY,
+          deal_id                         INTEGER NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
+          data_stage                      TEXT NOT NULL,
+          rubric_prompt_id                INTEGER REFERENCES llm_prompts(id),
+          macro_prompt_id                 INTEGER REFERENCES llm_prompts(id),
+          sensitivity_calculator_version  TEXT,
+          model                           TEXT,
+          model_temperature               NUMERIC(3,2),
+          model_max_tokens                INTEGER,
+          input_payload                   JSONB,
+          raw_response                    TEXT,
+          parsed_grades                   JSONB,
+          input_tokens                    INTEGER,
+          output_tokens                   INTEGER,
+          cost_gbp                        NUMERIC(8,4),
+          latency_ms                      INTEGER,
+          status                          TEXT NOT NULL DEFAULT 'pending',
+          error_message                   TEXT,
+          triggered_by                    TEXT,
+          triggered_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          completed_at                    TIMESTAMPTZ
+        )
+      `);
+
+      // Hot-path index for the Risk View tab: latest run + history per deal.
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS risk_view_deal_triggered_idx
+          ON risk_view (deal_id, triggered_at DESC)
+      `);
+
+      // Status filter for admin (find stuck 'running' rows or recent failures).
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS risk_view_status_idx
+          ON risk_view (status)
+      `);
+
+      console.log('[migrate] ✓ risk_view table ready (append-only run-log, FK-pinned to llm_prompts)');
+    } catch (err) {
+      console.log('[migrate] Note on risk_view:', err.message.substring(0, 160));
+    }
+
     try {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);
