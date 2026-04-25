@@ -418,13 +418,14 @@
   }
 
   // ─── Allowlist sub-row editor (Perplexity + Google) ───
+  // Friendly UI: domains as one-per-line textarea, recency dropdown, citations checkbox.
+  // On save, reassemble the extra_params JSON object behind the scenes.
   function toggleAllowlistEditor(tr) {
     const next = tr.nextElementSibling;
     if (next && next.classList.contains('allowlist-row') && next.dataset.for === tr.dataset.callType) {
       next.remove();
       return;
     }
-    // Remove any other open editor first
     document.querySelectorAll('tr.allowlist-row').forEach(r => r.remove());
 
     const provider = tr.dataset.provider;
@@ -433,47 +434,114 @@
     editorRow.className = 'allowlist-row';
     editorRow.dataset.for = tr.dataset.callType;
 
-    const txt = JSON.stringify(extra, null, 2);
-    const helpDomains = provider === 'perplexity'
-      ? `Perplexity uses <code>search_domain_filter</code> (array of bare hostnames). Also supports <code>search_recency_filter</code> ("month"|"year"|"day"|"hour") and <code>return_citations</code> (bool).`
-      : `Google grounding sources go here once NotebookLM / Vertex API is wired in.`;
+    const domains = Array.isArray(extra.search_domain_filter) ? extra.search_domain_filter : [];
+    const recency = extra.search_recency_filter || '';
+    const cites   = extra.return_citations !== false;  // default true
+
+    const domainsText = domains.join('\n');
+    const helpText = provider === 'perplexity'
+      ? `Edit the list of websites Perplexity is allowed to search. One domain per line — no <code>https://</code>, no slashes, no paths. Just <code>rightmove.co.uk</code>, not <code>https://www.rightmove.co.uk/properties</code>.`
+      : `Domains the model is allowed to ground on. One per line.`;
+
+    const recencyOpts = [
+      ['',     '— no filter —'],
+      ['hour', 'last hour'],
+      ['day',  'last day'],
+      ['month','last month'],
+      ['year', 'last year'],
+    ].map(([v, label]) =>
+      `<option value="${v}" ${v === recency ? 'selected' : ''}>${label}</option>`).join('');
 
     editorRow.innerHTML = `
       <td colspan="10">
-        <div class="meta"><strong>extra_params</strong> for <code>${escapeHtml(tr.dataset.callType)}</code> (${escapeHtml(provider)}). ${helpDomains}</div>
-        <textarea data-field="extra_params_json" spellcheck="false">${escapeHtml(txt)}</textarea>
+        <div class="meta">Settings for <code>${escapeHtml(tr.dataset.callType)}</code> (${escapeHtml(provider)}). ${helpText}</div>
+
+        <div style="display:grid; grid-template-columns: 1fr 320px; gap:16px; margin-top:10px;">
+          <div>
+            <label style="display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">
+              Allowed domains <span data-role="domain-count" style="color:var(--ink); font-family:var(--mono); text-transform:none;"></span>
+            </label>
+            <textarea data-field="domains" spellcheck="false" placeholder="rightmove.co.uk&#10;zoopla.co.uk&#10;savills.co.uk">${escapeHtml(domainsText)}</textarea>
+          </div>
+
+          <div>
+            ${provider === 'perplexity' ? `
+              <label style="display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">Recency window</label>
+              <select data-field="recency" style="width:100%; min-width:auto; margin-bottom:14px;">${recencyOpts}</select>
+
+              <label class="toggle" style="margin-top:6px;">
+                <input type="checkbox" data-field="citations" ${cites ? 'checked' : ''}>
+                <span>Return citations</span>
+              </label>
+              <div style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;">
+                Citations let n8n parse which exact URL backed each claim. Leave on for FCA-defensible audit trail.
+              </div>
+            ` : `
+              <div style="font-size:11px; color:var(--muted); line-height:1.4;">
+                Google rows: only the domain list is used (Vertex/Gemini grounding). No recency or citation flag.
+              </div>
+            `}
+          </div>
+        </div>
+
         <div class="err-msg" data-role="json-err"></div>
-        <div style="margin-top:8px; display:flex; gap:8px;">
+        <div style="margin-top:14px; display:flex; gap:8px;">
           <button class="save" data-action="save-extra">Save Allowlist</button>
           <button class="allowlist-btn" data-action="cancel">Close</button>
         </div>
       </td>
     `;
 
+    const ta = editorRow.querySelector('textarea[data-field="domains"]');
+    const countEl = editorRow.querySelector('[data-role="domain-count"]');
+    const updateCount = () => {
+      const lines = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+      countEl.textContent = `(${lines.length})`;
+    };
+    ta.addEventListener('input', updateCount);
+    updateCount();
+
     editorRow.querySelector('button[data-action="cancel"]').addEventListener('click', () => editorRow.remove());
+
     editorRow.querySelector('button[data-action="save-extra"]').addEventListener('click', () => {
-      const ta  = editorRow.querySelector('textarea');
       const err = editorRow.querySelector('[data-role="json-err"]');
       err.style.display = 'none';
-      let parsed;
-      try {
-        const raw = ta.value.trim();
-        parsed = raw === '' ? null : JSON.parse(raw);
-        if (parsed != null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
-          throw new Error('extra_params must be a JSON object or null');
-        }
-        if (provider === 'perplexity' && parsed) {
-          const dom = parsed.search_domain_filter;
-          if (dom != null && (!Array.isArray(dom) || !dom.every(d => typeof d === 'string'))) {
-            throw new Error('search_domain_filter must be an array of strings');
-          }
-        }
-      } catch (e) {
-        err.textContent = e.message;
+
+      const lines = ta.value
+        .split('\n')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean)
+        .map(s => s.replace(/^https?:\/\//, '').replace(/\/.*$/, ''));  // strip scheme + path defensively
+
+      // Validate domains: must look like host (chars + dots, no spaces).
+      const bad = lines.filter(s => !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(s));
+      if (bad.length) {
+        err.textContent = `Invalid domain(s): ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? '…' : ''}. Use bare hostnames like rightmove.co.uk.`;
         err.style.display = 'block';
         return;
       }
-      // Save just the extra_params via the regular saveRow path: stash on tr, mark dirty.
+
+      const dedup = Array.from(new Set(lines));
+
+      let parsed;
+      if (dedup.length === 0 && provider !== 'perplexity') {
+        // Google row with no domains → null is acceptable
+        parsed = null;
+      } else {
+        parsed = { search_domain_filter: dedup };
+        if (provider === 'perplexity') {
+          const recSel = editorRow.querySelector('select[data-field="recency"]');
+          const citChk = editorRow.querySelector('input[data-field="citations"]');
+          if (recSel && recSel.value) parsed.search_recency_filter = recSel.value;
+          if (citChk) parsed.return_citations = citChk.checked;
+          if (dedup.length === 0) {
+            err.textContent = 'Perplexity rows must have at least one allowed domain.';
+            err.style.display = 'block';
+            return;
+          }
+        }
+      }
+
       tr.dataset.extraParams = parsed ? JSON.stringify(parsed) : '';
       const btn = tr.querySelector('button.allowlist-btn');
       if (btn) btn.classList.toggle('active', !!parsed);
