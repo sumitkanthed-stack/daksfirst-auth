@@ -1361,6 +1361,36 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  llm_model_config — Risk MVP seed (2026-04-26): risk_grade row
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Drives the n8n Risk Analysis Standalone canvas. Opus 4.6 chosen over
+    //  Sonnet for rubric v2 stability while it's still un-battle-tested. Macro
+    //  block is sent with cache_control:ephemeral so 90% of input tokens land
+    //  on the discount tier (~$1.50/1M cached vs $15/1M fresh). Easy downgrade
+    //  to Sonnet later via:
+    //    UPDATE llm_model_config SET model='claude-sonnet-4-6'
+    //                              , cost_per_1m_input_usd=3.00
+    //                              , cost_per_1m_output_usd=15.00
+    //     WHERE call_type='risk_grade';
+    //
+    //  ON CONFLICT DO NOTHING — never overwrite admin-edited values on redeploy.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        INSERT INTO llm_model_config
+          (call_type, provider, model, max_tokens, temperature, budget_gbp, enabled, notes, cost_per_1m_input_usd, cost_per_1m_output_usd)
+        VALUES
+          ('risk_grade', 'anthropic', 'claude-opus-4-6', 25000, 0.00, 5.00, TRUE,
+            'V5 Risk Analysis rubric grading — Opus 4.6 + macro-block prompt caching (5-min ephemeral TTL)',
+            15.00, 75.00)
+        ON CONFLICT (call_type) DO NOTHING
+      `);
+      console.log('[migrate] ✓ llm_model_config: risk_grade row seeded (Opus 4.6, max_tokens 25000)');
+    } catch (err) {
+      console.log('[migrate] Note on risk_grade seed:', err.message.substring(0, 160));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  llm_prompts (2026-04-25): admin-editable prompt body store, append-only
     //  versioned. Stores every system/user prompt body the V5 canvas pulls at
     //  workflow start (risk-analysis rubric v2, credit-memo prompt, termsheet

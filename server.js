@@ -22,6 +22,7 @@ const docusignWebhookRoutes = require('./routes/docusign-webhook');
 const matrixRoutes = require('./routes/matrix');
 const financialsRoutes = require('./routes/financials');
 const companiesHouseRoutes = require('./routes/companies-house');
+const riskRoutes = require('./routes/risk');
 
 // Initialize Express app
 const app = express();
@@ -89,12 +90,12 @@ app.use('/api/deals', borrowersRoutes);
 app.use('/api/deals', propertiesRoutes);
 app.use('/api', brokerRoutes);        // Mounts /broker/*, /staff/*, /law-firms/*, /admin/broker/*
 app.use('/api/webhook', webhookRoutes);
-app.use('/api/webhook-v2', require('./routes/output-engine-v2'));
 app.use('/api/smart-parse', smartParseRoutes);
 app.use('/api/docusign', docusignWebhookRoutes);
 app.use('/api/matrix', matrixRoutes);
 app.use('/api/deals', financialsRoutes);
 app.use('/api/companies-house', companiesHouseRoutes);
+app.use('/api', riskRoutes);          // Mounts /admin/risk-runs/start (token+internal) and /risk-callback (webhook secret)
 
 // Error handling
 app.use((err, req, res, next) => {
