@@ -771,42 +771,77 @@ router.put('/config/delegated-authority', authenticateToken, authenticateAdmin, 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ADMIN: LLM MODEL CONFIG (V5 Credit Analysis)
+//  ADMIN: LLM MODEL CONFIG (V5 Credit Analysis — multi-provider)
 //  GET  /api/admin/config/llm-config
 //  PUT  /api/admin/config/llm-config/:callType
 //
-//  Controls which Anthropic model + max_tokens / temperature / budget
-//  the V5 n8n canvas uses for each of the 6 generation calls.
+//  Controls model + max_tokens / temperature / budget / extra_params for each
+//  call type used by the V5 n8n canvas. Multi-provider:
+//    - anthropic   : Sonnet 4.6 / Opus 4.6 / Haiku 4.5 (writers + assembler)
+//    - perplexity  : Sonar tiers (market evidence, party screening, quick facts)
+//    - google      : NotebookLM / Gemini (doc synthesis, audio overview) — DISABLED
+//                    until API access verified.
+//
+//  extra_params shape (provider-specific):
+//    perplexity → { search_domain_filter:[...], search_recency_filter, return_citations }
+//    google     → { grounding_sources:[...], notebook_id }  (TBD)
+//    anthropic  → null
+//
 //  Editable from /admin/models.html.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Allowlist — update when Anthropic releases a new approved model
-const ALLOWED_LLM_MODELS = [
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
-  'claude-haiku-4-5-20251001',
-];
+// Allowlists per provider — extend when a new approved model is added.
+const ALLOWED_MODELS_BY_PROVIDER = {
+  anthropic: [
+    'claude-sonnet-4-6',
+    'claude-opus-4-6',
+    'claude-haiku-4-5-20251001',
+  ],
+  perplexity: [
+    'sonar',
+    'sonar-pro',
+    'sonar-reasoning',
+    'sonar-reasoning-pro',
+    'sonar-deep-research',
+  ],
+  google: [
+    // Empty intentionally until NotebookLM/Gemini API access is verified.
+    // Add 'gemini-2.5-pro', 'gemini-2.5-flash', etc. once locked.
+    '',
+  ],
+};
+
+const ALLOWED_PROVIDERS = Object.keys(ALLOWED_MODELS_BY_PROVIDER);
+
+// Flat allowlist (legacy field — keep for backward compat with the existing
+// frontend until admin/models.html ships its provider-aware version).
+const ALLOWED_LLM_MODELS = Object.values(ALLOWED_MODELS_BY_PROVIDER).flat().filter(Boolean);
 
 router.get('/config/llm-config', authenticateToken, authenticateAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT call_type, model, max_tokens, temperature, budget_gbp, enabled,
-             notes, updated_by, updated_at
+      SELECT call_type, provider, model, max_tokens, temperature, budget_gbp, enabled,
+             notes, extra_params, cost_per_1m_input_usd, cost_per_1m_output_usd,
+             updated_by, updated_at
       FROM llm_model_config
-      ORDER BY call_type
+      ORDER BY provider, call_type
     `);
 
     const byCallType = {};
     for (const r of rows) {
       byCallType[r.call_type] = {
-        model:       r.model,
-        max_tokens:  r.max_tokens,
-        temperature: parseFloat(r.temperature),
-        budget_gbp:  parseFloat(r.budget_gbp),
-        enabled:     r.enabled,
-        notes:       r.notes,
-        updated_by:  r.updated_by,
-        updated_at:  r.updated_at,
+        provider:                r.provider,
+        model:                   r.model,
+        max_tokens:              r.max_tokens,
+        temperature:             parseFloat(r.temperature),
+        budget_gbp:              parseFloat(r.budget_gbp),
+        enabled:                 r.enabled,
+        notes:                   r.notes,
+        extra_params:            r.extra_params || null,
+        cost_per_1m_input_usd:   r.cost_per_1m_input_usd != null ? parseFloat(r.cost_per_1m_input_usd) : null,
+        cost_per_1m_output_usd:  r.cost_per_1m_output_usd != null ? parseFloat(r.cost_per_1m_output_usd) : null,
+        updated_by:              r.updated_by,
+        updated_at:              r.updated_at,
       };
     }
 
@@ -814,7 +849,9 @@ router.get('/config/llm-config', authenticateToken, authenticateAdmin, async (re
       ok: true,
       config: byCallType,
       rows,
-      allowed_models: ALLOWED_LLM_MODELS,
+      allowed_providers: ALLOWED_PROVIDERS,
+      allowed_models_by_provider: ALLOWED_MODELS_BY_PROVIDER,
+      allowed_models: ALLOWED_LLM_MODELS,  // legacy field, kept for older UI
     });
   } catch (err) {
     console.error('[admin/llm-config GET] error:', err);
@@ -824,23 +861,42 @@ router.get('/config/llm-config', authenticateToken, authenticateAdmin, async (re
 
 router.put('/config/llm-config/:callType', authenticateToken, authenticateAdmin, async (req, res) => {
   const { callType } = req.params;
-  const { model, max_tokens, temperature, budget_gbp, enabled, notes } = req.body;
+  const {
+    provider, model, max_tokens, temperature, budget_gbp,
+    enabled, notes, extra_params,
+    cost_per_1m_input_usd, cost_per_1m_output_usd,
+  } = req.body;
 
   try {
+    // Existence check + load current provider so we can validate model against
+    // the right allowlist when provider isn't being changed in this PUT.
     const { rows: existing } = await pool.query(
-      'SELECT call_type FROM llm_model_config WHERE call_type = $1',
+      'SELECT call_type, provider FROM llm_model_config WHERE call_type = $1',
       [callType]
     );
     if (existing.length === 0) {
       return res.status(404).json({ ok: false, error: `Unknown call_type: ${callType}` });
     }
+    const effectiveProvider = (provider !== undefined) ? provider : existing[0].provider;
 
-    if (model !== undefined && !ALLOWED_LLM_MODELS.includes(model)) {
+    if (provider !== undefined && !ALLOWED_PROVIDERS.includes(provider)) {
       return res.status(400).json({
         ok: false,
-        error: `Model "${model}" not in allowlist. Allowed: ${ALLOWED_LLM_MODELS.join(', ')}`,
+        error: `Provider "${provider}" not allowed. Allowed: ${ALLOWED_PROVIDERS.join(', ')}`,
       });
     }
+
+    if (model !== undefined) {
+      const providerAllowed = ALLOWED_MODELS_BY_PROVIDER[effectiveProvider] || [];
+      // Empty string is permitted for `google` while API access is being verified.
+      if (!providerAllowed.includes(model)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Model "${model}" not allowed for provider "${effectiveProvider}". Allowed: ${providerAllowed.filter(Boolean).join(', ') || '(none yet)'}`,
+        });
+      }
+    }
+
     if (max_tokens !== undefined) {
       const n = parseInt(max_tokens, 10);
       if (!Number.isFinite(n) || n < 100 || n > 32000) {
@@ -859,16 +915,55 @@ router.put('/config/llm-config/:callType', authenticateToken, authenticateAdmin,
         return res.status(400).json({ ok: false, error: 'budget_gbp must be 0.00–999.99' });
       }
     }
+    if (cost_per_1m_input_usd !== undefined && cost_per_1m_input_usd !== null) {
+      const c = parseFloat(cost_per_1m_input_usd);
+      if (!Number.isFinite(c) || c < 0 || c > 1000) {
+        return res.status(400).json({ ok: false, error: 'cost_per_1m_input_usd must be 0–1000 or null' });
+      }
+    }
+    if (cost_per_1m_output_usd !== undefined && cost_per_1m_output_usd !== null) {
+      const c = parseFloat(cost_per_1m_output_usd);
+      if (!Number.isFinite(c) || c < 0 || c > 1000) {
+        return res.status(400).json({ ok: false, error: 'cost_per_1m_output_usd must be 0–1000 or null' });
+      }
+    }
+
+    // extra_params: validated as JSON-shaped object. Provider-specific shape
+    // checks are intentionally light here — n8n is the consumer and will fail
+    // loud if a Perplexity row is missing search_domain_filter, etc.
+    let extraParamsValue;
+    if (extra_params !== undefined) {
+      if (extra_params === null) {
+        extraParamsValue = null;
+      } else if (typeof extra_params === 'object' && !Array.isArray(extra_params)) {
+        // Soft check: Perplexity rows should have search_domain_filter as an array
+        if (effectiveProvider === 'perplexity') {
+          if (!Array.isArray(extra_params.search_domain_filter)) {
+            return res.status(400).json({
+              ok: false,
+              error: 'perplexity extra_params must include search_domain_filter as an array',
+            });
+          }
+        }
+        extraParamsValue = JSON.stringify(extra_params);
+      } else {
+        return res.status(400).json({ ok: false, error: 'extra_params must be an object or null' });
+      }
+    }
 
     const sets = [];
     const vals = [];
     let i = 1;
-    if (model       !== undefined) { sets.push(`model = $${i++}`);       vals.push(model); }
-    if (max_tokens  !== undefined) { sets.push(`max_tokens = $${i++}`);  vals.push(parseInt(max_tokens, 10)); }
-    if (temperature !== undefined) { sets.push(`temperature = $${i++}`); vals.push(parseFloat(temperature)); }
-    if (budget_gbp  !== undefined) { sets.push(`budget_gbp = $${i++}`);  vals.push(parseFloat(budget_gbp)); }
-    if (enabled     !== undefined) { sets.push(`enabled = $${i++}`);     vals.push(!!enabled); }
-    if (notes       !== undefined) { sets.push(`notes = $${i++}`);       vals.push(notes); }
+    if (provider     !== undefined) { sets.push(`provider = $${i++}`);    vals.push(provider); }
+    if (model        !== undefined) { sets.push(`model = $${i++}`);       vals.push(model); }
+    if (max_tokens   !== undefined) { sets.push(`max_tokens = $${i++}`);  vals.push(parseInt(max_tokens, 10)); }
+    if (temperature  !== undefined) { sets.push(`temperature = $${i++}`); vals.push(parseFloat(temperature)); }
+    if (budget_gbp   !== undefined) { sets.push(`budget_gbp = $${i++}`);  vals.push(parseFloat(budget_gbp)); }
+    if (enabled      !== undefined) { sets.push(`enabled = $${i++}`);     vals.push(!!enabled); }
+    if (notes        !== undefined) { sets.push(`notes = $${i++}`);       vals.push(notes); }
+    if (extra_params !== undefined) { sets.push(`extra_params = $${i++}::jsonb`); vals.push(extraParamsValue); }
+    if (cost_per_1m_input_usd  !== undefined) { sets.push(`cost_per_1m_input_usd = $${i++}`);  vals.push(cost_per_1m_input_usd  === null ? null : parseFloat(cost_per_1m_input_usd)); }
+    if (cost_per_1m_output_usd !== undefined) { sets.push(`cost_per_1m_output_usd = $${i++}`); vals.push(cost_per_1m_output_usd === null ? null : parseFloat(cost_per_1m_output_usd)); }
 
     if (sets.length === 0) {
       return res.status(400).json({ ok: false, error: 'No editable fields supplied' });
@@ -890,14 +985,18 @@ router.put('/config/llm-config/:callType', authenticateToken, authenticateAdmin,
       ok: true,
       call_type: row.call_type,
       updated: {
-        model:       row.model,
-        max_tokens:  row.max_tokens,
-        temperature: parseFloat(row.temperature),
-        budget_gbp:  parseFloat(row.budget_gbp),
-        enabled:     row.enabled,
-        notes:       row.notes,
-        updated_by:  row.updated_by,
-        updated_at:  row.updated_at,
+        provider:                row.provider,
+        model:                   row.model,
+        max_tokens:              row.max_tokens,
+        temperature:             parseFloat(row.temperature),
+        budget_gbp:              parseFloat(row.budget_gbp),
+        enabled:                 row.enabled,
+        notes:                   row.notes,
+        extra_params:            row.extra_params || null,
+        cost_per_1m_input_usd:   row.cost_per_1m_input_usd  != null ? parseFloat(row.cost_per_1m_input_usd)  : null,
+        cost_per_1m_output_usd:  row.cost_per_1m_output_usd != null ? parseFloat(row.cost_per_1m_output_usd) : null,
+        updated_by:              row.updated_by,
+        updated_at:              row.updated_at,
       },
     });
   } catch (err) {

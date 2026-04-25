@@ -1230,6 +1230,134 @@ async function runMigrations() {
       console.log('[migrate] Note on llm_model_config:', err.message.substring(0, 120));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  llm_model_config V5.1 (2026-04-25): multi-provider extension
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Adds Perplexity + Google as providers alongside Anthropic. Existing
+    //  6 Anthropic rows untouched. Perplexity rows carry FCA-defensible domain
+    //  allowlists in extra_params (locked in 2026-04-25 review session). Google
+    //  rows seeded DISABLED pending NotebookLM API verification 2026-04-26.
+    //
+    //  Read by V5 n8n canvas via GET /api/admin/config/llm-config (same route).
+    //  See memory: project_v5_canvas_drafts_2026_04_25.md
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE llm_model_config ADD COLUMN IF NOT EXISTS provider VARCHAR(32) NOT NULL DEFAULT 'anthropic'`);
+      await pool.query(`ALTER TABLE llm_model_config ADD COLUMN IF NOT EXISTS extra_params JSONB`);
+      await pool.query(`ALTER TABLE llm_model_config ADD COLUMN IF NOT EXISTS cost_per_1m_input_usd NUMERIC(10,4)`);
+      await pool.query(`ALTER TABLE llm_model_config ADD COLUMN IF NOT EXISTS cost_per_1m_output_usd NUMERIC(10,4)`);
+
+      // Backfill costs on existing Anthropic rows for cost telemetry rollup.
+      // Source: Anthropic public pricing as of 2026-04-25.
+      // These remain admin-editable; UPDATE only fires when value is NULL.
+      await pool.query(`
+        UPDATE llm_model_config
+           SET cost_per_1m_input_usd  = 3.00,
+               cost_per_1m_output_usd = 15.00
+         WHERE provider = 'anthropic'
+           AND model = 'claude-sonnet-4-6'
+           AND cost_per_1m_input_usd IS NULL
+      `);
+      await pool.query(`
+        UPDATE llm_model_config
+           SET cost_per_1m_input_usd  = 15.00,
+               cost_per_1m_output_usd = 75.00
+         WHERE provider = 'anthropic'
+           AND model = 'claude-opus-4-6'
+           AND cost_per_1m_input_usd IS NULL
+      `);
+      await pool.query(`
+        UPDATE llm_model_config
+           SET cost_per_1m_input_usd  = 1.00,
+               cost_per_1m_output_usd = 5.00
+         WHERE provider = 'anthropic'
+           AND model = 'claude-haiku-4-5-20251001'
+           AND cost_per_1m_input_usd IS NULL
+      `);
+
+      // ── Seed 3 active Perplexity rows + 2 disabled Google placeholders ──
+      // Domain allowlists approved 2026-04-25 review session:
+      //   pplx_market_evidence  → UK property/sector + hospitality + Wikipedia (context)
+      //   pplx_party_screening  → UK + US + EU + global registries + Wikipedia (context)
+      //   pplx_quick_facts      → primary sources only (BoE/ONS/gov.uk/FCA/PRA)
+      // ON CONFLICT DO NOTHING — never overwrite admin edits on redeploy.
+      const PPLX_MARKET = JSON.stringify({
+        search_domain_filter: [
+          'landregistry.gov.uk', 'gov.uk', 'ons.gov.uk', 'bankofengland.co.uk',
+          'rightmove.co.uk', 'zoopla.co.uk', 'onthemarket.com',
+          'estatesgazette.com', 'egradius.co.uk', 'propertyweek.com',
+          'savills.co.uk', 'knightfrank.co.uk', 'jll.co.uk', 'cbre.co.uk', 'cushmanwakefield.com',
+          'ukfinance.org.uk', 'nacfb.org', 'astl.co.uk',
+          'str.com', 'hotstats.com', 'hospitalitynet.org',
+          'wikipedia.org'
+        ],
+        search_recency_filter: 'year',
+        return_citations: true,
+      });
+      const PPLX_PARTY = JSON.stringify({
+        search_domain_filter: [
+          // UK statutory + regulators
+          'find-and-update.company-information.service.gov.uk',
+          'companieshouse.gov.uk', 'thegazette.co.uk', 'gov.uk',
+          'fca.org.uk', 'handbook.fca.org.uk',
+          'bailii.org', 'judiciary.uk', 'supremecourt.uk',
+          'nationalcrimeagency.gov.uk', 'charitycommission.gov.uk',
+          'sanctionssearch.ofac.treas.gov',
+          // UK adverse media
+          'ft.com', 'reuters.com', 'bloomberg.com', 'bbc.co.uk',
+          'thetimes.co.uk', 'telegraph.co.uk', 'theguardian.com',
+          'economist.com', 'citywire.com', 'cityam.com',
+          // US statutory + regulators + adverse media
+          'sec.gov', 'finra.org', 'federalreserve.gov', 'justice.gov',
+          'courtlistener.com', 'opencorporates.com',
+          'wsj.com', 'nytimes.com', 'forbes.com', 'businessinsider.com',
+          // EU statutory + regulators + adverse media
+          'europa.eu', 'e-justice.europa.eu', 'eba.europa.eu',
+          'esma.europa.eu', 'ecb.europa.eu',
+          'bafin.de', 'finma.ch', 'politico.eu', 'handelsblatt.com',
+          // Context
+          'wikipedia.org',
+        ],
+        search_recency_filter: 'year',
+        return_citations: true,
+      });
+      const PPLX_FACTS = JSON.stringify({
+        search_domain_filter: [
+          'bankofengland.co.uk', 'ons.gov.uk', 'gov.uk', 'hmrc.gov.uk',
+          'fca.org.uk', 'handbook.fca.org.uk', 'prarulebook.co.uk',
+          'legislation.gov.uk',
+        ],
+        search_recency_filter: 'month',
+        return_citations: true,
+      });
+
+      await pool.query(`
+        INSERT INTO llm_model_config
+          (call_type, provider, model, max_tokens, temperature, budget_gbp, enabled, notes, extra_params, cost_per_1m_input_usd, cost_per_1m_output_usd)
+        VALUES
+          ('pplx_market_evidence',  'perplexity', 'sonar-pro',           3000, 0.20, 0.50, TRUE,
+            'Comps, area pricing, lender/sector market — feeds Funder Placement + Credit Memo',
+            $1::jsonb, 3.00, 15.00),
+          ('pplx_party_screening',  'perplexity', 'sonar-reasoning-pro', 4000, 0.20, 0.75, TRUE,
+            'Borrower/director/sponsor adverse media + corporate filings — feeds Borrower + Conditions',
+            $2::jsonb, 5.00, 25.00),
+          ('pplx_quick_facts',      'perplexity', 'sonar',               1500, 0.10, 0.20, TRUE,
+            'SONIA, base rate, regulatory spot-checks — primary sources only',
+            $3::jsonb, 1.00, 5.00),
+          ('google_doc_synthesis',  'google',     '',                    4000, 0.30, 0.50, FALSE,
+            'Document synthesis (NotebookLM/Gemini) — DISABLED pending API verification',
+            NULL, NULL, NULL),
+          ('google_audio_overview', 'google',     '',                    2000, 0.30, 0.30, FALSE,
+            'Audio-style committee briefing summary — DISABLED pending API verification',
+            NULL, NULL, NULL)
+        ON CONFLICT (call_type) DO NOTHING
+      `, [PPLX_MARKET, PPLX_PARTY, PPLX_FACTS]);
+
+      console.log('[migrate] ✓ llm_model_config V5.1: provider+extra_params+cost columns; 5 new rows (3 Perplexity active, 2 Google disabled)');
+    } catch (err) {
+      console.log('[migrate] Note on llm_model_config V5.1:', err.message.substring(0, 160));
+    }
+
     try {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);

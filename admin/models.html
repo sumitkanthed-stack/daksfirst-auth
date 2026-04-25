@@ -146,6 +146,68 @@
     color: var(--muted);
     font-size: 12px;
   }
+  .provider-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .provider-badge.anthropic { background: rgba(78,161,255,0.15); color: var(--accent); border: 1px solid rgba(78,161,255,0.4); }
+  .provider-badge.perplexity { background: rgba(244,183,64,0.15); color: var(--warn); border: 1px solid rgba(244,183,64,0.4); }
+  .provider-badge.google { background: rgba(138,149,165,0.15); color: var(--muted); border: 1px solid var(--border); }
+  button.allowlist-btn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    margin-right: 4px;
+  }
+  button.allowlist-btn:hover { color: var(--accent); border-color: var(--accent); }
+  button.allowlist-btn.active { color: var(--warn); border-color: var(--warn); }
+  td.cost-cell {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  td.cost-cell input { width: 60px; padding: 3px 5px; font-size: 11px; }
+  .allowlist-row td {
+    background: #0b0e13;
+    padding: 12px 16px;
+  }
+  .allowlist-row textarea {
+    width: 100%;
+    min-height: 160px;
+    background: #0b0e13;
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    resize: vertical;
+  }
+  .allowlist-row textarea:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+  .allowlist-row .meta {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .allowlist-row .meta strong { color: var(--ink); }
+  .allowlist-row .err-msg {
+    color: var(--err);
+    font-size: 11px;
+    margin-top: 4px;
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -153,7 +215,7 @@
 <header>
   <div>
     <h1>LLM Model Config</h1>
-    <div class="sub">Admin-editable Anthropic model selection for V5 Credit Analysis pipeline</div>
+    <div class="sub">Admin-editable multi-provider model selection (Anthropic / Perplexity / Google) for V5 Credit Analysis pipeline</div>
   </div>
   <div>
     <span id="user-badge" class="sub">Loading…</span>
@@ -172,31 +234,36 @@
     <table id="config-table">
       <thead>
         <tr>
+          <th>Provider</th>
           <th>Call Type</th>
           <th>Model</th>
           <th>Max Tokens</th>
           <th>Temp</th>
           <th>Budget £</th>
+          <th>Cost in/out (USD/MTok)</th>
           <th>Enabled</th>
           <th>Notes</th>
-          <th style="width:80px"></th>
+          <th style="width:160px"></th>
         </tr>
       </thead>
       <tbody id="config-tbody">
-        <tr><td colspan="8" style="text-align:center; color:var(--muted); padding:20px;">Loading…</td></tr>
+        <tr><td colspan="10" style="text-align:center; color:var(--muted); padding:20px;">Loading…</td></tr>
       </tbody>
     </table>
     <div class="status-row">
       <div id="status-text">—</div>
-      <div class="pricing">Sonnet 4.6: $3 in / $15 out per MTok · Haiku 4.5: $1 in / $5 out per MTok</div>
+      <div class="pricing">Anthropic Sonnet 4.6: $3/$15 · Haiku 4.5: $1/$5 · Perplexity Sonar tiers vary · Google = TBD</div>
     </div>
   </div>
 
   <div class="hint">
     Changes take effect on the next V5 pipeline run. The n8n canvas reads this config via
     <code>GET /api/admin/config/llm-config</code> at the top of the workflow, then injects
-    <code>model</code> and <code>max_tokens</code> into each Anthropic Chat Model node via expressions like
+    <code>provider</code>, <code>model</code>, <code>max_tokens</code>, and (for Perplexity) <code>extra_params.search_domain_filter</code>
+    into each provider node via expressions like
     <code>={{ $('Get LLM Config').item.json.config.credit_memo.model }}</code>.
+    Perplexity rows enforce an FCA-defensible domain allowlist (research auditability). Edit it via the
+    <strong>Allowlist</strong> button — JSON array of bare domains, one per host (no <code>https://</code>, no paths).
   </div>
 </main>
 
@@ -212,7 +279,8 @@
   const lastUp     = document.getElementById('last-updated');
   const userBadge  = document.getElementById('user-badge');
 
-  let ALLOWED = [];
+  let ALLOWED_BY_PROVIDER = { anthropic: [], perplexity: [], google: [] };
+  let ALLOWED_PROVIDERS = ['anthropic', 'perplexity', 'google'];
 
   function showBanner(kind, msg) {
     banner.className = 'banner ' + kind;
@@ -227,12 +295,16 @@
   }
 
   function escapeAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
   async function load() {
     if (!TOKEN) {
       showBanner('err', 'Not signed in. Open the main portal, sign in as admin, then return to this page.');
       userBadge.textContent = 'Not signed in';
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--muted); padding:20px;">No session</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--muted); padding:20px;">No session</td></tr>';
       return;
     }
 
@@ -248,10 +320,19 @@
       const data = await r.json();
       if (!data.ok) throw new Error(data.error || 'Failed to load');
 
-      ALLOWED = data.allowed_models || [];
+      // New multi-provider response shape, with backward-compat fallback.
+      if (data.allowed_models_by_provider && typeof data.allowed_models_by_provider === 'object') {
+        ALLOWED_BY_PROVIDER = data.allowed_models_by_provider;
+      } else if (Array.isArray(data.allowed_models)) {
+        ALLOWED_BY_PROVIDER = { anthropic: data.allowed_models, perplexity: [], google: [] };
+      }
+      if (Array.isArray(data.allowed_providers) && data.allowed_providers.length) {
+        ALLOWED_PROVIDERS = data.allowed_providers;
+      }
+
       render(data.rows || []);
       userBadge.textContent = 'Admin session';
-      statusText.textContent = `${(data.rows || []).length} call types configured`;
+      statusText.textContent = `${(data.rows || []).length} call types configured across ${ALLOWED_PROVIDERS.length} providers`;
 
       const newest = (data.rows || []).reduce((a, b) =>
         (a && a.updated_at > b.updated_at) ? a : b, null);
@@ -261,21 +342,51 @@
     }
   }
 
+  function buildModelOptions(provider, currentModel) {
+    const list = (ALLOWED_BY_PROVIDER[provider] || []).slice();
+    // Always include current value as an option, even if not in allowed list (graceful display).
+    if (currentModel != null && currentModel !== '' && !list.includes(currentModel)) {
+      list.unshift(currentModel);
+    }
+    if (!list.length) list.push('');
+    return list.map(m =>
+      `<option value="${escapeAttr(m)}" ${m === currentModel ? 'selected' : ''}>${escapeHtml(m || '(unset)')}</option>`
+    ).join('');
+  }
+
+  function fmtCost(n) {
+    if (n == null || n === '') return '';
+    const v = Number(n);
+    if (!isFinite(v)) return '';
+    return v.toFixed(2);
+  }
+
   function render(rows) {
     tbody.innerHTML = '';
     for (const row of rows) {
+      const provider = row.provider || 'anthropic';
       const tr = document.createElement('tr');
       tr.dataset.callType = row.call_type;
+      tr.dataset.provider = provider;
+      // Stash the full extra_params JSON on the row for the allowlist editor.
+      const extra = row.extra_params || null;
+      tr.dataset.extraParams = extra ? JSON.stringify(extra) : '';
 
-      const modelOpts = ALLOWED.map(m =>
-        `<option value="${m}" ${m === row.model ? 'selected' : ''}>${m}</option>`).join('');
+      const modelOpts = buildModelOptions(provider, row.model || '');
+      const hasExtra  = extra && typeof extra === 'object';
 
       tr.innerHTML = `
-        <td class="call-type">${row.call_type}</td>
+        <td><span class="provider-badge ${provider}">${escapeHtml(provider)}</span></td>
+        <td class="call-type">${escapeHtml(row.call_type)}</td>
         <td><select data-field="model">${modelOpts}</select></td>
         <td><input type="number" data-field="max_tokens" min="100" max="32000" step="100" value="${row.max_tokens}"></td>
         <td><input type="number" data-field="temperature" min="0" max="1" step="0.05" value="${parseFloat(row.temperature).toFixed(2)}"></td>
         <td><input type="number" data-field="budget_gbp" min="0" max="999.99" step="0.05" value="${parseFloat(row.budget_gbp).toFixed(2)}"></td>
+        <td class="cost-cell">
+          <input type="number" data-field="cost_per_1m_input_usd"  min="0" max="1000" step="0.01" value="${fmtCost(row.cost_per_1m_input_usd)}" placeholder="in" title="USD per 1M input tokens">
+          /
+          <input type="number" data-field="cost_per_1m_output_usd" min="0" max="1000" step="0.01" value="${fmtCost(row.cost_per_1m_output_usd)}" placeholder="out" title="USD per 1M output tokens">
+        </td>
         <td>
           <label class="toggle">
             <input type="checkbox" data-field="enabled" ${row.enabled ? 'checked' : ''}>
@@ -283,20 +394,95 @@
           </label>
         </td>
         <td class="notes"><input type="text" data-field="notes" value="${escapeAttr(row.notes)}"></td>
-        <td><button class="save" data-action="save">Save</button></td>
+        <td>
+          ${provider !== 'anthropic'
+            ? `<button class="allowlist-btn ${hasExtra ? 'active' : ''}" data-action="allowlist">Allowlist</button>`
+            : ''}
+          <button class="save" data-action="save">Save</button>
+        </td>
       `;
 
-      const chk = tr.querySelector('input[type="checkbox"]');
+      const chk = tr.querySelector('input[type="checkbox"][data-field="enabled"]');
       chk.addEventListener('change', () => {
         chk.nextElementSibling.textContent = chk.checked ? 'on' : 'off';
       });
 
       tr.querySelector('button.save').addEventListener('click', () => saveRow(tr));
+      const allowBtn = tr.querySelector('button.allowlist-btn');
+      if (allowBtn) {
+        allowBtn.addEventListener('click', () => toggleAllowlistEditor(tr));
+      }
       tbody.appendChild(tr);
     }
   }
 
-  async function saveRow(tr) {
+  // ─── Allowlist sub-row editor (Perplexity + Google) ───
+  function toggleAllowlistEditor(tr) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('allowlist-row') && next.dataset.for === tr.dataset.callType) {
+      next.remove();
+      return;
+    }
+    // Remove any other open editor first
+    document.querySelectorAll('tr.allowlist-row').forEach(r => r.remove());
+
+    const provider = tr.dataset.provider;
+    const extra = tr.dataset.extraParams ? JSON.parse(tr.dataset.extraParams) : {};
+    const editorRow = document.createElement('tr');
+    editorRow.className = 'allowlist-row';
+    editorRow.dataset.for = tr.dataset.callType;
+
+    const txt = JSON.stringify(extra, null, 2);
+    const helpDomains = provider === 'perplexity'
+      ? `Perplexity uses <code>search_domain_filter</code> (array of bare hostnames). Also supports <code>search_recency_filter</code> ("month"|"year"|"day"|"hour") and <code>return_citations</code> (bool).`
+      : `Google grounding sources go here once NotebookLM / Vertex API is wired in.`;
+
+    editorRow.innerHTML = `
+      <td colspan="10">
+        <div class="meta"><strong>extra_params</strong> for <code>${escapeHtml(tr.dataset.callType)}</code> (${escapeHtml(provider)}). ${helpDomains}</div>
+        <textarea data-field="extra_params_json" spellcheck="false">${escapeHtml(txt)}</textarea>
+        <div class="err-msg" data-role="json-err"></div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button class="save" data-action="save-extra">Save Allowlist</button>
+          <button class="allowlist-btn" data-action="cancel">Close</button>
+        </div>
+      </td>
+    `;
+
+    editorRow.querySelector('button[data-action="cancel"]').addEventListener('click', () => editorRow.remove());
+    editorRow.querySelector('button[data-action="save-extra"]').addEventListener('click', () => {
+      const ta  = editorRow.querySelector('textarea');
+      const err = editorRow.querySelector('[data-role="json-err"]');
+      err.style.display = 'none';
+      let parsed;
+      try {
+        const raw = ta.value.trim();
+        parsed = raw === '' ? null : JSON.parse(raw);
+        if (parsed != null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
+          throw new Error('extra_params must be a JSON object or null');
+        }
+        if (provider === 'perplexity' && parsed) {
+          const dom = parsed.search_domain_filter;
+          if (dom != null && (!Array.isArray(dom) || !dom.every(d => typeof d === 'string'))) {
+            throw new Error('search_domain_filter must be an array of strings');
+          }
+        }
+      } catch (e) {
+        err.textContent = e.message;
+        err.style.display = 'block';
+        return;
+      }
+      // Save just the extra_params via the regular saveRow path: stash on tr, mark dirty.
+      tr.dataset.extraParams = parsed ? JSON.stringify(parsed) : '';
+      const btn = tr.querySelector('button.allowlist-btn');
+      if (btn) btn.classList.toggle('active', !!parsed);
+      saveRow(tr, { onlyExtra: true }).then(() => editorRow.remove());
+    });
+
+    tr.parentNode.insertBefore(editorRow, tr.nextSibling);
+  }
+
+  async function saveRow(tr, opts = {}) {
     const callType = tr.dataset.callType;
     const btn = tr.querySelector('button.save');
     const payload = {};
@@ -306,9 +492,12 @@
       else if (el.type === 'number') payload[f] = el.value === '' ? null : Number(el.value);
       else payload[f] = el.value;
     }
+    // Always include provider + extra_params from row dataset so they round-trip.
+    payload.provider     = tr.dataset.provider || 'anthropic';
+    payload.extra_params = tr.dataset.extraParams ? JSON.parse(tr.dataset.extraParams) : null;
 
     btn.disabled = true;
-    btn.textContent = 'Saving…';
+    btn.textContent = opts.onlyExtra ? 'Saving allowlist…' : 'Saving…';
     btn.classList.remove('ok', 'err');
 
     try {
@@ -326,7 +515,9 @@
       btn.classList.add('ok');
       btn.textContent = 'Saved';
       showBanner('ok', `${callType} updated`);
-      lastUp.textContent = 'Last change: ' + fmtDate(data.updated.updated_at);
+      if (data.updated && data.updated.updated_at) {
+        lastUp.textContent = 'Last change: ' + fmtDate(data.updated.updated_at);
+      }
       setTimeout(() => { btn.classList.remove('ok'); btn.textContent = 'Save'; btn.disabled = false; }, 1400);
     } catch (err) {
       btn.classList.add('err');
