@@ -8,6 +8,7 @@ const { logAudit } = require('../services/audit');
 const alphaClient = require('../services/alpha-client');
 const featurePackager = require('../services/deal-feature-packager');
 const anthropicAnalyst = require('../services/anthropic-analyst');
+const riskPackager = require('../services/risk-packager');
 
 const INTERNAL_ROLES = ['admin', 'rm', 'credit', 'compliance'];
 
@@ -1107,6 +1108,57 @@ router.get('/config/llm-prompt/:key/history', authenticateToken, authenticateAdm
     });
   } catch (err) {
     console.error(`[admin/llm-prompt history ${key}] error:`, err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: RISK PACKAGER PREVIEW (V5 Risk MVP step 6 — 2026-04-25)
+//  POST /api/admin/risk-packager/preview/:dealId
+//
+//  Body: { data_stage: 'dip' | 'underwriting' | 'post_completion',
+//          sensitivity_calculator_version?: 'v5.1' }
+//
+//  Returns the exact JSON payload that n8n's Risk Analysis Standalone
+//  workflow will receive. DOES NOT call Anthropic, DOES NOT insert a
+//  risk_view row. Use to:
+//    - eyeball completeness before kicking off a real run
+//    - confirm rubric/macro version pin against /admin/prompts
+//    - debug "missing field" complaints from the rubric grader
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/risk-packager/preview/:dealId', authenticateToken, authenticateAdmin, async (req, res) => {
+  const dealId = parseInt(req.params.dealId, 10);
+  if (!Number.isInteger(dealId) || dealId <= 0) {
+    return res.status(400).json({ ok: false, error: 'dealId path param must be a positive integer' });
+  }
+
+  const { data_stage, sensitivity_calculator_version } = req.body || {};
+
+  try {
+    const result = await riskPackager.buildRiskPayload(dealId, data_stage, {
+      sensitivityCalculatorVersion: sensitivity_calculator_version,
+    });
+
+    if (!result.success) {
+      // Surface validation / lookup errors as 400 — the route itself worked.
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    res.json({
+      ok: true,
+      deal_id: result.payload.deal_id,
+      data_stage: result.payload.data_stage,
+      rubric: result.payload.rubric,
+      macro: result.payload.macro,
+      sensitivity_calculator_version: result.payload.sensitivity_calculator_version,
+      source_provenance: result.payload.source_provenance,
+      feature_hash: result.feature_hash,
+      risk_payload_hash: result.risk_payload_hash,
+      payload_size_bytes: Buffer.byteLength(JSON.stringify(result.payload), 'utf8'),
+      payload: result.payload,
+    });
+  } catch (err) {
+    console.error(`[admin/risk-packager/preview ${dealId}] error:`, err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
