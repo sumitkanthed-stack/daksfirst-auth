@@ -1006,6 +1006,112 @@ router.put('/config/llm-config/:callType', authenticateToken, authenticateAdmin,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN: LLM PROMPT BODIES (V5 Risk Analysis + future memo/termsheet prompts)
+//  GET  /api/admin/config/llm-prompt/:key
+//  GET  /api/admin/config/llm-prompt/:key/history
+//
+//  Backed by llm_prompts table (append-only versioned). Returns the ACTIVE
+//  body for a prompt_key, plus version + audit metadata. Read by the V5 n8n
+//  canvas at workflow start to load risk_rubric + risk_macro before grading.
+//
+//  Allowed keys (server-side gate — extend as new prompt types ship):
+//   - risk_rubric : 9-dimension risk grading rubric (active v2)
+//   - risk_macro  : UK bridging macro context block (active v1 NEUTRAL seed)
+//
+//  History route is admin-UI-only (don't pipe to n8n). Use for the
+//  /admin/prompts page to render version dropdowns + diff older versions.
+//
+//  No PUT/POST yet — those land with the /admin/prompts UI build (#48).
+//  When they do, the rule is: every save = INSERT new row with version+1
+//  and is_active=TRUE; deactivate the old active row in the same transaction.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ALLOWED_PROMPT_KEYS = ['risk_rubric', 'risk_macro'];
+
+router.get('/config/llm-prompt/:key', authenticateToken, authenticateAdmin, async (req, res) => {
+  const { key } = req.params;
+
+  if (!ALLOWED_PROMPT_KEYS.includes(key)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Unknown prompt_key '${key}'. Allowed: ${ALLOWED_PROMPT_KEYS.join(', ')}`,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT id, prompt_key, version, body, description, parent_version,
+             changelog, edited_by, edited_at
+        FROM llm_prompts
+       WHERE prompt_key = $1
+         AND is_active = TRUE
+       LIMIT 1
+      `,
+      [key]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: `No active version found for prompt_key '${key}'. Seed via migration or upload via /admin/prompts.`,
+      });
+    }
+
+    const row = rows[0];
+    res.json({
+      ok: true,
+      prompt_key:     row.prompt_key,
+      version:        row.version,
+      body:           row.body,
+      description:    row.description,
+      parent_version: row.parent_version,
+      changelog:      row.changelog,
+      edited_by:      row.edited_by,
+      edited_at:      row.edited_at,
+      body_length:    row.body.length,
+    });
+  } catch (err) {
+    console.error(`[admin/llm-prompt GET ${key}] error:`, err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/config/llm-prompt/:key/history', authenticateToken, authenticateAdmin, async (req, res) => {
+  const { key } = req.params;
+
+  if (!ALLOWED_PROMPT_KEYS.includes(key)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Unknown prompt_key '${key}'. Allowed: ${ALLOWED_PROMPT_KEYS.join(', ')}`,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT id, prompt_key, version, is_active, description, parent_version,
+             changelog, edited_by, edited_at, LENGTH(body) AS body_length
+        FROM llm_prompts
+       WHERE prompt_key = $1
+       ORDER BY version DESC
+      `,
+      [key]
+    );
+
+    res.json({
+      ok: true,
+      prompt_key: key,
+      versions:   rows,
+      count:      rows.length,
+    });
+  } catch (err) {
+    console.error(`[admin/llm-prompt history ${key}] error:`, err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ADMIN: ALPHA PIPE SMOKE TEST
 //  GET /api/admin/alpha-ping
 //
