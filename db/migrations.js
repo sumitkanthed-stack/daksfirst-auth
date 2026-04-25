@@ -1,4 +1,6 @@
 const pool = require('./pool');
+const fs = require('fs');
+const path = require('path');
 
 async function runMigrations() {
   try {
@@ -1481,6 +1483,92 @@ async function runMigrations() {
       console.log('[migrate] ✓ risk_view table ready (append-only run-log, FK-pinned to llm_prompts)');
     } catch (err) {
       console.log('[migrate] Note on risk_view:', err.message.substring(0, 160));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Seed llm_prompts with risk_rubric v2 + risk_macro v1 (2026-04-25)
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Bodies live as files under daksfirst-auth/prompts/ — diffable in git,
+    //  reviewable in PRs, deployed alongside code. Migration reads them ONCE
+    //  on first deploy where the (prompt_key, version) row doesn't yet exist
+    //  (ON CONFLICT DO NOTHING). Subsequent edits happen via /admin/prompts UI
+    //  and create new rows with incrementing version + flipped is_active.
+    //
+    //  Defensive: if a prompt file is missing on disk, skip the seed for that
+    //  key — DO NOT crash auth boot. Missing seed means /admin/prompts UI must
+    //  be used to upload v1 manually; risk pipeline won't run until then.
+    //
+    //  Seeded keys:
+    //   - risk_rubric  v2 (parent=NULL — v1 was draft, never stored in DB)
+    //   - risk_macro   v1 (NEUTRAL seed — see DRAFTS/v5-canvas-2026-04-25/
+    //                       macro-context-block-v1.md for usage notes)
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const promptsDir = path.join(__dirname, '..', 'prompts');
+
+      const seedRows = [
+        {
+          file: 'risk_rubric.v2.md',
+          prompt_key: 'risk_rubric',
+          version: 2,
+          parent_version: null,
+          description: 'Risk analysis rubric — 9 dimensions, 3-layer output, stage-aware grading',
+          changelog:
+            'v1 → v2: added borrower credit profile inputs (Experian/Equifax/TransUnion, ' +
+            'adverse credit, net worth, personal financials, tax returns); explicit data-stage ' +
+            'awareness with expected-data table; expanded Borrower/ALM/Guarantors definitions; ' +
+            'stage-aware conservatism rule; mandatory underwriting stage line in output.',
+        },
+        {
+          file: 'risk_macro.v1.md',
+          prompt_key: 'risk_macro',
+          version: 1,
+          parent_version: null,
+          description: 'Macro context block — UK bridging market state, themes, posture',
+          changelog:
+            'v1 seed: NEUTRAL posture with placeholder fields. All numeric fields ' +
+            'left as [FILL — source] markers; rubric instructed to treat absent ' +
+            'fields as "neutral macro: no themes flagged this cycle". Replace via ' +
+            '/admin/prompts UI before first underwriting-stage risk run.',
+        },
+      ];
+
+      for (const row of seedRows) {
+        const filePath = path.join(promptsDir, row.file);
+        let body = null;
+        try {
+          body = fs.readFileSync(filePath, 'utf8');
+        } catch (readErr) {
+          console.log(`[migrate] Note: prompts/${row.file} not found on disk, skipping seed for ${row.prompt_key}`);
+          continue;
+        }
+
+        await pool.query(
+          `
+          INSERT INTO llm_prompts
+            (prompt_key, version, body, is_active, description, parent_version, changelog, edited_by)
+          VALUES
+            ($1, $2, $3, TRUE, $4, $5, $6, 'system-seed')
+          ON CONFLICT (prompt_key, version) DO NOTHING
+          `,
+          [row.prompt_key, row.version, body, row.description, row.parent_version, row.changelog]
+        );
+      }
+
+      // Sanity log: which keys are now active
+      const activeRes = await pool.query(`
+        SELECT prompt_key, version, LENGTH(body) AS body_len
+          FROM llm_prompts
+         WHERE is_active = TRUE
+           AND prompt_key IN ('risk_rubric', 'risk_macro')
+         ORDER BY prompt_key
+      `);
+      const summary = activeRes.rows
+        .map((r) => `${r.prompt_key} v${r.version} (${r.body_len} chars)`)
+        .join('; ');
+      console.log(`[migrate] ✓ llm_prompts seed: ${summary || 'no active risk prompts (files missing?)'}`);
+    } catch (err) {
+      console.log('[migrate] Note on llm_prompts seed:', err.message.substring(0, 160));
     }
 
     try {
