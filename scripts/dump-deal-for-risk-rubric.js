@@ -401,7 +401,12 @@ function safeJsonStringify(obj, indent = 2) {
       process.exit(1);
     }
     const deal = dealQ.rows[0];
-    const matrix = deal.matrix_data || {};
+    // Matrix = the entire deal_submissions row. The 107 native columns
+    // (loan_amount_approved, rate_approved, current_value, exit_strategy_*,
+    //  arrangement_fee_pct, broker_fee_pct, interest_servicing_*, ...) ARE
+    // the canonical matrix. The matrix_data JSONB is legacy/additive only —
+    // merged on top so any straggler keys still surface.
+    const matrix = { ...deal, ...(deal.matrix_data || {}) };
 
     // ── 2. deal_properties (all properties for this deal) ────────────────
     const propsQ = await client.query(
