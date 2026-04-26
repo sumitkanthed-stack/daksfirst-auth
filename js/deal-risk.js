@@ -676,11 +676,24 @@ function renderMarkdown(md) {
     return `\n___HTMLBLOCK_${htmlStash.length - 1}___\n`;
   };
   let out = md.replace(/\r\n/g, '\n');
-  // Full <table>...</table> — capture greedy multiline.
+  const TBL_OPEN = '<table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:12.5px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">';
+  // Pass 1: Full <table>...</table>
   out = out.replace(/<table\b[\s\S]*?<\/table>/gi, stashHtml);
-  // Bare <thead>...</tbody> with no wrapping <table> — wrap on the way in.
+  // Pass 2: <thead>...</thead> followed (possibly across blank lines) by <tbody>...</tbody>
+  out = out.replace(/<thead\b[\s\S]*?<\/thead>\s*<tbody\b[\s\S]*?<\/tbody>/gi, (block) =>
+    stashHtml(`${TBL_OPEN}${block}</table>`)
+  );
+  // Pass 3: catch-all <thead>...</tbody> sequence (in case the prompt drifts again)
   out = out.replace(/<thead\b[\s\S]*?<\/tbody>/gi, (block) =>
-    stashHtml(`<table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:12.5px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">${block}</table>`)
+    stashHtml(`${TBL_OPEN}${block}</table>`)
+  );
+  // Pass 4: orphan <thead>...</thead> with no body
+  out = out.replace(/<thead\b[\s\S]*?<\/thead>/gi, (block) =>
+    stashHtml(`${TBL_OPEN}${block}</table>`)
+  );
+  // Pass 5: orphan <tbody>...</tbody> with no head
+  out = out.replace(/<tbody\b[\s\S]*?<\/tbody>/gi, (block) =>
+    stashHtml(`${TBL_OPEN}${block}</table>`)
   );
 
   // Tables — basic GFM. Strip leading separator row.
@@ -710,7 +723,7 @@ function renderMarkdown(md) {
     // Re-insert stashed raw HTML blocks
     const ph = line.match(/^___HTMLBLOCK_(\d+)___\s*$/);
     if (ph) { closeLists(); buf.push(htmlStash[Number(ph[1])]); continue; }
-    if (/^<table/.test(line) || /^<\/?(table|thead|tbody|tr|td|th)/.test(line)) { closeLists(); buf.push(line); continue; }
+    if (/^\s*<\/?(table|thead|tbody|tr|td|th)\b/i.test(line)) { closeLists(); buf.push(line); continue; }
     if (/^---+\s*$/.test(line)) { closeLists(); buf.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin:18px 0;">'); continue; }
     let m;
     if ((m = line.match(/^###\s+(.+)$/))) { closeLists(); buf.push(`<h3 style="font-family:'Playfair Display',Georgia,serif;color:#F1F5F9;margin:18px 0 8px;font-size:17px;font-weight:600;">${inlineMd(m[1])}</h3>`); continue; }
