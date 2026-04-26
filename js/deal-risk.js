@@ -635,9 +635,28 @@ function renderHistoryTab() {
 // ═════════════════════════════════════════════════════════════════
 function renderMarkdown(md) {
   if (!md) return '';
+  // ─── Stash raw HTML table blocks BEFORE markdown processing ───
+  // The v3 rubric prompt sometimes makes Claude emit a styled HTML table
+  // (`<table>...</table>` or bare `<thead>...</tbody>`) for the Dimension
+  // Grades / Layer tables. Without this stash, the per-line guard below only
+  // catches lines that START with `<table`/`<thead` etc., and any indented
+  // inner HTML falls through to <p>${inlineMd(line)}</p> which HTML-escapes it.
+  // Stash with placeholders, run markdown, re-insert verbatim.
+  const htmlStash = [];
+  const stashHtml = (block) => {
+    htmlStash.push(block);
+    return `\n___HTMLBLOCK_${htmlStash.length - 1}___\n`;
+  };
+  let out = md.replace(/\r\n/g, '\n');
+  // Full <table>...</table> — capture greedy multiline.
+  out = out.replace(/<table\b[\s\S]*?<\/table>/gi, stashHtml);
+  // Bare <thead>...</tbody> with no wrapping <table> — wrap on the way in.
+  out = out.replace(/<thead\b[\s\S]*?<\/tbody>/gi, (block) =>
+    stashHtml(`<table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:12.5px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">${block}</table>`)
+  );
+
   // Tables — basic GFM. Strip leading separator row.
-  let out = md
-    .replace(/\r\n/g, '\n')
+  out = out
     // tables: detect blocks
     .replace(/((?:\|.+\|\n)(?:\|[\s|:-]+\|\n)(?:\|.+\|\n?)+)/g, (block) => {
       const lines = block.trim().split('\n');
@@ -660,6 +679,9 @@ function renderMarkdown(md) {
     if (inOl) { buf.push('</ol>'); inOl = false; }
   };
   for (let line of lines) {
+    // Re-insert stashed raw HTML blocks
+    const ph = line.match(/^___HTMLBLOCK_(\d+)___\s*$/);
+    if (ph) { closeLists(); buf.push(htmlStash[Number(ph[1])]); continue; }
     if (/^<table/.test(line) || /^<\/?(table|thead|tbody|tr|td|th)/.test(line)) { closeLists(); buf.push(line); continue; }
     if (/^---+\s*$/.test(line)) { closeLists(); buf.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin:18px 0;">'); continue; }
     let m;
