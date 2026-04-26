@@ -929,6 +929,28 @@
             </div>
           </div>
 
+          <!-- ══ 6b. RISK VIEW ══ -->
+          <div class="deal-section" data-roles="rm,credit,compliance,admin" id="section-risk">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('risk')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:rgba(248,113,113,0.12);color:#F87171;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:'Inter',sans-serif;">R</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:#F1F5F9;">Risk View</div>
+                  <div style="font-size:11px;color:#64748b;">9 weighted dimensions × 3 readers (Claude / Alpha / Analyst) → 3 emergent latent layers · append-only</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span id="risk-headline-pill" style="display:none;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;"></span>
+                <div class="deal-section-chevron" id="chev-risk">&#9658;</div>
+              </div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-risk">
+              <div id="risk-content" style="padding:0;">
+                <p style="color:#64748b;text-align:center;padding:40px 0;font-size:13px;">Loading Risk View…</p>
+              </div>
+            </div>
+          </div>
+
           <!-- ══ 7. FEE ══ -->
           <div class="deal-section" data-roles="broker,borrower,rm,admin" id="section-fee">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('fee')">

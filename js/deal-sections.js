@@ -7,6 +7,9 @@ import { fetchWithAuth } from './auth.js';
 import { getCurrentRole, getCurrentUser } from './state.js';
 import { showToast, sanitizeHtml, formatNumber, formatPct, formatDate } from './utils.js';
 import { floatingProgress } from './floating-progress.js';
+// 2026-04-26: Risk View — Risk MVP step 9. Renders /api/admin/risk-view/:dealId/runs
+// into section-risk. Manual-trigger only, append-only, RBAC=rm/credit/compliance/admin.
+import { renderRiskSection } from './deal-risk.js';
 // 2026-04-21: shared display helpers. Single source of truth for stage
 // synthesis, stage labels, portfolio reads, and primary borrower display.
 import {
@@ -1303,6 +1306,14 @@ export async function renderDealSections(deal, role) {
   // 5b. Analysis (OE-5) — internal roles only. Async but we don't await;
   // the panel paints a loading state and swaps in the real content.
   renderAnalysisSection(deal, role);
+
+  // 6b. Risk View (Risk MVP step 9) — sits between Analysis and Fee in index.html.
+  // Reader-only paint of risk_view ledger; trigger button is RBAC-gated inside.
+  try {
+    await renderRiskSection(deal, role);
+  } catch (err) {
+    console.error('[deal-sections] renderRiskSection failed:', err);
+  }
 
   // 6. Fee
   renderFeeSection(deal);

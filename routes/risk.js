@@ -329,6 +329,160 @@ router.post(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  GET /api/admin/risk-view/:dealId/runs — list every risk run for a deal
+//  GET /api/admin/risk-view/:dealId/runs/:runId — full row incl raw_response
+//  ───────────────────────────────────────────────────────────────────────────
+//  Read-only, append-only. Used by the Risk View section on /deal/:id.
+//  Returns runs newest-first. Verdict is regex-extracted from raw_response so
+//  the rail can render coloured pills without parsing the full markdown.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Pull a verdict label out of the markdown rubric output.
+ * v3 narrative emits a "## Layer 3 — Composite Verdict" block followed by
+ * "### **HIGH**" (or LOW/MODERATE/ELEVATED). We try the explicit Layer 3
+ * marker first, then fall back to the first bold-only verdict word anywhere.
+ * Returns null if nothing matches — UI shows a grey "—" pill in that case.
+ */
+function extractVerdict(rawResponse) {
+  if (!rawResponse || typeof rawResponse !== 'string') return null;
+  const VERDICT_WORDS = ['LOW', 'MODERATE', 'ELEVATED', 'HIGH', 'CRITICAL'];
+
+  // Preferred: header block under Layer 3 (`### **HIGH**` style).
+  const layer3 = rawResponse.match(/Layer\s*3[\s\S]{0,400}?\*\*\s*(LOW|MODERATE|ELEVATED|HIGH|CRITICAL)\s*\*\*/i);
+  if (layer3) return layer3[1].toUpperCase();
+
+  // Fallback: first standalone `**WORD**` matching the verdict vocabulary.
+  const bold = rawResponse.match(/\*\*\s*(LOW|MODERATE|ELEVATED|HIGH|CRITICAL)\s*\*\*/i);
+  if (bold) return bold[1].toUpperCase();
+
+  // Last resort: bare word on its own line.
+  for (const w of VERDICT_WORDS) {
+    const re = new RegExp(`(^|\\n)\\s*${w}\\s*(\\n|$)`, 'i');
+    if (re.test(rawResponse)) return w;
+  }
+  return null;
+}
+
+router.get(
+  '/admin/risk-view/:dealId/runs',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    const dealId = Number(req.params.dealId);
+    if (!Number.isInteger(dealId) || dealId <= 0) {
+      return res.status(400).json({ ok: false, error: 'dealId must be a positive integer' });
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT
+            rv.id,
+            rv.deal_id,
+            rv.data_stage,
+            rv.status,
+            rv.model,
+            rv.model_temperature,
+            rv.model_max_tokens,
+            rv.input_tokens,
+            rv.output_tokens,
+            rv.cost_gbp,
+            rv.latency_ms,
+            rv.error_message,
+            rv.triggered_by,
+            rv.created_at,
+            rv.completed_at,
+            rv.rubric_prompt_id,
+            rv.macro_prompt_id,
+            rv.sensitivity_calculator_version,
+            rp.prompt_key   AS rubric_key,
+            rp.version      AS rubric_version,
+            rp.is_active    AS rubric_is_active,
+            mp.prompt_key   AS macro_key,
+            mp.version      AS macro_version,
+            mp.is_active    AS macro_is_active,
+            char_length(rv.raw_response)             AS raw_response_chars,
+            (rv.parsed_grades IS NOT NULL)           AS has_parsed_grades,
+            -- Pull just enough of raw_response to extract verdict server-side.
+            substring(rv.raw_response from 1 for 16000) AS raw_response_head
+          FROM risk_view rv
+     LEFT JOIN llm_prompts rp ON rp.id = rv.rubric_prompt_id
+     LEFT JOIN llm_prompts mp ON mp.id = rv.macro_prompt_id
+         WHERE rv.deal_id = $1
+      ORDER BY rv.id DESC`,
+        [dealId]
+      );
+
+      const runs = rows.map(r => {
+        const verdict = r.status === 'success' ? extractVerdict(r.raw_response_head) : null;
+        const { raw_response_head, ...rest } = r;
+        return {
+          ...rest,
+          verdict,
+          // Stale-rubric flag: row was run against a non-active prompt version.
+          rubric_stale: r.rubric_is_active === false,
+          macro_stale:  r.macro_is_active  === false,
+        };
+      });
+
+      return res.json({ ok: true, deal_id: dealId, runs });
+    } catch (err) {
+      console.error(`[risk-view runs ${dealId}] query failed:`, err);
+      return res.status(500).json({ ok: false, error: 'query failed' });
+    }
+  }
+);
+
+router.get(
+  '/admin/risk-view/:dealId/runs/:runId',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    const dealId = Number(req.params.dealId);
+    const runId  = Number(req.params.runId);
+    if (!Number.isInteger(dealId) || dealId <= 0 || !Number.isInteger(runId) || runId <= 0) {
+      return res.status(400).json({ ok: false, error: 'dealId and runId must be positive integers' });
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT
+            rv.*,
+            rp.prompt_key  AS rubric_key,
+            rp.version     AS rubric_version,
+            rp.is_active   AS rubric_is_active,
+            mp.prompt_key  AS macro_key,
+            mp.version     AS macro_version,
+            mp.is_active   AS macro_is_active
+          FROM risk_view rv
+     LEFT JOIN llm_prompts rp ON rp.id = rv.rubric_prompt_id
+     LEFT JOIN llm_prompts mp ON mp.id = rv.macro_prompt_id
+         WHERE rv.id = $1 AND rv.deal_id = $2
+         LIMIT 1`,
+        [runId, dealId]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ ok: false, error: `risk_run_id ${runId} not found for deal ${dealId}` });
+      }
+      const row = rows[0];
+      const verdict = row.status === 'success' ? extractVerdict(row.raw_response) : null;
+      return res.json({
+        ok: true,
+        run: {
+          ...row,
+          verdict,
+          rubric_stale: row.rubric_is_active === false,
+          macro_stale:  row.macro_is_active  === false,
+        },
+      });
+    } catch (err) {
+      console.error(`[risk-view run ${runId}] query failed:`, err);
+      return res.status(500).json({ ok: false, error: 'query failed' });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  POST /api/risk-callback  — n8n returns grades + telemetry
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/risk-callback', verifyWebhookSecret, async (req, res) => {
