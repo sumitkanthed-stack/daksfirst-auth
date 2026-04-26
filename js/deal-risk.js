@@ -443,37 +443,65 @@ function renderDimRow(dim, i, claude) {
 }
 
 /**
- * Pull "Grade" + first-sentence excerpt for each dimension out of the markdown
- * Layer-1 table or Layer-1 prose. Returns { dimId: { grade, excerpt } }.
- * Best-effort regex — does not need to be exhaustive; the narrative tab is the
- * SSOT for the analyst, this is just a quick visual map.
+ * Pull "Grade" + first-sentence excerpt for each dimension out of the v3 rubric
+ * Layer-1 table. Returns { dimId: { grade, excerpt } }.
+ *
+ * The v3 rubric prompt makes Claude emit Layer 1 as either:
+ *   - a markdown pipe table:  | # | **Name** | **Grade** | weight | prose |
+ *   - or an HTML table:       <tr><td>#</td><td><strong>Name</strong></td><td><strong>Grade</strong></td><td>w</td><td>prose</td></tr>
+ *
+ * We try both. Bold markers around name/grade are optional in markdown, and
+ * in HTML we strip <strong> / inline-styled tags before matching.
  */
 function parseDimensionClaude(raw) {
   if (!raw) return {};
   const out = {};
-  // Map dim names → ids by keyword.
   const map = [
     [/borrower\s+profile/i,                'borrower_profile'],
     [/borrower\s+ALM|assets,?\s+liabilities/i, 'borrower_alm'],
     [/guarantor/i,                         'guarantors'],
     [/property\s+\(physical|property\s+physical/i, 'property_physical'],
-    [/valuation\s*&|valuation\s+and|valuation\s+&\s+market/i, 'valuation'],
+    [/valuation/i,                         'valuation'],
     [/use\s+of\s+funds/i,                  'use_of_funds'],
     [/exit\s+(scenario|strategy|pathway)/i, 'exit'],
     [/legal\s+(&|and)\s+insurance/i,       'legal_insurance'],
     [/compliance|KYC|PEP|sanctions/i,      'compliance_kyc'],
   ];
-  // Markdown table row split:  | # | name | Grade | Weight | Provenance ... |
-  const rowRe = /\|\s*\d+\s*\|\s*\*\*([^|]+?)\*\*\s*\|\s*\*\*([^|]+?)\*\*\s*\|\s*([^|]*)\|\s*([^|]+?)(?:\||\n)/g;
-  let m;
-  while ((m = rowRe.exec(raw)) !== null) {
-    const dimName = m[1].trim();
-    const grade = m[2].trim();
-    const excerpt = (m[4] || '').trim().slice(0, 340);
+
+  const stripTags = (s) => String(s || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tryAssign = (dimName, grade, excerpt) => {
+    const cleanName = stripTags(dimName);
+    const cleanGrade = stripTags(grade);
+    if (!cleanName || !cleanGrade) return;
+    const cleanExcerpt = stripTags(excerpt).slice(0, 340);
     for (const [re, id] of map) {
-      if (re.test(dimName)) { out[id] = { grade, excerpt }; break; }
+      if (re.test(cleanName) && !out[id]) {
+        out[id] = { grade: cleanGrade, excerpt: cleanExcerpt };
+        break;
+      }
     }
+  };
+
+  // 1. Markdown pipe rows (bold markers around name/grade optional)
+  const mdRowRe = /\|\s*\d+\s*\|\s*\*?\*?([^|]+?)\*?\*?\s*\|\s*\*?\*?([^|]+?)\*?\*?\s*\|\s*([^|]*)\|\s*([^|]+?)(?:\||\n)/g;
+  let m;
+  while ((m = mdRowRe.exec(raw)) !== null) {
+    tryAssign(m[1], m[2], m[4]);
   }
+
+  // 2. HTML <tr> rows — match 5+ <td> cells, capture cells 2 (name), 3 (grade), 5 (provenance)
+  const htmlRowRe = /<tr\b[^>]*>\s*<td\b[^>]*>\s*\d+\s*<\/td>\s*<td\b[^>]*>([\s\S]*?)<\/td>\s*<td\b[^>]*>([\s\S]*?)<\/td>\s*<td\b[^>]*>[\s\S]*?<\/td>\s*<td\b[^>]*>([\s\S]*?)<\/td>/gi;
+  let h;
+  while ((h = htmlRowRe.exec(raw)) !== null) {
+    tryAssign(h[1], h[2], h[3]);
+  }
+
   return out;
 }
 
