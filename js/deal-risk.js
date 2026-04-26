@@ -800,3 +800,6 @@ function wireSubTabClicks(deal) {
       // Re-render only the tab nav + body to avoid blowing away rail/hero.
       const role = getCurrentRoleSafe();
       paint(deal, role);
+    });
+  });
+}
