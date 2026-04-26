@@ -72,6 +72,28 @@ function verifyWebhookSecret(req, res, next) {
 }
 
 /**
+ * Fetch a prompt body by id. We only ship bodies in the trigger payload —
+ * keeping rubric/macro body lookups on the auth side (rather than n8n calling
+ * back) means n8n needs zero credentials to talk to auth, the trigger snapshot
+ * is reproducible, and admin edits to llm_prompts take effect on the next run.
+ *
+ * Throws if id missing — every risk run must FK-pin to an existing prompt row.
+ */
+async function loadPromptBodyById(promptId) {
+  const { rows } = await pool.query(
+    `SELECT id, prompt_key, version, body
+       FROM llm_prompts
+      WHERE id = $1
+      LIMIT 1`,
+    [promptId]
+  );
+  if (rows.length === 0) {
+    throw new Error(`loadPromptBodyById: prompt id ${promptId} not found in llm_prompts`);
+  }
+  return rows[0];
+}
+
+/**
  * GBP cost from token counts using llm_model_config cost_per_1m_*_usd columns.
  * Falls back to NULL if costs aren't set on the row (admin can backfill via UI).
  * USD→GBP conversion deliberately omitted: cost_per_1m_*_usd is the canonical
@@ -199,6 +221,28 @@ router.post(
       });
     }
 
+    // Pre-fetch rubric + macro bodies. We ship them in the trigger body so n8n
+    // doesn't need an admin Bearer token to fetch from auth — the canvas becomes
+    // a stateless prompt-builder + Anthropic-caller. See:
+    // feedback_auth_is_data_collector_not_decider.md (auth assembles, n8n calls).
+    let rubricRow, macroRow;
+    try {
+      [rubricRow, macroRow] = await Promise.all([
+        loadPromptBodyById(payload.rubric.prompt_id),
+        loadPromptBodyById(payload.macro.prompt_id),
+      ]);
+    } catch (err) {
+      await pool.query(
+        `UPDATE risk_view SET status='failed', error_message=$1, completed_at=NOW() WHERE id=$2`,
+        [`prompt body fetch failed: ${err.message}`, riskRunId]
+      ).catch(() => {});
+      return res.status(500).json({
+        ok: false,
+        risk_run_id: riskRunId,
+        error: `prompt body fetch failed: ${err.message}`,
+      });
+    }
+
     const triggerBody = {
       risk_run_id: riskRunId,
       deal_id: payload.deal_id,
@@ -206,6 +250,20 @@ router.post(
       data_stage: payload.data_stage,
       callback_url: `${(config.PUBLIC_AUTH_URL || '').replace(/\/$/, '') || 'https://daksfirst-auth.onrender.com'}/api/risk-callback`,
       model_config_call_type: 'risk_grade',
+
+      // ── Pre-fetched prompt bodies + model config + full deal payload ──
+      // n8n needs no auth to fetch these — it just reads the body and builds
+      // the Anthropic call. Total payload ~340kB for deal 32 (well under
+      // n8n cloud's 16MB ceiling).
+      rubric_body: rubricRow.body,
+      macro_body:  macroRow.body,
+      model_config: {
+        model:       modelCfg.model,
+        max_tokens:  modelCfg.max_tokens,
+        temperature: modelCfg.temperature,
+        provider:    modelCfg.provider,
+      },
+      deal_payload: payload,
     };
 
     try {
