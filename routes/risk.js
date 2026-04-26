@@ -390,7 +390,7 @@ router.get(
             rv.latency_ms,
             rv.error_message,
             rv.triggered_by,
-            rv.created_at,
+            rv.triggered_at AS created_at,
             rv.completed_at,
             rv.rubric_prompt_id,
             rv.macro_prompt_id,
