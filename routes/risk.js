@@ -257,10 +257,13 @@ router.post(
       // n8n cloud's 16MB ceiling).
       rubric_body: rubricRow.body,
       macro_body:  macroRow.body,
+      // pg deserializes NUMERIC columns as strings (max_tokens is INTEGER so
+      // it's already a Number). Coerce here so n8n can ship straight to the
+      // Anthropic API — Anthropic 400s on "temperature":"0.00" (string).
       model_config: {
         model:       modelCfg.model,
-        max_tokens:  modelCfg.max_tokens,
-        temperature: modelCfg.temperature,
+        max_tokens:  Number(modelCfg.max_tokens),
+        temperature: Number(modelCfg.temperature),
         provider:    modelCfg.provider,
       },
       deal_payload: payload,
