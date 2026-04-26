@@ -111,7 +111,7 @@ export async function renderRiskSection(deal, role) {
   host.innerHTML = `<div style="padding:40px 0;text-align:center;color:#64748B;font-size:13px;">Loading Risk View…</div>`;
 
   try {
-    const res = await fetchWithAuth(`${API_BASE}/admin/risk-view/${deal.id}/runs`);
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/risk-view/${deal.id}/runs`);
     if (!res.ok) throw new Error(`runs fetch ${res.status}`);
     const data = await res.json();
     __riskState.runs = Array.isArray(data.runs) ? data.runs : [];
@@ -141,7 +141,7 @@ async function loadFullRun(runId) {
   if (!__riskState.dealId || !runId) return;
   try {
     const res = await fetchWithAuth(
-      `${API_BASE}/admin/risk-view/${__riskState.dealId}/runs/${runId}`
+      `${API_BASE}/api/admin/risk-view/${__riskState.dealId}/runs/${runId}`
     );
     if (!res.ok) throw new Error(`run fetch ${res.status}`);
     const data = await res.json();
@@ -725,7 +725,7 @@ function wireTriggerButton(deal) {
     btn.disabled = true;
     btn.textContent = 'Dispatching…';
     try {
-      const res = await fetchWithAuth(`${API_BASE}/admin/risk-runs/start`, {
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/risk-runs/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId: deal.id, dataStage: stage }),
@@ -752,7 +752,7 @@ function pollUntilSettled(runId, deal) {
   const tick = async () => {
     attempts++;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/admin/risk-view/${deal.id}/runs/${runId}`);
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/risk-view/${deal.id}/runs/${runId}`);
       const data = await res.json();
       const st = data.run?.status;
       if (st === 'success' || st === 'failed') {
@@ -800,6 +800,3 @@ function wireSubTabClicks(deal) {
       // Re-render only the tab nav + body to avoid blowing away rail/hero.
       const role = getCurrentRoleSafe();
       paint(deal, role);
-    });
-  });
-}
