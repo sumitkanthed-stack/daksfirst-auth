@@ -456,17 +456,32 @@ function renderDimRow(dim, i, claude) {
 function parseDimensionClaude(raw) {
   if (!raw) return {};
   const out = {};
+  // Order matters: more specific patterns FIRST. /^property/ at the bottom is
+  // a catch-all so per-property rows ("Property — Flat 2, King Henrys Reach")
+  // still aggregate into property_physical.
   const map = [
     [/borrower\s+profile/i,                'borrower_profile'],
     [/borrower\s+ALM|assets,?\s+liabilities/i, 'borrower_alm'],
     [/guarantor/i,                         'guarantors'],
-    [/property\s+\(physical|property\s+physical/i, 'property_physical'],
     [/valuation/i,                         'valuation'],
     [/use\s+of\s+funds/i,                  'use_of_funds'],
     [/exit\s+(scenario|strategy|pathway)/i, 'exit'],
     [/legal\s+(&|and)\s+insurance/i,       'legal_insurance'],
     [/compliance|KYC|PEP|sanctions/i,      'compliance_kyc'],
+    [/^property\b/i,                       'property_physical'],
   ];
+
+  // Worst-of grade aggregation — the v3 rubric splits Property (physical)
+  // into one row per property, so we may see 2-4 "Property — Flat X" rows
+  // that all map to property_physical. Take the most pessimistic grade and
+  // count the others into a "+N more" suffix.
+  const GRADE_RANK = {
+    pass: 1, low: 2, acceptable: 2, ok: 2,
+    moderate: 3, medium: 3,
+    elevated: 4, high: 5,
+    severe: 6, critical: 7, failure: 8, fail: 8, veto: 9, vetoed: 9,
+  };
+  const rankOf = (g) => GRADE_RANK[String(g || '').toLowerCase().trim()] ?? 0;
 
   const stripTags = (s) => String(s || '')
     .replace(/<[^>]+>/g, '')
@@ -481,10 +496,23 @@ function parseDimensionClaude(raw) {
     if (!cleanName || !cleanGrade) return;
     const cleanExcerpt = stripTags(excerpt).slice(0, 340);
     for (const [re, id] of map) {
-      if (re.test(cleanName) && !out[id]) {
-        out[id] = { grade: cleanGrade, excerpt: cleanExcerpt };
-        break;
+      if (!re.test(cleanName)) continue;
+      const existing = out[id];
+      if (!existing) {
+        out[id] = { grade: cleanGrade, excerpt: cleanExcerpt, _count: 1 };
+      } else {
+        // Aggregate: keep worst grade, append "+N more" to excerpt.
+        const newRank = rankOf(cleanGrade);
+        const oldRank = rankOf(existing.grade);
+        const winnerGrade = newRank > oldRank ? cleanGrade : existing.grade;
+        const winnerExcerpt = newRank > oldRank ? cleanExcerpt : existing.excerpt;
+        out[id] = {
+          grade: winnerGrade,
+          excerpt: winnerExcerpt,
+          _count: (existing._count || 1) + 1,
+        };
       }
+      break;
     }
   };
 
@@ -500,6 +528,14 @@ function parseDimensionClaude(raw) {
   let h;
   while ((h = htmlRowRe.exec(raw)) !== null) {
     tryAssign(h[1], h[2], h[3]);
+  }
+
+  // Append "+N more" suffix where multiple rows aggregated into one slot.
+  for (const k of Object.keys(out)) {
+    if (out[k]._count > 1) {
+      out[k].excerpt = `${out[k].excerpt} (+${out[k]._count - 1} more, worst-of shown)`;
+    }
+    delete out[k]._count;
   }
 
   return out;
