@@ -29,9 +29,13 @@
  *     deal_id, submission_id, data_stage, packaged_at,
  *     rubric:  { prompt_key, version, prompt_id },
  *     macro:   { prompt_key, version, prompt_id },
+ *     taxonomy_version: 'tax_v1',
+ *     taxonomy: {
+ *       version, determinants:[9], sectors:[6], grade_scale:{...}
+ *     },
  *     sensitivity_calculator_version,
- *     features: { deal, borrowers, properties },     // from M1 packager
- *     companies_house: [ { company_number, ... } ],  // verification snapshots
+ *     features: { deal, borrowers, properties },
+ *     companies_house: [ { company_number, ... } ],
  *     source_provenance: { ... },
  *     feature_hash:     <sha256 of features>,
  *     risk_payload_hash: <sha256 of full payload incl. version pins>
@@ -51,13 +55,8 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_SENSITIVITY_VERSION = 'v5.1';
 const VALID_STAGES = ['dip', 'underwriting', 'post_completion'];
 
-// ─── Active prompt resolution ────────────────────────────────────────────────
+// --- Active prompt resolution ---
 
-/**
- * Look up the currently-active row for a prompt_key. Throws if none active —
- * a missing rubric/macro is a hard fail, not a soft warning, because every
- * risk_view row must FK-pin to a real prompt id for audit reproducibility.
- */
 async function loadActivePrompt(promptKey) {
   const { rows } = await pool.query(
     `SELECT id, prompt_key, version
@@ -76,14 +75,79 @@ async function loadActivePrompt(promptKey) {
   return { prompt_key: r.prompt_key, version: r.version, prompt_id: r.id };
 }
 
-// ─── Companies House enrichment ──────────────────────────────────────────────
+// --- Active taxonomy resolution ---
 
-/**
- * For each unique company_number that appears on any borrower row, pull the
- * latest verification snapshot from company_verifications. Returns [] if
- * none of the borrowers are corporate. Soft-fails per company (logs and
- * continues) — a missing CH lookup should NOT block a risk run.
- */
+async function loadActiveTaxonomy() {
+  const { rows: vRows } = await pool.query(
+    `SELECT version
+       FROM risk_taxonomy_versions
+      WHERE is_active = TRUE
+      LIMIT 1`
+  );
+  if (vRows.length === 0) {
+    throw new Error(
+      'risk-packager: no active risk_taxonomy version. ' +
+      'Seed via migration (tax_v1) or activate via /admin/taxonomy.'
+    );
+  }
+  const version = vRows[0].version;
+
+  const { rows } = await pool.query(
+    `SELECT kind, node_key, label, ordering, metadata
+       FROM risk_taxonomy
+      WHERE version = $1 AND is_active = TRUE
+      ORDER BY kind, ordering, node_key`,
+    [version]
+  );
+
+  const determinants = rows
+    .filter((r) => r.kind === 'determinant')
+    .map((r) => ({
+      key:      r.node_key,
+      label:    r.label,
+      ordering: r.ordering,
+      metadata: r.metadata || {},
+    }));
+
+  const sectors = rows
+    .filter((r) => r.kind === 'sector')
+    .map((r) => ({
+      key:      r.node_key,
+      label:    r.label,
+      ordering: r.ordering,
+      metadata: r.metadata || {},
+    }));
+
+  const gradeScaleRow = rows.find(
+    (r) => r.kind === 'config' && r.node_key === 'grade_scale'
+  );
+
+  if (determinants.length === 0) {
+    throw new Error(
+      `risk-packager: taxonomy version '${version}' has zero active determinants.`
+    );
+  }
+  if (sectors.length === 0) {
+    throw new Error(
+      `risk-packager: taxonomy version '${version}' has zero active sectors.`
+    );
+  }
+  if (!gradeScaleRow) {
+    throw new Error(
+      `risk-packager: taxonomy version '${version}' missing grade_scale config row.`
+    );
+  }
+
+  return {
+    version,
+    determinants,
+    sectors,
+    grade_scale: gradeScaleRow.metadata || {},
+  };
+}
+
+// --- Companies House enrichment ---
+
 async function loadCompaniesHouseSnapshots(borrowerRows) {
   const numbers = [
     ...new Set(
@@ -105,16 +169,8 @@ async function loadCompaniesHouseSnapshots(borrowerRows) {
   return rows;
 }
 
-// ─── Data-stage resolution ───────────────────────────────────────────────────
+// --- Data-stage resolution ---
 
-/**
- * Validate / normalise data_stage. The caller is RM clicking "Run Risk
- * Analysis" on the deal page — they pick the stage explicitly. We do NOT
- * derive it from deal.deal_stage because (a) the same deal can be re-graded
- * at multiple stages and (b) RM may want to grade an underwriting-stage
- * deal as if it were DIP-stage (sanity check). Stage is part of the audit
- * pin, not a derived hint.
- */
 function resolveDataStage(input) {
   const v = (input || '').toString().trim().toLowerCase();
   if (!VALID_STAGES.includes(v)) {
@@ -125,7 +181,7 @@ function resolveDataStage(input) {
   return v;
 }
 
-// ─── Hashing ─────────────────────────────────────────────────────────────────
+// --- Hashing ---
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -139,23 +195,8 @@ function sha256(obj) {
   return crypto.createHash('sha256').update(stableStringify(obj), 'utf8').digest('hex');
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// --- Public API ---
 
-/**
- * Build the risk-grading input payload for a deal at the given data stage.
- *
- * @param {number} dealId   deal_submissions.id (the INT)
- * @param {string} dataStage  'dip' | 'underwriting' | 'post_completion'
- * @param {object} [options]
- * @param {string} [options.sensitivityCalculatorVersion]  pinned to risk_view row
- * @returns {Promise<{
- *   success: boolean,
- *   payload?: object,
- *   feature_hash?: string,
- *   risk_payload_hash?: string,
- *   error?: string
- * }>}
- */
 async function buildRiskPayload(dealId, dataStage, options = {}) {
   if (!dealId || !Number.isInteger(Number(dealId))) {
     return { success: false, error: 'dealId must be an integer' };
@@ -168,14 +209,11 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     return { success: false, error: err.message };
   }
 
-  // 1. Reuse M1 packager for the deal/borrowers/properties matrix envelope.
-  //    'risk_run' is the stage_id used in M1's ledger — distinct from data_stage.
   const m1 = await featurePackager.packageDealForStage(dealId, 'risk_run');
   if (!m1.success) {
     return { success: false, error: `feature packager failed: ${m1.error}` };
   }
 
-  // 2. Pin the active rubric + macro versions atomically. Both must exist.
   let rubric, macro;
   try {
     [rubric, macro] = await Promise.all([
@@ -186,10 +224,15 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     return { success: false, error: err.message };
   }
 
-  // 3. Companies House enrichment (soft-fail per company is fine).
+  let taxonomy;
+  try {
+    taxonomy = await loadActiveTaxonomy();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+
   const companiesHouse = await loadCompaniesHouseSnapshots(m1.envelope.features.borrowers);
 
-  // 4. Provenance summary — what made it into the envelope.
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -207,7 +250,6 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
       Object.keys(m1.envelope.features.deal.matrix_data || {}).length > 0,
   };
 
-  // 5. Assemble the final envelope.
   const sensitivityVersion =
     options.sensitivityCalculatorVersion || DEFAULT_SENSITIVITY_VERSION;
 
@@ -219,6 +261,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     packaged_at:      new Date().toISOString(),
     rubric,
     macro,
+    taxonomy_version: taxonomy.version,
+    taxonomy,
     sensitivity_calculator_version: sensitivityVersion,
     features:         m1.envelope.features,
     companies_house:  companiesHouse,
@@ -226,8 +270,6 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     feature_hash:     m1.feature_hash,
   };
 
-  // risk_payload_hash covers everything EXCEPT packaged_at (timestamps drift).
-  // Used for re-run dedup when RM clicks the button twice on identical data.
   const { packaged_at, ...hashable } = payload;
   payload.risk_payload_hash = sha256(hashable);
 
@@ -235,6 +277,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     `[risk-packager] deal=${payload.deal_id} stage=${stage} ` +
     `rubric=${rubric.prompt_key}.v${rubric.version}#${rubric.prompt_id} ` +
     `macro=${macro.prompt_key}.v${macro.version}#${macro.prompt_id} ` +
+    `taxonomy=${taxonomy.version}` +
+    `(d=${taxonomy.determinants.length},s=${taxonomy.sectors.length}) ` +
     `borrowers=${provenance.borrowers_count} ` +
     `properties=${provenance.properties_count} ` +
     `chimnie=${provenance.chimnie_attached_count} ` +
@@ -252,9 +296,9 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
 
 module.exports = {
   buildRiskPayload,
-  // exposed for tests
   resolveDataStage,
   loadActivePrompt,
+  loadActiveTaxonomy,
   loadCompaniesHouseSnapshots,
   sha256,
   stableStringify,
