@@ -235,6 +235,21 @@ router.get('/deals/:submissionId', authenticateToken, authenticateInternal, asyn
       total_gdv: propertiesResult.rows.reduce((sum, p) => sum + (parseFloat(p.gdv) || 0), 0)
     };
 
+    // ── SmartSearch KYC checks (2026-04-27) ────────────────────────────────
+    // Append-only kyc_checks history for this deal. Lightweight projection —
+    // full raw vendor JSON stays in DB, frontend gets just enough to render
+    // status pills and action buttons per borrower/property.
+    const kycChecksResult = await pool.query(
+      `SELECT id, deal_id, borrower_id, director_id, company_id, check_type, provider,
+              subject_first_name, subject_last_name, subject_company_name,
+              result_status, result_score, mode, cost_pence,
+              requested_by, requested_at, parent_check_id, is_monitoring_update, pull_error
+         FROM kyc_checks
+        WHERE deal_id = $1
+        ORDER BY requested_at DESC`,
+      [dealId]
+    );
+
     res.json({
       success: true,
       deal: {
@@ -247,7 +262,8 @@ router.get('/deals/:submissionId', authenticateToken, authenticateInternal, asyn
         approvals: approvalsResult.rows,
         borrowers: borrowersResult.rows,
         properties: propertiesResult.rows,
-        portfolio_summary: portfolioSummary
+        portfolio_summary: portfolioSummary,
+        kyc_checks: kycChecksResult.rows
       }
     });
   } catch (error) {

@@ -877,6 +877,10 @@ export async function renderDealMatrix(deal) {
                       </div>
                     </div>
 
+                    <!-- ── A.1 SmartSearch KYC/AML (admin-only, primary corporate) ── -->
+                    ${(isInternalUser && primaryRow && typeof window._buildSmartSearchPanel === 'function')
+                      ? window._buildSmartSearchPanel(primaryRow, deal) : ''}
+
                     <!-- ── B. Companies House Verification ── -->
                     ${deal.company_number ? `
                     <div style="margin-bottom:12px;">
@@ -2607,6 +2611,172 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 })();
 
+                // ═══ HMLR Title Register panel (2026-04-27) ═══
+                // Inline expandable panel — admin-only (paid API). Shows last
+                // pulled mode/timestamp/cost, with proprietors + charges +
+                // restrictions tables when expanded.
+                const hmlrHtml = (() => {
+                  if (!isInternalUser) return '';
+                  const pulled = p.hmlr_pulled_at;
+                  const pulledMode = p.hmlr_pull_mode;
+                  const pulledCost = p.hmlr_pulled_cost_pence;
+                  const titleNum = p.hmlr_title_number || p.title_number || '';
+                  const pullErr = p.hmlr_pull_error;
+                  const tenure = p.hmlr_tenure;
+                  const cls = p.hmlr_class_of_title;
+                  const proprietors = Array.isArray(p.hmlr_proprietors_jsonb) ? p.hmlr_proprietors_jsonb
+                                    : (p.hmlr_proprietors_jsonb && typeof p.hmlr_proprietors_jsonb === 'object'
+                                         ? (p.hmlr_proprietors_jsonb.proprietors || [])
+                                         : []);
+                  const charges = Array.isArray(p.hmlr_charges_jsonb) ? p.hmlr_charges_jsonb
+                                : (p.hmlr_charges_jsonb && typeof p.hmlr_charges_jsonb === 'object'
+                                     ? (p.hmlr_charges_jsonb.charges || [])
+                                     : []);
+                  const restrictions = Array.isArray(p.hmlr_restrictions_jsonb) ? p.hmlr_restrictions_jsonb
+                                     : (p.hmlr_restrictions_jsonb && typeof p.hmlr_restrictions_jsonb === 'object'
+                                          ? (p.hmlr_restrictions_jsonb.restrictions || [])
+                                          : []);
+
+                  // Status colour: green (mock = no charge but data present), gold (live success),
+                  // red (pull error), grey (never pulled).
+                  let pillBg, pillFg, pillText;
+                  if (pullErr) {
+                    pillBg = 'rgba(248,113,113,0.15)'; pillFg = '#F87171'; pillText = 'Error';
+                  } else if (pulled && pulledMode === 'live') {
+                    pillBg = 'rgba(212,168,83,0.15)'; pillFg = '#D4A853';
+                    pillText = 'LIVE \u00B7 \u00A3' + ((pulledCost || 0) / 100).toFixed(2);
+                  } else if (pulled && pulledMode === 'test') {
+                    pillBg = 'rgba(96,165,250,0.15)'; pillFg = '#60A5FA'; pillText = 'TEST';
+                  } else if (pulled) {
+                    pillBg = 'rgba(52,211,153,0.12)'; pillFg = '#34D399'; pillText = 'MOCK';
+                  } else {
+                    pillBg = 'rgba(148,163,184,0.10)'; pillFg = '#94A3B8'; pillText = 'Not pulled';
+                  }
+
+                  // Default open if just pulled or has error; collapsed otherwise (less noise)
+                  const hmlrCollapsed = !pulled || (pulled && !pullErr);
+                  const hmlrBodyDisplay = hmlrCollapsed ? 'none' : 'block';
+                  const hmlrSummaryDisplay = hmlrCollapsed ? 'inline' : 'none';
+                  const hmlrChevronRotate = hmlrCollapsed ? '' : 'transform:rotate(90deg);';
+
+                  // Inline summary (when collapsed)
+                  let summaryInline = '';
+                  if (pulled) {
+                    const bits = [];
+                    if (titleNum) bits.push('<strong>' + sanitizeHtml(titleNum) + '</strong>');
+                    if (tenure) bits.push(sanitizeHtml(tenure));
+                    if (proprietors.length) bits.push(proprietors.length + ' proprietor' + (proprietors.length === 1 ? '' : 's'));
+                    if (charges.length) bits.push(charges.length + ' charge' + (charges.length === 1 ? '' : 's'));
+                    if (restrictions.length) bits.push(restrictions.length + ' restriction' + (restrictions.length === 1 ? '' : 's'));
+                    summaryInline = bits.join(' \u00B7 ');
+                  } else if (titleNum) {
+                    summaryInline = 'Title ' + sanitizeHtml(titleNum) + ' \u2014 not yet pulled';
+                  } else {
+                    summaryInline = 'No title number on file';
+                  }
+
+                  // Header + action buttons
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleHmlrPanel(' + p.id + ')">' +
+                    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                      '<span id="hmlr-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + hmlrChevronRotate + 'transition:transform 0.15s;">\u25B6</span>' +
+                      '<span style="font-size:10px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'HM Land Registry</span>' +
+                      '<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;background:' + pillBg + ';color:' + pillFg + ';">' + pillText + '</span>' +
+                      '<span id="hmlr-summary-' + p.id + '" style="display:' + hmlrSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">' + summaryInline + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                      (pulled ? '<span style="font-size:9px;color:#64748B;">Pulled ' + new Date(pulled).toLocaleDateString('en-GB') + '</span>' : '') +
+                      (titleNum
+                        ? '<button onclick="event.stopPropagation();window._hmlrPull(' + p.id + ', \'' + subId + '\', \'' + sanitizeHtml(titleNum).replace(/\'/g, '') + '\')" style="padding:3px 10px;background:' + (pulled ? 'rgba(167,139,250,0.12)' : '#A78BFA') + ';color:' + (pulled ? '#A78BFA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (pulled ? 'Re-pull' : 'Pull OC1') + '</button>'
+                        : '<button onclick="event.stopPropagation();window._hmlrSearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:#A78BFA;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Search title</button>') +
+                    '</div>' +
+                  '</div>';
+
+                  // Body — proprietors / charges / restrictions / error
+                  let bodyInner = '';
+                  if (pullErr) {
+                    bodyInner = '<div style="margin-top:8px;padding:8px 10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.2);border-radius:4px;font-size:11px;color:#F87171;">' +
+                      '<strong>HMLR pull error:</strong> ' + sanitizeHtml(pullErr) +
+                    '</div>';
+                  } else if (!pulled) {
+                    bodyInner = '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No HMLR data yet. ' +
+                      (titleNum ? 'Click <strong>Pull OC1</strong> to fetch the official copy of register (proprietors, charges, restrictions, tenure).'
+                                : 'No title number on file. Click <strong>Search title</strong> to find by postcode.') +
+                    '</div>';
+                  } else {
+                    // Top row — title meta
+                    const meta = [];
+                    if (titleNum) meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Title No</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;">' + sanitizeHtml(titleNum) + '</span>');
+                    if (tenure) meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Tenure</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;">' + sanitizeHtml(tenure) + '</span>');
+                    if (cls) meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Class</span><span style="font-size:12px;color:#F1F5F9;font-weight:700;">' + sanitizeHtml(cls) + '</span>');
+                    const metaRow = meta.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04);">' + meta.map(m => '<div>' + m + '</div>').join('') + '</div>' : '';
+
+                    // Proprietors
+                    let propsHtml = '';
+                    if (proprietors.length) {
+                      propsHtml = '<div style="margin-top:8px;"><div style="font-size:9px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Registered Proprietors (' + proprietors.length + ')</div>' +
+                        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+                          '<tbody>' +
+                          proprietors.map(pr => {
+                            const nm = pr.name || pr.proprietor_name || pr.proprietor || '\u2014';
+                            const co = pr.company_number ? ' <span style="font-size:9px;color:#94A3B8;">(' + sanitizeHtml(pr.company_number) + ')</span>' : '';
+                            const addr = pr.address || pr.proprietor_address || '';
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);"><td style="padding:4px 6px;color:#F1F5F9;font-weight:600;vertical-align:top;width:40%;">' + sanitizeHtml(nm) + co + '</td>' +
+                              '<td style="padding:4px 6px;color:#94A3B8;font-size:10px;">' + sanitizeHtml(addr) + '</td></tr>';
+                          }).join('') +
+                          '</tbody>' +
+                        '</table></div>';
+                    }
+
+                    // Charges
+                    let chargesHtml = '';
+                    if (charges.length) {
+                      chargesHtml = '<div style="margin-top:8px;"><div style="font-size:9px;color:#F87171;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Existing Charges (' + charges.length + ')</div>' +
+                        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+                          '<tbody>' +
+                          charges.map(c => {
+                            const lender = c.chargee || c.lender || c.in_favour_of || '\u2014';
+                            const dated = c.date || c.charge_date || '';
+                            const detail = c.particulars || c.detail || c.notes || '';
+                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);"><td style="padding:4px 6px;color:#F1F5F9;font-weight:600;vertical-align:top;width:35%;">' + sanitizeHtml(lender) + '</td>' +
+                              '<td style="padding:4px 6px;color:#94A3B8;font-size:10px;">' + sanitizeHtml(detail) + (dated ? ' <span style="color:#64748B;">(' + sanitizeHtml(dated) + ')</span>' : '') + '</td></tr>';
+                          }).join('') +
+                          '</tbody>' +
+                        '</table></div>';
+                    }
+
+                    // Restrictions
+                    let restrHtml = '';
+                    if (restrictions.length) {
+                      restrHtml = '<div style="margin-top:8px;"><div style="font-size:9px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Restrictions (' + restrictions.length + ')</div>' +
+                        '<ul style="margin:0;padding:0 0 0 18px;font-size:11px;color:#CBD5E1;">' +
+                          restrictions.map(r => {
+                            const txt = (typeof r === 'string') ? r : (r.text || r.particulars || r.detail || JSON.stringify(r));
+                            return '<li style="margin-bottom:3px;">' + sanitizeHtml(txt) + '</li>';
+                          }).join('') +
+                        '</ul></div>';
+                    }
+
+                    // Empty-state if pulled but nothing found
+                    if (!proprietors.length && !charges.length && !restrictions.length) {
+                      bodyInner = metaRow + '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No proprietors, charges or restrictions in the returned record.</div>';
+                    } else {
+                      bodyInner = metaRow + propsHtml + chargesHtml + restrHtml;
+                    }
+
+                    // PDF link
+                    if (p.hmlr_register_pdf_url) {
+                      bodyInner += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.04);"><a href="' + sanitizeHtml(p.hmlr_register_pdf_url) + '" target="_blank" rel="noopener" style="font-size:11px;color:#A78BFA;font-weight:600;text-decoration:none;">\u2197 View official register PDF</a></div>';
+                    }
+                  }
+
+                  return '<div id="hmlr-panel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(167,139,250,0.03);border:1px solid rgba(167,139,250,0.2);border-radius:6px;">' +
+                    headerRow +
+                    '<div id="hmlr-body-' + p.id + '" style="display:' + hmlrBodyDisplay + ';">' +
+                      bodyInner +
+                    '</div>' +
+                  '</div>';
+                })();
+
                 return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;cursor:pointer;" onclick="window._togglePropPanel(' + p.id + ')">' +
                     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
@@ -2629,7 +2799,8 @@ export async function renderDealMatrix(deal) {
                   '</div>' + // close prop-body
                 '</div>' +
                 chimnieHtml +
-                areaHtml;
+                areaHtml +
+                hmlrHtml;
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -6620,11 +6791,18 @@ export async function renderDealMatrix(deal) {
     const _isCorporate = (bor.borrower_type === 'corporate') ||
       (bor.full_name && /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group)\b/i.test(bor.full_name));
 
+    // SmartSearch KYC/AML panel — admin-only (2026-04-27).
+    // Renders status pills per check_type and action buttons. Reads deal.kyc_checks
+    // populated by the admin endpoint.
+    const ssPanelHtml = (typeof window._buildSmartSearchPanel === 'function')
+      ? window._buildSmartSearchPanel(bor, deal)
+      : '';
+
     let innerBody;
     if (_isCorporate) {
       // G5.3 Part B Commit 2 — delegate to shared renderer.
       // Renderer handles nested kids with inline expandable sub-panels + broker-trace banner.
-      innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0);
+      innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0) + ssPanelHtml;
     } else {
       // Individual detail (unchanged legacy layout)
       innerBody =
@@ -6672,7 +6850,10 @@ export async function renderDealMatrix(deal) {
         '</div>' +
 
         // ── CH Match Data (bottom) ──
-        chMatchHtml;
+        chMatchHtml +
+
+        // ── SmartSearch KYC/AML panel (admin-only) ──
+        ssPanelHtml;
     }
 
     const detailHtml = '<tr id="borrower-detail-' + borrowerId + '">' +
@@ -8723,6 +8904,490 @@ window._toggleChimniePanel = function(propertyId) {
     body.style.display = 'none';
     if (summary) summary.style.display = 'inline';
     if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Toggle HMLR panel (2026-04-27) ─────────────────────────────────────────
+// Mirrors _toggleChimniePanel for the HM Land Registry sub-panel.
+window._toggleHmlrPanel = function(propertyId) {
+  const body = document.getElementById('hmlr-body-' + propertyId);
+  const chevron = document.getElementById('hmlr-chevron-' + propertyId);
+  const summary = document.getElementById('hmlr-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── HMLR title search by postcode (2026-04-27) ─────────────────────────────
+// Calls POST /api/admin/hmlr/search to discover the title number, then
+// prompts to confirm + persist. Free in mock mode; live mode is per-call.
+window._hmlrSearch = async function(propertyId, submissionId) {
+  const prop = window.currentDealData && window.currentDealData.properties
+    ? window.currentDealData.properties.find(p => p.id === propertyId) : null;
+  const postcode = prop && prop.postcode ? prop.postcode : prompt('Postcode for HMLR title search:');
+  if (!postcode) return;
+  const houseNumber = prompt('House number / name (optional):', '');
+
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/hmlr/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postcode, houseNumber: houseNumber || undefined })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('HMLR search failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Search title'; btn.style.opacity = '1'; }
+      return;
+    }
+    const titleNumbers = (data.data && data.data.title_numbers) || (data.titles || []);
+    if (!titleNumbers.length) {
+      alert('No titles found for ' + postcode + (houseNumber ? ' (' + houseNumber + ')' : ''));
+      if (btn) { btn.disabled = false; btn.textContent = 'Search title'; btn.style.opacity = '1'; }
+      return;
+    }
+    const chosen = titleNumbers.length === 1
+      ? titleNumbers[0]
+      : prompt('Multiple titles returned — pick one:\n\n' + titleNumbers.join('\n'), titleNumbers[0]);
+    if (!chosen) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Search title'; btn.style.opacity = '1'; }
+      return;
+    }
+    if (!confirm('Pull official register (OC1) for title ' + chosen + '?\n\nThis will charge the per-call fee in live mode (free in mock).')) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Search title'; btn.style.opacity = '1'; }
+      return;
+    }
+    return window._hmlrPull(propertyId, submissionId, chosen);
+  } catch (err) {
+    console.error('[hmlr-search] Error:', err);
+    alert('HMLR search error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Search title'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── HMLR OC1 pull — chargeable in live mode (2026-04-27) ───────────────────
+// Calls POST /api/admin/hmlr/pull/:propertyId with title number; backend
+// persists hmlr_* columns and refreshes the deal in-place.
+window._hmlrPull = async function(propertyId, submissionId, titleNumber) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/hmlr/pull/${propertyId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ titleNumber })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('HMLR pull failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Pull OC1'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[hmlr-pull] Error:', err);
+    alert('HMLR pull error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Pull OC1'; btn.style.opacity = '1'; }
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── SmartSearch (KYC / AML / Sanctions / PEP / Monitoring) — admin panels ──
+// ════════════════════════════════════════════════════════════════════════════
+// Renders an inline expandable panel under each borrower card. Reads
+// `deal.kyc_checks` (populated by routes/admin.js GET /api/admin/deals/:id) and
+// renders a status pill per check_type plus action buttons. Mirrors the HMLR
+// pattern: chevron + title + status pills inline; click to expand for full
+// detail (vendor reference, score, mode, cost, raw subject, etc.).
+//
+// Borrower-type heuristics:
+//   - corporate parent  : has children where parent_borrower_id = bor.id, OR
+//                         borrower_type === 'corporate', OR name pattern
+//                         (Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Group)
+//   - director          : parent_borrower_id IS NOT NULL (rendered with KYC +
+//                         sanctions; KYB suppressed)
+//   - individual primary: borrower_type === 'individual' (KYC + sanctions)
+//
+// Match logic for `deal.kyc_checks` rows:
+//   - business_kyb        : row.borrower_id === bor.id  (always corporate side)
+//   - individual_kyc      : row.borrower_id === bor.id
+//   - sanctions_pep       : row.borrower_id === bor.id
+//   - ongoing_monitoring  : parent_check_id of any matched row above
+// Latest-per-check_type wins (deal.kyc_checks is ordered DESC by requested_at).
+// ────────────────────────────────────────────────────────────────────────────
+window._buildSmartSearchPanel = function(bor, deal) {
+  if (!bor || typeof bor !== 'object') return '';
+
+  // Admin-only — degrades to empty string for brokers
+  const _internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+  const _userRole = (typeof getCurrentRole === 'function' ? getCurrentRole() : null) || '';
+  if (!_internalRoles.includes(String(_userRole).toLowerCase())) return '';
+
+  const submissionId = (deal && (deal.submission_id || deal.id)) || '';
+  const borrowerId = bor.id;
+  if (!borrowerId || !submissionId) return '';
+
+  // Borrower classification
+  const corporateNamePattern = /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group|Plc)\b/i;
+  const isCorporate = (bor.borrower_type === 'corporate') ||
+    (bor.full_name && corporateNamePattern.test(bor.full_name)) ||
+    !!bor.company_number || !!bor.company_name;
+  const isDirector = !!bor.parent_borrower_id;
+
+  // Check whether this corporate has child directors (drives the "Sweep" button)
+  const allBorrowers = (deal && Array.isArray(deal.borrowers)) ? deal.borrowers : [];
+  const childDirectors = allBorrowers.filter(b => b && b.parent_borrower_id === borrowerId);
+  const hasDirectors = childDirectors.length > 0;
+
+  // Pull and dedupe latest-per-check_type for this subject.
+  const allChecks = (deal && Array.isArray(deal.kyc_checks)) ? deal.kyc_checks : [];
+  const subjectChecks = allChecks.filter(c => c && c.borrower_id === borrowerId);
+
+  // Group by check_type; first one wins (server returns DESC by requested_at)
+  const latestByType = {};
+  subjectChecks.forEach(c => {
+    if (c.is_monitoring_update) return; // monitoring updates handled separately
+    if (!latestByType[c.check_type]) latestByType[c.check_type] = c;
+  });
+
+  // Monitoring update events keyed by parent_check_id
+  const monitoringUpdates = allChecks.filter(c =>
+    c && c.is_monitoring_update && c.parent_check_id != null
+  );
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const statusPalette = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'pass')   return { bg: 'rgba(52,211,153,0.15)',  fg: '#34D399', label: 'Pass' };
+    if (s === 'refer')  return { bg: 'rgba(251,191,36,0.15)',  fg: '#FBBF24', label: 'Refer' };
+    if (s === 'fail')   return { bg: 'rgba(248,113,113,0.15)', fg: '#F87171', label: 'Fail' };
+    if (s === 'error')  return { bg: 'rgba(248,113,113,0.10)', fg: '#F87171', label: 'Error' };
+    return { bg: 'rgba(100,116,139,0.15)', fg: '#94A3B8', label: status || 'Unknown' };
+  };
+  const modePalette = (mode) => {
+    const m = String(mode || '').toLowerCase();
+    if (m === 'live')  return { bg: 'rgba(212,168,83,0.15)',  fg: '#D4A853', label: 'LIVE' };
+    if (m === 'test')  return { bg: 'rgba(96,165,250,0.15)',  fg: '#60A5FA', label: 'TEST' };
+    if (m === 'mock')  return { bg: 'rgba(167,139,250,0.15)', fg: '#A78BFA', label: 'MOCK' };
+    return { bg: 'rgba(100,116,139,0.15)', fg: '#94A3B8', label: mode || '?' };
+  };
+  const checkTypeLabel = {
+    individual_kyc:     'Individual KYC',
+    business_kyb:       'Business KYB',
+    sanctions_pep:      'Sanctions / PEP',
+    ongoing_monitoring: 'Monitoring',
+  };
+  const fmtCost = (p) => {
+    const n = Number(p);
+    if (!isFinite(n) || n <= 0) return '£0';
+    return n < 100 ? (n + 'p') : ('£' + (n / 100).toFixed(2));
+  };
+  const fmtDateTime = (iso) => {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+    catch (_) { return String(iso); }
+  };
+
+  // ── Determine which check_types are applicable for this subject ───────────
+  const applicableTypes = isCorporate
+    ? ['business_kyb']
+    : ['individual_kyc', 'sanctions_pep'];
+
+  // ── Build inline status pills (always visible, even when collapsed) ───────
+  const pills = applicableTypes.map(t => {
+    const c = latestByType[t];
+    if (!c) {
+      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;background:rgba(100,116,139,0.10);color:#64748B;">' +
+        sanitizeHtml(checkTypeLabel[t] || t) + ' · not run</span>';
+    }
+    const sp = statusPalette(c.result_status);
+    const mp = modePalette(c.mode);
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;background:' + sp.bg + ';color:' + sp.fg + ';">' +
+      sanitizeHtml(checkTypeLabel[t] || t) + ' · ' + sp.label +
+      ' <span style="font-size:8px;padding:1px 4px;border-radius:3px;background:' + mp.bg + ';color:' + mp.fg + ';margin-left:2px;">' + mp.label + '</span>' +
+    '</span>';
+  }).join(' ');
+
+  // ── Action buttons (right-aligned in header) ──────────────────────────────
+  const btnStyle = 'padding:3px 10px;background:#A78BFA;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;';
+  const btnStyleGhost = 'padding:3px 10px;background:rgba(167,139,250,0.12);color:#A78BFA;border:1px solid rgba(167,139,250,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;';
+  const actions = [];
+  if (isCorporate) {
+    const hasKyb = !!latestByType.business_kyb;
+    actions.push('<button onclick="event.stopPropagation();window._kycRunBusiness(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasKyb ? btnStyleGhost : btnStyle) + '">' + (hasKyb ? 'Re-run KYB' : 'Run KYB') + '</button>');
+    if (hasDirectors) {
+      actions.push('<button onclick="event.stopPropagation();window._kycSweep(' + borrowerId + ', \'' + submissionId + '\')" style="' + btnStyle + '">Sweep ' + childDirectors.length + ' director' + (childDirectors.length === 1 ? '' : 's') + '</button>');
+    }
+  } else {
+    const hasKyc = !!latestByType.individual_kyc;
+    const hasSan = !!latestByType.sanctions_pep;
+    actions.push('<button onclick="event.stopPropagation();window._kycRunIndividual(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasKyc ? btnStyleGhost : btnStyle) + '">' + (hasKyc ? 'Re-run KYC' : 'Run KYC') + '</button>');
+    actions.push('<button onclick="event.stopPropagation();window._kycRunSanctions(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasSan ? btnStyleGhost : btnStyle) + '">' + (hasSan ? 'Re-run Sanctions' : 'Run Sanctions') + '</button>');
+  }
+
+  // Most-recent timestamp across all subject checks (for the "Last pulled" hint)
+  let mostRecentRequestedAt = null;
+  Object.values(latestByType).forEach(c => {
+    if (!mostRecentRequestedAt || (c.requested_at && c.requested_at > mostRecentRequestedAt)) {
+      mostRecentRequestedAt = c.requested_at;
+    }
+  });
+  const lastPulledHint = mostRecentRequestedAt
+    ? '<span style="font-size:9px;color:#64748B;">Last ' + sanitizeHtml(fmtDateTime(mostRecentRequestedAt)) + '</span>'
+    : '';
+
+  // ── Header (always visible, click to expand) ──────────────────────────────
+  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleSmartSearchPanel(' + borrowerId + ')">' +
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+      '<span id="ss-chevron-' + borrowerId + '" style="display:inline-block;font-size:10px;color:#64748B;transition:transform 0.15s;">\u25B6</span>' +
+      '<span style="font-size:10px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">SmartSearch KYC/AML</span>' +
+      pills +
+    '</div>' +
+    '<div style="display:flex;gap:6px;align-items:center;">' +
+      lastPulledHint +
+      actions.join('') +
+    '</div>' +
+  '</div>';
+
+  // ── Body — full per-check detail (collapsed by default) ───────────────────
+  let bodyInner = '';
+  const subjectChecksForBody = applicableTypes
+    .map(t => latestByType[t])
+    .filter(Boolean);
+
+  if (subjectChecksForBody.length === 0) {
+    bodyInner = '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No KYC/AML checks run yet for this subject. ' +
+      (isCorporate ? 'Click <strong>Run KYB</strong> to fetch incorporation, status, directors and UBOs.'
+                   : 'Click <strong>Run KYC</strong> for identity verification, then <strong>Run Sanctions</strong> for screening.') +
+      '</div>';
+  } else {
+    bodyInner = subjectChecksForBody.map(c => {
+      const sp = statusPalette(c.result_status);
+      const mp = modePalette(c.mode);
+      const updates = monitoringUpdates.filter(u => u.parent_check_id === c.id);
+      const canMonitor = (String(c.result_status).toLowerCase() === 'pass') && !updates.length;
+
+      const meta = [];
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Status</span>' +
+        '<span style="font-size:11px;font-weight:700;color:' + sp.fg + ';">' + sp.label + (c.result_score != null ? ' (' + c.result_score + ')' : '') + '</span>');
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Mode</span>' +
+        '<span style="font-size:11px;font-weight:700;color:' + mp.fg + ';">' + mp.label + '</span>');
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Cost</span>' +
+        '<span style="font-size:11px;color:#F1F5F9;font-weight:700;">' + fmtCost(c.cost_pence) + '</span>');
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Run</span>' +
+        '<span style="font-size:11px;color:#F1F5F9;font-weight:700;">' + sanitizeHtml(fmtDateTime(c.requested_at)) + '</span>');
+
+      // Subject (depends on check type)
+      let subjectLine = '';
+      if (c.check_type === 'business_kyb' && c.subject_company_name) {
+        subjectLine = '<div style="margin-top:6px;font-size:10px;color:#94A3B8;">' +
+          '<strong>Subject:</strong> ' + sanitizeHtml(c.subject_company_name) +
+          (c.subject_company_number ? ' <span style="color:#64748B;">(' + sanitizeHtml(c.subject_company_number) + ')</span>' : '') +
+        '</div>';
+      } else if (c.subject_first_name || c.subject_last_name) {
+        subjectLine = '<div style="margin-top:6px;font-size:10px;color:#94A3B8;">' +
+          '<strong>Subject:</strong> ' + sanitizeHtml((c.subject_first_name || '') + ' ' + (c.subject_last_name || '')).trim() +
+        '</div>';
+      }
+
+      // Error block
+      const errBlock = c.pull_error
+        ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.2);border-radius:4px;font-size:10px;color:#F87171;"><strong>Error:</strong> ' + sanitizeHtml(c.pull_error) + '</div>'
+        : '';
+
+      // Monitoring controls / status
+      let monitorBlock = '';
+      if (updates.length) {
+        const last = updates[0];
+        monitorBlock = '<div style="margin-top:6px;padding:6px 8px;background:rgba(96,165,250,0.06);border-left:2px solid #60A5FA;font-size:10px;color:#CBD5E1;">' +
+          '<strong style="color:#60A5FA;">Monitoring active</strong> · last update ' + sanitizeHtml(fmtDateTime(last.requested_at)) +
+          ' · status <strong>' + sanitizeHtml(last.result_status || '\u2014') + '</strong>' +
+        '</div>';
+      } else if (canMonitor) {
+        monitorBlock = '<div style="margin-top:6px;text-align:right;">' +
+          '<button onclick="event.stopPropagation();window._kycEnrolMonitoring(' + c.id + ', \'' + submissionId + '\')" style="' + btnStyleGhost + '">Enrol monitoring</button>' +
+        '</div>';
+      }
+
+      return '<div style="margin-top:8px;padding:8px 10px;background:rgba(167,139,250,0.04);border:1px solid rgba(167,139,250,0.15);border-radius:5px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<div style="font-size:10px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + sanitizeHtml(checkTypeLabel[c.check_type] || c.check_type) + '</div>' +
+          (c.id ? '<div style="font-size:9px;color:#64748B;">#' + c.id + '</div>' : '') +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;">' +
+          meta.map(m => '<div>' + m + '</div>').join('') +
+        '</div>' +
+        subjectLine +
+        errBlock +
+        monitorBlock +
+      '</div>';
+    }).join('');
+  }
+
+  return '<div id="ss-panel-' + borrowerId + '" style="margin-top:8px;padding:10px 12px;background:rgba(167,139,250,0.03);border:1px solid rgba(167,139,250,0.2);border-radius:6px;">' +
+    headerRow +
+    '<div id="ss-body-' + borrowerId + '" style="display:none;">' +
+      bodyInner +
+    '</div>' +
+  '</div>';
+};
+
+// ── Toggle SmartSearch panel (2026-04-27) ──────────────────────────────────
+window._toggleSmartSearchPanel = function(borrowerId) {
+  const body = document.getElementById('ss-body-' + borrowerId);
+  const chevron = document.getElementById('ss-chevron-' + borrowerId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Run Individual KYC (2026-04-27) ────────────────────────────────────────
+// POST /api/admin/kyc/individual/:borrowerId — uses borrower's stored name/dob
+window._kycRunIndividual = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Running...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/kyc/individual/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('KYC failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run KYC'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[kyc-individual] Error:', err);
+    alert('KYC error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run KYC'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Run Sanctions / PEP (2026-04-27) ───────────────────────────────────────
+// POST /api/admin/kyc/sanctions/:borrowerId
+window._kycRunSanctions = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Screening...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/kyc/sanctions/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Sanctions screen failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Sanctions'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[kyc-sanctions] Error:', err);
+    alert('Sanctions error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Sanctions'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Run Business KYB (2026-04-27) ──────────────────────────────────────────
+// POST /api/admin/kyc/business/:borrowerId — uses corporate's company_number
+window._kycRunBusiness = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Running KYB...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/kyc/business/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('KYB failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run KYB'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[kyc-business] Error:', err);
+    alert('KYB error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run KYB'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Sweep directors (2026-04-27) ───────────────────────────────────────────
+// POST /api/admin/kyc/sweep/:borrowerId — KYB on parent + KYC + sanctions on
+// every linked director. Cost depends on mode (mock = £0).
+window._kycSweep = async function(borrowerId, submissionId) {
+  if (!confirm('Run KYB on parent + KYC + sanctions on every linked director?\n\nIn live mode this fires 1 KYB + N×2 individual checks (per director).')) return;
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Sweeping...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/kyc/sweep/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeKyb: true, includeIndividual: true, includeSanctions: true })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Sweep failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Sweep directors'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[kyc-sweep] Error:', err);
+    alert('Sweep error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Sweep directors'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Enrol passed check into ongoing monitoring (2026-04-27) ────────────────
+// POST /api/admin/kyc/monitor/:checkId — vendor pushes status changes via the
+// HMAC-verified webhook at /api/webhooks/smartsearch.
+window._kycEnrolMonitoring = async function(checkId, submissionId) {
+  if (!confirm('Enrol this passed check into ongoing monitoring?\n\nVendor will push status updates via webhook. Recurring fee per subject per month in live mode.')) return;
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enrolling...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/kyc/monitor/${checkId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Monitor enrol failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Enrol monitoring'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[kyc-monitor] Error:', err);
+    alert('Monitor error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Enrol monitoring'; btn.style.opacity = '1'; }
   }
 };
 
