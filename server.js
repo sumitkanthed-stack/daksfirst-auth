@@ -25,6 +25,7 @@ const companiesHouseRoutes = require('./routes/companies-house');
 const riskRoutes = require('./routes/risk');
 const hmlrRoutes = require('./routes/hmlr');
 const { adminRouter: kycAdminRoutes, webhookRouter: smartsearchWebhookRoutes } = require('./routes/kyc');
+const { adminRouter: creditAdminRoutes } = require('./routes/credit');
 
 // Initialize Express app
 const app = express();
@@ -86,7 +87,8 @@ app.get('/api/health', async (req, res) => {
     chimnie: config.CHIMNIE_API_KEY ? 'configured' : 'not configured',
     ptal: ptalStatus.loaded ? `${ptalStatus.cells.toLocaleString()} cells loaded` : 'not loaded',
     hmlr: `mode=${config.HMLR_MODE}${(config.HMLR_USERNAME && config.HMLR_PASSWORD) ? ' creds=ok' : ' creds=missing'}${(config.HMLR_CLIENT_CERT && config.HMLR_CLIENT_KEY) ? ' cert=ok' : ' cert=missing'}`,
-    smartsearch: `mode=${config.SMARTSEARCH_MODE}${(config.SMARTSEARCH_USERNAME && config.SMARTSEARCH_PASSWORD) ? ' creds=ok' : ' creds=missing'}${config.SMARTSEARCH_API_KEY ? ' apikey=ok' : ' apikey=missing'}${config.SMARTSEARCH_WEBHOOK_SECRET ? ' webhook=ok' : ' webhook=missing'}`
+    smartsearch: `mode=${config.SMARTSEARCH_MODE}${(config.SMARTSEARCH_USERNAME && config.SMARTSEARCH_PASSWORD) ? ' creds=ok' : ' creds=missing'}${config.SMARTSEARCH_API_KEY ? ' apikey=ok' : ' apikey=missing'}${config.SMARTSEARCH_WEBHOOK_SECRET ? ' webhook=ok' : ' webhook=missing'}`,
+    experian: `mode=${config.EXPERIAN_MODE || 'mock'}${(config.EXPERIAN_CLIENT_ID && config.EXPERIAN_CLIENT_SECRET) ? ' creds=ok' : ' creds=missing'}`
   });
 });
 
@@ -108,6 +110,7 @@ app.use('/api', riskRoutes);          // Mounts /admin/risk-runs/start (token+in
 app.use('/api/admin/hmlr', hmlrRoutes); // HM Land Registry — admin-only (status, search, pull, property)
 app.use('/api/admin/kyc', kycAdminRoutes); // SmartSearch KYC/AML — admin-only (status, individual, business, sanctions, sweep, monitor, checks, check)
 app.use('/api/webhooks/smartsearch', smartsearchWebhookRoutes); // SmartSearch ongoing-monitoring webhook (HMAC-verified, public)
+app.use('/api/admin/credit', creditAdminRoutes); // Experian credit bureau — admin-only (status, personal, business, hunter, sweep, checks, check, latest)
 
 // Error handling
 app.use((err, req, res, next) => {

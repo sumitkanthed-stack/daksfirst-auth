@@ -881,6 +881,10 @@ export async function renderDealMatrix(deal) {
                     ${(isInternalUser && primaryRow && typeof window._buildSmartSearchPanel === 'function')
                       ? window._buildSmartSearchPanel(primaryRow, deal) : ''}
 
+                    <!-- ── A.2 Experian credit bureau (admin-only, primary corporate) ── -->
+                    ${(isInternalUser && primaryRow && typeof window._buildExperianPanel === 'function')
+                      ? window._buildExperianPanel(primaryRow, deal) : ''}
+
                     <!-- ── B. Companies House Verification ── -->
                     ${deal.company_number ? `
                     <div style="margin-bottom:12px;">
@@ -6798,11 +6802,19 @@ export async function renderDealMatrix(deal) {
       ? window._buildSmartSearchPanel(bor, deal)
       : '';
 
+    // Experian credit bureau panel — admin-only (2026-04-27).
+    // Reads deal.credit_checks populated by the admin endpoint. Mirrors the
+    // SmartSearch pattern: status pills per product (personal_credit /
+    // commercial_delphi / hunter_fraud) + action buttons.
+    const expPanelHtml = (typeof window._buildExperianPanel === 'function')
+      ? window._buildExperianPanel(bor, deal)
+      : '';
+
     let innerBody;
     if (_isCorporate) {
       // G5.3 Part B Commit 2 — delegate to shared renderer.
       // Renderer handles nested kids with inline expandable sub-panels + broker-trace banner.
-      innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0) + ssPanelHtml;
+      innerBody = window._renderCorporatePanelHtml(bor, deal, canEdit, 0) + ssPanelHtml + expPanelHtml;
     } else {
       // Individual detail (unchanged legacy layout)
       innerBody =
@@ -6853,7 +6865,10 @@ export async function renderDealMatrix(deal) {
         chMatchHtml +
 
         // ── SmartSearch KYC/AML panel (admin-only) ──
-        ssPanelHtml;
+        ssPanelHtml +
+
+        // ── Experian credit bureau panel (admin-only) ──
+        expPanelHtml;
     }
 
     const detailHtml = '<tr id="borrower-detail-' + borrowerId + '">' +
@@ -9388,6 +9403,392 @@ window._kycEnrolMonitoring = async function(checkId, submissionId) {
     console.error('[kyc-monitor] Error:', err);
     alert('Monitor error: ' + err.message);
     if (btn) { btn.disabled = false; btn.textContent = orig || 'Enrol monitoring'; btn.style.opacity = '1'; }
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPERIAN CREDIT BUREAU PANEL — admin-only borrower credit history
+// (2026-04-27, EXP-B6)
+// ════════════════════════════════════════════════════════════════════════════
+// Mirrors _buildSmartSearchPanel pattern but wraps the Experian product
+// surface (personal_credit / commercial_delphi / hunter_fraud) instead of
+// SmartSearch checks. Uses a sky-blue (#38BDF8) palette to differentiate
+// visually from SmartSearch's purple.
+//
+// Match logic for `deal.credit_checks` rows:
+//   - personal_credit  : row.borrower_id === bor.id  AND  individual subject
+//   - commercial_delphi: row.borrower_id === bor.id  AND  corporate subject
+//   - hunter_fraud     : row.borrower_id === bor.id  (individual only)
+// Latest-per-product wins (rows arrive DESC by requested_at).
+// ────────────────────────────────────────────────────────────────────────────
+window._buildExperianPanel = function(bor, deal) {
+  if (!bor || typeof bor !== 'object') return '';
+
+  // Admin-only — degrades to empty string for brokers
+  const _internalRoles = ['admin', 'rm', 'credit', 'compliance'];
+  const _userRole = (typeof getCurrentRole === 'function' ? getCurrentRole() : null) || '';
+  if (!_internalRoles.includes(String(_userRole).toLowerCase())) return '';
+
+  const submissionId = (deal && (deal.submission_id || deal.id)) || '';
+  const borrowerId = bor.id;
+  if (!borrowerId || !submissionId) return '';
+
+  // Borrower classification — same heuristic as SmartSearch panel
+  const corporateNamePattern = /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group|Plc)\b/i;
+  const isCorporate = (bor.borrower_type === 'corporate') ||
+    (bor.full_name && corporateNamePattern.test(bor.full_name)) ||
+    !!bor.company_number || !!bor.company_name;
+
+  // Director sweep — only meaningful for corporate parents with linked directors
+  const allBorrowers = (deal && Array.isArray(deal.borrowers)) ? deal.borrowers : [];
+  const childDirectors = allBorrowers.filter(b => b && b.parent_borrower_id === borrowerId);
+  const hasDirectors = childDirectors.length > 0;
+
+  // Pull this borrower's latest-per-product checks
+  const allChecks = (deal && Array.isArray(deal.credit_checks)) ? deal.credit_checks : [];
+  const subjectChecks = allChecks.filter(c => c && c.borrower_id === borrowerId);
+  const latestByProduct = {};
+  subjectChecks.forEach(c => {
+    if (!latestByProduct[c.product]) latestByProduct[c.product] = c;
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const statusPalette = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'pass')       return { bg: 'rgba(52,211,153,0.15)',  fg: '#34D399', label: 'Pass' };
+    if (s === 'refer')      return { bg: 'rgba(251,191,36,0.15)',  fg: '#FBBF24', label: 'Refer' };
+    if (s === 'fail')       return { bg: 'rgba(248,113,113,0.15)', fg: '#F87171', label: 'Fail' };
+    if (s === 'high_risk')  return { bg: 'rgba(248,113,113,0.15)', fg: '#F87171', label: 'High risk' };
+    if (s === 'error')      return { bg: 'rgba(248,113,113,0.10)', fg: '#F87171', label: 'Error' };
+    return { bg: 'rgba(100,116,139,0.15)', fg: '#94A3B8', label: status || 'Unknown' };
+  };
+  const modePalette = (mode) => {
+    const m = String(mode || '').toLowerCase();
+    if (m === 'live')  return { bg: 'rgba(212,168,83,0.15)',  fg: '#D4A853', label: 'LIVE' };
+    if (m === 'test')  return { bg: 'rgba(96,165,250,0.15)',  fg: '#60A5FA', label: 'TEST' };
+    if (m === 'mock')  return { bg: 'rgba(167,139,250,0.15)', fg: '#A78BFA', label: 'MOCK' };
+    return { bg: 'rgba(100,116,139,0.15)', fg: '#94A3B8', label: mode || '?' };
+  };
+  const productLabel = {
+    personal_credit:    'Personal Credit',
+    commercial_delphi:  'Commercial Delphi',
+    hunter_fraud:       'Hunter Fraud',
+  };
+  const fmtCost = (p) => {
+    const n = Number(p);
+    if (!isFinite(n) || n <= 0) return '£0';
+    return n < 100 ? (n + 'p') : ('£' + (n / 100).toFixed(2));
+  };
+  const fmtMoney = (pence) => {
+    const n = Number(pence);
+    if (!isFinite(n) || n <= 0) return '—';
+    if (n >= 100000) return '£' + Math.round(n / 100000) + 'k';
+    return '£' + (n / 100).toLocaleString('en-GB');
+  };
+  const fmtDateTime = (iso) => {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+    catch (_) { return String(iso); }
+  };
+
+  // ── Determine which products are applicable for this subject ──────────────
+  const applicableProducts = isCorporate
+    ? ['commercial_delphi']
+    : ['personal_credit', 'hunter_fraud'];
+
+  // ── Inline status pills ───────────────────────────────────────────────────
+  const pills = applicableProducts.map(p => {
+    const c = latestByProduct[p];
+    if (!c) {
+      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;background:rgba(100,116,139,0.10);color:#64748B;">' +
+        sanitizeHtml(productLabel[p] || p) + ' · not run</span>';
+    }
+    const sp = statusPalette(c.result_status);
+    const mp = modePalette(c.mode);
+    // Score in pill if present (commercial 0-100, personal 0-999)
+    const scoreFrag = (c.credit_score != null) ? ' · ' + c.credit_score : (c.result_grade ? ' · ' + sanitizeHtml(c.result_grade) : '');
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;background:' + sp.bg + ';color:' + sp.fg + ';">' +
+      sanitizeHtml(productLabel[p] || p) + ' · ' + sp.label + scoreFrag +
+      ' <span style="font-size:8px;padding:1px 4px;border-radius:3px;background:' + mp.bg + ';color:' + mp.fg + ';margin-left:2px;">' + mp.label + '</span>' +
+    '</span>';
+  }).join(' ');
+
+  // ── Action buttons ────────────────────────────────────────────────────────
+  const btnStyle = 'padding:3px 10px;background:#38BDF8;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;';
+  const btnStyleGhost = 'padding:3px 10px;background:rgba(56,189,248,0.12);color:#38BDF8;border:1px solid rgba(56,189,248,0.3);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;';
+  const actions = [];
+  if (isCorporate) {
+    const hasComm = !!latestByProduct.commercial_delphi;
+    actions.push('<button onclick="event.stopPropagation();window._creditRunBusiness(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasComm ? btnStyleGhost : btnStyle) + '">' + (hasComm ? 'Re-pull Commercial' : 'Run Commercial') + '</button>');
+    if (hasDirectors) {
+      actions.push('<button onclick="event.stopPropagation();window._creditSweep(' + borrowerId + ', \'' + submissionId + '\')" style="' + btnStyle + '">Sweep ' + childDirectors.length + ' director' + (childDirectors.length === 1 ? '' : 's') + '</button>');
+    }
+  } else {
+    const hasPersonal = !!latestByProduct.personal_credit;
+    const hasHunter = !!latestByProduct.hunter_fraud;
+    actions.push('<button onclick="event.stopPropagation();window._creditRunPersonal(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasPersonal ? btnStyleGhost : btnStyle) + '">' + (hasPersonal ? 'Re-pull Personal' : 'Run Personal') + '</button>');
+    actions.push('<button onclick="event.stopPropagation();window._creditRunHunter(' + borrowerId + ', \'' + submissionId + '\')" style="' + (hasHunter ? btnStyleGhost : btnStyle) + '">' + (hasHunter ? 'Re-pull Hunter' : 'Run Hunter') + '</button>');
+  }
+
+  // Most-recent timestamp
+  let mostRecentRequestedAt = null;
+  Object.values(latestByProduct).forEach(c => {
+    if (!mostRecentRequestedAt || (c.requested_at && c.requested_at > mostRecentRequestedAt)) {
+      mostRecentRequestedAt = c.requested_at;
+    }
+  });
+  const lastPulledHint = mostRecentRequestedAt
+    ? '<span style="font-size:9px;color:#64748B;">Last ' + sanitizeHtml(fmtDateTime(mostRecentRequestedAt)) + '</span>'
+    : '';
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleExperianPanel(' + borrowerId + ')">' +
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+      '<span id="exp-chevron-' + borrowerId + '" style="display:inline-block;font-size:10px;color:#64748B;transition:transform 0.15s;">\u25B6</span>' +
+      '<span style="font-size:10px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Experian Credit Bureau</span>' +
+      pills +
+    '</div>' +
+    '<div style="display:flex;gap:6px;align-items:center;">' +
+      lastPulledHint +
+      actions.join('') +
+    '</div>' +
+  '</div>';
+
+  // ── Body — per-product detail card ────────────────────────────────────────
+  let bodyInner = '';
+  const subjectChecksForBody = applicableProducts
+    .map(p => latestByProduct[p])
+    .filter(Boolean);
+
+  if (subjectChecksForBody.length === 0) {
+    bodyInner = '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No credit bureau data pulled yet for this subject. ' +
+      (isCorporate ? 'Click <strong>Run Commercial</strong> for Commercial Delphi score, recommended limit, payment behaviour and gazette/CCJ history.'
+                   : 'Click <strong>Run Personal</strong> for Delphi Select score (0-999) + CCJ + bankruptcy + IVA + electoral roll. <strong>Run Hunter</strong> screens CIFAS fraud markers.') +
+      '</div>';
+  } else {
+    bodyInner = subjectChecksForBody.map(c => {
+      const sp = statusPalette(c.result_status);
+      const mp = modePalette(c.mode);
+
+      const meta = [];
+      // Status
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Status</span>' +
+        '<span style="font-size:11px;font-weight:700;color:' + sp.fg + ';">' + sp.label + '</span>');
+      // Score (Delphi 0-999, Commercial 0-100, Hunter match count)
+      if (c.product === 'hunter_fraud') {
+        const hits = (c.hunter_match_count != null) ? c.hunter_match_count : 0;
+        const hitsColor = hits === 0 ? '#34D399' : '#F87171';
+        meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">CIFAS hits</span>' +
+          '<span style="font-size:11px;font-weight:700;color:' + hitsColor + ';">' + hits + '</span>');
+      } else if (c.credit_score != null) {
+        const scoreLabel = c.product === 'commercial_delphi' ? 'Score / 100' : 'Score / 999';
+        meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">' + scoreLabel + '</span>' +
+          '<span style="font-size:11px;font-weight:700;color:#F1F5F9;">' + c.credit_score + (c.result_grade ? ' (' + sanitizeHtml(c.result_grade) + ')' : '') + '</span>');
+      } else if (c.result_grade) {
+        meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Grade</span>' +
+          '<span style="font-size:11px;font-weight:700;color:#F1F5F9;">' + sanitizeHtml(c.result_grade) + '</span>');
+      }
+      // Recommended limit (commercial only)
+      if (c.product === 'commercial_delphi' && c.recommended_limit_pence != null) {
+        meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Rec. limit</span>' +
+          '<span style="font-size:11px;font-weight:700;color:#F1F5F9;">' + fmtMoney(c.recommended_limit_pence) + '</span>');
+      }
+      // Mode
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Mode</span>' +
+        '<span style="font-size:11px;font-weight:700;color:' + mp.fg + ';">' + mp.label + '</span>');
+      // Cost
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Cost</span>' +
+        '<span style="font-size:11px;color:#F1F5F9;font-weight:700;">' + fmtCost(c.cost_pence) + '</span>');
+      // Run timestamp
+      meta.push('<span style="font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px;">Run</span>' +
+        '<span style="font-size:11px;color:#F1F5F9;font-weight:700;">' + sanitizeHtml(fmtDateTime(c.requested_at)) + '</span>');
+
+      // Subject line
+      let subjectLine = '';
+      if (c.product === 'commercial_delphi' && c.subject_company_name) {
+        subjectLine = '<div style="margin-top:6px;font-size:10px;color:#94A3B8;">' +
+          '<strong>Subject:</strong> ' + sanitizeHtml(c.subject_company_name) +
+          (c.subject_company_number ? ' <span style="color:#64748B;">(' + sanitizeHtml(c.subject_company_number) + ')</span>' : '') +
+        '</div>';
+      } else if (c.subject_first_name || c.subject_last_name) {
+        subjectLine = '<div style="margin-top:6px;font-size:10px;color:#94A3B8;">' +
+          '<strong>Subject:</strong> ' + sanitizeHtml((c.subject_first_name || '') + ' ' + (c.subject_last_name || '')).trim() +
+        '</div>';
+      }
+
+      // Adverse summary (Personal Credit + Commercial Delphi both expose CCJ/bankruptcy/IVA/defaults)
+      let adverseLine = '';
+      if (c.product !== 'hunter_fraud') {
+        const flags = [];
+        if (c.ccj_count != null && c.ccj_count > 0) {
+          flags.push('<span style="color:#F87171;font-weight:700;">' + c.ccj_count + ' CCJ' + (c.ccj_count === 1 ? '' : 's') +
+            (c.ccj_value_pence ? ' (' + fmtMoney(c.ccj_value_pence) + ')' : '') + '</span>');
+        }
+        if (c.bankruptcy_flag === true) flags.push('<span style="color:#F87171;font-weight:700;">Bankruptcy</span>');
+        if (c.iva_flag === true) flags.push('<span style="color:#F87171;font-weight:700;">IVA</span>');
+        if (c.default_count != null && c.default_count > 0) {
+          flags.push('<span style="color:#FBBF24;font-weight:700;">' + c.default_count + ' default' + (c.default_count === 1 ? '' : 's') +
+            (c.default_value_pence ? ' (' + fmtMoney(c.default_value_pence) + ')' : '') + '</span>');
+        }
+        if (c.gone_away_flag === true) flags.push('<span style="color:#FBBF24;font-weight:700;">Gone-away marker</span>');
+        if (flags.length === 0 && (c.ccj_count === 0 || c.ccj_count === null) && c.bankruptcy_flag !== null) {
+          flags.push('<span style="color:#34D399;">No adverse markers</span>');
+        }
+        if (flags.length > 0) {
+          adverseLine = '<div style="margin-top:6px;padding:6px 8px;background:rgba(56,189,248,0.04);border-left:2px solid rgba(56,189,248,0.4);font-size:10px;color:#CBD5E1;">' +
+            '<strong style="color:#38BDF8;text-transform:uppercase;letter-spacing:.3px;font-size:9px;">Adverse · </strong>' +
+            flags.join(' &middot; ') +
+          '</div>';
+        }
+      }
+
+      // Error block
+      const errBlock = c.pull_error
+        ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.2);border-radius:4px;font-size:10px;color:#F87171;"><strong>Error:</strong> ' + sanitizeHtml(c.pull_error) + '</div>'
+        : '';
+
+      return '<div style="margin-top:8px;padding:8px 10px;background:rgba(56,189,248,0.04);border:1px solid rgba(56,189,248,0.15);border-radius:5px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<div style="font-size:10px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + sanitizeHtml(productLabel[c.product] || c.product) + '</div>' +
+          (c.id ? '<div style="font-size:9px;color:#64748B;">#' + c.id + '</div>' : '') +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;">' +
+          meta.map(m => '<div>' + m + '</div>').join('') +
+        '</div>' +
+        subjectLine +
+        adverseLine +
+        errBlock +
+      '</div>';
+    }).join('');
+  }
+
+  return '<div id="exp-panel-' + borrowerId + '" style="margin-top:8px;padding:10px 12px;background:rgba(56,189,248,0.03);border:1px solid rgba(56,189,248,0.2);border-radius:6px;">' +
+    headerRow +
+    '<div id="exp-body-' + borrowerId + '" style="display:none;">' +
+      bodyInner +
+    '</div>' +
+  '</div>';
+};
+
+// ── Toggle Experian panel (2026-04-27) ─────────────────────────────────────
+window._toggleExperianPanel = function(borrowerId) {
+  const body = document.getElementById('exp-body-' + borrowerId);
+  const chevron = document.getElementById('exp-chevron-' + borrowerId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Run Personal Credit (Delphi Select) ─────────────────────────────────────
+// POST /api/admin/credit/personal/:borrowerId — uses borrower's stored name/dob/address
+window._creditRunPersonal = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/credit/personal/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Personal credit failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Personal'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[credit-personal] Error:', err);
+    alert('Personal credit error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Personal'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Run Business Credit (Commercial Delphi) ─────────────────────────────────
+// POST /api/admin/credit/business/:borrowerId — uses corporate's company_number
+window._creditRunBusiness = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/credit/business/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Commercial credit failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Commercial'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[credit-business] Error:', err);
+    alert('Commercial credit error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Commercial'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Run Hunter Fraud (CIFAS) ────────────────────────────────────────────────
+// POST /api/admin/credit/hunter/:borrowerId — runs in mock mode until EXP-A1
+// B2B account approval (Hunter is gated, not in dev sandbox).
+window._creditRunHunter = async function(borrowerId, submissionId) {
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Screening...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/credit/hunter/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Hunter screen failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Hunter'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[credit-hunter] Error:', err);
+    alert('Hunter screen error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Run Hunter'; btn.style.opacity = '1'; }
+  }
+};
+
+// ── Sweep credit on parent + all directors ──────────────────────────────────
+// POST /api/admin/credit/sweep/:borrowerId — Commercial Delphi on parent +
+// Personal Credit + Hunter on every linked director.
+window._creditSweep = async function(borrowerId, submissionId) {
+  if (!confirm('Run Commercial Delphi on parent + Personal Credit + Hunter on every linked director?\n\nIn live mode this fires 1 commercial + N×2 individual pulls.')) return;
+  const btn = event && event.target;
+  const orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Sweeping...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/credit/sweep/${borrowerId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeBusiness: true, includePersonal: true, includeHunter: true })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Credit sweep failed (' + res.status + '): ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = orig || 'Sweep directors'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[credit-sweep] Error:', err);
+    alert('Credit sweep error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = orig || 'Sweep directors'; btn.style.opacity = '1'; }
   }
 };
 

@@ -250,6 +250,25 @@ router.get('/deals/:submissionId', authenticateToken, authenticateInternal, asyn
       [dealId]
     );
 
+    // ── Experian credit checks (2026-04-27) ────────────────────────────────
+    // Append-only credit_checks history for this deal. Same projection
+    // philosophy as kyc_checks — lightweight cols for inline panels;
+    // full vendor payload stays in raw JSONB columns and is fetched on demand
+    // via GET /api/admin/credit/check/:checkId.
+    const creditChecksResult = await pool.query(
+      `SELECT id, deal_id, borrower_id, director_id, company_id, product, vendor,
+              subject_first_name, subject_last_name, subject_company_name,
+              subject_company_number, result_status, result_grade, credit_score,
+              recommended_limit_pence, ccj_count, ccj_value_pence,
+              bankruptcy_flag, iva_flag, default_count, default_value_pence,
+              gone_away_flag, hunter_match_count, mode, cost_pence,
+              requested_by, requested_at, parent_check_id, pull_error
+         FROM credit_checks
+        WHERE deal_id = $1
+        ORDER BY requested_at DESC`,
+      [dealId]
+    );
+
     res.json({
       success: true,
       deal: {
@@ -263,7 +282,8 @@ router.get('/deals/:submissionId', authenticateToken, authenticateInternal, asyn
         borrowers: borrowersResult.rows,
         properties: propertiesResult.rows,
         portfolio_summary: portfolioSummary,
-        kyc_checks: kycChecksResult.rows
+        kyc_checks: kycChecksResult.rows,
+        credit_checks: creditChecksResult.rows
       }
     });
   } catch (error) {
