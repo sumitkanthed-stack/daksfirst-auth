@@ -551,6 +551,11 @@ router.post('/risk-callback', verifyWebhookSecret, async (req, res) => {
   const newStatus = success === true ? 'success' : 'failed';
 
   // ── v3.1 defensive extraction from parsed_grades JSONB ──
+  // Rubric v3.1 emits the composite under `.final` (with pd/lgd/ia + drivers/
+  // headline/rationale) and the full grading tree (determinants/latents/sector/
+  // info_request/missing_data_summary) at the TOP LEVEL — not nested under
+  // `grade_matrix`. We mirror that: extract pd/lgd/ia from .final, store the
+  // whole parsed_grades tree as grade_matrix so render path reads off one root.
   // Validate ranges in JS so CHECK constraints (final_pd 1-9, final_lgd/ia A-E)
   // can never fire on malformed model output. Bad/missing values land NULL;
   // parsed_grades JSONB still has the full payload for diagnosis.
@@ -559,18 +564,23 @@ router.post('/risk-callback', verifyWebhookSecret, async (req, res) => {
   let v31_final_ia = null;
   let v31_grade_matrix = null;
   if (parsed_grades && typeof parsed_grades === 'object') {
-    const pd = Number(parsed_grades.final_pd);
+    const finalObj =
+      (parsed_grades.final && typeof parsed_grades.final === 'object')
+        ? parsed_grades.final
+        : {};
+
+    const pd = Number(finalObj.pd);
     if (Number.isInteger(pd) && pd >= 1 && pd <= 9) v31_final_pd = pd;
 
-    const lgd = String(parsed_grades.final_lgd || '').trim().toUpperCase();
+    const lgd = String(finalObj.lgd || '').trim().toUpperCase();
     if (/^[A-E]$/.test(lgd)) v31_final_lgd = lgd;
 
-    const ia = String(parsed_grades.final_ia || '').trim().toUpperCase();
+    const ia = String(finalObj.ia || '').trim().toUpperCase();
     if (/^[A-E]$/.test(ia)) v31_final_ia = ia;
 
-    if (parsed_grades.grade_matrix && typeof parsed_grades.grade_matrix === 'object') {
-      v31_grade_matrix = JSON.stringify(parsed_grades.grade_matrix);
-    }
+    // Whole tree → grade_matrix. Render path reads .final, .determinants,
+    // .latents, .sector, .info_request, .missing_data_summary directly off it.
+    v31_grade_matrix = JSON.stringify(parsed_grades);
   }
 
   try {
