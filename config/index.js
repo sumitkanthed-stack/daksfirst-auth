@@ -35,6 +35,7 @@ module.exports = {
   // CORS
   CORS_ORIGINS: [
     'https://apply.daksfirst.com',
+    'https://apply-staging.daksfirst.com',
     'https://daksfirst-auth.vercel.app',
     'http://localhost:3000',
     'http://localhost:5173'
