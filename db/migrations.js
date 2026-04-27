@@ -2042,6 +2042,81 @@ async function runMigrations() {
       console.log('[migrate] Note on kyc_checks:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // 2026-04-27: credit_checks — append-only Experian (and future
+    // Equifax) credit bureau lookup history.
+    //   - Sumit's call: Experian first, Equifax later as Phase C
+    //     ⇒ vendor column NOT NULL DEFAULT 'experian' so adding a
+    //     second bureau later is a one-line code change
+    //   - Three products at launch:
+    //       commercial_delphi  — SPV/Ltd commercial credit score (0-100)
+    //                            + recommended limit + payment behaviour
+    //       personal_credit    — Guarantor credit file (0-999 score)
+    //                            + CCJ + bankruptcy + IVA + electoral roll
+    //       hunter_fraud       — CIFAS fraud markers (bundled with Experian)
+    //   - Mirrors kyc_checks shape: per-subject FKs, append-only, mode flag,
+    //     cost_pence, parent_check_id for sweep aggregation
+    //   - Architecture: auth = data collector (Experian results flow into
+    //     risk packager <credit_data> block, NOT into local decisions)
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS credit_checks (
+          id                       SERIAL PRIMARY KEY,
+          deal_id                  INT,
+          borrower_id              INT,
+          director_id              INT,
+          individual_id            INT,
+          company_id               INT,
+          product                  VARCHAR(40)  NOT NULL,
+          vendor                   VARCHAR(40)  NOT NULL DEFAULT 'experian',
+          subject_first_name       VARCHAR(120),
+          subject_last_name        VARCHAR(120),
+          subject_dob              DATE,
+          subject_address_jsonb    JSONB,
+          subject_company_number   VARCHAR(20),
+          subject_company_name     VARCHAR(255),
+          result_status            VARCHAR(20),
+          result_grade             VARCHAR(20),
+          credit_score             INT,
+          recommended_limit_pence  BIGINT,
+          result_summary_jsonb     JSONB,
+          result_raw_jsonb         JSONB,
+          ccj_count                INT,
+          ccj_value_pence          BIGINT,
+          ccj_jsonb                JSONB,
+          bankruptcy_flag          BOOLEAN,
+          iva_flag                 BOOLEAN,
+          default_count            INT,
+          default_value_pence      BIGINT,
+          electoral_roll_jsonb     JSONB,
+          gone_away_flag           BOOLEAN,
+          payment_behaviour_jsonb  JSONB,
+          gazette_jsonb            JSONB,
+          fraud_markers_jsonb      JSONB,
+          hunter_match_count       INT,
+          adverse_jsonb            JSONB,
+          mode                     VARCHAR(10)  NOT NULL DEFAULT 'mock',
+          cost_pence               INT          NOT NULL DEFAULT 0,
+          requested_by             INT,
+          requested_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          parent_check_id          INT,
+          pull_error               TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_deal_id        ON credit_checks(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_borrower_id    ON credit_checks(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_company_id     ON credit_checks(company_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_director_id    ON credit_checks(director_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_product        ON credit_checks(product)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_vendor         ON credit_checks(vendor)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_parent         ON credit_checks(parent_check_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_credit_checks_deal_prod_at   ON credit_checks(deal_id, product, requested_at DESC)`);
+      console.log('[migrate] ✓ credit_checks table + indexes ready (Experian append-only)');
+    } catch (err) {
+      console.log('[migrate] Note on credit_checks:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

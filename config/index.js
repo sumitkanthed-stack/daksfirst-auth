@@ -152,6 +152,47 @@ module.exports = {
   //   Sanctions/PEP (~£2). 500p (£5) is a sane default; raise for KYB-heavy days.
   SMARTSEARCH_MAX_PENCE_PER_CHECK: parseInt(process.env.SMARTSEARCH_MAX_PENCE_PER_CHECK || '500', 10),
 
+  // Experian (Commercial Delphi / Personal Credit / Hunter Fraud) — 2026-04-27
+  //   Auth: OAuth2 client_credentials (modern Experian Connect API) OR Basic
+  //   for legacy Bureau Gateway. We default to OAuth2 — vendor recommends.
+  //   Mode flag: 'mock' returns canned fixtures (default — safe for prod no creds),
+  //              'test' hits sandbox (sandbox.experianaperture.io equivalent),
+  //              'live' hits production and CHARGES per-search.
+  //   No webhook — Experian is request/response. Monitoring is a separate
+  //   "ConsumerView Monitoring" product we may add later.
+  //   Per-search cap defends against accidentally calling premium add-ons.
+  EXPERIAN_MODE: process.env.EXPERIAN_MODE || 'mock',
+  EXPERIAN_TEST_BASE_URL: process.env.EXPERIAN_TEST_BASE_URL || 'https://sandbox-uk.experian.com/v1',
+  EXPERIAN_LIVE_BASE_URL: process.env.EXPERIAN_LIVE_BASE_URL || 'https://uk.experian.com/v1',
+  EXPERIAN_AUTH_BASE_URL: process.env.EXPERIAN_AUTH_BASE_URL || 'https://uk-api.experian.com/oauth2/v1',
+  EXPERIAN_CLIENT_ID: process.env.EXPERIAN_CLIENT_ID || '',
+  EXPERIAN_CLIENT_SECRET: process.env.EXPERIAN_CLIENT_SECRET || '',
+  EXPERIAN_USERNAME: process.env.EXPERIAN_USERNAME || '',
+  EXPERIAN_PASSWORD: process.env.EXPERIAN_PASSWORD || '',
+  EXPERIAN_TIMEOUT_MS: parseInt(process.env.EXPERIAN_TIMEOUT_MS || '30000', 10),
+  // Per-search cap in pence — Personal Credit (~£3-8), Commercial Delphi (~£12-20),
+  //   Hunter (~£2-5). 2500p (£25) covers Delphi+Hunter combo with headroom.
+  EXPERIAN_MAX_PENCE_PER_SEARCH: parseInt(process.env.EXPERIAN_MAX_PENCE_PER_SEARCH || '2500', 10),
+
+  // TrueLayer (Open Banking — AISP for Source of Funds + Verification for CoP) — 2026-04-27
+  //   Auth: OAuth2 client_credentials for app-level + authorization_code for
+  //   borrower consent flow.
+  //   Mode flag: 'mock' returns canned fixtures (default),
+  //              'test' hits TrueLayer sandbox (auth.truelayer-sandbox.com),
+  //              'live' hits production — requires FCA AISP authorisation.
+  //   Webhook secret used to verify HMAC signature on consent state changes
+  //   inbound at /api/openbanking/webhook.
+  //   Magic token TTL: how long the email consent link stays valid (24h default).
+  TRUELAYER_MODE: process.env.TRUELAYER_MODE || 'mock',
+  TRUELAYER_AUTH_BASE_URL: process.env.TRUELAYER_AUTH_BASE_URL || 'https://auth.truelayer-sandbox.com',
+  TRUELAYER_API_BASE_URL: process.env.TRUELAYER_API_BASE_URL || 'https://api.truelayer-sandbox.com',
+  TRUELAYER_CLIENT_ID: process.env.TRUELAYER_CLIENT_ID || '',
+  TRUELAYER_CLIENT_SECRET: process.env.TRUELAYER_CLIENT_SECRET || '',
+  TRUELAYER_WEBHOOK_SECRET: process.env.TRUELAYER_WEBHOOK_SECRET || '',
+  TRUELAYER_REDIRECT_URI: process.env.TRUELAYER_REDIRECT_URI || 'https://daksfirst-auth.onrender.com/api/openbanking/callback',
+  TRUELAYER_CONSENT_TOKEN_TTL_HOURS: parseInt(process.env.TRUELAYER_CONSENT_TOKEN_TTL_HOURS || '24', 10),
+  TRUELAYER_TIMEOUT_MS: parseInt(process.env.TRUELAYER_TIMEOUT_MS || '30000', 10),
+
   // Daksfirst Alpha (risk modeling engine) — calls this service for deal scoring.
   //   Alpha is deployed separately on Render (Frankfurt EEA for data residency).
   //   Auth never sends PII; only sanitised feature vectors. If alpha is
