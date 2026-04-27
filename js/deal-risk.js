@@ -1050,9 +1050,9 @@ function renderV31DeterminantCard(key, body) {
         </div>
       ` : ''}
       ${evidence.length ? `
-        <div style="padding-top:8px;border-top:1px dashed rgba(255,255,255,0.05);font-size:10px;color:#64748B;line-height:1.7;">
-          <span style="font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.4px;">Evidence:</span>
-          ${evidence.map(e => `<code style="background:#0a0f1a;padding:1px 5px;border-radius:3px;color:#94A3B8;font-size:9.5px;margin-left:4px;">${sanitizeHtml(String(e))}</code>`).join('')}
+        <div style="padding-top:8px;border-top:1px dashed rgba(255,255,255,0.05);font-size:10px;color:#64748B;line-height:1.9;min-width:0;overflow-wrap:anywhere;word-break:break-all;">
+          <div style="font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;line-height:1.4;">Evidence</div>
+          ${evidence.map(e => `<code style="background:#0a0f1a;padding:2px 5px;border-radius:3px;color:#94A3B8;font-size:9.5px;font-family:'SF Mono',Menlo,Consolas,monospace;margin-right:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone;">${sanitizeHtml(String(e))}</code>`).join('')}
         </div>
       ` : ''}
     </div>
