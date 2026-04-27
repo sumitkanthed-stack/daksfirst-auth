@@ -64,19 +64,29 @@ async function getAccessToken() {
   if (!config.EXPERIAN_CLIENT_ID || !config.EXPERIAN_CLIENT_SECRET) {
     throw new Error('Experian OAuth not configured — set EXPERIAN_CLIENT_ID and EXPERIAN_CLIENT_SECRET');
   }
+  if (!config.EXPERIAN_USERNAME || !config.EXPERIAN_PASSWORD) {
+    throw new Error('Experian UK OAuth requires username + password (resource-owner password grant) — set EXPERIAN_USERNAME and EXPERIAN_PASSWORD (your developer.experian.com login email + password)');
+  }
   const tokenUrl = `${config.EXPERIAN_AUTH_BASE_URL}/token`;
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
+  // Experian UK uses a non-standard OAuth flow: JSON body with all 4 credentials,
+  // no grant_type field. The username + password are the same credentials used
+  // to log into developer.experian.com (NOT a separate API user — confirmed
+  // 2026-04-27 from Experian UK Connect API docs).
+  const tokenBody = {
     client_id: config.EXPERIAN_CLIENT_ID,
     client_secret: config.EXPERIAN_CLIENT_SECRET,
-  });
+    username: config.EXPERIAN_USERNAME,
+    password: config.EXPERIAN_PASSWORD,
+  };
   const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
       Accept: 'application/json',
+      'X-Correlation-Id': `daksfirst-${Date.now()}`,
+      'X-User-Domain': 'experian.co.uk',
     },
-    body: body.toString(),
+    body: JSON.stringify(tokenBody),
     signal: AbortSignal.timeout(config.EXPERIAN_TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -380,23 +390,24 @@ function extractFlatFields(apiData, product) {
     gazette_jsonb: apiData.gazette || null,
     fraud_markers_jsonb: apiData.fraud_markers || null,
     hunter_match_count: typeof (apiData.summary && apiData.summary.hunter_match_count) === 'number' ? apiData.summary.hunter_match_count : null,
-    adverse_jsonb: apiData.adverse_summary || null,
+    adverse_jsonb: apiData.adverse_summary || apiData.adverse || null,
   };
 }
 
-/**
- * Status check — used by /api/health and admin diagnostics.
- * Does NOT make a network call.
- */
+// ------------------------------------------------------------
+// 7.  Health/status — used by GET /api/admin/credit/status
+// ------------------------------------------------------------
 function getStatus() {
   return {
     mode: config.EXPERIAN_MODE,
     base_url: getBaseUrl(),
-    auth_url: config.EXPERIAN_AUTH_BASE_URL,
+    auth_base_url: config.EXPERIAN_AUTH_BASE_URL,
     creds_configured: !!(config.EXPERIAN_CLIENT_ID && config.EXPERIAN_CLIENT_SECRET),
-    token_cached: !!tokenCache.access_token,
-    token_expires_at: tokenCache.expires_at ? new Date(tokenCache.expires_at).toISOString() : null,
+    user_configured: !!(config.EXPERIAN_USERNAME && config.EXPERIAN_PASSWORD),
     max_pence_per_search: config.EXPERIAN_MAX_PENCE_PER_SEARCH,
+    timeout_ms: config.EXPERIAN_TIMEOUT_MS,
+    token_cached: !!tokenCache.access_token,
+    token_expires_at: tokenCache.access_token ? new Date(tokenCache.expires_at).toISOString() : null,
   };
 }
 
