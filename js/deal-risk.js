@@ -104,6 +104,7 @@ export async function renderRiskSection(deal, role) {
   if (!allowed.includes(role)) return; // role gating already hides the section
 
   __riskState.dealId = deal.id;
+  // activeTab default is set after loadFullRun, once we know if it's v3.1.
   __riskState.activeTab = 'narrative';
 
   const host = document.getElementById('risk-content');
@@ -130,6 +131,9 @@ export async function renderRiskSection(deal, role) {
   } else {
     __riskState.activeRun = active;
   }
+
+  // Default tab: v3.1 runs land on the verdict tab; v3 runs keep narrative.
+  __riskState.activeTab = isV31Run(__riskState.activeRun) ? 'verdict' : 'narrative';
 
   paint(deal, role);
 }
@@ -181,6 +185,7 @@ function paint(deal, role) {
   wireTriggerButton(deal);
   wireRunRailClicks(deal, role);
   wireSubTabClicks(deal);
+  wireV31LatentDrivers();
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -328,13 +333,17 @@ function renderRunPill(r) {
 // SUB-TABS
 // ═════════════════════════════════════════════════════════════════
 function renderSubTabs() {
-  const tabs = [
+  const tabs = [];
+  if (isV31Run(__riskState.activeRun)) {
+    tabs.push({ id: 'verdict', label: 'Verdict (v3.1)' });
+  }
+  tabs.push(
     { id: 'narrative',  label: 'Narrative' },
     { id: 'dimensions', label: '9 Dimensions × 3 Readers' },
     { id: 'latents',    label: '3 Emergent Layers' },
     { id: 'telemetry',  label: 'Telemetry' },
     { id: 'history',    label: 'Append-Only History' },
-  ];
+  );
   return `
     <div style="display:flex;gap:0;padding:0 24px;background:#111827;border-bottom:1px solid rgba(255,255,255,0.06);">
       ${tabs.map(t => {
@@ -358,12 +367,13 @@ function renderActiveTab(deal) {
   if (!run) return `<div style="padding:30px;text-align:center;color:#94A3B8;">Run not loaded.</div>`;
 
   switch (__riskState.activeTab) {
+    case 'verdict':    return renderV31VerdictTab(run);
     case 'narrative':  return renderNarrativeTab(run);
     case 'dimensions': return renderDimensionsTab(run);
     case 'latents':    return renderLatentsTab(run);
     case 'telemetry':  return renderTelemetryTab(run);
     case 'history':    return renderHistoryTab();
-    default:           return renderNarrativeTab(run);
+    default:           return isV31Run(run) ? renderV31VerdictTab(run) : renderNarrativeTab(run);
   }
 }
 
@@ -695,6 +705,403 @@ function renderHistoryTab() {
 }
 
 // ═════════════════════════════════════════════════════════════════
+// v3.1 — VERDICT TAB
+// PD (1–9) × LGD (A–E) × IA (A–E) verdict ribbon with appetite-zone
+// overlay, three emergent latent cards, nine fixed determinant cards,
+// and a sticky context sidebar (sector baseline + info request +
+// missing data + taxonomy version).
+//
+// Triggered when the active run carries a `grade_matrix` JSONB blob
+// shaped like:
+//   {
+//     final:        { pd, lgd, ia, headline, rationale, drivers[] },
+//     latents:      [{ key, label, pd, lgd, ia, rationale, drivers[] }, …],
+//     determinants: { <key>: { pd, lgd, ia, rationale, red_flags[], evidence_refs[] }, … },
+//     sector, sector_baseline, info_request, missing_data_summary, taxonomy_version
+//   }
+// Legacy v3.0 rows (no grade_matrix, only `verdict` HIGH/MED/LOW)
+// fall through to the narrative tab unchanged.
+// ═════════════════════════════════════════════════════════════════
+function isV31Run(run) {
+  if (!run) return false;
+  const gm = run.grade_matrix || run.parsed_grades;
+  if (!gm || typeof gm !== 'object') return false;
+  if (!gm.final || typeof gm.final !== 'object') return false;
+  return gm.final.pd != null;
+}
+
+// PD 1–3 = green, 4–5 = blue, 6–7 = amber, 8–9 = red.
+const PD_BAND = (pd) => {
+  const n = Number(pd) || 0;
+  if (n >= 1 && n <= 3) return { fg: '#34D399', bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.30)', label: 'low' };
+  if (n <= 5) return { fg: '#60A5FA', bg: 'rgba(96,165,250,0.12)', border: 'rgba(96,165,250,0.30)', label: 'moderate' };
+  if (n <= 7) return { fg: '#FBBF24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)', label: 'elevated' };
+  if (n <= 9) return { fg: '#F87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)', label: 'high' };
+  return { fg: '#94A3B8', bg: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.18)', label: '—' };
+};
+
+// LGD / IA letter A–E, A best.
+const LGD_IA_BAND = (letter) => {
+  const L = String(letter || '').toUpperCase();
+  switch (L) {
+    case 'A': return { fg: '#34D399', bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.30)' };
+    case 'B': return { fg: '#60A5FA', bg: 'rgba(96,165,250,0.12)', border: 'rgba(96,165,250,0.30)' };
+    case 'C': return { fg: '#FBBF24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' };
+    case 'D': return { fg: '#FB923C', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.30)' };
+    case 'E': return { fg: '#F87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)' };
+    default:  return { fg: '#94A3B8', bg: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.18)' };
+  }
+};
+
+// Hardcoded for v1 — promote to risk_taxonomy(kind='appetite_zone') later.
+// Preferred = PD 1–4 AND LGD A–B; Stretch = PD 1–6 AND LGD A–C; Decline = else.
+const APPETITE_ZONE = (pd, lgd) => {
+  const lgdRank = { A: 1, B: 2, C: 3, D: 4, E: 5 }[String(lgd || '').toUpperCase()] || 0;
+  const pdN = Number(pd) || 0;
+  if (!lgdRank || !pdN) return null;
+  if (pdN <= 4 && lgdRank <= 2) return 'preferred';
+  if (pdN <= 6 && lgdRank <= 3) return 'stretch';
+  return 'decline';
+};
+
+const ZONE_STYLE = {
+  preferred: { color: 'rgba(52,211,153,0.85)',  bg: 'rgba(52,211,153,0.07)',  label: 'PREFERRED' },
+  stretch:   { color: 'rgba(251,191,36,0.85)',  bg: 'rgba(251,191,36,0.06)',  label: 'STRETCH'   },
+  decline:   { color: 'rgba(248,113,113,0.85)', bg: 'rgba(248,113,113,0.05)', label: 'DECLINE'   },
+};
+
+function renderV31VerdictTab(run) {
+  const gm = (run && (run.grade_matrix || run.parsed_grades)) || null;
+  if (!gm || typeof gm !== 'object' || !gm.final) {
+    return `<div style="padding:30px;text-align:center;color:#94A3B8;font-size:13px;">
+      Grade matrix not available for this run. The run may pre-date taxonomy v3.1, or be still in flight.
+    </div>`;
+  }
+  const final = gm.final || {};
+  const latents = Array.isArray(gm.latents) ? gm.latents : [];
+  const dets = (gm.determinants && typeof gm.determinants === 'object') ? gm.determinants : {};
+  const sectorBaseline = gm.sector_baseline || null;
+  const infoRequest = Array.isArray(gm.info_request) ? gm.info_request : [];
+  const missing = gm.missing_data_summary || null;
+
+  return `
+    <div style="padding:20px 24px 36px;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;align-items:start;">
+      <div style="min-width:0;">
+        ${renderV31Ribbon(final)}
+        ${renderV31LatentRow(latents, dets)}
+        ${renderV31DeterminantGrid(dets)}
+      </div>
+      <aside style="position:sticky;top:80px;display:flex;flex-direction:column;gap:14px;">
+        ${renderV31SectorCard(gm.sector, sectorBaseline)}
+        ${renderV31InfoRequest(infoRequest)}
+        ${renderV31MissingData(missing)}
+        ${renderV31TaxonomyBadge(gm.taxonomy_version)}
+      </aside>
+    </div>
+  `;
+}
+
+// ─── v3.1 verdict ribbon: final headline + 9×5 PD×LGD grid + IA badge ────
+function renderV31Ribbon(final) {
+  const pdN = Number(final.pd) || 0;
+  const pdB = PD_BAND(pdN);
+  const lgdB = LGD_IA_BAND(final.lgd);
+  const iaB = LGD_IA_BAND(final.ia);
+  const drivers = Array.isArray(final.drivers) ? final.drivers : [];
+
+  return `
+    <div style="padding:22px 24px;border-radius:14px;background:linear-gradient(180deg,#0F172A 0%,#0a0f1a 100%);border:1px solid rgba(212,168,83,0.22);box-shadow:0 4px 24px rgba(0,0,0,0.30);margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;">Final verdict</div>
+          <div style="font-family:'Playfair Display',Georgia,serif;font-size:22px;line-height:1.35;color:#F1F5F9;font-weight:600;">${sanitizeHtml(final.headline || '—')}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          ${renderV31FinalPill('PD', pdN || '—', pdB.label, pdB)}
+          ${renderV31FinalPill('LGD', String(final.lgd || '—').toUpperCase(), 'severity', lgdB)}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:18px;align-items:stretch;">
+        ${renderV31Grid(pdN, final.lgd)}
+        ${renderV31IaBadge(final.ia, iaB)}
+      </div>
+      ${final.rationale ? `
+        <div style="margin-top:18px;padding-top:16px;border-top:1px dashed rgba(255,255,255,0.08);">
+          <div style="font-size:13.5px;color:#CBD5E1;line-height:1.7;">${sanitizeHtml(final.rationale)}</div>
+        </div>
+      ` : ''}
+      ${drivers.length ? `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;">
+          <span style="font-size:9.5px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;font-weight:700;align-self:center;margin-right:4px;">drivers</span>
+          ${drivers.map(d => `<span style="font-size:10.5px;color:#D4A853;background:rgba(212,168,83,0.08);border:1px solid rgba(212,168,83,0.22);padding:3px 9px;border-radius:8px;font-weight:600;">${sanitizeHtml(d)}</span>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderV31FinalPill(label, value, sublabel, b) {
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;background:${b.bg};border:1px solid ${b.border};min-width:74px;">
+      <div style="font-size:9.5px;color:${b.fg};font-weight:700;text-transform:uppercase;letter-spacing:.8px;opacity:.85;">${label}</div>
+      <div style="font-family:'Playfair Display',Georgia,serif;font-size:30px;font-weight:700;color:${b.fg};line-height:1;margin-top:1px;">${sanitizeHtml(String(value))}</div>
+      <div style="font-size:9px;color:${b.fg};opacity:.7;text-transform:uppercase;letter-spacing:.5px;margin-top:2px;">${sanitizeHtml(sublabel)}</div>
+    </div>
+  `;
+}
+
+// ─── 9×5 PD × LGD grid with appetite-zone overlay + hit cell glow ───────
+function renderV31Grid(pd, lgd) {
+  const pdN = Number(pd) || 0;
+  const lgdU = String(lgd || '').toUpperCase();
+  const COLS = ['A', 'B', 'C', 'D', 'E'];
+
+  // Build cells row-by-row (9 rows × 5 cols)
+  const cellsByRow = [];
+  for (let row = 1; row <= 9; row++) {
+    const cells = COLS.map(col => {
+      const isHit = (row === pdN && col === lgdU);
+      const zone = APPETITE_ZONE(row, col);
+      const zoneStyle = zone ? ZONE_STYLE[zone] : null;
+      const pdB = PD_BAND(row);
+      const cellBg = isHit ? pdB.bg : (zoneStyle ? zoneStyle.bg : 'rgba(255,255,255,0.02)');
+      const cellBorder = isHit ? pdB.fg : (zoneStyle ? zoneStyle.color : 'rgba(255,255,255,0.06)');
+      const ringStyle = isHit
+        ? `box-shadow:0 0 0 2px ${pdB.fg}, 0 0 16px ${pdB.fg}cc;z-index:2;`
+        : '';
+      const hitOpacity = isHit ? 1 : (zone === 'preferred' ? 1 : zone === 'stretch' ? 0.95 : 0.85);
+      return `
+        <div title="PD ${row} · LGD ${col}${zone ? ' · ' + zone : ''}"
+             style="position:relative;height:24px;border-radius:5px;background:${cellBg};border:1px solid ${cellBorder};opacity:${hitOpacity};${ringStyle}transition:all .2s;">
+          ${isHit ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${pdB.fg};letter-spacing:.4px;">${row}${col}</div>` : ''}
+        </div>
+      `;
+    });
+    cellsByRow.push(cells);
+  }
+
+  // Column header row (A–E)
+  const colHeader = COLS.map(c => {
+    const b = LGD_IA_BAND(c);
+    return `<div style="font-size:10px;font-weight:700;color:${b.fg};text-align:center;letter-spacing:.5px;opacity:.85;">${c}</div>`;
+  }).join('');
+
+  // Row headers (1–9 PD)
+  const rows = cellsByRow.map((cells, idx) => {
+    const r = idx + 1;
+    const b = PD_BAND(r);
+    return `<div style="font-size:10px;font-weight:700;color:${b.fg};text-align:right;padding-right:6px;line-height:24px;opacity:.85;">${r}</div>${cells.join('')}`;
+  });
+
+  return `
+    <div>
+      <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;font-weight:600;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <span>PD (rows 1–9, low → high) × LGD (cols A–E)</span>
+        <span style="display:flex;gap:10px;font-size:9.5px;font-weight:600;letter-spacing:.4px;">
+          <span style="color:${ZONE_STYLE.preferred.color};">■ preferred</span>
+          <span style="color:${ZONE_STYLE.stretch.color};">■ stretch</span>
+          <span style="color:${ZONE_STYLE.decline.color};">■ decline</span>
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:20px repeat(5, 1fr);gap:5px;align-items:center;">
+        <div></div>${colHeader}
+        ${rows.join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderV31IaBadge(ia, iaB) {
+  const L = String(ia || '—').toUpperCase();
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 10px;border-radius:10px;background:${iaB.bg};border:1px solid ${iaB.border};">
+      <div style="font-size:9.5px;color:${iaB.fg};font-weight:700;text-transform:uppercase;letter-spacing:.9px;opacity:.85;">IA</div>
+      <div style="font-family:'Playfair Display',Georgia,serif;font-size:38px;font-weight:700;color:${iaB.fg};line-height:1;margin:4px 0 6px;">${sanitizeHtml(L)}</div>
+      <div style="font-size:9px;color:${iaB.fg};opacity:.7;text-align:center;line-height:1.3;letter-spacing:.4px;">information<br>availability</div>
+    </div>
+  `;
+}
+
+// ─── Layer 2: emergent latent factors ─────────────────────────────
+function renderV31LatentRow(latents, dets) {
+  if (!latents.length) {
+    return `
+      <div style="padding:18px;border-radius:10px;background:#0F172A;border:1px dashed rgba(255,255,255,0.08);text-align:center;color:#64748B;font-size:12px;margin-bottom:20px;">
+        No emergent latent factors emitted by the model for this run.
+      </div>
+    `;
+  }
+  const cols = Math.min(latents.length, 3);
+  return `
+    <div style="margin-bottom:20px;">
+      <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;font-weight:600;">
+        Layer 2 — emergent latent factors (deal-specific, ${latents.length})
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(${cols}, minmax(0, 1fr));gap:12px;">
+        ${latents.map(L => renderV31LatentCard(L, dets)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderV31LatentCard(L, dets) {
+  const pdB = PD_BAND(L.pd);
+  const lgdB = LGD_IA_BAND(L.lgd);
+  const iaB = LGD_IA_BAND(L.ia);
+  const drivers = Array.isArray(L.drivers) ? L.drivers : [];
+  return `
+    <div style="padding:14px 16px;border-radius:10px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:10px;min-width:0;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+        <div style="font-family:'Playfair Display',Georgia,serif;font-size:14.5px;color:#F1F5F9;font-weight:600;line-height:1.3;flex:1;min-width:0;">${sanitizeHtml(L.label || L.key || '—')}</div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <span style="padding:2px 7px;border-radius:6px;background:${pdB.bg};color:${pdB.fg};border:1px solid ${pdB.border};font-size:10px;font-weight:700;">PD ${Number(L.pd) || '—'}</span>
+          <span style="padding:2px 7px;border-radius:6px;background:${lgdB.bg};color:${lgdB.fg};border:1px solid ${lgdB.border};font-size:10px;font-weight:700;">LGD ${sanitizeHtml(String(L.lgd || '—'))}</span>
+          <span style="padding:2px 7px;border-radius:6px;background:${iaB.bg};color:${iaB.fg};border:1px solid ${iaB.border};font-size:10px;font-weight:700;">IA ${sanitizeHtml(String(L.ia || '—'))}</span>
+        </div>
+      </div>
+      ${L.rationale ? `<div style="font-size:12px;color:#CBD5E1;line-height:1.65;">${sanitizeHtml(L.rationale)}</div>` : ''}
+      ${drivers.length ? `
+        <div style="padding-top:8px;border-top:1px dashed rgba(255,255,255,0.05);">
+          <div style="font-size:9.5px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:5px;">Driven by</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            ${drivers.map(d => {
+              const isDet = !!dets[d];
+              return `<span class="${isDet ? 'risk-det-link' : ''}" data-det-link="${isDet ? escapeAttrV31(d) : ''}" title="${isDet ? 'click to scroll to determinant' : ''}" style="font-size:10px;color:${isDet ? '#60A5FA' : '#94A3B8'};background:${isDet ? 'rgba(96,165,250,0.10)' : 'rgba(148,163,184,0.08)'};border:1px solid ${isDet ? 'rgba(96,165,250,0.22)' : 'rgba(148,163,184,0.15)'};padding:2px 7px;border-radius:6px;cursor:${isDet ? 'pointer' : 'default'};">${sanitizeHtml(d)}</span>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// ─── Layer 1: nine fixed determinant cards ────────────────────────
+function renderV31DeterminantGrid(dets) {
+  const keys = Object.keys(dets || {});
+  if (!keys.length) {
+    return `
+      <div style="padding:18px;border-radius:10px;background:#0F172A;border:1px dashed rgba(255,255,255,0.08);text-align:center;color:#64748B;font-size:12px;">
+        No determinant grades emitted.
+      </div>
+    `;
+  }
+  return `
+    <div>
+      <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;font-weight:600;">
+        Layer 1 — fixed determinants (${keys.length})
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;">
+        ${keys.map(k => renderV31DeterminantCard(k, dets[k])).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderV31DeterminantCard(key, body) {
+  const niceName = humaniseDetKey(key);
+  if (!body || typeof body !== 'object') {
+    return `<div id="risk-det-${escapeAttrV31(key)}" style="padding:14px;border-radius:10px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);scroll-margin-top:120px;">
+      <div style="font-size:12.5px;color:#F1F5F9;font-weight:600;">${sanitizeHtml(niceName)}</div>
+      <div style="font-size:11px;color:#64748B;margin-top:6px;">No body returned by model.</div>
+    </div>`;
+  }
+  const pdB = PD_BAND(body.pd);
+  const lgdB = LGD_IA_BAND(body.lgd);
+  const iaB = LGD_IA_BAND(body.ia);
+  const redFlags = Array.isArray(body.red_flags) ? body.red_flags : [];
+  const evidence = Array.isArray(body.evidence_refs) ? body.evidence_refs : [];
+  return `
+    <div id="risk-det-${escapeAttrV31(key)}" style="padding:14px 16px;border-radius:10px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:9px;scroll-margin-top:120px;min-width:0;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+        <div style="font-size:13px;color:#F1F5F9;font-weight:600;line-height:1.3;flex:1;min-width:0;">${sanitizeHtml(niceName)}</div>
+        <div style="display:flex;gap:3px;flex-shrink:0;">
+          <span style="padding:2px 6px;border-radius:5px;background:${pdB.bg};color:${pdB.fg};border:1px solid ${pdB.border};font-size:9.5px;font-weight:700;">PD ${Number(body.pd) || '—'}</span>
+          <span style="padding:2px 6px;border-radius:5px;background:${lgdB.bg};color:${lgdB.fg};border:1px solid ${lgdB.border};font-size:9.5px;font-weight:700;">LGD ${sanitizeHtml(String(body.lgd || '—'))}</span>
+          <span style="padding:2px 6px;border-radius:5px;background:${iaB.bg};color:${iaB.fg};border:1px solid ${iaB.border};font-size:9.5px;font-weight:700;">IA ${sanitizeHtml(String(body.ia || '—'))}</span>
+        </div>
+      </div>
+      ${body.rationale ? `<div style="font-size:11.5px;color:#CBD5E1;line-height:1.6;">${sanitizeHtml(body.rationale)}</div>` : ''}
+      ${redFlags.length ? `
+        <div>
+          <div style="font-size:9.5px;color:#F87171;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px;">Red flags</div>
+          <ul style="margin:0 0 0 16px;padding:0;font-size:11px;color:#FCA5A5;line-height:1.55;">
+            ${redFlags.map(rf => `<li style="margin:2px 0;">${sanitizeHtml(String(rf))}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+      ${evidence.length ? `
+        <div style="padding-top:8px;border-top:1px dashed rgba(255,255,255,0.05);font-size:10px;color:#64748B;line-height:1.7;">
+          <span style="font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.4px;">Evidence:</span>
+          ${evidence.map(e => `<code style="background:#0a0f1a;padding:1px 5px;border-radius:3px;color:#94A3B8;font-size:9.5px;margin-left:4px;">${sanitizeHtml(String(e))}</code>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function humaniseDetKey(k) {
+  return String(k || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function escapeAttrV31(s) {
+  return String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// ─── Sidebar cards ────────────────────────────────────────────────
+function renderV31SectorCard(sector, baseline) {
+  if (!sector && !baseline) return '';
+  const b = baseline || {};
+  const pdB = b.pd != null ? PD_BAND(b.pd) : null;
+  const lgdB = b.lgd ? LGD_IA_BAND(b.lgd) : null;
+  return `
+    <div style="padding:14px 16px;border-radius:10px;background:#0F172A;border:1px solid rgba(255,255,255,0.06);">
+      <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">Sector context</div>
+      ${sector ? `<div style="font-size:13px;color:#F1F5F9;font-weight:600;margin-bottom:8px;">${sanitizeHtml(sector)}</div>` : ''}
+      ${(pdB || lgdB) ? `
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+          ${pdB ? `<span style="padding:2px 7px;border-radius:6px;background:${pdB.bg};color:${pdB.fg};border:1px solid ${pdB.border};font-size:10px;font-weight:700;">baseline PD ${b.pd}</span>` : ''}
+          ${lgdB ? `<span style="padding:2px 7px;border-radius:6px;background:${lgdB.bg};color:${lgdB.fg};border:1px solid ${lgdB.border};font-size:10px;font-weight:700;">baseline LGD ${sanitizeHtml(String(b.lgd))}</span>` : ''}
+        </div>
+      ` : ''}
+      ${b.rationale ? `<div style="font-size:11px;color:#CBD5E1;line-height:1.6;">${sanitizeHtml(b.rationale)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderV31InfoRequest(items) {
+  if (!items.length) return '';
+  return `
+    <div style="padding:14px 16px;border-radius:10px;background:rgba(212,168,83,0.05);border:1px solid rgba(212,168,83,0.20);">
+      <div style="font-size:10px;color:#D4A853;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">Info request to broker</div>
+      <ul style="margin:0 0 0 16px;padding:0;font-size:11.5px;color:#CBD5E1;line-height:1.6;">
+        ${items.map(it => {
+          const text = typeof it === 'string' ? it : (it && (it.label || it.field || it.ask)) || JSON.stringify(it);
+          return `<li style="margin:3px 0;">${sanitizeHtml(text)}</li>`;
+        }).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+function renderV31MissingData(summary) {
+  if (!summary) return '';
+  const text = typeof summary === 'string' ? summary : JSON.stringify(summary);
+  return `
+    <div style="padding:14px 16px;border-radius:10px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.20);">
+      <div style="font-size:10px;color:#FBBF24;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:6px;">Missing data summary</div>
+      <div style="font-size:11.5px;color:#CBD5E1;line-height:1.6;">${sanitizeHtml(text)}</div>
+    </div>
+  `;
+}
+
+function renderV31TaxonomyBadge(version) {
+  if (!version) return '';
+  return `
+    <div style="font-size:10px;color:#64748B;text-align:right;letter-spacing:.4px;">taxonomy ${sanitizeHtml(version)}</div>
+  `;
+}
+
+// ═════════════════════════════════════════════════════════════════
 // MARKDOWN — minimal renderer (headings, bold, italics, lists, tables)
 // ═════════════════════════════════════════════════════════════════
 function renderMarkdown(md) {
@@ -885,6 +1292,14 @@ function wireRunRailClicks(deal, role) {
       const id = Number(el.dataset.runId);
       if (!id || id === __riskState.activeRunId) return;
       await loadFullRun(id);
+      // Re-evaluate default tab against the newly-loaded run's shape.
+      // verdict ↔ narrative is the v3.1 ↔ v3 split; preserve other tabs
+      // (dimensions/latents/telemetry/history) the user may have navigated to.
+      if (__riskState.activeTab === 'verdict' && !isV31Run(__riskState.activeRun)) {
+        __riskState.activeTab = 'narrative';
+      } else if (__riskState.activeTab === 'narrative' && isV31Run(__riskState.activeRun)) {
+        __riskState.activeTab = 'verdict';
+      }
       paint(deal, role);
     });
   });
@@ -899,6 +1314,30 @@ function wireSubTabClicks(deal) {
       // Re-render only the tab nav + body to avoid blowing away rail/hero.
       const role = getCurrentRoleSafe();
       paint(deal, role);
+    });
+  });
+}
+
+// v3.1 — clicking a latent driver chip scrolls the matching determinant
+// card into view and pulses its border. No-op for chips whose key isn't
+// a known determinant.
+function wireV31LatentDrivers() {
+  document.querySelectorAll('.risk-det-link').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.getAttribute('data-det-link');
+      if (!key) return;
+      const target = document.getElementById(`risk-det-${key}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Pulse highlight
+      const prevBorder = target.style.border;
+      const prevShadow = target.style.boxShadow;
+      target.style.border = '1px solid rgba(96,165,250,0.55)';
+      target.style.boxShadow = '0 0 0 2px rgba(96,165,250,0.30), 0 0 18px rgba(96,165,250,0.30)';
+      setTimeout(() => {
+        target.style.border = prevBorder;
+        target.style.boxShadow = prevShadow;
+      }, 1200);
     });
   });
 }
