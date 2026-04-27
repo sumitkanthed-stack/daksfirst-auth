@@ -64,22 +64,25 @@ module.exports = {
   // Anthropic AI (for document categorisation)
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
 
+  // Anthropic Credit Analyst (M2, 2026-04-22) — dedicated config for the
+  //   `services/anthropic-analyst.js` pipe. Uses the same ANTHROPIC_API_KEY
+  //   (enterprise DPA tier — signed for production rollout).
+  //   Opus 4.6 is the default across all stages per Sumit's directive.
+  //   Pricing env vars are in GBP per million tokens — KEEP UP-TO-DATE against
+  //   Anthropic's published pricing, do not trust defaults of 0.
+  //   Hard cap blocks dispatch; soft cap (50% of hard) logs a warning.
+  ANTHROPIC_ANALYST_MODEL: process.env.ANTHROPIC_ANALYST_MODEL || 'claude-opus-4-6',
+  ANTHROPIC_MAX_GBP_PER_DEAL: parseFloat(process.env.ANTHROPIC_MAX_GBP_PER_DEAL || '50'),
+  ANTHROPIC_INPUT_GBP_PER_MTOK: parseFloat(process.env.ANTHROPIC_INPUT_GBP_PER_MTOK || '0'),
+  ANTHROPIC_OUTPUT_GBP_PER_MTOK: parseFloat(process.env.ANTHROPIC_OUTPUT_GBP_PER_MTOK || '0'),
+  ANTHROPIC_ANALYST_TIMEOUT_MS: parseInt(process.env.ANTHROPIC_ANALYST_TIMEOUT_MS || '120000', 10),
+
   // n8n webhooks
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
   N8N_PARSE_WEBHOOK_URL: process.env.N8N_PARSE_WEBHOOK_URL || '',
   N8N_DATA_PARSE_URL: process.env.N8N_DATA_PARSE_URL || '',
   N8N_DATA_CLASSIFY_URL: process.env.N8N_DATA_CLASSIFY_URL || '',
-// Output Engine (OE-3, 2026-04-22)
-  //   Production webhook on the cloned "Credit Analysis - Admin Run" workflow
-  //   in n8n Cloud. Auth dispatcher POSTs the full feature envelope here and
-  //   n8n asynchronously posts three base64 DOCX blobs back to the auth
-  //   callback at /api/webhook/output-engine/complete.
-  N8N_OUTPUT_ENGINE_WEBHOOK_URL: process.env.N8N_OUTPUT_ENGINE_WEBHOOK_URL || '',
 
-  // Public base URL for THIS service (used when auth hands an n8n workflow
-  // an absolute callback URL to POST back to). Render is authoritative for
-  // webhook inbound; Vercel is frontend-only.
-  AUTH_PUBLIC_BASE_URL: process.env.AUTH_PUBLIC_BASE_URL || 'https://daksfirst-auth.onrender.com',
   // DocuSign
   DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY || '',
   DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID || '',
@@ -104,6 +107,29 @@ module.exports = {
   CHIMNIE_BASE_URL: process.env.CHIMNIE_BASE_URL || 'https://api.chimnie.com',
   CHIMNIE_TIMEOUT_MS: parseInt(process.env.CHIMNIE_TIMEOUT_MS || '15000', 10),
   CHIMNIE_MONTHLY_CAP_CREDITS: parseInt(process.env.CHIMNIE_MONTHLY_CAP_CREDITS || '5000', 10),
+
+  // HM Land Registry Business Gateway (mTLS + Basic Auth) — 2026-04-27
+  //   Auth: client cert + private key (mTLS) PLUS HTTP Basic (username + password).
+  //   Test env: https://bgtest.landregistry.gov.uk/bg2test/api  (separate test cert).
+  //   Live env: https://businessgateway.landregistry.gov.uk/api (live cert + credit acct).
+  //   Mode flag: 'mock' returns canned fixtures (default — safe for prod with no creds),
+  //              'test'  hits the bgtest sandbox using HMLR_TEST_* creds,
+  //              'live'  hits production and CHARGES the HMLR credit account.
+  //   Cert handling mirrors DocuSign private-key pattern: replace literal '\n' with newlines
+  //   so the PEM body survives Render env var encoding.
+  HMLR_MODE: process.env.HMLR_MODE || 'mock',
+  HMLR_TEST_BASE_URL: process.env.HMLR_TEST_BASE_URL || 'https://bgtest.landregistry.gov.uk/bg2test/api',
+  HMLR_LIVE_BASE_URL: process.env.HMLR_LIVE_BASE_URL || 'https://businessgateway.landregistry.gov.uk/api',
+  HMLR_USERNAME: process.env.HMLR_USERNAME || '',
+  HMLR_PASSWORD: process.env.HMLR_PASSWORD || '',
+  HMLR_CLIENT_CERT: (process.env.HMLR_CLIENT_CERT || '').replace(/\\n/g, '\n'),
+  HMLR_CLIENT_KEY: (process.env.HMLR_CLIENT_KEY || '').replace(/\\n/g, '\n'),
+  HMLR_CLIENT_KEY_PASSPHRASE: process.env.HMLR_CLIENT_KEY_PASSPHRASE || '',
+  HMLR_TIMEOUT_MS: parseInt(process.env.HMLR_TIMEOUT_MS || '30000', 10),
+  // Per-pull cap in pence — defensive guard against runaway charges if HMLR
+  //   changes pricing or we accidentally call a premium product. £10 = 1000p
+  //   covers a standard OC1 (£7) with headroom; raise if pulling Title Plans.
+  HMLR_MAX_PENCE_PER_PULL: parseInt(process.env.HMLR_MAX_PENCE_PER_PULL || '1000', 10),
 
   // Daksfirst Alpha (risk modeling engine) — calls this service for deal scoring.
   //   Alpha is deployed separately on Render (Frankfurt EEA for data residency).

@@ -1953,6 +1953,34 @@ async function runMigrations() {
       console.log('[migrate] Note on risk_taxonomy seed:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // HMLR (HM Land Registry) Business Gateway integration columns
+    //   Pattern: latest pull only, attached to deal_properties (mirrors Chimnie).
+    //   All cols nullable — mock mode is the default until live creds arrive,
+    //   so production rows can sit at NULL indefinitely with no harm.
+    //   Sumit signed off architecture 2026-04-27: cols on deal_properties only,
+    //   admin-only button + admin-only display, mock|test|live mode flag.
+    // ============================================================
+    try {
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_title_number       VARCHAR(20)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_register_pdf_url   TEXT`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_register_raw_jsonb JSONB`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_proprietors_jsonb  JSONB`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_charges_jsonb      JSONB`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_restrictions_jsonb JSONB`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_tenure             VARCHAR(20)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_class_of_title     VARCHAR(40)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_pulled_at          TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_pulled_cost_pence  INT`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_pull_mode          VARCHAR(10)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_pull_error         TEXT`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS hmlr_pulled_by          INT`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_hmlr_title ON deal_properties(hmlr_title_number)`);
+      console.log('[migrate] ✓ HMLR integration columns ready on deal_properties');
+    } catch (err) {
+      console.log('[migrate] Note on HMLR columns:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

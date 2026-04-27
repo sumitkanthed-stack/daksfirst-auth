@@ -23,6 +23,7 @@ const matrixRoutes = require('./routes/matrix');
 const financialsRoutes = require('./routes/financials');
 const companiesHouseRoutes = require('./routes/companies-house');
 const riskRoutes = require('./routes/risk');
+const hmlrRoutes = require('./routes/hmlr');
 
 // Initialize Express app
 const app = express();
@@ -77,7 +78,8 @@ app.get('/api/health', async (req, res) => {
     onedrive: (config.AZURE_CLIENT_ID && config.AZURE_TENANT_ID && config.AZURE_CLIENT_SECRET) ? 'configured' : 'not configured',
     companies_house: config.COMPANIES_HOUSE_API_KEY ? 'configured' : 'not configured',
     chimnie: config.CHIMNIE_API_KEY ? 'configured' : 'not configured',
-    ptal: ptalStatus.loaded ? `${ptalStatus.cells.toLocaleString()} cells loaded` : 'not loaded'
+    ptal: ptalStatus.loaded ? `${ptalStatus.cells.toLocaleString()} cells loaded` : 'not loaded',
+    hmlr: `mode=${config.HMLR_MODE}${(config.HMLR_USERNAME && config.HMLR_PASSWORD) ? ' creds=ok' : ' creds=missing'}${(config.HMLR_CLIENT_CERT && config.HMLR_CLIENT_KEY) ? ' cert=ok' : ' cert=missing'}`
   });
 });
 
@@ -96,6 +98,7 @@ app.use('/api/matrix', matrixRoutes);
 app.use('/api/deals', financialsRoutes);
 app.use('/api/companies-house', companiesHouseRoutes);
 app.use('/api', riskRoutes);          // Mounts /admin/risk-runs/start (token+internal) and /risk-callback (webhook secret)
+app.use('/api/admin/hmlr', hmlrRoutes); // HM Land Registry — admin-only (status, search, pull, property)
 
 // Error handling
 app.use((err, req, res, next) => {
