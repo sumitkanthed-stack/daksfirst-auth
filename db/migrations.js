@@ -801,10 +801,10 @@ async function runMigrations() {
       // backfill, no race, single source of truth.
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_inconsistent BOOLEAN
          GENERATED ALWAYS AS (
-           chimnie_avm_low IS NOT NULL
-           AND chimnie_avm_mid IS NOT NULL
-           AND chimnie_avm_high IS NOT NULL
-           AND (chimnie_avm_mid > chimnie_avm_high OR chimnie_avm_mid < chimnie_avm_low)
+           CASE
+             WHEN chimnie_avm_low IS NULL OR chimnie_avm_mid IS NULL OR chimnie_avm_high IS NULL THEN NULL
+             ELSE (chimnie_avm_mid > chimnie_avm_high OR chimnie_avm_mid < chimnie_avm_low)
+           END
          ) STORED`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_disagreement_pct NUMERIC(6,2)
          GENERATED ALWAYS AS (
