@@ -366,6 +366,26 @@ function extractVerdict(rawResponse) {
   return null;
 }
 
+/**
+ * Strip the trailing ```grade_matrix … ``` fenced block from raw_response so
+ * the frontend renders only the analyst narrative. Rubric v4 (v3.1) instructs
+ * Opus to emit a JSON block at the end which is parsed server-side into
+ * parsed_grades + final_pd/lgd/ia. Keeping it in the rendered narrative leaks
+ * raw JSON onto the deal page.
+ *
+ * Also defensively strips any orphaned ```json … ``` block that contains a
+ * `"schema_version"` key (in case the model dropped or renamed the language
+ * tag). raw_response in DB is preserved literal — we only mutate the API
+ * response surface.
+ */
+function stripGradeMatrix(s) {
+  if (!s || typeof s !== 'string') return s;
+  return s
+    .replace(/```\s*grade_matrix[\s\S]*?```/gi, '')
+    .replace(/```\s*json[\s\S]*?"schema_version"[\s\S]*?```/gi, '')
+    .trim();
+}
+
 router.get(
   '/admin/risk-view/:dealId/runs',
   authenticateToken,
@@ -468,10 +488,14 @@ router.get(
       }
       const row = rows[0];
       const verdict = row.status === 'success' ? extractVerdict(row.raw_response) : null;
+      // v3.1: hide the trailing grade_matrix JSON fence from the rendered
+      // narrative. parsed_grades is the canonical surface for that data.
+      const narrative = stripGradeMatrix(row.raw_response);
       return res.json({
         ok: true,
         run: {
           ...row,
+          raw_response: narrative,
           verdict,
           rubric_stale: row.rubric_is_active === false,
           macro_stale:  row.macro_is_active  === false,
