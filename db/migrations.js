@@ -1732,6 +1732,202 @@ async function runMigrations() {
       console.log('[migrate] Note on deal_stage_analyses:', err.message.substring(0, 120));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Risk MVP v3.1 — Three-axis grading (2026-04-27)
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Replaces single HIGH / MED / LOW verdict with PD (1-9) · LGD (A-E) · IA (A-E).
+    //  Direction: 1/A = best, 9/E = worst on every axis.
+    //
+    //  Architecture (signed off in DRAFTS/v3.1-grading-2026-04-27/02_v3_1_grading_spec_v2.md):
+    //   - risk_taxonomy_versions: parent table, one row per taxonomy version
+    //   - risk_taxonomy:          config rows (determinants, sectors, grade_scale)
+    //                             versioned + append-only — adding a determinant
+    //                             is a new INSERT under a new version, not a deploy
+    //   - risk_view ALTER:        5 new columns surfacing the v3.1 verdict
+    //
+    //  Layer 2 latent names are NOT pre-defined here — Opus generates them per
+    //  deal at run-time and stores them inside grade_matrix.latents[]. The
+    //  taxonomy only fixes the 9 Layer 1 determinants + sector list + grade scale.
+    //
+    //  Append-only: legacy rows (run #9 etc.) leave the new columns NULL and
+    //  the frontend renders them under the v3.0 legacy badge.
+    //
+    //  Read by: services/risk-packager.js (passes active taxonomy into Opus
+    //  context), routes/risk.js (returns grade_matrix in run details).
+    //  See memory: project_risk_v3_1_design_locked_2026_04_27.md
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      // Parent registry — one row per taxonomy version, supports FK on risk_view
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS risk_taxonomy_versions (
+          version       TEXT PRIMARY KEY,
+          description   TEXT,
+          is_active     BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      // Partial unique index: at most one active version at a time.
+      // Flipping active is a 2-step transaction (UPDATE old → FALSE, UPDATE new → TRUE).
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS risk_taxonomy_versions_one_active
+          ON risk_taxonomy_versions (is_active) WHERE is_active = TRUE
+      `);
+
+      // Config rows: kind ∈ {determinant, sector, config}. Identified by
+      // (version, kind, node_key); ordering drives UI render order.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS risk_taxonomy (
+          id            SERIAL PRIMARY KEY,
+          version       TEXT NOT NULL REFERENCES risk_taxonomy_versions(version),
+          kind          TEXT NOT NULL CHECK (kind IN ('determinant', 'sector', 'config')),
+          node_key      TEXT NOT NULL,
+          label         TEXT NOT NULL,
+          ordering      INTEGER NOT NULL DEFAULT 0,
+          metadata      JSONB DEFAULT '{}'::jsonb,
+          is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (version, kind, node_key)
+        )
+      `);
+
+      // Hot-path index for the canvas / packager lookup by version + kind.
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS risk_taxonomy_version_kind_idx
+          ON risk_taxonomy (version, kind, ordering)
+      `);
+
+      console.log('[migrate] ✓ risk_taxonomy_versions + risk_taxonomy tables ready');
+    } catch (err) {
+      console.log('[migrate] Note on risk_taxonomy:', err.message.substring(0, 160));
+    }
+
+    // ── risk_view: append-only column additions for v3.1 grading ────────────
+    try {
+      await pool.query(`
+        ALTER TABLE risk_view
+          ADD COLUMN IF NOT EXISTS final_pd          INTEGER CHECK (final_pd BETWEEN 1 AND 9)
+      `);
+      await pool.query(`
+        ALTER TABLE risk_view
+          ADD COLUMN IF NOT EXISTS final_lgd         CHAR(1) CHECK (final_lgd IN ('A','B','C','D','E'))
+      `);
+      await pool.query(`
+        ALTER TABLE risk_view
+          ADD COLUMN IF NOT EXISTS final_ia          CHAR(1) CHECK (final_ia IN ('A','B','C','D','E'))
+      `);
+      await pool.query(`
+        ALTER TABLE risk_view
+          ADD COLUMN IF NOT EXISTS grade_matrix      JSONB
+      `);
+      await pool.query(`
+        ALTER TABLE risk_view
+          ADD COLUMN IF NOT EXISTS taxonomy_version  TEXT REFERENCES risk_taxonomy_versions(version)
+      `);
+
+      // Filtering / pipeline ranking indexes on the top-level grade columns.
+      await pool.query(`CREATE INDEX IF NOT EXISTS risk_view_final_pd_idx       ON risk_view (final_pd)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS risk_view_final_lgd_idx      ON risk_view (final_lgd)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS risk_view_taxonomy_ver_idx   ON risk_view (taxonomy_version)`);
+
+      console.log('[migrate] ✓ risk_view v3.1 columns: final_pd, final_lgd, final_ia, grade_matrix, taxonomy_version');
+    } catch (err) {
+      console.log('[migrate] Note on risk_view v3.1 columns:', err.message.substring(0, 160));
+    }
+
+    // ── Seed tax_v1: 9 determinants + 6 sectors + 1 grade_scale config ──────
+    //   Adding/removing/renaming a determinant later = INSERT under a new
+    //   version (e.g. tax_v2), flip is_active. NEVER mutate existing rows.
+    try {
+      // 1. Register the version
+      await pool.query(`
+        INSERT INTO risk_taxonomy_versions (version, description, is_active)
+        VALUES ('tax_v1', 'Risk taxonomy v1 — 9 determinants + 6 sectors + grade_scale config (2026-04-27)', TRUE)
+        ON CONFLICT (version) DO NOTHING
+      `);
+
+      // 2. Seed determinants (9 — Layer 1 dimensions, fixed across deals)
+      const determinants = [
+        ['borrower_profile',  'Borrower profile',         1, { description: 'Identity, track record, experience, adverse credit' }],
+        ['borrower_alm',      'Borrower ALM',             2, { description: 'Assets, liabilities, liquidity, ICR/DSCR coverage' }],
+        ['guarantors',        'Guarantors',               3, { description: 'Personal/corporate guarantors, net worth, recourse strength' }],
+        ['property_physical', 'Property (physical)',      4, { description: 'Condition, EPC, PTAL, location quality, rentability' }],
+        ['valuation',         'Valuation',                5, { description: 'AVM band, surveyor view, comparables, marketing buffer' }],
+        ['use_of_funds',      'Use of funds',             6, { description: 'Purpose clarity, alignment with exit, business logic' }],
+        ['exit_pathway',      'Exit pathway',             7, { description: 'Refinance/sale credibility, timing, marketability' }],
+        ['legal_insurance',   'Legal & insurance',        8, { description: 'Title quality, charges, leases, insurance adequacy' }],
+        ['compliance_kyc',    'Compliance / KYC',         9, { description: 'KYC/AML completeness, sanctions, source of funds, PEP' }],
+      ];
+      for (const [key, label, order, meta] of determinants) {
+        await pool.query(
+          `INSERT INTO risk_taxonomy (version, kind, node_key, label, ordering, metadata, is_active)
+           VALUES ('tax_v1', 'determinant', $1, $2, $3, $4::jsonb, TRUE)
+           ON CONFLICT (version, kind, node_key) DO NOTHING`,
+          [key, label, order, JSON.stringify(meta)]
+        );
+      }
+
+      // 3. Seed sectors (6 — broad-brush; refine via tax_v2 once we have data)
+      const sectors = [
+        ['resi_bridging',  'Residential bridging', 1, { description: 'Short-term resi loans, owner-occupier or investment' }],
+        ['commercial',     'Commercial',           2, { description: 'Office, retail, industrial — single or mixed tenant' }],
+        ['resi_btl',       'Residential BTL',      3, { description: 'Buy-to-let portfolios, single or HMO' }],
+        ['land_planning',  'Land with planning',   4, { description: 'Sites with planning consent (no ground-up build)' }],
+        ['mixed_use',      'Mixed-use',            5, { description: 'Combined resi + commercial in single asset' }],
+        ['hospitality',    'Hospitality',          6, { description: 'Hotels, serviced apartments, F&B operating assets' }],
+      ];
+      for (const [key, label, order, meta] of sectors) {
+        await pool.query(
+          `INSERT INTO risk_taxonomy (version, kind, node_key, label, ordering, metadata, is_active)
+           VALUES ('tax_v1', 'sector', $1, $2, $3, $4::jsonb, TRUE)
+           ON CONFLICT (version, kind, node_key) DO NOTHING`,
+          [key, label, order, JSON.stringify(meta)]
+        );
+      }
+
+      // 4. Grade scale config — the [1-9]:[A-E]:[A-E] axes definition + colour ramp
+      const gradeScaleMeta = {
+        pd_scale:  { min: 1, max: 9, direction: 'low_is_best', percentile_rule: 'PD 1 = top decile, PD 5 = median, PD 9 = bottom decile (per sector)' },
+        lgd_scale: { values: ['A','B','C','D','E'], direction: 'A_is_best' },
+        ia_scale:  { values: ['A','B','C','D','E'], direction: 'A_is_best', name: 'Information Availability', notes: 'Pure LLM judgement weighting public-verified vs borrower-volunteered evidence' },
+        colour_ramp: {
+          '1A': '#1f7a3a', '5C': '#c79b3e', '9E': '#a8332b',
+          stops: [
+            { coord: '1A', hex: '#1f7a3a', label: 'best' },
+            { coord: '3B', hex: '#5fa84a' },
+            { coord: '5C', hex: '#c79b3e', label: 'median' },
+            { coord: '7D', hex: '#d97933' },
+            { coord: '9E', hex: '#a8332b', label: 'worst' },
+          ],
+        },
+        layers: {
+          layer_1_count: 9,
+          layer_2_emergent: true,
+          layer_2_target_count: 3,
+          layer_3_count: 1,
+        },
+      };
+      await pool.query(
+        `INSERT INTO risk_taxonomy (version, kind, node_key, label, ordering, metadata, is_active)
+         VALUES ('tax_v1', 'config', 'grade_scale', 'Grade scale (PD · LGD · IA)', 0, $1::jsonb, TRUE)
+         ON CONFLICT (version, kind, node_key) DO NOTHING`,
+        [JSON.stringify(gradeScaleMeta)]
+      );
+
+      // Sanity log
+      const summary = await pool.query(`
+        SELECT kind, COUNT(*)::int AS n
+          FROM risk_taxonomy
+         WHERE version = 'tax_v1' AND is_active = TRUE
+         GROUP BY kind
+         ORDER BY kind
+      `);
+      const summaryStr = summary.rows.map((r) => `${r.kind}=${r.n}`).join(', ');
+      console.log(`[migrate] ✓ risk_taxonomy tax_v1 seeded: ${summaryStr || 'no rows (already seeded?)'}`);
+    } catch (err) {
+      console.log('[migrate] Note on risk_taxonomy seed:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
