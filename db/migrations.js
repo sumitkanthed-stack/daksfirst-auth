@@ -792,6 +792,31 @@ async function runMigrations() {
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_low NUMERIC(15,2)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_high NUMERIC(15,2)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_confidence VARCHAR(10)`,       // High/Medium/Low
+      // 2026-04-27 — AVM model-disagreement detector. Chimnie returns two
+      // independent valuations: property_value (sales-comp model) → mid, and
+      // property_value_range (hedonic confidence band) → [low, high]. The two
+      // models occasionally disagree, leaving mid outside [low,high]. We
+      // surface this on the matrix and ship to the risk LLM so IA can be
+      // downgraded when the AVM models disagree. Generated columns = no
+      // backfill, no race, single source of truth.
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_inconsistent BOOLEAN
+         GENERATED ALWAYS AS (
+           chimnie_avm_low IS NOT NULL
+           AND chimnie_avm_mid IS NOT NULL
+           AND chimnie_avm_high IS NOT NULL
+           AND (chimnie_avm_mid > chimnie_avm_high OR chimnie_avm_mid < chimnie_avm_low)
+         ) STORED`,
+      `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_avm_disagreement_pct NUMERIC(6,2)
+         GENERATED ALWAYS AS (
+           CASE
+             WHEN chimnie_avm_mid IS NULL OR chimnie_avm_high IS NULL OR chimnie_avm_low IS NULL THEN NULL
+             WHEN chimnie_avm_mid > chimnie_avm_high AND chimnie_avm_high > 0
+               THEN ROUND(100.0 * (chimnie_avm_mid - chimnie_avm_high) / chimnie_avm_high, 2)
+             WHEN chimnie_avm_mid < chimnie_avm_low  AND chimnie_avm_mid  > 0
+               THEN ROUND(100.0 * (chimnie_avm_low  - chimnie_avm_mid)  / chimnie_avm_mid,  2)
+             ELSE 0
+           END
+         ) STORED`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_last_sale_price NUMERIC(15,2)`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_last_sale_date DATE`,
       `ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS chimnie_years_owned INT`,
