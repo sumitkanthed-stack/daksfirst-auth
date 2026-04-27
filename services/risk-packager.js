@@ -169,6 +169,45 @@ async function loadCompaniesHouseSnapshots(borrowerRows) {
   return rows;
 }
 
+// --- Experian credit_checks enrichment (2026-04-27, EXP-B7) ---
+//
+// Pulls latest-per-borrower-per-product credit_checks rows for the deal.
+// Three products in scope: commercial_delphi (corporate borrowers),
+// personal_credit + hunter_fraud (individuals — directors, guarantors, UBOs).
+// Soft-fail: if no rows exist, returns empty array. Risk grading proceeds
+// with NULL credit signal — Opus is briefed (via prompt) to mark the
+// determinant as Information Availability gap, not auto-decline.
+//
+// Pre-CONS-3 NOTE: this function ships ALL credit_checks rows regardless of
+// borrower consent state. Once CONS-3 lands, callers will only have populated
+// rows where consent was given — uncalled subjects simply won't have rows
+// in credit_checks, so this query naturally filters consented data only.
+async function loadCreditChecks(dealId) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (borrower_id, product)
+            id, deal_id, borrower_id, director_id, company_id,
+            product, vendor,
+            subject_first_name, subject_last_name, subject_company_name,
+            subject_company_number,
+            result_status, result_grade, credit_score,
+            recommended_limit_pence,
+            ccj_count, ccj_value_pence, ccj_jsonb,
+            bankruptcy_flag, iva_flag,
+            default_count, default_value_pence,
+            electoral_roll_jsonb, gone_away_flag,
+            payment_behaviour_jsonb, gazette_jsonb,
+            fraud_markers_jsonb, hunter_match_count,
+            adverse_jsonb,
+            mode, cost_pence, requested_at
+       FROM credit_checks
+      WHERE deal_id = $1
+        AND pull_error IS NULL
+      ORDER BY borrower_id, product, requested_at DESC`,
+    [dealId]
+  );
+  return rows;
+}
+
 // --- Data-stage resolution ---
 
 function resolveDataStage(input) {
@@ -233,9 +272,18 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
 
   const companiesHouse = await loadCompaniesHouseSnapshots(m1.envelope.features.borrowers);
 
+  // Experian credit_checks (2026-04-27, EXP-B7). Soft-fail on empty.
+  const creditChecks = await loadCreditChecks(dealId);
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
+
+  // Per-product breakdown for provenance + log telemetry.
+  const creditByProduct = creditChecks.reduce((acc, c) => {
+    acc[c.product] = (acc[c.product] || 0) + 1;
+    return acc;
+  }, {});
 
   const provenance = {
     deal_columns_count:     Object.keys(m1.envelope.features.deal).length,
@@ -245,6 +293,10 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     ptal_attached_count:    propsWithPtal.length,
     area_intel_attached_count: propsWithArea.length,
     companies_house_count:  companiesHouse.length,
+    credit_checks_count:    creditChecks.length,
+    credit_commercial_count: creditByProduct.commercial_delphi || 0,
+    credit_personal_count:   creditByProduct.personal_credit || 0,
+    credit_hunter_count:     creditByProduct.hunter_fraud || 0,
     matrix_data_jsonb_present:
       !!m1.envelope.features.deal.matrix_data &&
       Object.keys(m1.envelope.features.deal.matrix_data || {}).length > 0,
@@ -266,6 +318,7 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     sensitivity_calculator_version: sensitivityVersion,
     features:         m1.envelope.features,
     companies_house:  companiesHouse,
+    credit_checks:    creditChecks,
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
@@ -283,6 +336,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     `properties=${provenance.properties_count} ` +
     `chimnie=${provenance.chimnie_attached_count} ` +
     `ch=${provenance.companies_house_count} ` +
+    `credit=${provenance.credit_checks_count}` +
+    `(c=${provenance.credit_commercial_count},p=${provenance.credit_personal_count},h=${provenance.credit_hunter_count}) ` +
     `risk_hash=${payload.risk_payload_hash.slice(0, 12)}`
   );
 
@@ -300,6 +355,7 @@ module.exports = {
   loadActivePrompt,
   loadActiveTaxonomy,
   loadCompaniesHouseSnapshots,
+  loadCreditChecks,
   sha256,
   stableStringify,
   SCHEMA_VERSION,
