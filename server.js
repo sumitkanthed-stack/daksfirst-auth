@@ -24,6 +24,7 @@ const financialsRoutes = require('./routes/financials');
 const companiesHouseRoutes = require('./routes/companies-house');
 const riskRoutes = require('./routes/risk');
 const hmlrRoutes = require('./routes/hmlr');
+const { adminRouter: kycAdminRoutes, webhookRouter: smartsearchWebhookRoutes } = require('./routes/kyc');
 
 // Initialize Express app
 const app = express();
@@ -31,8 +32,13 @@ const app = express();
 // Set up trust proxy for rate limiting
 app.set('trust proxy', 1);
 
-// Middleware
-app.use(express.json({ limit: '10mb' }));
+// Middleware — capture rawBody for HMAC-verified webhooks (SmartSearch).
+// Without the verify callback, downstream webhook handlers cannot reconstruct
+// the exact bytes the vendor signed, so HMAC verification will silently fail.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 
 // Security headers
 app.use(helmet({
@@ -79,7 +85,8 @@ app.get('/api/health', async (req, res) => {
     companies_house: config.COMPANIES_HOUSE_API_KEY ? 'configured' : 'not configured',
     chimnie: config.CHIMNIE_API_KEY ? 'configured' : 'not configured',
     ptal: ptalStatus.loaded ? `${ptalStatus.cells.toLocaleString()} cells loaded` : 'not loaded',
-    hmlr: `mode=${config.HMLR_MODE}${(config.HMLR_USERNAME && config.HMLR_PASSWORD) ? ' creds=ok' : ' creds=missing'}${(config.HMLR_CLIENT_CERT && config.HMLR_CLIENT_KEY) ? ' cert=ok' : ' cert=missing'}`
+    hmlr: `mode=${config.HMLR_MODE}${(config.HMLR_USERNAME && config.HMLR_PASSWORD) ? ' creds=ok' : ' creds=missing'}${(config.HMLR_CLIENT_CERT && config.HMLR_CLIENT_KEY) ? ' cert=ok' : ' cert=missing'}`,
+    smartsearch: `mode=${config.SMARTSEARCH_MODE}${(config.SMARTSEARCH_USERNAME && config.SMARTSEARCH_PASSWORD) ? ' creds=ok' : ' creds=missing'}${config.SMARTSEARCH_API_KEY ? ' apikey=ok' : ' apikey=missing'}${config.SMARTSEARCH_WEBHOOK_SECRET ? ' webhook=ok' : ' webhook=missing'}`
   });
 });
 
@@ -99,6 +106,8 @@ app.use('/api/deals', financialsRoutes);
 app.use('/api/companies-house', companiesHouseRoutes);
 app.use('/api', riskRoutes);          // Mounts /admin/risk-runs/start (token+internal) and /risk-callback (webhook secret)
 app.use('/api/admin/hmlr', hmlrRoutes); // HM Land Registry — admin-only (status, search, pull, property)
+app.use('/api/admin/kyc', kycAdminRoutes); // SmartSearch KYC/AML — admin-only (status, individual, business, sanctions, sweep, monitor, checks, check)
+app.use('/api/webhooks/smartsearch', smartsearchWebhookRoutes); // SmartSearch ongoing-monitoring webhook (HMAC-verified, public)
 
 // Error handling
 app.use((err, req, res, next) => {

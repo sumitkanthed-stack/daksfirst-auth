@@ -1981,6 +1981,67 @@ async function runMigrations() {
       console.log('[migrate] Note on HMLR columns:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // SmartSearch (KYC/AML) — kyc_checks table (append-only history)
+    //   Sumit signed off architecture 2026-04-27:
+    //     - SEPARATE history table (NOT latest-only on borrowers/companies)
+    //     - All four products: individual KYC, business KYB,
+    //       sanctions/PEP, ongoing monitoring
+    //     - Admin-only manual trigger (Q1) — no auto-fire on borrower create
+    //     - Q2: per-subject endpoints + a batch sweep endpoint for directors
+    //     - Q3: monitoring is admin-pick (NOT auto-enrol on every passed check)
+    //   Pattern mirrors risk_view: append-only run-log, FKs nullable to allow
+    //   webhook-driven monitoring updates with no logged-in user.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS kyc_checks (
+          id                       SERIAL PRIMARY KEY,
+          deal_id                  INT,
+          borrower_id              INT,
+          director_id              INT,
+          individual_id            INT,
+          company_id               INT,
+          check_type               VARCHAR(40)  NOT NULL,
+          provider                 VARCHAR(40)  NOT NULL DEFAULT 'smartsearch',
+          subject_first_name       VARCHAR(120),
+          subject_last_name        VARCHAR(120),
+          subject_dob              DATE,
+          subject_address_jsonb    JSONB,
+          subject_company_number   VARCHAR(20),
+          subject_company_name     VARCHAR(255),
+          result_status            VARCHAR(20),
+          result_score             INT,
+          result_summary_jsonb     JSONB,
+          result_raw_jsonb         JSONB,
+          sanctions_hits_jsonb     JSONB,
+          pep_hits_jsonb           JSONB,
+          rca_hits_jsonb           JSONB,
+          sip_hits_jsonb           JSONB,
+          adverse_media_jsonb      JSONB,
+          mode                     VARCHAR(10)  NOT NULL DEFAULT 'mock',
+          cost_pence               INT          NOT NULL DEFAULT 0,
+          requested_by             INT,
+          requested_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          parent_check_id          INT,
+          is_monitoring_update     BOOLEAN      NOT NULL DEFAULT FALSE,
+          pull_error               TEXT
+        )
+      `);
+      // Indexes: deal lookup, subject lookup, type filter, "latest per type per
+      // deal" composite, monitoring chain walks.
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_deal_id          ON kyc_checks(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_borrower_id      ON kyc_checks(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_company_id       ON kyc_checks(company_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_director_id      ON kyc_checks(director_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_check_type       ON kyc_checks(check_type)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_parent           ON kyc_checks(parent_check_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_kyc_checks_deal_type_at     ON kyc_checks(deal_id, check_type, requested_at DESC)`);
+      console.log('[migrate] ✓ kyc_checks table + indexes ready (SmartSearch append-only)');
+    } catch (err) {
+      console.log('[migrate] Note on kyc_checks:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

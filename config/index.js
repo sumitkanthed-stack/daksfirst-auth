@@ -131,6 +131,27 @@ module.exports = {
   //   covers a standard OC1 (£7) with headroom; raise if pulling Title Plans.
   HMLR_MAX_PENCE_PER_PULL: parseInt(process.env.HMLR_MAX_PENCE_PER_PULL || '1000', 10),
 
+  // SmartSearch (KYC / AML / Sanctions / PEP / Ongoing Monitoring) — 2026-04-27
+  //   Auth: HTTP Basic (username + password) plus SMARTSEARCH_API_KEY header.
+  //   Mode flag: 'mock' returns canned fixtures (default — safe for prod with no creds),
+  //              'test' hits sandbox using SMARTSEARCH_TEST_BASE_URL,
+  //              'live' hits production and CHARGES per-check.
+  //   Webhook secret is for the inbound monitoring callback at
+  //   /api/webhooks/smartsearch — vendor pushes updates when a monitored
+  //   subject's status changes (new sanctions hit, new PEP listing, etc.).
+  //   Per-check cap is defensive against premium products / pricing surprises.
+  SMARTSEARCH_MODE: process.env.SMARTSEARCH_MODE || 'mock',
+  SMARTSEARCH_TEST_BASE_URL: process.env.SMARTSEARCH_TEST_BASE_URL || 'https://api-test.smartsearchsecure.com/v1',
+  SMARTSEARCH_LIVE_BASE_URL: process.env.SMARTSEARCH_LIVE_BASE_URL || 'https://api.smartsearchsecure.com/v1',
+  SMARTSEARCH_USERNAME: process.env.SMARTSEARCH_USERNAME || '',
+  SMARTSEARCH_PASSWORD: process.env.SMARTSEARCH_PASSWORD || '',
+  SMARTSEARCH_API_KEY: process.env.SMARTSEARCH_API_KEY || '',
+  SMARTSEARCH_WEBHOOK_SECRET: process.env.SMARTSEARCH_WEBHOOK_SECRET || '',
+  SMARTSEARCH_TIMEOUT_MS: parseInt(process.env.SMARTSEARCH_TIMEOUT_MS || '30000', 10),
+  // Per-check cap in pence — covers Individual KYC (~£3-5), Business KYB (~£8-12),
+  //   Sanctions/PEP (~£2). 500p (£5) is a sane default; raise for KYB-heavy days.
+  SMARTSEARCH_MAX_PENCE_PER_CHECK: parseInt(process.env.SMARTSEARCH_MAX_PENCE_PER_CHECK || '500', 10),
+
   // Daksfirst Alpha (risk modeling engine) — calls this service for deal scoring.
   //   Alpha is deployed separately on Render (Frankfurt EEA for data residency).
   //   Auth never sends PII; only sanitised feature vectors. If alpha is
