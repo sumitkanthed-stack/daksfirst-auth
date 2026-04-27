@@ -232,6 +232,12 @@ function renderHero(run, deal, role) {
   if (!run) return '';
   const v = run.verdict ? run.verdict.toUpperCase() : null;
   const vs = v ? (VERDICT_STYLE[v] || VERDICT_STYLE.MODERATE) : null;
+  // v3.1 grade code (e.g. "7CD") — used when legacy verdict enum is absent.
+  const gmFinal = run && run.grade_matrix && run.grade_matrix.final;
+  const gradeCode = (gmFinal && gmFinal.pd != null && gmFinal.lgd && gmFinal.ia)
+    ? `${gmFinal.pd}${String(gmFinal.lgd).toUpperCase()}${String(gmFinal.ia).toUpperCase()}`
+    : null;
+  const gradeBand = gradeCode ? PD_BAND(Number(gmFinal.pd) || 0) : null;
   const stage = run.data_stage ? run.data_stage.replace('_', ' ') : '—';
   const completed = run.completed_at ? new Date(run.completed_at).toLocaleString() : 'in flight';
   const cost = (run.cost_gbp != null) ? `£${Number(run.cost_gbp).toFixed(2)}` : '—';
@@ -251,12 +257,18 @@ function renderHero(run, deal, role) {
             <div style="font-size:10px;color:${vs.fg};font-weight:700;text-transform:uppercase;letter-spacing:1.2px;opacity:.85;">Verdict</div>
             <div style="font-family:'Playfair Display',Georgia,serif;font-size:32px;font-weight:700;color:${vs.fg};letter-spacing:.5px;line-height:1;margin-top:2px;">${v}</div>
           </div>
+        ` : (gradeCode ? `
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:120px;padding:14px 18px;border-radius:10px;background:${gradeBand.bg};border:1px solid ${gradeBand.border};">
+            <div style="font-size:10px;color:${gradeBand.fg};font-weight:700;text-transform:uppercase;letter-spacing:1.2px;opacity:.85;">Grade</div>
+            <div style="font-family:'Playfair Display',Georgia,serif;font-size:32px;font-weight:700;color:${gradeBand.fg};letter-spacing:.5px;line-height:1;margin-top:2px;">${gradeCode}</div>
+            <div style="font-size:9px;color:${gradeBand.fg};opacity:.7;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">PD · LGD · IA</div>
+          </div>
         ` : `
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:120px;padding:14px 18px;border-radius:10px;background:rgba(148,163,184,0.08);border:1px solid rgba(148,163,184,0.18);">
             <div style="font-size:10px;color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;">Verdict</div>
             <div style="font-family:'Playfair Display',Georgia,serif;font-size:22px;font-weight:600;color:#94A3B8;margin-top:6px;">—</div>
           </div>
-        `}
+        `)}
         <div style="flex:1;min-width:280px;">
           <div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">
             Run #${run.id} · ${sanitizeHtml(stage)} · rubric v${run.rubric_version || '?'} ${run.rubric_stale ? '<span style="color:#FBBF24;">(stale)</span>' : ''}
@@ -781,8 +793,16 @@ function renderV31VerdictTab(run) {
   const latents = Array.isArray(gm.latents) ? gm.latents : [];
   const dets = (gm.determinants && typeof gm.determinants === 'object') ? gm.determinants : {};
   const sectorBaseline = gm.sector_baseline || null;
-  const infoRequest = Array.isArray(gm.info_request) ? gm.info_request : [];
-  const missing = gm.missing_data_summary || null;
+  // info_request: per rubric v4 spec it's a single string ("one concrete ask").
+  // Tolerate array-of-strings just in case the model emits one.
+  const infoRequest = gm.info_request != null
+    ? (Array.isArray(gm.info_request) ? gm.info_request : [gm.info_request])
+    : [];
+  // missing_data_summary: per spec it's an array of strings. Tolerate plain
+  // string fallback.
+  const missing = Array.isArray(gm.missing_data_summary)
+    ? gm.missing_data_summary
+    : (gm.missing_data_summary ? [gm.missing_data_summary] : []);
 
   return `
     <div style="padding:20px 24px 36px;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;align-items:start;">
@@ -1084,12 +1104,22 @@ function renderV31InfoRequest(items) {
 }
 
 function renderV31MissingData(summary) {
-  if (!summary) return '';
-  const text = typeof summary === 'string' ? summary : JSON.stringify(summary);
+  // summary is now always an array (caller normalizes). Render as bulleted
+  // list of items, each item stringified safely.
+  if (!Array.isArray(summary) || !summary.length) return '';
+  const items = summary.map(it => {
+    if (typeof it === 'string') return it;
+    if (it && typeof it === 'object') {
+      return it.label || it.field || it.note || it.text || JSON.stringify(it);
+    }
+    return String(it);
+  });
   return `
     <div style="padding:14px 16px;border-radius:10px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.20);">
-      <div style="font-size:10px;color:#FBBF24;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:6px;">Missing data summary</div>
-      <div style="font-size:11.5px;color:#CBD5E1;line-height:1.6;">${sanitizeHtml(text)}</div>
+      <div style="font-size:10px;color:#FBBF24;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">Missing data summary</div>
+      <ul style="margin:0 0 0 16px;padding:0;font-size:11.5px;color:#CBD5E1;line-height:1.6;">
+        ${items.map(t => `<li style="margin:3px 0;">${sanitizeHtml(t)}</li>`).join('')}
+      </ul>
     </div>
   `;
 }
