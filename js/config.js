@@ -8,8 +8,9 @@ export const API_BASE = isStaging
   ? 'https://daksfirst-auth-staging.onrender.com'
   : 'https://daksfirst-auth.onrender.com';
 
-// NOTE: staging n8n webhook ID is set in Phase E.2 (canvas clones with [STG]
-// prefix). Until then the placeholder will fail loudly on staging — by design.
+// Phase E.2 (2026-04-27) — staging n8n canvas [STG] Risk Analysis Standalone
+// has its own auto-generated webhook ID. Both environments share the same
+// n8n Cloud account; only the canvas + credential differ.
 export const N8N_WEBHOOK = isStaging
-  ? 'https://sumitkanthed.app.n8n.cloud/webhook/STAGING_PENDING_E2'
+  ? 'https://sumitkanthed.app.n8n.cloud/webhook/45335fc4-8430-42eb-9b04-c556db91a094'
   : 'https://sumitkanthed.app.n8n.cloud/webhook/4c811581-2d51-4432-aef1-2c04d53fe71c';
