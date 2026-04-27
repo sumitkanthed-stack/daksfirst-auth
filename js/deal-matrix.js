@@ -44,6 +44,27 @@ async function _refreshDealInPlace(submissionId) {
         if (!el.classList.contains('collapsed')) expandedLegacySections.push(el.id.replace(/^body-/, ''));
       });
 
+      // ── Capture borrower detail rows + SmartSearch/Experian panel sub-states ──
+      // (2026-04-27 EXP-B6 fix) After Run/Sweep actions, _refreshDealInPlace
+      // re-renders the matrix but reverts to collapsed borrower rows, dropping the
+      // user out of context. Capture which borrower rows AND which inline panel
+      // bodies were open so we can re-open them post-restore.
+      const openBorrowerRows = [];
+      document.querySelectorAll('[id^="borrower-detail-inner-"]').forEach(el => {
+        const mh = el.style.maxHeight;
+        if (mh && mh !== '0px' && mh !== '') {
+          openBorrowerRows.push(el.id.replace(/^borrower-detail-inner-/, ''));
+        }
+      });
+      const openSsPanels = [];
+      document.querySelectorAll('[id^="ss-body-"]').forEach(el => {
+        if (el.style.display === 'block') openSsPanels.push(el.id.replace(/^ss-body-/, ''));
+      });
+      const openExpPanels = [];
+      document.querySelectorAll('[id^="exp-body-"]').forEach(el => {
+        if (el.style.display === 'block') openExpPanels.push(el.id.replace(/^exp-body-/, ''));
+      });
+
       const scrollY = window.scrollY || window.pageYOffset || 0;
 
       // Keep a reference to the OLD matrix element so we can detect when it's been replaced.
@@ -81,6 +102,38 @@ async function _refreshDealInPlace(submissionId) {
             if (chevron) chevron.classList.add('open');
           }
         }
+
+        // Restore borrower detail rows that were expanded pre-refresh.
+        // Click the row to trigger the existing toggle handler — this reuses
+        // the open animation + maxHeight management so behaviour is identical.
+        for (const bid of openBorrowerRows) {
+          const row = document.getElementById('borrower-row-' + bid);
+          if (row) {
+            try { row.click(); } catch (_) {}
+          }
+        }
+
+        // Restore SmartSearch + Experian panel bodies (they share toggle pattern).
+        // Allow a 50ms window for the borrower row to mount its detail-inner first.
+        setTimeout(() => {
+          for (const bid of openSsPanels) {
+            if (typeof window._toggleSmartSearchPanel === 'function') {
+              const body = document.getElementById('ss-body-' + bid);
+              if (body && body.style.display === 'none') {
+                try { window._toggleSmartSearchPanel(bid); } catch (_) {}
+              }
+            }
+          }
+          for (const bid of openExpPanels) {
+            if (typeof window._toggleExperianPanel === 'function') {
+              const body = document.getElementById('exp-body-' + bid);
+              if (body && body.style.display === 'none') {
+                try { window._toggleExperianPanel(bid); } catch (_) {}
+              }
+            }
+          }
+        }, 50);
+
         if (scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
       };
 
@@ -6891,6 +6944,14 @@ export async function renderDealMatrix(deal) {
         // Corporate panel is much taller (CH summary + charges + filings + nested kids) — give it headroom
         inner.style.maxHeight = _isCorporate ? '2400px' : '600px';
         inner.style.opacity = '1';
+        // After the 300ms expand transition, clear maxHeight so embedded panels
+        // (SmartSearch + Experian + their expanded bodies) can grow freely without
+        // being clipped by the parent's overflow:hidden. (2026-04-27 EXP-B6 fix)
+        setTimeout(() => {
+          if (inner.style.maxHeight !== '0px' && inner.style.maxHeight !== '') {
+            inner.style.maxHeight = 'none';
+          }
+        }, 350);
       }
     });
   };
@@ -10225,7 +10286,6 @@ window._chConfirmRoles = async function(submissionId, matchData) {
       };
     });
 
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/borrowers/verify-roles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ verifications })
