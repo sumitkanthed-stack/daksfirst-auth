@@ -179,17 +179,19 @@ router.post(
         `INSERT INTO risk_view (
             deal_id, data_stage,
             rubric_prompt_id, macro_prompt_id,
+            taxonomy_version,
             sensitivity_calculator_version,
             model, model_temperature, model_max_tokens,
             input_payload,
             status, triggered_by
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)
          RETURNING id`,
         [
           payload.deal_id,
           payload.data_stage,
           payload.rubric.prompt_id,
           payload.macro.prompt_id,
+          payload.taxonomy_version || null,
           payload.sensitivity_calculator_version,
           modelCfg.model,
           modelCfg.temperature,
@@ -548,22 +550,53 @@ router.post('/risk-callback', verifyWebhookSecret, async (req, res) => {
 
   const newStatus = success === true ? 'success' : 'failed';
 
+  // ── v3.1 defensive extraction from parsed_grades JSONB ──
+  // Validate ranges in JS so CHECK constraints (final_pd 1-9, final_lgd/ia A-E)
+  // can never fire on malformed model output. Bad/missing values land NULL;
+  // parsed_grades JSONB still has the full payload for diagnosis.
+  let v31_final_pd = null;
+  let v31_final_lgd = null;
+  let v31_final_ia = null;
+  let v31_grade_matrix = null;
+  if (parsed_grades && typeof parsed_grades === 'object') {
+    const pd = Number(parsed_grades.final_pd);
+    if (Number.isInteger(pd) && pd >= 1 && pd <= 9) v31_final_pd = pd;
+
+    const lgd = String(parsed_grades.final_lgd || '').trim().toUpperCase();
+    if (/^[A-E]$/.test(lgd)) v31_final_lgd = lgd;
+
+    const ia = String(parsed_grades.final_ia || '').trim().toUpperCase();
+    if (/^[A-E]$/.test(ia)) v31_final_ia = ia;
+
+    if (parsed_grades.grade_matrix && typeof parsed_grades.grade_matrix === 'object') {
+      v31_grade_matrix = JSON.stringify(parsed_grades.grade_matrix);
+    }
+  }
+
   try {
     await pool.query(
       `UPDATE risk_view SET
           raw_response   = $1,
           parsed_grades  = $2::jsonb,
-          input_tokens   = $3,
-          output_tokens  = $4,
-          cost_gbp       = $5,
-          latency_ms     = $6,
-          status         = $7,
-          error_message  = $8,
+          final_pd       = $3,
+          final_lgd      = $4,
+          final_ia       = $5,
+          grade_matrix   = $6::jsonb,
+          input_tokens   = $7,
+          output_tokens  = $8,
+          cost_gbp       = $9,
+          latency_ms     = $10,
+          status         = $11,
+          error_message  = $12,
           completed_at   = NOW()
-        WHERE id = $9`,
+        WHERE id = $13`,
       [
         typeof raw_response === 'string' ? raw_response : null,
         parsed_grades ? JSON.stringify(parsed_grades) : null,
+        v31_final_pd,
+        v31_final_lgd,
+        v31_final_ia,
+        v31_grade_matrix,
         Number.isFinite(Number(input_tokens)) ? Number(input_tokens) : null,
         Number.isFinite(Number(output_tokens)) ? Number(output_tokens) : null,
         cost_gbp,
