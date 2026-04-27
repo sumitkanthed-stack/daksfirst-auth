@@ -250,7 +250,7 @@ router.post(
       deal_id: payload.deal_id,
       submission_id: payload.submission_id,
       data_stage: payload.data_stage,
-      callback_url: `${(config.PUBLIC_AUTH_URL || '').replace(/\/$/, '') || 'https://daksfirst-auth.onrender.com'}/api/risk-callback`,
+      callback_url: `${(config.AUTH_PUBLIC_BASE_URL || '').replace(/\/$/, '') || 'https://daksfirst-auth.onrender.com'}/api/risk-callback`,
       model_config_call_type: 'risk_grade',
 
       // ── Pre-fetched prompt bodies + model config + full deal payload ──
