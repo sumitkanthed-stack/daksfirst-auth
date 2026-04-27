@@ -208,6 +208,36 @@ async function loadCreditChecks(dealId) {
   return rows;
 }
 
+// --- SmartSearch kyc_checks enrichment (2026-04-28, SS-B8) ---
+//
+// Mirror of loadCreditChecks for KYC/AML signal. Four check_types in scope:
+// individual_kyc, business_kyb, sanctions_pep, ongoing_monitoring.
+// DISTINCT ON (borrower_id, check_type) returns latest-per-subject-per-type.
+// is_monitoring_update rows excluded — those are async vendor pushes that
+// belong in a separate "monitoring_events" stream, not the underwriting
+// snapshot Opus grades against. pull_error filtered same as credit_checks.
+async function loadKycChecks(dealId) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (borrower_id, check_type)
+            id, deal_id, borrower_id, director_id, individual_id, company_id,
+            check_type, provider,
+            subject_first_name, subject_last_name, subject_company_name,
+            subject_company_number,
+            result_status, result_score,
+            result_summary_jsonb,
+            sanctions_hits_jsonb, pep_hits_jsonb, rca_hits_jsonb,
+            sip_hits_jsonb, adverse_media_jsonb,
+            mode, cost_pence, requested_at, parent_check_id
+       FROM kyc_checks
+      WHERE deal_id = $1
+        AND pull_error IS NULL
+        AND is_monitoring_update = FALSE
+      ORDER BY borrower_id, check_type, requested_at DESC`,
+    [dealId]
+  );
+  return rows;
+}
+
 // --- Data-stage resolution ---
 
 function resolveDataStage(input) {
@@ -275,6 +305,9 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
   // Experian credit_checks (2026-04-27, EXP-B7). Soft-fail on empty.
   const creditChecks = await loadCreditChecks(dealId);
 
+  // SmartSearch kyc_checks (2026-04-28, SS-B8). Soft-fail on empty.
+  const kycChecks = await loadKycChecks(dealId);
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -282,6 +315,12 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
   // Per-product breakdown for provenance + log telemetry.
   const creditByProduct = creditChecks.reduce((acc, c) => {
     acc[c.product] = (acc[c.product] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Per-check_type breakdown for kyc_checks (SS-B8).
+  const kycByType = kycChecks.reduce((acc, k) => {
+    acc[k.check_type] = (acc[k.check_type] || 0) + 1;
     return acc;
   }, {});
 
@@ -297,6 +336,10 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     credit_commercial_count: creditByProduct.commercial_delphi || 0,
     credit_personal_count:   creditByProduct.personal_credit || 0,
     credit_hunter_count:     creditByProduct.hunter_fraud || 0,
+    kyc_checks_count:       kycChecks.length,
+    kyc_individual_count:   kycByType.individual_kyc || 0,
+    kyc_business_count:     kycByType.business_kyb || 0,
+    kyc_sanctions_count:    kycByType.sanctions_pep || 0,
     matrix_data_jsonb_present:
       !!m1.envelope.features.deal.matrix_data &&
       Object.keys(m1.envelope.features.deal.matrix_data || {}).length > 0,
@@ -319,6 +362,7 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     features:         m1.envelope.features,
     companies_house:  companiesHouse,
     credit_checks:    creditChecks,
+    kyc_checks:       kycChecks,
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
@@ -338,6 +382,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     `ch=${provenance.companies_house_count} ` +
     `credit=${provenance.credit_checks_count}` +
     `(c=${provenance.credit_commercial_count},p=${provenance.credit_personal_count},h=${provenance.credit_hunter_count}) ` +
+    `kyc=${provenance.kyc_checks_count}` +
+    `(i=${provenance.kyc_individual_count},b=${provenance.kyc_business_count},s=${provenance.kyc_sanctions_count}) ` +
     `risk_hash=${payload.risk_payload_hash.slice(0, 12)}`
   );
 
@@ -356,6 +402,7 @@ module.exports = {
   loadActiveTaxonomy,
   loadCompaniesHouseSnapshots,
   loadCreditChecks,
+  loadKycChecks,
   sha256,
   stableStringify,
   SCHEMA_VERSION,
