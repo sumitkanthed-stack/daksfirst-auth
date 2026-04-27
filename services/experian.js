@@ -78,13 +78,15 @@ async function getAccessToken() {
     username: config.EXPERIAN_USERNAME,
     password: config.EXPERIAN_PASSWORD,
   };
+  // Per Experian docs (developer.experian.com → Get an access token):
+  //   Headers: Accept + Content-type + Grant_type (capitalised G, in HEADER, not body)
+  //   Body: JSON with username + password + client_id + client_secret
   const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Correlation-Id': `daksfirst-${Date.now()}`,
-      'X-User-Domain': 'experian.co.uk',
+      'Grant_type': 'password',
     },
     body: JSON.stringify(tokenBody),
     signal: AbortSignal.timeout(config.EXPERIAN_TIMEOUT_MS),
