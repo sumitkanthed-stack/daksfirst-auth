@@ -2423,7 +2423,9 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'uses_sdlt', 'uses_legal_fees', 'uses_other_amount', 'uses_other_description',
       'sources_second_charge', 'sources_equity', 'sources_other_amount', 'sources_other_description',
       // Sprint 4 #19 — refinance-aware S&U
-      'uses_loan_redemption'
+      'uses_loan_redemption',
+      // Sprint 5 #26 — explicit primary-use type dropdown
+      'uses_primary_type'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;

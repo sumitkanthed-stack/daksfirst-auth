@@ -212,6 +212,12 @@ function renderEditableField(dbField, label, value, inputType, canEdit, options)
   </div>`;
 }
 
+// Sprint 5 #25 — expose for window._rebuildSusUses (which lives lower in
+// this file but needs to call renderEditableField after a loan_purpose change).
+if (typeof window !== 'undefined') {
+  window.renderEditableField = renderEditableField;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // M2b (Matrix-SSOT 2026-04-20) — Requested vs Approved paired field
 //
@@ -3629,42 +3635,110 @@ export async function renderDealMatrix(deal) {
                   <!-- USES column -->
                   <div>
                     <div style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid rgba(251,191,36,0.25);padding-bottom:4px;">Uses
-                      <span style="font-size:9px;color:#94A3B8;font-weight:500;text-transform:none;letter-spacing:0;margin-left:8px;">${(() => {
+                      <span id="sus-layout-tag" style="font-size:9px;color:#94A3B8;font-weight:500;text-transform:none;letter-spacing:0;margin-left:8px;">${(() => {
+                        // Layout tag = analyst's explicit pick (Sprint 5 #26)
+                        // Falls back to loan_purpose-derived hint if not yet picked.
+                        const pt = (deal.uses_primary_type || '').toLowerCase();
+                        if (pt === 'purchase')  return '· Purchase';
+                        if (pt === 'refinance') return '· Refinance';
+                        if (pt === 'refurb')    return '· Refurb-only';
+                        if (pt === 'other')     return '· Other';
                         const lp = (deal.loan_purpose || '').toLowerCase();
                         const isAcq = ['acquisition','auction_purchase','chain_break'].includes(lp);
                         const isRefi = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp);
                         const isRefurb = ['light_refurb','heavy_refurb'].includes(lp);
-                        const tag = isAcq ? 'Acquisition layout' : isRefi ? 'Refinance layout' : isRefurb ? 'Refurb layout' : 'Generic layout — set Loan Purpose to refine';
+                        const tag = isAcq ? 'Acquisition (suggested)' : isRefi ? 'Refinance (suggested)' : isRefurb ? 'Refurb (suggested)' : 'Pick primary use →';
                         return '· ' + tag;
                       })()}</span>
                     </div>
                     ${(() => {
-                      // Sprint 4 #19 — conditional Uses fields by loan_purpose.
-                      // Acquisition/auction/chain-break → Purchase price + SDLT.
-                      // Refinance/cash-out/bridge-* → Loan redemption (existing lender payoff).
-                      // Refurb → keep refurb cost in front; show purchase price too if also acquisition.
+                      // Sprint 5 #26 (2026-04-28) — Explicit primary-use type dropdown.
+                      // Replaces the loan_purpose-driven conditional rebuild that was
+                      // unreliable across re-renders. Analyst picks the type from a
+                      // dropdown; the amount field below carries a dynamic label and
+                      // routes the value to the matching column on save:
+                      //   purchase  → purchase_price
+                      //   refinance → uses_loan_redemption
+                      //   refurb    → refurb_cost
+                      //   other     → uses_other_amount
+                      // SDLT, Refurb-extra, Legal fees are always visible below
+                      // because any of them can apply regardless of primary type
+                      // (e.g. refi-with-additional-refurb, SPV transfer SDLT, etc.)
+                      const pt = (deal.uses_primary_type || '').toLowerCase();
+                      // Default suggestion — derive from loan_purpose so a brand-new
+                      // deal still shows a sensible field on first render
                       const lp = (deal.loan_purpose || '').toLowerCase();
-                      const isAcq    = ['acquisition','auction_purchase','chain_break'].includes(lp);
-                      const isRefi   = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp);
-                      const isRefurb = ['light_refurb','heavy_refurb'].includes(lp);
-                      let html = '';
-                      if (isAcq || isRefurb || !lp) {
-                        html += renderEditableField('purchase_price', 'Purchase price (£)', deal.purchase_price, 'money', canEdit);
-                        html += renderEditableField('uses_sdlt', 'Stamp Duty / SDLT (£)', deal.uses_sdlt, 'money', canEdit);
-                        if (canEdit) {
-                          html += '<button onclick="window._autoCalcSdlt(' + (Number(deal.purchase_price) || 0) + ')" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>';
-                        }
-                      }
-                      if (isRefi) {
-                        html += renderEditableField('uses_loan_redemption', 'Loan redemption — existing lender payoff (£)', deal.uses_loan_redemption, 'money', canEdit);
-                        // SDLT can still apply (e.g. SPV transfer on refi); show optionally
-                        html += renderEditableField('uses_sdlt', 'Stamp Duty / SDLT if any (£)', deal.uses_sdlt, 'money', canEdit);
-                      }
-                      // Refurb cost is always relevant if it's a refurb deal,
-                      // and editable for refi-with-refurb scenarios too
-                      html += renderEditableField('refurb_cost', 'Refurb cost (£)', deal.refurb_cost, 'money', canEdit);
-                      html += renderEditableField('uses_legal_fees', 'Legal fees (£)', deal.uses_legal_fees, 'money', canEdit);
-                      return html;
+                      const suggested = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp) ? 'refinance'
+                                      : ['light_refurb','heavy_refurb'].includes(lp) ? 'refurb'
+                                      : ['acquisition','auction_purchase','chain_break'].includes(lp) ? 'purchase'
+                                      : '';
+                      const activeType = pt || suggested || 'purchase';
+
+                      // Resolve display + storage column + current value per active type
+                      const fieldMap = {
+                        purchase:  { label: 'Purchase price (£)',                          col: 'purchase_price',        val: deal.purchase_price        },
+                        refinance: { label: 'Loan redemption — existing lender payoff (£)', col: 'uses_loan_redemption',  val: deal.uses_loan_redemption  },
+                        refurb:    { label: 'Refurb cost (£)',                              col: 'refurb_cost',           val: deal.refurb_cost           },
+                        other:     { label: 'Other primary use amount (£)',                 col: 'uses_other_amount',     val: deal.uses_other_amount     }
+                      };
+                      const fm = fieldMap[activeType] || fieldMap.purchase;
+
+                      // Dropdown options
+                      const opts = [
+                        { value: 'purchase',  label: 'Purchase price' },
+                        { value: 'refinance', label: 'Loan redemption (refinance)' },
+                        { value: 'refurb',    label: 'Refurb cost (refurb-only deal)' },
+                        { value: 'other',     label: 'Other primary use' }
+                      ];
+                      const ddOptHtml = opts.map(o =>
+                        `<option value="${o.value}" ${o.value === activeType ? 'selected' : ''}>${o.label}</option>`
+                      ).join('');
+                      const dropdownHtml = canEdit
+                        ? `<div style="margin-bottom:12px;">
+                             <label style="display:block;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Primary use type *</label>
+                             <select id="mf-uses_primary_type" data-field="uses_primary_type" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(251,191,36,0.35);color:#F1F5F9;border-radius:4px;font-size:13px;cursor:pointer;" onchange="window._onPrimaryUseChange()">
+                               ${ddOptHtml}
+                             </select>
+                             ${pt ? '' : '<div style="font-size:10px;color:#94A3B8;margin-top:3px;font-style:italic;">Suggested from Loan Purpose — pick to lock</div>'}
+                           </div>`
+                        : `<div style="margin-bottom:12px;">
+                             <label style="display:block;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Primary use type</label>
+                             <input type="hidden" id="mf-uses_primary_type" value="${activeType}">
+                             <div style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:#F1F5F9;border-radius:4px;font-size:13px;">${(opts.find(o => o.value === activeType) || opts[0]).label}</div>
+                           </div>`;
+
+                      // The amount field — its data-field changes when the dropdown changes.
+                      // We give it a stable DOM id (mf-primary-use-amount) so the change
+                      // handler can rebind it without recreating the input.
+                      const safeAmt = sanitizeHtml(String(fm.val == null ? '' : fm.val));
+                      const amtDisplay = formatWithCommas(safeAmt);
+                      const amountHtml = canEdit
+                        ? `<div style="margin-bottom:12px;">
+                             <label id="primary-use-label" style="display:block;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">${fm.label}</label>
+                             <input id="primary-use-amount" type="text" inputmode="numeric" data-field="${fm.col}" data-type="money" value="${amtDisplay}" placeholder="e.g. 1,500,000"
+                               style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#F1F5F9;border-radius:4px;font-size:13px;"
+                               oninput="this.value=this.value.replace(/[^0-9.,]/g,'')"
+                               onfocus="this.select()"
+                               onblur="window._savePrimaryUseAmount(this)" />
+                           </div>`
+                        : `<div style="margin-bottom:12px;">
+                             <label id="primary-use-label" style="display:block;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">${fm.label}</label>
+                             <div style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:#F1F5F9;border-radius:4px;font-size:13px;">${amtDisplay ? '£' + amtDisplay : '—'}</div>
+                           </div>`;
+
+                      // SDLT auto-calc button only useful for purchase
+                      const sdltBtn = (canEdit && activeType === 'purchase')
+                        ? `<button onclick="window._autoCalcSdlt(Number((document.getElementById('primary-use-amount')||{}).value || '0'.replace(/,/g,'')) || ${Number(deal.purchase_price) || 0})" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>`
+                        : '';
+
+                      return dropdownHtml + amountHtml +
+                             renderEditableField('uses_sdlt',       'Stamp Duty / SDLT (£)', deal.uses_sdlt,       'money', canEdit) +
+                             sdltBtn +
+                             // Show refurb cost separately ONLY if primary type isn't already refurb
+                             (activeType !== 'refurb'
+                               ? renderEditableField('refurb_cost', 'Refurb cost — additional (£)', deal.refurb_cost, 'money', canEdit)
+                               : '') +
+                             renderEditableField('uses_legal_fees', 'Legal fees (£)',         deal.uses_legal_fees, 'money', canEdit);
                     })()}
                     <div style="font-size:11px;color:#94A3B8;margin:6px 0 4px 0;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.06);">Lender fees (auto from Loan Terms):</div>
                     <div id="sus-fees-list" style="font-size:11px;color:#CBD5E1;margin-bottom:8px;line-height:1.7;">Loading…</div>
@@ -9181,13 +9255,25 @@ window._recalcSourcesUses = function (deal) {
   const valFromDeal = (k) => Number((deal && deal[k]) || 0);
 
   // USES
-  const purchasePrice = numFromField('mf-purchase_price') || valFromDeal('purchase_price');
-  const sdlt          = numFromField('mf-uses_sdlt') || valFromDeal('uses_sdlt');
-  const refurb        = numFromField('mf-refurb_cost') || valFromDeal('refurb_cost');
-  const legal         = numFromField('mf-uses_legal_fees') || valFromDeal('uses_legal_fees');
-  const otherUses     = numFromField('mf-uses_other_amount') || valFromDeal('uses_other_amount');
-  // Sprint 4 #19 — loan redemption (refinance deals) flows into total uses
-  const loanRedemption = numFromField('mf-uses_loan_redemption') || valFromDeal('uses_loan_redemption');
+  // Sprint 5 #26 — the primary-use amount lives in a single input with a
+  // dynamic data-field. Read it once and route it into the right bucket
+  // so the matching column also gets dropped from its own getter (else
+  // we'd double-count).
+  const primaryAmt = $('primary-use-amount');
+  const primaryCol = primaryAmt ? primaryAmt.getAttribute('data-field') : null;
+  const primaryNum = (() => {
+    if (!primaryAmt) return 0;
+    const r = String(primaryAmt.value || '').replace(/[^0-9.]/g, '');
+    return Number(r) || 0;
+  })();
+  const fromPrimary = (col) => primaryCol === col ? primaryNum : 0;
+
+  const purchasePrice  = fromPrimary('purchase_price')      || numFromField('mf-purchase_price')      || valFromDeal('purchase_price');
+  const sdlt           = numFromField('mf-uses_sdlt')       || valFromDeal('uses_sdlt');
+  const refurb         = fromPrimary('refurb_cost')         || numFromField('mf-refurb_cost')         || valFromDeal('refurb_cost');
+  const legal          = numFromField('mf-uses_legal_fees') || valFromDeal('uses_legal_fees');
+  const otherUses      = fromPrimary('uses_other_amount')   || numFromField('mf-uses_other_amount')   || valFromDeal('uses_other_amount');
+  const loanRedemption = fromPrimary('uses_loan_redemption')|| numFromField('mf-uses_loan_redemption')|| valFromDeal('uses_loan_redemption');
 
   // Lender fees auto-derived from loan_amount_approved × pct (matches
   // services/fee-formulae.js convention). DIP fee + commitment fee are
@@ -9270,6 +9356,196 @@ if (!window._susFocusoutInstalled) {
   });
   window._susFocusoutInstalled = true;
 }
+
+// Sprint 5 #25 (2026-04-28) — Rebuild the conditional Uses fields when
+// loan_purpose changes from the dropdown. Without this, the layout sticks
+// at whatever loan_purpose was set at page render (typically "" → Acquisition
+// default), even after the user picks Refinance and the value saves.
+//
+// Reads the new loan_purpose from the dropdown DOM, decides which layout
+// applies, and rewrites the inner HTML of #sus-uses-conditional. Field IDs
+// (mf-purchase_price, mf-uses_loan_redemption, etc.) stay matrixSaveField-
+// compatible so auto-save on blur continues to work.
+window._rebuildSusUses = function () {
+  const host = document.getElementById('sus-uses-conditional');
+  const tag  = document.getElementById('sus-layout-tag');
+  if (!host) return;
+  const sel = document.getElementById('mf-loan_purpose');
+  const lp = ((sel && sel.value) || (window.currentDeal && window.currentDeal.loan_purpose) || '').toLowerCase();
+  const deal = window.currentDeal || {};
+  // Pick up any in-progress edits in DOM so we don't lose them on rebuild
+  const readNum = (k) => {
+    const el = document.getElementById('mf-' + k);
+    if (!el) return deal[k];
+    const raw = String(el.value || '').replace(/[^0-9.]/g, '');
+    return raw === '' ? deal[k] : raw;
+  };
+  const liveDeal = Object.assign({}, deal, {
+    purchase_price:        readNum('purchase_price'),
+    uses_sdlt:             readNum('uses_sdlt'),
+    uses_loan_redemption:  readNum('uses_loan_redemption'),
+    refurb_cost:           readNum('refurb_cost'),
+    uses_legal_fees:       readNum('uses_legal_fees')
+  });
+  const canEdit = !!(window.currentCanEdit !== false);
+
+  const isAcq    = ['acquisition','auction_purchase','chain_break'].includes(lp);
+  const isRefi   = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp);
+  const isRefurb = ['light_refurb','heavy_refurb'].includes(lp);
+
+  if (tag) {
+    const txt = isAcq ? 'Acquisition layout'
+              : isRefi ? 'Refinance layout'
+              : isRefurb ? 'Refurb layout'
+              : 'Generic layout — set Loan Purpose to refine';
+    tag.textContent = '· ' + txt;
+  }
+
+  // Use the same renderEditableField that the matrix uses so saves still wire
+  const ref = (typeof window.renderEditableField === 'function')
+    ? window.renderEditableField
+    : null;
+  if (!ref) {
+    // Fall back: trigger a deal refetch + full matrix re-render
+    if (typeof window.refreshMatrix === 'function') window.refreshMatrix();
+    return;
+  }
+
+  let html = '';
+  if (isAcq || isRefurb || !lp) {
+    html += ref('purchase_price', 'Purchase price (£)', liveDeal.purchase_price, 'money', canEdit);
+    html += ref('uses_sdlt', 'Stamp Duty / SDLT (£)', liveDeal.uses_sdlt, 'money', canEdit);
+    if (canEdit) {
+      html += '<button onclick="window._autoCalcSdlt(' + (Number(liveDeal.purchase_price) || 0) + ')" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>';
+    }
+  }
+  if (isRefi) {
+    html += ref('uses_loan_redemption', 'Loan redemption — existing lender payoff (£)', liveDeal.uses_loan_redemption, 'money', canEdit);
+    html += ref('uses_sdlt', 'Stamp Duty / SDLT if any (£)', liveDeal.uses_sdlt, 'money', canEdit);
+  }
+  html += ref('refurb_cost', 'Refurb cost (£)', liveDeal.refurb_cost, 'money', canEdit);
+  html += ref('uses_legal_fees', 'Legal fees (£)', liveDeal.uses_legal_fees, 'money', canEdit);
+
+  host.innerHTML = html;
+
+  // Recompute totals after rebuild so the balance pill stays accurate
+  setTimeout(() => {
+    if (typeof window._recalcSourcesUses === 'function') {
+      window._recalcSourcesUses(window.currentDeal || {});
+    }
+  }, 50);
+};
+
+// Watch the loan_purpose dropdown (and any future change to it) and rebuild
+// the Uses block. Listens for both 'change' (immediate) and the matrix's
+// own 'matrix:fieldSaved' custom event if it exists.
+if (!window._loanPurposeWatcherInstalled) {
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'mf-loan_purpose') {
+      // Update window.currentDeal so the rebuild reads the new value even
+      // before the PUT round-trip completes
+      if (window.currentDeal) {
+        window.currentDeal.loan_purpose = e.target.value;
+      }
+      window._rebuildSusUses();
+    }
+  });
+  // If the matrix dispatches a save-success event for any field, also
+  // rebuild when loan_purpose was the saved field.
+  document.addEventListener('matrix:fieldSaved', (e) => {
+    if (e && e.detail && e.detail.field === 'loan_purpose') {
+      if (window.currentDeal) {
+        window.currentDeal.loan_purpose = e.detail.value;
+      }
+      window._rebuildSusUses();
+    }
+  });
+  window._loanPurposeWatcherInstalled = true;
+}
+
+// Sprint 5 #26 — Explicit "Primary use type" dropdown handlers.
+//
+// _onPrimaryUseChange — called when the dropdown changes. Saves the new
+//   uses_primary_type to the backend, swaps the amount field's data-field
+//   attribute + label, repopulates the amount field with the value of the
+//   newly active column, and updates the layout tag.
+//
+// _savePrimaryUseAmount(input) — onblur handler for the amount field.
+//   Reads the current data-field, parses the amount, saves via the existing
+//   matrixValidateAndSave hook, then re-runs S&U totals.
+window._onPrimaryUseChange = function () {
+  const dd = document.getElementById('mf-uses_primary_type');
+  if (!dd) return;
+  const newType = dd.value;
+  if (!newType) return;
+
+  // Persist the choice itself
+  if (typeof window.matrixSaveField === 'function') {
+    window.matrixSaveField('uses_primary_type', newType);
+  }
+
+  // Update window.currentDeal so subsequent reads use the new value
+  if (window.currentDeal) {
+    window.currentDeal.uses_primary_type = newType;
+  }
+
+  // Map type → { label, column, value-from-deal }
+  const deal = window.currentDeal || {};
+  const fieldMap = {
+    purchase:  { label: 'Purchase price (£)',                          col: 'purchase_price',        val: deal.purchase_price },
+    refinance: { label: 'Loan redemption — existing lender payoff (£)', col: 'uses_loan_redemption',  val: deal.uses_loan_redemption },
+    refurb:    { label: 'Refurb cost (£)',                              col: 'refurb_cost',           val: deal.refurb_cost },
+    other:     { label: 'Other primary use amount (£)',                 col: 'uses_other_amount',     val: deal.uses_other_amount }
+  };
+  const fm = fieldMap[newType] || fieldMap.purchase;
+
+  // Update label
+  const lbl = document.getElementById('primary-use-label');
+  if (lbl) lbl.textContent = fm.label;
+
+  // Update amount input — change data-field + value (without losing what user typed,
+  // we re-show the corresponding column's saved value)
+  const amt = document.getElementById('primary-use-amount');
+  if (amt) {
+    amt.setAttribute('data-field', fm.col);
+    const v = fm.val == null ? '' : String(fm.val);
+    // Format with commas if numeric
+    const formatted = v
+      ? Number(String(v).replace(/[^0-9.]/g, '')).toLocaleString('en-GB')
+      : '';
+    amt.value = formatted;
+  }
+
+  // Update layout tag
+  const tag = document.getElementById('sus-layout-tag');
+  if (tag) {
+    const txtMap = { purchase: '· Purchase', refinance: '· Refinance', refurb: '· Refurb-only', other: '· Other' };
+    tag.textContent = txtMap[newType] || '· ' + newType;
+  }
+
+  // Recompute totals
+  if (typeof window._recalcSourcesUses === 'function') {
+    window._recalcSourcesUses(window.currentDeal || {});
+  }
+};
+
+window._savePrimaryUseAmount = function (input) {
+  if (!input) return;
+  const col = input.getAttribute('data-field');
+  if (!col) return;
+  const raw = String(input.value || '').replace(/[^0-9.]/g, '');
+  if (typeof window.matrixValidateAndSave === 'function') {
+    window.matrixValidateAndSave(col, raw, 'money');
+  }
+  // Mirror to window.currentDeal so next dropdown switch sees the latest value
+  if (window.currentDeal) {
+    const num = Number(raw);
+    window.currentDeal[col] = isFinite(num) ? num : null;
+  }
+  if (typeof window._recalcSourcesUses === 'function') {
+    window._recalcSourcesUses(window.currentDeal || {});
+  }
+};
 
 // UK residential SDLT auto-calc (2026-04 rates with 3% second-home surcharge).
 // Override-able — user can edit the field after auto-calc if buyer is non-standard.

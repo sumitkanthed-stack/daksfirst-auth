@@ -2564,6 +2564,24 @@ async function runMigrations() {
     }
 
     // ============================================================
+    // 2026-04-28 (Sprint 5 #26): Explicit primary-use type.
+    //   Analyst/RM picks the type via dropdown in the matrix S&U
+    //   block. Replaces the loan_purpose-driven conditional layout.
+    //   Values: 'purchase' | 'refinance' | 'refurb' | 'other'
+    //   The matched amount lands in the matching column:
+    //     purchase  → purchase_price
+    //     refinance → uses_loan_redemption
+    //     refurb    → refurb_cost
+    //     other     → uses_other_amount (+ uses_other_description)
+    // ============================================================
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS uses_primary_type TEXT`);
+      console.log('[migrate] ✓ deal_submissions.uses_primary_type ready (Sprint 5 #26)');
+    } catch (err) {
+      console.log('[migrate] Note on uses_primary_type:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
     // 2026-04-28 (Sprint 4 #20): Per-UBO income & expenses.
     //   Mirrors borrower_other_assets_liabilities pattern but for
     //   income/expense flows. frequency normalises monthly vs annual
