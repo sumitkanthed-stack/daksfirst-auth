@@ -2506,6 +2506,50 @@ async function runMigrations() {
     }
 
     // ============================================================
+    // 2026-04-28 (Sprint 3 #18): CH directorships discovery for KYC.
+    //
+    // Pulled automatically when an individual borrower's CH appointment
+    // is recorded (i.e. as part of corporate-borrower CH verify, for
+    // each director/PSC found). Uses GET /officers/{officer_id}/appointments
+    // from Companies House API.
+    //
+    // troublesome_reasons[] populated by service rules when storing each
+    // row. Reasons: 'dissolved' | 'liquidation' | 'in_administration' |
+    // 'receivership' | 'voluntary_arrangement' | 'strike_off_pending' |
+    // 'phoenix_pattern' (resigned within 6 months of dissolution) |
+    // 'competitor_lender' (against a maintained list).
+    //
+    // is_troublesome generated col flips true when reasons array non-empty.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS borrower_other_directorships (
+          id                     SERIAL PRIMARY KEY,
+          borrower_id            INT NOT NULL,
+          ch_officer_id          VARCHAR(100),
+          company_number         VARCHAR(20),
+          company_name           VARCHAR(255),
+          company_status         VARCHAR(50),
+          officer_role           VARCHAR(50),
+          appointment_date       DATE,
+          resignation_date       DATE,
+          is_active              BOOLEAN GENERATED ALWAYS AS (resignation_date IS NULL) STORED,
+          troublesome_reasons    TEXT[],
+          is_troublesome         BOOLEAN GENERATED ALWAYS AS (
+            troublesome_reasons IS NOT NULL AND array_length(troublesome_reasons, 1) > 0
+          ) STORED,
+          pulled_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bod_borrower         ON borrower_other_directorships(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bod_company_number   ON borrower_other_directorships(company_number)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bod_troublesome      ON borrower_other_directorships(borrower_id) WHERE is_troublesome = TRUE`);
+      console.log('[migrate] ✓ borrower_other_directorships table + indexes ready (Sprint 3 #18)');
+    } catch (err) {
+      console.log('[migrate] Note on borrower_other_directorships:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
     // 2026-04-28 (Sprint 2 fix): rename two exit money cols to drop the
     // _pence suffix. Matrix convention on deal_submissions stores £ values
     // directly in BIGINT/NUMERIC cols (current_value, purchase_price, etc.),

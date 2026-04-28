@@ -28,6 +28,7 @@ const { adminRouter: kycAdminRoutes, webhookRouter: smartsearchWebhookRoutes } =
 const { adminRouter: creditAdminRoutes } = require('./routes/credit');
 const panelsRoutes = require('./routes/panels');
 const valuationsRoutes = require('./routes/valuations');
+const balanceSheetRoutes = require('./routes/borrower-balance-sheet');
 
 // Initialize Express app
 const app = express();
@@ -115,6 +116,7 @@ app.use('/api/webhooks/smartsearch', smartsearchWebhookRoutes); // SmartSearch o
 app.use('/api/admin/credit', creditAdminRoutes); // Experian credit bureau — admin-only (status, personal, business, hunter, sweep, checks, check, latest)
 app.use('/api/admin/panels', panelsRoutes); // Approved valuer + lawyer panel CRUD — admin-only (Sprint 1b 2026-04-28)
 app.use('/api/admin/valuations', valuationsRoutes); // RICS valuation evidence — admin-only Pattern B (Sprint 1b 2026-04-28)
+app.use('/api/admin/balance-sheet', balanceSheetRoutes); // Per-UBO balance sheet — admin-only (Sprint 3 #17 2026-04-28)
 
 // Error handling
 app.use((err, req, res, next) => {

@@ -1600,6 +1600,25 @@ export async function renderDealMatrix(deal) {
         </div>
 
         <!-- Liabilities -->
+        <!-- Sprint 3 #17 — Per-UBO Balance Sheet (NEW) -->
+        ${renderFieldRow('balance-sheet', 'Balance Sheet (per UBO)', 'Property portfolio + assets + liabilities + ownership %',
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-balance-sheet">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Per-UBO Balance Sheet</div>
+                ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
+              </div>
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 10px 0;font-style:italic;">Each individual borrower / UBO / director / guarantor gets their own balance sheet. Track property portfolio (with rent vs interest = net rental), other assets, and liabilities. Ownership % captures partial / indirect ownership (e.g. 50% jointly with spouse, 30% via SPV).</p>
+              ${(typeof window._buildBalanceSheetSection === 'function')
+                ? window._buildBalanceSheetSection(deal)
+                : '<div style="font-size:11px;color:#F87171;padding:10px;">Balance sheet module not loaded. Refresh the page.</div>'}
+            </div>
+          </div>
+        </div>
+
         ${renderFieldRow('liabilities', 'Liabilities', 'Mortgages, loans, credit commitments',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 

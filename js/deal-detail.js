@@ -341,6 +341,11 @@ export async function showDealDetail(dealId) {
       console.warn('[valuations-panel] load failed:', err && err.message);
     });
 
+    // Sprint 3 #17 — balance sheet panel (sets window._buildBalanceSheetSection)
+    import('./balance-sheet-panel.js').catch(err => {
+      console.warn('[balance-sheet-panel] load failed:', err && err.message);
+    });
+
     // Expose current deal globally for valuations-panel uploader (needs submission_id)
     try { window.currentDeal = deal; } catch (_) {}
 
