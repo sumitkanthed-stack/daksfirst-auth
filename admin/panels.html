@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daksfirst — Approved Panels</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #151a21;
+    --panel-2: #1c232c;
+    --border: #2a3340;
+    --ink: #e7ecf3;
+    --muted: #8a95a5;
+    --accent: #4ea1ff;
+    --ok: #3ecf8e;
+    --warn: #f4b740;
+    --err: #ef5b5b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  header a.back { color: var(--muted); text-decoration: none; font-size: 12px; }
+  header a.back:hover { color: var(--accent); }
+  header .user-badge { color: var(--muted); font-size: 12px; }
+
+  .tabs { display: flex; gap: 0; padding: 0 28px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+  .tab { padding: 12px 24px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 500; }
+  .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab:hover { color: var(--ink); }
+
+  main { padding: 20px 28px; max-width: 1700px; }
+
+  .banner { display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+  .banner.ok  { background: rgba(62,207,142,0.1); border: 1px solid var(--ok); color: var(--ok); }
+  .banner.err { background: rgba(239,91,91,0.1); border: 1px solid var(--err); color: var(--err); }
+  .banner.warn { background: rgba(244,183,64,0.1); border: 1px solid var(--warn); color: var(--warn); }
+
+  .filter-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .filter-bar label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .filter-bar .grow { flex: 1; }
+
+  input[type="text"], input[type="email"], input[type="url"], input[type="tel"], input[type="number"], input[type="date"], select, textarea {
+    background: #0b0e13; color: var(--ink); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 13px;
+  }
+  input[type="number"] { font-family: var(--mono); }
+  textarea { font-family: var(--mono); resize: vertical; min-height: 80px; width: 100%; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+  select { min-width: 140px; }
+  input[type="text"].grow { width: 100%; }
+  label.check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; font-size: 13px; }
+  label.check input { accent-color: var(--accent); }
+
+  button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 7px 14px; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  button.ghost:hover { border-color: var(--accent); color: var(--accent); }
+  button.danger { background: var(--err); }
+  button.warn { background: var(--warn); color: #1a1a1a; }
+  button.ok { background: var(--ok); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; background: var(--panel-2); }
+  tr:last-child td { border-bottom: none; }
+  tr.suspended { opacity: 0.7; }
+  tr.removed { opacity: 0.4; }
+  td.firm { font-weight: 600; }
+  td.muted { color: var(--muted); font-size: 12px; }
+  td.actions { white-space: nowrap; text-align: right; }
+  td.actions button { margin-left: 4px; padding: 4px 8px; font-size: 11px; }
+
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pill.active    { background: rgba(62,207,142,0.15); color: var(--ok); }
+  .pill.suspended { background: rgba(244,183,64,0.15); color: var(--warn); }
+  .pill.removed   { background: rgba(239,91,91,0.15); color: var(--err); }
+  .pill.funder    { background: rgba(78,161,255,0.12); color: var(--accent); margin-right: 4px; }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+  .overlay.show { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; width: 92%; max-width: 720px; max-height: 90vh; overflow-y: auto; }
+  .modal-head { padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--panel-2); display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .modal-head .close { background: transparent; color: var(--muted); border: none; font-size: 20px; cursor: pointer; }
+  .modal-body { padding: 18px; }
+  .modal-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+  .form-row { display: flex; flex-direction: column; gap: 4px; }
+  .form-row.span-2 { grid-column: span 2; }
+  .form-row label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .form-row input, .form-row select, .form-row textarea { width: 100%; }
+  .form-section-title { grid-column: span 2; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+
+  .csv-instr { background: var(--panel-2); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.6; }
+  .csv-instr code { background: #0b0e13; padding: 1px 6px; border-radius: 3px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Approved Panels</h1>
+    <div class="sub">Daksfirst-approved RICS valuers + conveyancing lawyers — admin only</div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:center;">
+    <span id="user-badge" class="user-badge">Loading…</span>
+    <a class="back" href="/admin">← back to admin</a>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="valuers" onclick="switchTab('valuers')">Valuers</div>
+  <div class="tab" data-tab="lawyers" onclick="switchTab('lawyers')">Lawyers</div>
+</div>
+
+<main>
+  <div id="banner" class="banner"></div>
+
+  <div class="filter-bar">
+    <label for="filter-status">Status</label>
+    <select id="filter-status" onchange="reloadList()">
+      <option value="active" selected>Active</option>
+      <option value="suspended">Suspended</option>
+      <option value="removed">Removed</option>
+      <option value="*">All statuses</option>
+    </select>
+
+    <label for="filter-funder">Funder</label>
+    <select id="filter-funder" onchange="reloadList()">
+      <option value="">Any funder</option>
+      <option value="daksfirst">daksfirst</option>
+      <option value="gb_bank">gb_bank</option>
+      <option value="starling_warehouse">starling_warehouse</option>
+    </select>
+
+    <input type="text" id="filter-search" class="grow" placeholder="Search firm name…" oninput="debouncedReload()" />
+
+    <button onclick="openAddModal()">+ Add Firm</button>
+    <button class="ghost" onclick="openImportModal()">Import CSV</button>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead id="table-head"></thead>
+      <tbody id="table-body">
+        <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Add / Edit modal -->
+<div class="overlay" id="firm-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="firm-modal-title">Add Valuer</h2>
+      <button class="close" onclick="closeModal('firm-overlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="firm-form" onsubmit="event.preventDefault(); saveFirm();">
+        <div class="form-grid" id="firm-form-grid"></div>
+      </form>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" onclick="closeModal('firm-overlay')">Cancel</button>
+      <button onclick="saveFirm()" id="firm-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import CSV modal -->
+<div class="overlay" id="import-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="import-modal-title">Import Valuers from CSV</h2>
+      <button class="close" onclick="closeModal('import-overlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="csv-instr" id="import-instructions"></div>
+      <textarea id="import-csv" placeholder="Paste CSV here (header row required)" rows="12"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" onclick="closeModal('import-overlay')">Cancel</button>
+      <button onclick="runImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal (suspend/remove with reason) -->
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <h2 id="confirm-title">Confirm</h2>
+      <button class="close" onclick="closeModal('confirm-overlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message" style="margin:0 0 12px 0;"></p>
+      <label style="display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Reason (audit trail)</label>
+      <textarea id="confirm-reason" rows="3" placeholder="e.g. PI insurance lapsed, firm dissolved, …"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" onclick="closeModal('confirm-overlay')">Cancel</button>
+      <button id="confirm-action-btn" class="danger">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ─── Match the rest of the frontend ───
+  const TOKEN = sessionStorage.getItem('daksfirst_token') || '';
+  const API_BASE = window.location.hostname.startsWith('apply-staging')
+    ? 'https://daksfirst-auth-staging.onrender.com'
+    : 'https://daksfirst-auth.onrender.com';
+
+  // ─── State ───
+  let CURRENT_TAB = 'valuers';     // 'valuers' | 'lawyers'
+  let SCHEMA = null;                // populated via /api/admin/panels/schema
+  let CURRENT_LIST = [];           // last fetched list of firms
+  let EDITING_ID = null;            // id of firm being edited; null for add
+
+  // ─── DOM refs ───
+  const banner = document.getElementById('banner');
+  const userBadge = document.getElementById('user-badge');
+  const tableHead = document.getElementById('table-head');
+  const tableBody = document.getElementById('table-body');
+
+  // ─── Helpers ───
+  function showBanner(kind, msg, holdMs) {
+    banner.className = 'banner ' + kind;
+    banner.textContent = msg;
+    banner.style.display = 'block';
+    if (kind === 'ok' || holdMs) {
+      setTimeout(() => { banner.style.display = 'none'; }, holdMs || 3500);
+    }
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  function fmtArr(arr) {
+    if (!Array.isArray(arr) || arr.length === 0) return '<span style="color:var(--muted);">—</span>';
+    return arr.map(a => '<span class="pill funder">' + escapeHtml(a) + '</span>').join('');
+  }
+  function fmtMoney(pence) {
+    if (pence == null) return '—';
+    const p = Number(pence);
+    if (Number.isNaN(p)) return '—';
+    return '£' + (p / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return iso; }
+  }
+  async function api(path, opts) {
+    const r = await fetch(API_BASE + path, Object.assign({
+      headers: Object.assign({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, (opts && opts.headers) || {})
+    }, opts || {}));
+    if (r.status === 401 || r.status === 403) {
+      showBanner('err', 'Session expired or not admin. Sign in as admin and reload.', 999999);
+      throw new Error('auth');
+    }
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error || 'Request failed');
+    return j;
+  }
+
+  // ─── Tabs ───
+  window.switchTab = function (which) {
+    CURRENT_TAB = which;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === which));
+    reloadList();
+  };
+
+  // ─── Schema-driven form rendering ───
+  function fieldDefsForCurrent() {
+    // Maps known DB columns to form field metadata.
+    // Order matters — drives layout.
+    const VALUER_DEFS = [
+      { section: 'Identity' },
+      { name: 'firm_name',              label: 'Firm name *',          type: 'text',     span: 2, required: true },
+      { name: 'rics_firm_number',       label: 'RICS firm number',     type: 'text' },
+      { name: 'companies_house_number', label: 'CH number',            type: 'text' },
+      { name: 'rics_regulated',         label: 'RICS regulated',       type: 'checkbox' },
+      { name: '_blank1', type: 'spacer' },
+
+      { section: 'Contact' },
+      { name: 'firm_address',           label: 'Address',              type: 'textarea', span: 2 },
+      { name: 'firm_postcode',          label: 'Postcode',             type: 'text' },
+      { name: 'firm_phone',             label: 'Phone',                type: 'tel' },
+      { name: 'firm_email',             label: 'Email',                type: 'email' },
+      { name: 'firm_website',           label: 'Website',              type: 'url' },
+
+      { section: 'Coverage' },
+      { name: 'specialisms',            label: 'Specialisms (comma-sep)',         type: 'csv-array', span: 2,
+        hint: 'e.g. residential, commercial, mixed_use, development, hospitality' },
+      { name: 'geographic_coverage',    label: 'Geographic coverage (comma-sep)', type: 'csv-array', span: 2,
+        hint: 'e.g. london, south_east, national' },
+      { name: 'approved_by_funder',     label: 'Approved by funder (comma-sep) *', type: 'csv-array', span: 2,
+        hint: 'e.g. daksfirst, gb_bank' },
+
+      { section: 'PI Insurance' },
+      { name: 'pi_insurance_provider',  label: 'PI provider',          type: 'text' },
+      { name: 'pi_insurance_amount_pence', label: 'PI amount (pence)', type: 'number',
+        hint: '500000000 = £5,000,000' },
+      { name: 'pi_insurance_expiry',    label: 'PI expiry date',       type: 'date' },
+      { name: '_blank2', type: 'spacer' },
+
+      { section: 'Notes' },
+      { name: 'notes',                  label: 'Internal notes',       type: 'textarea', span: 2 }
+    ];
+    const LAWYER_DEFS = [
+      { section: 'Identity' },
+      { name: 'firm_name',              label: 'Firm name *',          type: 'text',     span: 2, required: true },
+      { name: 'sra_number',             label: 'SRA number',           type: 'text' },
+      { name: 'companies_house_number', label: 'CH number',            type: 'text' },
+      { name: 'sra_regulated',          label: 'SRA regulated',        type: 'checkbox' },
+      { name: '_blank1', type: 'spacer' },
+
+      { section: 'Contact' },
+      { name: 'firm_address',           label: 'Address',              type: 'textarea', span: 2 },
+      { name: 'firm_postcode',          label: 'Postcode',             type: 'text' },
+      { name: 'firm_phone',             label: 'Phone',                type: 'tel' },
+      { name: 'firm_email',             label: 'Email',                type: 'email' },
+      { name: 'firm_website',           label: 'Website',              type: 'url' },
+
+      { section: 'Coverage' },
+      { name: 'specialisms',            label: 'Specialisms (comma-sep)',         type: 'csv-array', span: 2,
+        hint: 'e.g. bridging, development, commercial_property, corporate, hospitality' },
+      { name: 'geographic_coverage',    label: 'Geographic coverage (comma-sep)', type: 'csv-array', span: 2 },
+      { name: 'approved_by_funder',     label: 'Approved by funder (comma-sep) *', type: 'csv-array', span: 2 },
+
+      { section: 'PI Insurance' },
+      { name: 'pi_insurance_provider',  label: 'PI provider',          type: 'text' },
+      { name: 'pi_insurance_amount_pence', label: 'PI amount (pence)', type: 'number' },
+      { name: 'pi_insurance_expiry',    label: 'PI expiry date',       type: 'date' },
+      { name: '_blank2', type: 'spacer' },
+
+      { section: 'CDD Undertaking' },
+      { name: 'cdd_undertaking_signed', label: 'Signed Daksfirst CDD undertaking', type: 'checkbox' },
+      { name: 'cdd_undertaking_date',   label: 'CDD undertaking date',  type: 'date' },
+
+      { section: 'Notes' },
+      { name: 'notes',                  label: 'Internal notes',       type: 'textarea', span: 2 }
+    ];
+    return CURRENT_TAB === 'valuers' ? VALUER_DEFS : LAWYER_DEFS;
+  }
+
+  function renderForm(values) {
+    const grid = document.getElementById('firm-form-grid');
+    grid.innerHTML = '';
+    values = values || {};
+    fieldDefsForCurrent().forEach(def => {
+      if (def.section) {
+        const h = document.createElement('div');
+        h.className = 'form-section-title';
+        h.textContent = def.section;
+        grid.appendChild(h);
+        return;
+      }
+      if (def.type === 'spacer') {
+        const sp = document.createElement('div');
+        sp.className = def.span === 2 ? 'form-row span-2' : 'form-row';
+        grid.appendChild(sp);
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'form-row' + (def.span === 2 ? ' span-2' : '');
+      const lab = document.createElement('label');
+      lab.htmlFor = 'f-' + def.name;
+      lab.textContent = def.label;
+      wrap.appendChild(lab);
+
+      let input;
+      if (def.type === 'textarea') {
+        input = document.createElement('textarea');
+        input.rows = 3;
+        input.value = values[def.name] || '';
+      } else if (def.type === 'checkbox') {
+        const labCheck = document.createElement('label');
+        labCheck.className = 'check';
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.id = 'f-' + def.name;
+        input.checked = !!values[def.name];
+        labCheck.appendChild(input);
+        const span = document.createElement('span');
+        span.textContent = 'Yes';
+        labCheck.appendChild(span);
+        wrap.appendChild(labCheck);
+        grid.appendChild(wrap);
+        return;
+      } else if (def.type === 'csv-array') {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = Array.isArray(values[def.name]) ? values[def.name].join(', ') : (values[def.name] || '');
+      } else {
+        input = document.createElement('input');
+        input.type = def.type || 'text';
+        let v = values[def.name];
+        if (def.type === 'date' && v) v = String(v).substring(0, 10);
+        input.value = v == null ? '' : v;
+      }
+      input.id = 'f-' + def.name;
+      input.dataset.fieldName = def.name;
+      input.dataset.fieldType = def.type || 'text';
+      wrap.appendChild(input);
+      if (def.hint) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'color:var(--muted);font-size:11px;';
+        hint.textContent = def.hint;
+        wrap.appendChild(hint);
+      }
+      grid.appendChild(wrap);
+    });
+  }
+
+  function readForm() {
+    const out = {};
+    fieldDefsForCurrent().forEach(def => {
+      if (def.section || def.type === 'spacer') return;
+      const el = document.getElementById('f-' + def.name);
+      if (!el) return;
+      if (def.type === 'checkbox') {
+        out[def.name] = !!el.checked;
+      } else if (def.type === 'csv-array') {
+        const v = (el.value || '').split(',').map(s => s.trim()).filter(Boolean);
+        out[def.name] = v;
+      } else if (def.type === 'number') {
+        const n = el.value === '' ? null : Number(el.value);
+        out[def.name] = (n == null || Number.isNaN(n)) ? null : n;
+      } else if (def.type === 'date') {
+        out[def.name] = el.value || null;
+      } else {
+        out[def.name] = el.value === '' ? null : el.value;
+      }
+    });
+    return out;
+  }
+
+  // ─── Table render ───
+  function renderTable() {
+    if (CURRENT_TAB === 'valuers') {
+      tableHead.innerHTML = `
+        <tr>
+          <th>Firm</th><th>RICS</th><th>Specialisms</th><th>Coverage</th><th>Funders</th>
+          <th>PI £</th><th>PI Expiry</th><th>Status</th><th></th>
+        </tr>`;
+    } else {
+      tableHead.innerHTML = `
+        <tr>
+          <th>Firm</th><th>SRA</th><th>Specialisms</th><th>Coverage</th><th>Funders</th>
+          <th>CDD</th><th>PI Expiry</th><th>Status</th><th></th>
+        </tr>`;
+    }
+
+    if (!CURRENT_LIST.length) {
+      tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">No firms match the current filters.</td></tr>';
+      return;
+    }
+
+    tableBody.innerHTML = CURRENT_LIST.map(row => {
+      const statusCls = 'pill ' + row.status;
+      const trCls = row.status === 'suspended' ? 'suspended' : (row.status === 'removed' ? 'removed' : '');
+      const colReg = CURRENT_TAB === 'valuers'
+        ? (row.rics_regulated ? '<span class="pill active">RICS</span>' + (row.rics_firm_number ? ' <span style="color:var(--muted);font-size:11px;">' + escapeHtml(row.rics_firm_number) + '</span>' : '') : '<span style="color:var(--muted);">—</span>')
+        : (row.sra_regulated ? '<span class="pill active">SRA</span>' + (row.sra_number ? ' <span style="color:var(--muted);font-size:11px;">' + escapeHtml(row.sra_number) + '</span>' : '') : '<span style="color:var(--muted);">—</span>');
+      const colCdd = CURRENT_TAB === 'lawyers'
+        ? (row.cdd_undertaking_signed ? '<span class="pill active">Signed</span>' : '<span style="color:var(--muted);font-size:11px;">Not signed</span>')
+        : fmtMoney(row.pi_insurance_amount_pence);
+      const actions =
+        (row.status === 'active'
+          ? '<button class="ghost" onclick="openEdit(' + row.id + ')">Edit</button>' +
+            '<button class="warn" onclick="askConfirm(\'suspend\', ' + row.id + ', \'' + escapeHtml(row.firm_name) + '\')">Suspend</button>' +
+            '<button class="danger" onclick="askConfirm(\'remove\', ' + row.id + ', \'' + escapeHtml(row.firm_name) + '\')">Remove</button>'
+          : '<button class="ok" onclick="restoreRow(' + row.id + ')">Restore</button>'
+        );
+
+      return '<tr class="' + trCls + '">' +
+        '<td class="firm">' + escapeHtml(row.firm_name) +
+          (row.firm_email ? '<div class="muted">' + escapeHtml(row.firm_email) + '</div>' : '') +
+          (row.firm_postcode ? '<div class="muted">' + escapeHtml(row.firm_postcode) + '</div>' : '') +
+        '</td>' +
+        '<td>' + colReg + '</td>' +
+        '<td class="muted">' + (Array.isArray(row.specialisms) && row.specialisms.length ? row.specialisms.join(', ') : '—') + '</td>' +
+        '<td class="muted">' + (Array.isArray(row.geographic_coverage) && row.geographic_coverage.length ? row.geographic_coverage.join(', ') : '—') + '</td>' +
+        '<td>' + fmtArr(row.approved_by_funder) + '</td>' +
+        '<td>' + colCdd + '</td>' +
+        '<td class="muted">' + fmtDate(row.pi_insurance_expiry) + '</td>' +
+        '<td><span class="' + statusCls + '">' + escapeHtml(row.status) + '</span></td>' +
+        '<td class="actions">' + actions + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ─── Data fetching ───
+  let _reloadTimer = null;
+  window.debouncedReload = function () {
+    clearTimeout(_reloadTimer);
+    _reloadTimer = setTimeout(reloadList, 250);
+  };
+
+  window.reloadList = async function () {
+    if (!TOKEN) {
+      showBanner('err', 'Not signed in. Open the main portal, sign in as admin, then return to this page.', 999999);
+      return;
+    }
+    const status = document.getElementById('filter-status').value;
+    const funder = document.getElementById('filter-funder').value;
+    const search = document.getElementById('filter-search').value;
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (funder) qs.set('funder', funder);
+    if (search) qs.set('search', search);
+    try {
+      const j = await api('/api/admin/panels/' + CURRENT_TAB + '?' + qs.toString());
+      CURRENT_LIST = j.data || [];
+      renderTable();
+    } catch (err) {
+      if (err.message !== 'auth') {
+        showBanner('err', 'Failed to load: ' + err.message);
+      }
+    }
+  };
+
+  // ─── Modal lifecycle ───
+  window.closeModal = function (id) {
+    document.getElementById(id).classList.remove('show');
+  };
+
+  window.openAddModal = function () {
+    EDITING_ID = null;
+    document.getElementById('firm-modal-title').textContent =
+      'Add ' + (CURRENT_TAB === 'valuers' ? 'Valuer' : 'Lawyer');
+    renderForm({
+      rics_regulated: true,
+      sra_regulated: true,
+      approved_by_funder: ['daksfirst']
+    });
+    document.getElementById('firm-overlay').classList.add('show');
+  };
+
+  window.openEdit = async function (id) {
+    EDITING_ID = id;
+    document.getElementById('firm-modal-title').textContent = 'Edit firm';
+    try {
+      const j = await api('/api/admin/panels/' + CURRENT_TAB + '/' + id);
+      renderForm(j.data || {});
+      document.getElementById('firm-overlay').classList.add('show');
+    } catch (err) {
+      showBanner('err', 'Failed to load firm: ' + err.message);
+    }
+  };
+
+  window.saveFirm = async function () {
+    const data = readForm();
+    const btn = document.getElementById('firm-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      if (EDITING_ID) {
+        await api('/api/admin/panels/' + CURRENT_TAB + '/' + EDITING_ID, {
+          method: 'PUT',
+          body: JSON.stringify(data)
+        });
+        showBanner('ok', 'Firm updated.');
+      } else {
+        await api('/api/admin/panels/' + CURRENT_TAB, {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+        showBanner('ok', 'Firm added.');
+      }
+      closeModal('firm-overlay');
+      reloadList();
+    } catch (err) {
+      showBanner('err', 'Save failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  };
+
+  // ─── Suspend / Remove / Restore ───
+  let _confirmCtx = null;
+  window.askConfirm = function (action, id, firmName) {
+    _confirmCtx = { action, id };
+    const title = action === 'suspend' ? 'Suspend firm' : 'Remove firm';
+    const msg = action === 'suspend'
+      ? 'Suspend ' + firmName + '? This is reversible — restore brings it back to active.'
+      : 'Remove ' + firmName + '? Soft-delete only; historic deals retain attribution. Reversible.';
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = msg;
+    document.getElementById('confirm-reason').value = '';
+    const btn = document.getElementById('confirm-action-btn');
+    btn.textContent = action === 'suspend' ? 'Suspend' : 'Remove';
+    btn.className = action === 'suspend' ? 'warn' : 'danger';
+    btn.onclick = doConfirm;
+    document.getElementById('confirm-overlay').classList.add('show');
+  };
+
+  async function doConfirm() {
+    if (!_confirmCtx) return;
+    const { action, id } = _confirmCtx;
+    const reason = document.getElementById('confirm-reason').value || null;
+    try {
+      await api('/api/admin/panels/' + CURRENT_TAB + '/' + id + '/' + action, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      showBanner('ok', 'Firm ' + (action === 'suspend' ? 'suspended' : 'removed') + '.');
+      closeModal('confirm-overlay');
+      reloadList();
+    } catch (err) {
+      showBanner('err', action + ' failed: ' + err.message);
+    }
+  }
+
+  window.restoreRow = async function (id) {
+    if (!confirm('Restore this firm to active?')) return;
+    try {
+      await api('/api/admin/panels/' + CURRENT_TAB + '/' + id + '/restore', { method: 'POST' });
+      showBanner('ok', 'Firm restored.');
+      reloadList();
+    } catch (err) {
+      showBanner('err', 'Restore failed: ' + err.message);
+    }
+  };
+
+  // ─── CSV import ───
+  window.openImportModal = function () {
+    const cols = (CURRENT_TAB === 'valuers' ? SCHEMA.valuer_columns : SCHEMA.lawyer_columns) || [];
+    document.getElementById('import-modal-title').textContent =
+      'Import ' + (CURRENT_TAB === 'valuers' ? 'Valuers' : 'Lawyers') + ' from CSV';
+    document.getElementById('import-instructions').innerHTML =
+      'Header row required. Recognised columns: <code>' + cols.join('</code>, <code>') + '</code>.<br>' +
+      'Array fields (<code>specialisms</code>, <code>geographic_coverage</code>, <code>approved_by_funder</code>) accept pipe-separated values: <code>residential|commercial</code>.<br>' +
+      'Boolean fields accept <code>true</code>/<code>false</code>. Money fields are in pence.';
+    document.getElementById('import-csv').value = '';
+    document.getElementById('import-overlay').classList.add('show');
+  };
+
+  function parseCsvRows(text) {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    return lines.slice(1).map(line => {
+      const cells = line.split(',').map(c => c.trim());
+      const obj = {};
+      headers.forEach((h, i) => {
+        const v = cells[i];
+        if (v == null || v === '') return;
+        if (['specialisms', 'geographic_coverage', 'approved_by_funder'].includes(h)) {
+          obj[h] = v.split('|').map(s => s.trim()).filter(Boolean);
+        } else if (v === 'true' || v === 'false') {
+          obj[h] = v === 'true';
+        } else if (/_pence$/.test(h) || /^pi_insurance_amount/.test(h)) {
+          const n = Number(v);
+          obj[h] = Number.isNaN(n) ? null : n;
+        } else {
+          obj[h] = v;
+        }
+      });
+      return obj;
+    });
+  }
+
+  window.runImport = async function () {
+    const text = document.getElementById('import-csv').value;
+    const rows = parseCsvRows(text);
+    if (!rows.length) {
+      showBanner('err', 'No valid rows parsed.');
+      return;
+    }
+    try {
+      const j = await api('/api/admin/panels/' + CURRENT_TAB + '/import', {
+        method: 'POST',
+        body: JSON.stringify({ rows })
+      });
+      const r = j.data || {};
+      const errCount = (r.errors || []).length;
+      if (errCount > 0) {
+        showBanner('warn',
+          'Imported ' + r.inserted + ' of ' + r.total + ' rows. ' + errCount + ' failed: ' +
+          (r.errors || []).slice(0, 3).map(e => e.firm_name + ' (' + e.error + ')').join('; ') +
+          (errCount > 3 ? '…' : ''),
+          15000);
+      } else {
+        showBanner('ok', 'Imported ' + r.inserted + ' rows.');
+      }
+      closeModal('import-overlay');
+      reloadList();
+    } catch (err) {
+      showBanner('err', 'Import failed: ' + err.message);
+    }
+  };
+
+  // ─── Init ───
+  async function init() {
+    if (!TOKEN) {
+      showBanner('err', 'Not signed in. Open the main portal, sign in as admin, then return to this page.', 999999);
+      userBadge.textContent = 'Not signed in';
+      return;
+    }
+    userBadge.textContent = 'Admin';
+    try {
+      const sj = await api('/api/admin/panels/schema');
+      SCHEMA = sj.data || { valuer_columns: [], lawyer_columns: [] };
+    } catch (err) {
+      if (err.message !== 'auth') showBanner('err', 'Schema load failed: ' + err.message);
+      return;
+    }
+    reloadList();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
