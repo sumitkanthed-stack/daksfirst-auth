@@ -1619,6 +1619,23 @@ export async function renderDealMatrix(deal) {
           </div>
         </div>
 
+        <!-- Sprint 4 #21 — Consolidated A/L + Consolidated Income/Expenses (rollup across all UBOs) -->
+        ${renderFieldRow('consolidated-balance-sheet', 'Consolidated A/L + I/E', 'Aggregated across all UBOs (effective shares applied)',
+          ['not-started', 'not-started', 'not-started', 'not-started'])}
+
+        <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-consolidated-balance-sheet">
+          <div style="padding:8px 26px 14px 50px">
+            <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <div style="font-size:14px;font-weight:700;color:#F1F5F9">Consolidated Balance Sheet + Income/Expenses</div>
+                <span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ-ONLY · ROLLUP</span>
+              </div>
+              <p style="font-size:11px;color:#94A3B8;margin:0 0 10px 0;font-style:italic;">Rollup of every UBO's balance sheet + income/expenses on this deal. Effective shares (ownership %) applied. Edit individual rows in the per-UBO Balance Sheet block above.</p>
+              <div id="consolidated-bs-host" style="font-size:12px;color:#94A3B8;padding:6px;">Loading consolidated rollup…</div>
+            </div>
+          </div>
+        </div>
+
         ${renderFieldRow('liabilities', 'Liabilities', 'Mortgages, loans, credit commitments',
           ['not-started', 'not-started', 'not-started', 'not-started'])}
 
