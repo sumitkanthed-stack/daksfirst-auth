@@ -293,6 +293,227 @@ async function getNetWorthForBorrower(borrowerId) {
   };
 }
 
+// ════════════════════════════════════════════════════════════
+// Sprint 4 #20 (2026-04-28) — Per-UBO income & expenses
+// ════════════════════════════════════════════════════════════
+
+const IE_COLS = [
+  'kind', 'category', 'description', 'amount',
+  'frequency', 'ownership_pct', 'ownership_via', 'notes'
+];
+
+const VALID_IE_KIND = ['income', 'expense'];
+const VALID_FREQUENCY = ['monthly', 'annually', 'one_off'];
+
+const COMMON_IE_CATEGORIES = {
+  income: ['employment', 'self_employment', 'rental', 'dividend', 'pension', 'investment', 'other_income'],
+  expense: ['mortgage', 'rent', 'utilities', 'council_tax', 'living_costs', 'school_fees', 'insurance', 'other_expense']
+};
+
+// Convert any (amount, frequency) to a monthly figure for roll-ups.
+// 'one_off' contributes 0 to monthly run-rate (still stored, just doesn't
+// flow to monthly DSCR-style calculations).
+function _toMonthly(amount, frequency) {
+  const a = Number(amount || 0);
+  if (!Number.isFinite(a)) return 0;
+  switch ((frequency || 'monthly').toLowerCase()) {
+    case 'annually':  return a / 12;
+    case 'one_off':   return 0;
+    case 'monthly':
+    default:          return a;
+  }
+}
+
+function _decorateIeRow(row) {
+  if (!row) return row;
+  const a = Number(row.amount || 0);
+  const pct = Number(row.ownership_pct || 100) / 100;
+  const monthly = _toMonthly(a, row.frequency);
+  return Object.assign({}, row, {
+    derived: {
+      effective_amount: a * pct,
+      monthly_gross: monthly,
+      monthly_effective: monthly * pct
+    }
+  });
+}
+
+async function listIncomeExpensesForBorrower(borrowerId) {
+  const r = await pool.query(
+    `SELECT * FROM borrower_income_expenses
+      WHERE borrower_id = $1 AND deleted_at IS NULL
+      ORDER BY kind, id ASC`,
+    [borrowerId]
+  );
+  return r.rows.map(_decorateIeRow);
+}
+
+async function listIncomeExpensesForDeal(dealId) {
+  const r = await pool.query(
+    `SELECT bie.*
+       FROM borrower_income_expenses bie
+       JOIN deal_borrowers db ON db.id = bie.borrower_id
+      WHERE db.deal_id = $1 AND bie.deleted_at IS NULL
+      ORDER BY bie.borrower_id, bie.kind, bie.id`,
+    [dealId]
+  );
+  return r.rows.map(_decorateIeRow);
+}
+
+async function createIncomeExpenseRow(borrowerId, data, userId) {
+  if (!data.kind || !VALID_IE_KIND.includes(data.kind)) {
+    throw new Error(`kind must be one of: ${VALID_IE_KIND.join(', ')}`);
+  }
+  if (data.frequency && !VALID_FREQUENCY.includes(data.frequency)) {
+    throw new Error(`frequency must be one of: ${VALID_FREQUENCY.join(', ')}`);
+  }
+  const cols = ['borrower_id', 'added_by_user_id'];
+  const placeholders = ['$1', '$2'];
+  const values = [borrowerId, userId];
+  let i = 3;
+  for (const c of IE_COLS) {
+    if (data[c] !== undefined && data[c] !== null) {
+      cols.push(c);
+      placeholders.push('$' + i);
+      values.push(data[c]);
+      i++;
+    }
+  }
+  const sql = `INSERT INTO borrower_income_expenses (${cols.join(', ')})
+               VALUES (${placeholders.join(', ')})
+               RETURNING *`;
+  const r = await pool.query(sql, values);
+  return _decorateIeRow(r.rows[0]);
+}
+
+async function updateIncomeExpenseRow(id, data) {
+  if (data.kind !== undefined && !VALID_IE_KIND.includes(data.kind)) {
+    throw new Error(`kind must be one of: ${VALID_IE_KIND.join(', ')}`);
+  }
+  if (data.frequency !== undefined && !VALID_FREQUENCY.includes(data.frequency)) {
+    throw new Error(`frequency must be one of: ${VALID_FREQUENCY.join(', ')}`);
+  }
+  const sets = [];
+  const values = [];
+  let i = 1;
+  for (const c of IE_COLS) {
+    if (data[c] !== undefined) {
+      sets.push(c + ' = $' + i);
+      values.push(data[c]);
+      i++;
+    }
+  }
+  if (sets.length === 0) return await getIncomeExpenseRow(id);
+  values.push(id);
+  const r = await pool.query(
+    `UPDATE borrower_income_expenses SET ${sets.join(', ')}
+      WHERE id = $${i} AND deleted_at IS NULL
+      RETURNING *`,
+    values
+  );
+  return r.rows[0] ? _decorateIeRow(r.rows[0]) : null;
+}
+
+async function softDeleteIncomeExpenseRow(id) {
+  const r = await pool.query(
+    `UPDATE borrower_income_expenses
+        SET deleted_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING id`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+async function getIncomeExpenseRow(id) {
+  const r = await pool.query(
+    `SELECT * FROM borrower_income_expenses WHERE id = $1`,
+    [id]
+  );
+  return r.rows[0] ? _decorateIeRow(r.rows[0]) : null;
+}
+
+// Sprint 4 #21 — Consolidated rollups across ALL borrowers on a deal.
+// No new tables; just SUMs across the per-borrower data.
+async function getConsolidatedForDeal(dealId) {
+  const [props, other, ie] = await Promise.all([
+    listPortfolioForDeal(dealId),
+    listAssetsLiabsForDeal(dealId),
+    listIncomeExpensesForDeal(dealId)
+  ]);
+
+  // Property side
+  const totalGrossMV    = props.reduce((s,p) => s + Number(p.market_value || 0), 0);
+  const totalGrossMort  = props.reduce((s,p) => s + Number(p.mortgage_outstanding || 0), 0);
+  const totalEffMV      = props.reduce((s,p) => s + Number((p.derived && p.derived.effective_market_value) || 0), 0);
+  const totalEffMort    = props.reduce((s,p) => s + Number((p.derived && p.derived.effective_mortgage) || 0), 0);
+  const totalEffEquity  = props.reduce((s,p) => s + Number((p.derived && p.derived.effective_equity) || 0), 0);
+  const totalEffNetRent = props.reduce((s,p) => s + Number((p.derived && p.derived.net_rent_monthly_effective) || 0), 0);
+
+  // Other A/L side
+  const assetsArr = other.filter(r => r.kind === 'asset');
+  const liabsArr  = other.filter(r => r.kind === 'liability');
+  const totalEffAssets = assetsArr.reduce((s,r) => s + Number((r.derived && r.derived.effective_amount) || 0), 0);
+  const totalEffLiabs  = liabsArr.reduce((s,r) => s + Number((r.derived && r.derived.effective_amount) || 0), 0);
+
+  // Income/Expense side
+  const incomes  = ie.filter(r => r.kind === 'income');
+  const expenses = ie.filter(r => r.kind === 'expense');
+  const monthlyIncome  = incomes.reduce((s,r) => s + Number((r.derived && r.derived.monthly_effective) || 0), 0);
+  const monthlyExpense = expenses.reduce((s,r) => s + Number((r.derived && r.derived.monthly_effective) || 0), 0);
+
+  return {
+    deal_id: dealId,
+    counts: {
+      portfolio_properties: props.length,
+      other_assets: assetsArr.length,
+      other_liabilities: liabsArr.length,
+      income_lines: incomes.length,
+      expense_lines: expenses.length
+    },
+    consolidated_balance_sheet: {
+      gross_property_value: totalGrossMV,
+      gross_property_mortgage: totalGrossMort,
+      effective_property_value: totalEffMV,
+      effective_property_mortgage: totalEffMort,
+      effective_property_equity: totalEffEquity,
+      effective_other_assets: totalEffAssets,
+      effective_other_liabilities: totalEffLiabs,
+      effective_total_assets: totalEffMV + totalEffAssets,
+      effective_total_liabilities: totalEffMort + totalEffLiabs,
+      effective_consolidated_net_worth: totalEffEquity + totalEffAssets - totalEffLiabs
+    },
+    consolidated_income_expense: {
+      effective_monthly_income: monthlyIncome,
+      effective_monthly_expense: monthlyExpense,
+      effective_monthly_net: monthlyIncome - monthlyExpense,
+      effective_monthly_net_rent: totalEffNetRent
+    },
+    portfolio_properties: props,
+    other_assets_liabilities: other,
+    income_expenses: ie
+  };
+}
+
+// Per-UBO income/expenses roll-up
+async function getIncomeExpenseSummaryForBorrower(borrowerId) {
+  const rows = await listIncomeExpensesForBorrower(borrowerId);
+  const incomes = rows.filter(r => r.kind === 'income');
+  const expenses = rows.filter(r => r.kind === 'expense');
+  const monthlyIncome = incomes.reduce((s, r) => s + Number(r.derived.monthly_effective || 0), 0);
+  const monthlyExpense = expenses.reduce((s, r) => s + Number(r.derived.monthly_effective || 0), 0);
+  return {
+    borrower_id: borrowerId,
+    income_count: incomes.length,
+    expense_count: expenses.length,
+    effective_monthly_income: monthlyIncome,
+    effective_monthly_expense: monthlyExpense,
+    effective_monthly_net: monthlyIncome - monthlyExpense,
+    incomes,
+    expenses
+  };
+}
+
 module.exports = {
   // Portfolio properties
   listPortfolioForBorrower,
@@ -308,11 +529,25 @@ module.exports = {
   updateAssetLiabRow,
   softDeleteAssetLiabRow,
   getAssetLiabRow,
+  // Income / Expenses (Sprint 4 #20)
+  listIncomeExpensesForBorrower,
+  listIncomeExpensesForDeal,
+  createIncomeExpenseRow,
+  updateIncomeExpenseRow,
+  softDeleteIncomeExpenseRow,
+  getIncomeExpenseRow,
+  getIncomeExpenseSummaryForBorrower,
   // Roll-up
   getNetWorthForBorrower,
+  // Sprint 4 #21 — Consolidated rollups across UBOs
+  getConsolidatedForDeal,
   // Constants
   PROP_COLS,
   ASSET_COLS,
+  IE_COLS,
   VALID_KIND,
-  COMMON_CATEGORIES
+  VALID_IE_KIND,
+  VALID_FREQUENCY,
+  COMMON_CATEGORIES,
+  COMMON_IE_CATEGORIES
 };

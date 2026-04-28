@@ -158,17 +158,71 @@ router.get('/deal/:dealId/all', async (req, res) => {
   try {
     const dealId = parseId(req.params.dealId);
     if (!dealId) return res.status(400).json({ success: false, error: 'Invalid dealId' });
-    const [portfolio, other] = await Promise.all([
+    const [portfolio, other, incomeExpenses] = await Promise.all([
       bs.listPortfolioForDeal(dealId),
-      bs.listAssetsLiabsForDeal(dealId)
+      bs.listAssetsLiabsForDeal(dealId),
+      bs.listIncomeExpensesForDeal(dealId)
     ]);
     res.json({
       success: true,
       data: {
         portfolio_properties: portfolio,
-        other_assets_liabilities: other
+        other_assets_liabilities: other,
+        income_expenses: incomeExpenses
       }
     });
+  } catch (err) { wrapErr(res, err); }
+});
+
+// ─────────────────────────────────────────────────
+// Sprint 4 #20 — Income & Expenses per UBO
+// ─────────────────────────────────────────────────
+router.get('/borrower/:borrowerId/income-expenses', async (req, res) => {
+  try {
+    const id = parseId(req.params.borrowerId);
+    if (!id) return res.status(400).json({ success: false, error: 'Invalid borrowerId' });
+    const data = await bs.getIncomeExpenseSummaryForBorrower(id);
+    res.json({ success: true, data });
+  } catch (err) { wrapErr(res, err); }
+});
+
+router.post('/borrower/:borrowerId/income-expenses', async (req, res) => {
+  try {
+    const id = parseId(req.params.borrowerId);
+    if (!id) return res.status(400).json({ success: false, error: 'Invalid borrowerId' });
+    const userId = req.user && req.user.id;
+    const row = await bs.createIncomeExpenseRow(id, req.body || {}, userId);
+    res.status(201).json({ success: true, data: row });
+  } catch (err) { wrapErr(res, err); }
+});
+
+router.put('/income-expenses/:id', async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ success: false, error: 'Invalid id' });
+    const row = await bs.updateIncomeExpenseRow(id, req.body || {});
+    if (!row) return res.status(404).json({ success: false, error: 'Row not found' });
+    res.json({ success: true, data: row });
+  } catch (err) { wrapErr(res, err); }
+});
+
+router.delete('/income-expenses/:id', async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ success: false, error: 'Invalid id' });
+    const r = await bs.softDeleteIncomeExpenseRow(id);
+    if (!r) return res.status(404).json({ success: false, error: 'Row not found' });
+    res.json({ success: true, data: r });
+  } catch (err) { wrapErr(res, err); }
+});
+
+// Sprint 4 #21 — Consolidated rollup across all UBOs on a deal
+router.get('/deal/:dealId/consolidated', async (req, res) => {
+  try {
+    const dealId = parseId(req.params.dealId);
+    if (!dealId) return res.status(400).json({ success: false, error: 'Invalid dealId' });
+    const data = await bs.getConsolidatedForDeal(dealId);
+    res.json({ success: true, data });
   } catch (err) { wrapErr(res, err); }
 });
 

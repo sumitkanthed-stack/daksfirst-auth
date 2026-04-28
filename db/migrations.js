@@ -2564,6 +2564,42 @@ async function runMigrations() {
     }
 
     // ============================================================
+    // 2026-04-28 (Sprint 4 #20): Per-UBO income & expenses.
+    //   Mirrors borrower_other_assets_liabilities pattern but for
+    //   income/expense flows. frequency normalises monthly vs annual
+    //   capture. ownership_pct + ownership_via for partial economic
+    //   interest (e.g. joint income with spouse).
+    //
+    //   Used for net-monthly-income roll-up + DSCR-style affordability
+    //   the rubric reads alongside the balance sheet.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS borrower_income_expenses (
+          id                       SERIAL PRIMARY KEY,
+          borrower_id              INT NOT NULL,
+          kind                     VARCHAR(20) NOT NULL,
+          category                 VARCHAR(50),
+          description              TEXT,
+          amount                   NUMERIC,
+          frequency                VARCHAR(20) DEFAULT 'monthly',
+          ownership_pct            NUMERIC(5,2),
+          ownership_via            TEXT,
+          notes                    TEXT,
+          added_by_user_id         INT,
+          added_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          deleted_at               TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bie_borrower  ON borrower_income_expenses(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bie_kind      ON borrower_income_expenses(kind)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bie_active    ON borrower_income_expenses(borrower_id, kind) WHERE deleted_at IS NULL`);
+      console.log('[migrate] ✓ borrower_income_expenses table + indexes ready (Sprint 4 #20)');
+    } catch (err) {
+      console.log('[migrate] Note on borrower_income_expenses:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
     // 2026-04-28 (Sprint 2 fix): rename two exit money cols to drop the
     // _pence suffix. Matrix convention on deal_submissions stores £ values
     // directly in BIGINT/NUMERIC cols (current_value, purchase_price, etc.),
