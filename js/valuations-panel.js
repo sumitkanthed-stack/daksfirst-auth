@@ -502,29 +502,39 @@
   };
 
   async function _saveFromModal() {
-    if (!_modalCtx) return;
+    console.log('[val-save] click — ctx=', _modalCtx);
+    if (!_modalCtx) {
+      alert('Cannot save — modal context lost. Close and re-open the form.');
+      return;
+    }
     const btn = document.getElementById('val-modal-save');
     btn.disabled = true; btn.textContent = 'Saving…';
     const data = _readForm();
+    console.log('[val-save] payload=', data);
     try {
       let valuationId = _modalCtx.valuationId;
+      let savedAction = '';
       if (_modalCtx.mode === 'add') {
         data.property_id = _modalCtx.propertyId;
         const j = await _api('/api/admin/valuations/' + _modalCtx.dealId, {
           method: 'POST', body: JSON.stringify(data)
         });
         valuationId = j.data.id;
+        savedAction = 'Draft created (id ' + valuationId + ')';
       } else if (_modalCtx.mode === 'edit') {
         await _api('/api/admin/valuations/' + valuationId, {
           method: 'PUT', body: JSON.stringify(data)
         });
+        savedAction = 'Draft updated (id ' + valuationId + ')';
       } else if (_modalCtx.mode === 'supersede') {
         data.property_id = _modalCtx.propertyId;
         const j = await _api('/api/admin/valuations/' + valuationId + '/supersede', {
           method: 'POST', body: JSON.stringify(data)
         });
         valuationId = j.data.newRow.id;
+        savedAction = 'New draft (id ' + valuationId + ') created — old valuation superseded';
       }
+      console.log('[val-save] success —', savedAction);
       // Update modal context so doc upload area appears for new draft
       _modalCtx.valuationId = valuationId;
       _modalCtx.mode = 'edit';
@@ -533,9 +543,26 @@
       if (docArea) docArea.innerHTML = _docArea({});
       // Refresh underlying panel
       _refreshPanel(_modalCtx.propertyId, _modalCtx.dealId);
+      // Visible success feedback so user knows it worked
+      btn.textContent = '✓ Saved';
+      btn.style.background = '#3ecf8e';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Save Draft';
+        btn.style.background = '';
+      }, 1500);
+      // Inline banner inside the modal body
+      const body = document.getElementById('val-modal-body');
+      if (body) {
+        const banner = document.createElement('div');
+        banner.style.cssText = 'background:rgba(62,207,142,0.1);border:1px solid #3ecf8e;color:#3ecf8e;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;';
+        banner.textContent = '✓ ' + savedAction + '. Now attach the RICS PDF below to enable Finalise.';
+        body.insertBefore(banner, body.firstChild);
+        setTimeout(() => banner.remove(), 8000);
+      }
     } catch (err) {
+      console.error('[val-save] failed:', err);
       alert('Save failed: ' + err.message);
-    } finally {
       btn.disabled = false; btn.textContent = 'Save Draft';
     }
   }
