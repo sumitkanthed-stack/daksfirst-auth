@@ -2282,6 +2282,112 @@ async function runMigrations() {
       console.log('[migrate] Note on deal_valuations:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // 2026-04-28 (Sprint 2): deal_valuations expansion
+    //   Refurb cols (6) — for refurb deals where bridging lender lends against
+    //     as-is, 180-day MV, or GDV depending on structure. lending_value_basis
+    //     records which of as_is | 180_day_mv | gdv | mv | mv_subject_to_works
+    //     was used to anchor lending_value_pence.
+    //   Sale-side demand cols (5) — RICS valuer's view of sale exit viability.
+    //     valuer_* prefix to distinguish from chimnie's area-level baseline
+    //     already on deal_properties (chimnie_area_days_to_sell).
+    //   Letting-side demand cols (7) — RICS valuer's view of refi-to-BTL exit
+    //     viability. achievable_rent_pcm_pence + estimated_gross_yield_pct
+    //     feed DSCR calc against target refi rate.
+    //   Comparables (2 JSONB) — structured arrays of comp sales/lettings
+    //     captured from the RICS report.
+    //
+    //   All ADD IF NOT EXISTS for idempotent re-runs.
+    //
+    //   LOS scope only — no versioning chain. See feedback_los_vs_lms_scope_discipline.md
+    //   The existing superseded_by_id chain stays for now but new UI doesn't
+    //   expose it; updates in place during origination.
+    // ============================================================
+    try {
+      const valColumns = [
+        // Refurb (6)
+        'ADD COLUMN IF NOT EXISTS as_is_value_pence              BIGINT',
+        'ADD COLUMN IF NOT EXISTS market_value_180day_pence      BIGINT',
+        'ADD COLUMN IF NOT EXISTS gdv_pence                      BIGINT',
+        'ADD COLUMN IF NOT EXISTS works_cost_estimate_pence      BIGINT',
+        'ADD COLUMN IF NOT EXISTS is_refurb_deal                 BOOLEAN DEFAULT FALSE',
+        'ADD COLUMN IF NOT EXISTS lending_value_basis            VARCHAR(30)',
+        // Sale-side demand (5)
+        'ADD COLUMN IF NOT EXISTS valuer_days_to_sell_estimate   INT',
+        'ADD COLUMN IF NOT EXISTS sale_demand_grade              VARCHAR(20)',
+        'ADD COLUMN IF NOT EXISTS recent_local_sales_count       INT',
+        'ADD COLUMN IF NOT EXISTS local_price_trend_12m_pct      NUMERIC(6,2)',
+        'ADD COLUMN IF NOT EXISTS sale_marketability_commentary  TEXT',
+        // Letting-side demand (7)
+        'ADD COLUMN IF NOT EXISTS valuer_days_to_let_estimate      INT',
+        'ADD COLUMN IF NOT EXISTS letting_demand_grade             VARCHAR(20)',
+        'ADD COLUMN IF NOT EXISTS achievable_rent_pcm_pence        BIGINT',
+        'ADD COLUMN IF NOT EXISTS estimated_gross_yield_pct        NUMERIC(6,3)',
+        'ADD COLUMN IF NOT EXISTS recent_local_lettings_count      INT',
+        'ADD COLUMN IF NOT EXISTS local_rent_trend_12m_pct         NUMERIC(6,2)',
+        'ADD COLUMN IF NOT EXISTS letting_marketability_commentary TEXT',
+        // Comparables (2 JSONB)
+        'ADD COLUMN IF NOT EXISTS comparable_sales_jsonb     JSONB',
+        'ADD COLUMN IF NOT EXISTS comparable_lettings_jsonb  JSONB'
+      ];
+      for (const colSql of valColumns) {
+        try {
+          await pool.query('ALTER TABLE deal_valuations ' + colSql);
+        } catch (err) {
+          // ADD COLUMN IF NOT EXISTS is idempotent on PG 9.6+; this catch is
+          // defensive against rare race / ordering issues.
+          console.log('[migrate] Note on deal_valuations col:', err.message.substring(0, 160));
+        }
+      }
+      // Optional helper indexes — refurb filter + lending_value_basis filter
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_is_refurb ON deal_valuations(is_refurb_deal) WHERE is_refurb_deal = TRUE`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_basis    ON deal_valuations(lending_value_basis)`);
+      console.log('[migrate] ✓ deal_valuations refurb + sale/letting cols ready (Sprint 2)');
+    } catch (err) {
+      console.log('[migrate] Note on deal_valuations Sprint 2 expansion:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
+    // 2026-04-28 (Sprint 2): deal_submissions — exit strategy structured cols
+    //   Existing exit_strategy / exit_strategy_requested / exit_strategy_approved
+    //   text fields stay as the approval-flow audit (set at DIP).
+    //   New structured cols (12) are the analytical view that the rubric reads
+    //   to grade exit viability against valuer's marketability indicators.
+    //
+    //   primary route enum:
+    //     refinance_btl | refinance_owner_occ | refinance_commercial | sale | combination
+    //   confidence enums: high | medium | low (both borrower-stated and UW-assessed)
+    //
+    //   No new table — single snapshot per deal. Plan evolution = LMS scope.
+    // ============================================================
+    try {
+      const exitColumns = [
+        'ADD COLUMN IF NOT EXISTS exit_route_primary                    VARCHAR(30)',
+        'ADD COLUMN IF NOT EXISTS exit_route_secondary                  VARCHAR(30)',
+        'ADD COLUMN IF NOT EXISTS exit_target_date                      DATE',
+        'ADD COLUMN IF NOT EXISTS exit_target_disposal_window_days      INT',
+        'ADD COLUMN IF NOT EXISTS exit_target_refi_lender               VARCHAR(255)',
+        'ADD COLUMN IF NOT EXISTS exit_target_refi_loan_pence           BIGINT',
+        'ADD COLUMN IF NOT EXISTS exit_target_refi_ltv_pct              NUMERIC(6,2)',
+        'ADD COLUMN IF NOT EXISTS exit_target_refi_rate_pct_pa          NUMERIC(6,3)',
+        'ADD COLUMN IF NOT EXISTS exit_expected_disposal_proceeds_pence BIGINT',
+        'ADD COLUMN IF NOT EXISTS exit_borrower_stated_confidence       VARCHAR(20)',
+        'ADD COLUMN IF NOT EXISTS exit_underwriter_assessed_confidence  VARCHAR(20)',
+        'ADD COLUMN IF NOT EXISTS exit_underwriter_commentary           TEXT'
+      ];
+      for (const colSql of exitColumns) {
+        try {
+          await pool.query('ALTER TABLE deal_submissions ' + colSql);
+        } catch (err) {
+          console.log('[migrate] Note on deal_submissions exit col:', err.message.substring(0, 160));
+        }
+      }
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deals_exit_route_primary ON deal_submissions(exit_route_primary)`);
+      console.log('[migrate] ✓ deal_submissions exit strategy structured cols ready (Sprint 2 — 12 cols)');
+    } catch (err) {
+      console.log('[migrate] Note on deal_submissions exit cols:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
