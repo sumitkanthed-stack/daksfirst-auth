@@ -50,6 +50,7 @@
 const crypto = require('crypto');
 const pool = require('../db/pool');
 const featurePackager = require('./deal-feature-packager');
+const valuationsService = require('./valuations');
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_SENSITIVITY_VERSION = 'v5.1';
@@ -238,6 +239,30 @@ async function loadKycChecks(dealId) {
   return rows;
 }
 
+// --- RICS valuations enrichment (2026-04-28, Sprint 1b Pattern B) ---
+//
+// Pulls ACTIVE (finalised + non-superseded) RICS valuations for the deal.
+// Drafts and superseded rows are excluded — Opus grades against the
+// canonical lending value snapshot, not work-in-progress.
+//
+// Soft-fail: if no valuations exist, returns []. Risk grading proceeds
+// with NULL valuation signal — the rubric's Information Availability
+// dimension catches this gap (and downgrades IA grade accordingly).
+//
+// Each row carries valuer panel attribution (firm name, panel status,
+// approved_by_funder) AND an `is_off_panel` flag — the rubric reads
+// the latter to apply the off-panel IA penalty Sumit specified
+// 2026-04-28 ("soft policy: off-panel allowed but flagged").
+//
+// Includes the computed expiry block { state, daysRemaining, expiresAt }
+// so the rubric can flag expired/expiring vals without recomputing dates.
+//
+// Delegates to valuationsService.loadForRiskPackager(dealId) — that
+// function owns the JOIN to approved_valuers and the field projection.
+async function loadValuations(dealId) {
+  return await valuationsService.loadForRiskPackager(dealId);
+}
+
 // --- Data-stage resolution ---
 
 function resolveDataStage(input) {
@@ -308,6 +333,11 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
   // SmartSearch kyc_checks (2026-04-28, SS-B8). Soft-fail on empty.
   const kycChecks = await loadKycChecks(dealId);
 
+  // RICS valuations (2026-04-28, Sprint 1b Pattern B). Soft-fail on empty.
+  // Active rows only (finalised + non-superseded). Includes valuer panel
+  // attribution + computed expiry. lending_value_pence is THE LTV anchor.
+  const valuations = await loadValuations(dealId);
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -323,6 +353,16 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     acc[k.check_type] = (acc[k.check_type] || 0) + 1;
     return acc;
   }, {});
+
+  // Valuation telemetry for provenance + log: total active rows, off-panel
+  // count (for IA penalty visibility), expired count (for drawdown gate).
+  const valuationOffPanelCount = valuations.filter((v) => v.is_off_panel).length;
+  const valuationExpiredCount = valuations.filter((v) =>
+    v.expiry && v.expiry.state === 'expired'
+  ).length;
+  const valuationValidForDrawdown = valuations.filter((v) =>
+    v.expiry && v.expiry.state !== 'expired' && v.expiry.state !== 'missing'
+  ).length;
 
   const provenance = {
     deal_columns_count:     Object.keys(m1.envelope.features.deal).length,
@@ -340,6 +380,10 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     kyc_individual_count:   kycByType.individual_kyc || 0,
     kyc_business_count:     kycByType.business_kyb || 0,
     kyc_sanctions_count:    kycByType.sanctions_pep || 0,
+    valuations_count:           valuations.length,
+    valuations_off_panel_count: valuationOffPanelCount,
+    valuations_expired_count:   valuationExpiredCount,
+    valuations_valid_for_drawdown_count: valuationValidForDrawdown,
     matrix_data_jsonb_present:
       !!m1.envelope.features.deal.matrix_data &&
       Object.keys(m1.envelope.features.deal.matrix_data || {}).length > 0,
@@ -363,6 +407,7 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     companies_house:  companiesHouse,
     credit_checks:    creditChecks,
     kyc_checks:       kycChecks,
+    valuations:       valuations,
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
@@ -384,6 +429,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     `(c=${provenance.credit_commercial_count},p=${provenance.credit_personal_count},h=${provenance.credit_hunter_count}) ` +
     `kyc=${provenance.kyc_checks_count}` +
     `(i=${provenance.kyc_individual_count},b=${provenance.kyc_business_count},s=${provenance.kyc_sanctions_count}) ` +
+    `vals=${provenance.valuations_count}` +
+    `(off=${provenance.valuations_off_panel_count},exp=${provenance.valuations_expired_count},ok=${provenance.valuations_valid_for_drawdown_count}) ` +
     `risk_hash=${payload.risk_payload_hash.slice(0, 12)}`
   );
 
@@ -403,6 +450,7 @@ module.exports = {
   loadCompaniesHouseSnapshots,
   loadCreditChecks,
   loadKycChecks,
+  loadValuations,
   sha256,
   stableStringify,
   SCHEMA_VERSION,
