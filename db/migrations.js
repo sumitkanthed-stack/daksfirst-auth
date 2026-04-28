@@ -1626,6 +1626,75 @@ async function runMigrations() {
       console.log('[migrate] Note on llm_prompts seed:', err.message.substring(0, 160));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Sprint 5 #28 (2026-04-28): risk_rubric v5 deploy
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Adds explicit field references for Sprint 3+4+5 payload blocks
+    //  (balance_sheet, borrower_exposure, sources_uses, exit + valuation
+    //  Sprint 2 fields). v4 base preserved; v5 only adds a "Payload Inputs
+    //  Reference — schema v2" section at the end.
+    //
+    //  Idempotent: the existence check guards against duplicate inserts on
+    //  re-deploy. Append-only: v4 row preserved as is_active=FALSE for audit.
+    //  Old risk_view rows pinned to v4 keep grading against v4 — no
+    //  retroactive change.
+    //
+    //  If prompts/rubric_v5_body.md is missing, skip silently — risk pipeline
+    //  continues against v4 until next deploy.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const v5BodyPath = path.join(__dirname, '..', 'prompts', 'rubric_v5_body.md');
+      let v5Body = null;
+      try {
+        v5Body = fs.readFileSync(v5BodyPath, 'utf8');
+      } catch (readErr) {
+        console.log('[migrate] Note: prompts/rubric_v5_body.md not found, skipping rubric v5 deploy');
+      }
+
+      if (v5Body) {
+        const existing = await pool.query(
+          `SELECT id FROM llm_prompts WHERE prompt_key = 'risk_rubric' AND version = 5`
+        );
+        if (existing.rows.length > 0) {
+          console.log('[migrate] ✓ risk_rubric v5 already present, skipping deploy');
+        } else {
+          // Transactional swap
+          await pool.query('BEGIN');
+          try {
+            await pool.query(
+              `INSERT INTO llm_prompts
+                  (prompt_key, version, body, is_active, description, parent_version, changelog, edited_by)
+               VALUES
+                  ('risk_rubric', 5, $1, FALSE,
+                   'Risk analysis rubric — v5: adds Sprint 3+4+5 payload field references',
+                   4,
+                   'v4 → v5: added Payload Inputs Reference (schema v2) section. ' ||
+                   'Cites balance_sheet.consolidated/per_ubo, borrower_exposure, ' ||
+                   'sources_uses computed summary, Sprint 2 exit + valuation fields, ' ||
+                   'directorships, credit_checks, kyc_checks. v4 base unchanged.',
+                   'system-seed')`,
+              [v5Body]
+            );
+            await pool.query(
+              `UPDATE llm_prompts SET is_active = FALSE
+                WHERE prompt_key = 'risk_rubric' AND version = 4`
+            );
+            await pool.query(
+              `UPDATE llm_prompts SET is_active = TRUE
+                WHERE prompt_key = 'risk_rubric' AND version = 5`
+            );
+            await pool.query('COMMIT');
+            console.log(`[migrate] ✓ risk_rubric v5 deployed (${v5Body.length} chars), v4 deactivated`);
+          } catch (txErr) {
+            await pool.query('ROLLBACK').catch(() => {});
+            throw txErr;
+          }
+        }
+      }
+    } catch (err) {
+      console.log('[migrate] Note on rubric v5 deploy:', err.message.substring(0, 200));
+    }
+
     try {
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_routed BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS auto_route_reason JSONB`);
