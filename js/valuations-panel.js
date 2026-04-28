@@ -34,8 +34,13 @@
 
   const _internalRoles = ['admin', 'rm', 'credit', 'compliance'];
   function _isAdmin() {
-    const role = (typeof window.getCurrentRole === 'function' ? window.getCurrentRole() : null) || '';
-    return _internalRoles.includes(String(role).toLowerCase());
+    // Liberal gate (2026-04-28 patch): if a session token exists, render
+    // the panel. Backend's authenticateAdmin middleware enforces the real
+    // role gate on every data call (/api/admin/valuations/*, /api/admin/panels/*).
+    // Earlier JWT-decode approach silently failed for reasons we couldn't
+    // pin down remotely; this avoids the foot-gun. Brokers don't see the
+    // deal page in normal flow, so the cosmetic exposure is acceptable.
+    return !!sessionStorage.getItem('daksfirst_token');
   }
 
   function _apiBase() {
