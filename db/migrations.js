@@ -2388,6 +2388,33 @@ async function runMigrations() {
       console.log('[migrate] Note on deal_submissions exit cols:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // 2026-04-28 (Sprint 2 fix): rename two exit money cols to drop the
+    // _pence suffix. Matrix convention on deal_submissions stores £ values
+    // directly in BIGINT/NUMERIC cols (current_value, purchase_price, etc.),
+    // not pence. The earlier migration mistakenly used _pence suffix; this
+    // aligns the naming. Idempotent — only renames if old name still exists.
+    // ============================================================
+    try {
+      const renamePairs = [
+        ['exit_target_refi_loan_pence',           'exit_target_refi_loan'],
+        ['exit_expected_disposal_proceeds_pence', 'exit_expected_disposal_proceeds']
+      ];
+      for (const [oldName, newName] of renamePairs) {
+        const exists = await pool.query(
+          `SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'deal_submissions' AND column_name = $1`,
+          [oldName]
+        );
+        if (exists.rows.length > 0) {
+          await pool.query(`ALTER TABLE deal_submissions RENAME COLUMN ${oldName} TO ${newName}`);
+          console.log('[migrate] ✓ renamed deal_submissions.' + oldName + ' → ' + newName);
+        }
+      }
+    } catch (err) {
+      console.log('[migrate] Note on exit cols rename:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

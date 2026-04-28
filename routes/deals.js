@@ -2405,7 +2405,17 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'dip_fee', 'exit_fee_pct', 'extension_fee_pct',
       // 2026-04-21: RM-authored DIP Conditions — separate from broker-facing
       // additional_notes. Only dip_notes appears on the DIP preview / PDF.
-      'dip_notes'
+      'dip_notes',
+      // Sprint 2 (2026-04-28): structured exit-strategy cols — RM/Credit fill
+      // these as part of underwriting. Free-text exit_strategy_* stays for
+      // approval-flow audit; these are the analytical view the rubric reads.
+      'exit_route_primary', 'exit_route_secondary',
+      'exit_target_date', 'exit_target_disposal_window_days',
+      'exit_target_refi_lender', 'exit_target_refi_loan',
+      'exit_target_refi_ltv_pct', 'exit_target_refi_rate_pct_pa',
+      'exit_expected_disposal_proceeds',
+      'exit_borrower_stated_confidence', 'exit_underwriter_assessed_confidence',
+      'exit_underwriter_commentary'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;
@@ -2419,7 +2429,11 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       // M2a: Approved numerics
       'loan_amount_approved', 'ltv_approved', 'rate_approved', 'term_months_approved',
       'loan_amount_requested', 'term_months_requested',
-      'dip_fee', 'exit_fee_pct', 'extension_fee_pct'
+      'dip_fee', 'exit_fee_pct', 'extension_fee_pct',
+      // Sprint 2 — exit strategy numerics
+      'exit_target_disposal_window_days', 'exit_target_refi_loan',
+      'exit_target_refi_ltv_pct', 'exit_target_refi_rate_pct_pa',
+      'exit_expected_disposal_proceeds'
     ];
 
     // M2c+M4d (Matrix-SSOT auto-revoke): editing any field in an approval section's

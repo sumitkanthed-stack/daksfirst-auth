@@ -48,6 +48,21 @@ export const LOAN_PURPOSE_OPTIONS = [
 
 const LOAN_PURPOSE_MAP = Object.fromEntries(LOAN_PURPOSE_OPTIONS.map(o => [o.value, o.label]));
 
+// Sprint 2 — Exit strategy enums (deal_submissions structured cols)
+export const EXIT_ROUTE_OPTIONS = [
+  { value: 'sale',                  label: 'Sale — exit via property disposal' },
+  { value: 'refinance_btl',         label: 'Refinance to BTL (specialist or high-street BTL lender)' },
+  { value: 'refinance_owner_occ',   label: 'Refinance to owner-occupier mortgage' },
+  { value: 'refinance_commercial',  label: 'Refinance to commercial mortgage' },
+  { value: 'combination',           label: 'Combination — partial sale + partial refi' }
+];
+
+export const EXIT_CONFIDENCE_OPTIONS = [
+  { value: 'high',   label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low',    label: 'Low' }
+];
+
 /**
  * Get the human-readable label for a loan_purpose code. Falls back to the
  * code itself if unknown. Use this wherever the stored value needs display.

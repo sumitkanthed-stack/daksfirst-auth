@@ -12,7 +12,7 @@ import { floatingProgress } from './floating-progress.js';
 import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
 // 2026-04-21: shared display helpers for consistent stage labels across views.
-import { getStageLabel, LOAN_PURPOSE_OPTIONS } from './deal-display.js';
+import { getStageLabel, LOAN_PURPOSE_OPTIONS, EXIT_ROUTE_OPTIONS, EXIT_CONFIDENCE_OPTIONS } from './deal-display.js';
 
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
 // Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
@@ -3424,8 +3424,30 @@ export async function renderDealMatrix(deal) {
                 ${canEdit ? '<span style="font-size:8px;color:#D4A853;font-weight:600;background:rgba(212,168,83,0.15);padding:2px 8px;border-radius:4px;">EDITABLE</span>' : '<span style="font-size:8px;color:#94A3B8;font-weight:600;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;">READ ONLY</span>'}
               </div>
               <div style="display:grid;grid-template-columns:1fr;gap:8px;">
-                ${renderEditableField('exit_strategy', 'Exit Plan', deal.exit_strategy, 'textarea', canEdit)}
+                ${renderEditableField('exit_strategy', 'Exit Plan (free-text — what broker asked for / RM approved)', deal.exit_strategy, 'textarea', canEdit)}
                 ${renderEditableField('additional_notes', 'Additional Notes (internal — not on DIP)', deal.additional_notes, 'textarea', canEdit)}
+
+                ${isInternalUser ? `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.1);">
+                  <div style="font-size:10px;color:#4EA1FF;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">📊 Structured Exit Plan (RM/Credit underwriting)</div>
+                  <div style="font-size:11px;color:#94A3B8;margin-bottom:10px;font-style:italic;">Structured fields the rubric reads to grade exit viability. Captured at IC stage by RM/Credit; cross-checked against valuer's marketability indicators.</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">
+                    ${renderEditableField('exit_route_primary', 'Primary route', deal.exit_route_primary, 'select', canEdit, EXIT_ROUTE_OPTIONS)}
+                    ${renderEditableField('exit_route_secondary', 'Secondary route (fallback)', deal.exit_route_secondary, 'select', canEdit, EXIT_ROUTE_OPTIONS)}
+                    ${renderEditableField('exit_target_date', 'Target exit date', deal.exit_target_date, 'date', canEdit)}
+                    ${renderEditableField('exit_target_disposal_window_days', 'Disposal window (days)', deal.exit_target_disposal_window_days, 'number', canEdit)}
+                    ${renderEditableField('exit_target_refi_lender', 'Target refi lender', deal.exit_target_refi_lender, 'text', canEdit)}
+                    ${renderEditableField('exit_target_refi_loan', 'Target refi loan (£)', deal.exit_target_refi_loan, 'money', canEdit)}
+                    ${renderEditableField('exit_target_refi_ltv_pct', 'Target refi LTV (%)', deal.exit_target_refi_ltv_pct, 'number', canEdit)}
+                    ${renderEditableField('exit_target_refi_rate_pct_pa', 'Target refi rate (% pa)', deal.exit_target_refi_rate_pct_pa, 'number', canEdit)}
+                    ${renderEditableField('exit_expected_disposal_proceeds', 'Expected disposal proceeds (£)', deal.exit_expected_disposal_proceeds, 'money', canEdit)}
+                    ${renderEditableField('exit_borrower_stated_confidence', 'Borrower-stated confidence', deal.exit_borrower_stated_confidence, 'select', canEdit, EXIT_CONFIDENCE_OPTIONS)}
+                    ${renderEditableField('exit_underwriter_assessed_confidence', 'Underwriter-assessed confidence', deal.exit_underwriter_assessed_confidence, 'select', canEdit, EXIT_CONFIDENCE_OPTIONS)}
+                  </div>
+                  <div style="margin-top:8px;">
+                    ${renderEditableField('exit_underwriter_commentary', 'Underwriter commentary (DSCR check, gap vs valuer letting demand, fallback credibility)', deal.exit_underwriter_commentary, 'textarea', canEdit)}
+                  </div>
+                </div>` : ''}
+
                 ${isInternalUser ? `<div style="margin-top:6px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.1);">
                   <div style="font-size:10px;color:#C9A227;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚖ DIP Conditions (RM-only)</div>
                   <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;font-style:italic;">Text written here appears on the DIP document sent to the broker. Keep internal chatter in Additional Notes above.</div>
