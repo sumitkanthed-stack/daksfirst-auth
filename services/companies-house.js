@@ -201,16 +201,25 @@ async function getCompanyProfile(companyNumber) {
 }
 
 /**
- * Extract the CH officer_id from an officer item's links.officer.appointments URL.
- * URL shape: /officers/{officer_id}/appointments
+ * Extract the CH officer_id from an officer item.
+ * Handles both response shapes:
+ *   /company/{n}/officers  — item.links.officer.appointments
+ *   /search/officers       — item.links.self  (already the .../appointments URL)
+ *   /officers/{id}/appointments items — item.links.self also works
  * Used by getOfficers + searchOfficers (Sprint 5 #23/#24).
  */
 function _extractOfficerId(item) {
-  if (!item) return null;
-  const link = item.links && item.links.officer && item.links.officer.appointments;
-  if (!link) return null;
-  const m = String(link).match(/\/officers\/([^/]+)\/appointments/i);
-  return (m && m[1]) || null;
+  if (!item || !item.links) return null;
+  const candidates = [
+    item.links.officer && item.links.officer.appointments,
+    item.links.self,
+    item.links.officer
+  ].filter(Boolean);
+  for (const link of candidates) {
+    const m = String(link).match(/\/officers\/([^/]+)(?:\/|$)/i);
+    if (m && m[1]) return m[1];
+  }
+  return null;
 }
 
 /**
