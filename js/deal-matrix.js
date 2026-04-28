@@ -2801,7 +2801,7 @@ export async function renderDealMatrix(deal) {
                   '</div>';
                 })();
 
-                return '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
+                const _propIntelStack = '<div id="prop-intel-' + p.id + '" style="margin-top:8px;padding:10px 12px;background:rgba(52,211,153,0.03);border:1px solid ' + borderColor + ';border-radius:6px;">' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;cursor:pointer;" onclick="window._togglePropPanel(' + p.id + ')">' +
                     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
                       '<span id="prop-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + chevronRotate + 'transition:transform 0.15s;">\u25B6</span>' +
@@ -2821,12 +2821,49 @@ export async function renderDealMatrix(deal) {
                   (epcHtml ? '<div style="margin-bottom:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + epcHtml + '</div>' : '') +
                   (priceHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.04);">' + priceHtml + '</div>' : '') +
                   '</div>' + // close prop-body
-                '</div>' +
-                chimnieHtml +
-                areaHtml +
-                hmlrHtml +
-                ((typeof window._buildValuationsPanel === 'function')
-                  ? window._buildValuationsPanel(p, deal) : '');
+                '</div>';
+
+                // Sprint 2 #14 — TABBED property card.
+                // Replaces 5 stacked panels with one tab strip + active pane.
+                // Default tab = Property Intel (matches prior default-open behaviour).
+                const _propIntelHtml = _propIntelStack;
+                const _intelOk = !!p.property_searched_at;
+                const _chimOk = !!p.chimnie_uprn;
+                const _areaOk = !!p.chimnie_local_authority;
+                const _hmlrOk = !!(p.hmlr_title_number || p.hmlr_searched_at);
+                const _tabBadge = (ok) => ok
+                  ? '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(52,211,153,0.15);color:#34D399;font-weight:700;">✓</span>'
+                  : '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(100,116,139,0.12);color:#64748B;font-weight:700;">—</span>';
+                const _mkTab = (key, label, color, ok, isDefault) =>
+                  '<div data-prop-tab="' + p.id + '" data-tab-name="' + key + '" data-tab-color="' + color + '" ' +
+                  'onclick="window._togglePropTab(' + p.id + ', \'' + key + '\')" ' +
+                  'style="padding:8px 14px;font-size:11px;font-weight:500;cursor:pointer;color:' + (isDefault ? color : '#94A3B8') + ';border-bottom:2px solid ' + (isDefault ? color : 'transparent') + ';display:flex;gap:5px;align-items:center;white-space:nowrap;transition:color .15s;">' +
+                    label + _tabBadge(ok) +
+                  '</div>';
+                const _tabStripHtml =
+                  '<div id="prop-tabstrip-' + p.id + '" style="display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);margin-top:10px;background:rgba(255,255,255,0.02);border-radius:6px 6px 0 0;overflow-x:auto;">' +
+                    _mkTab('intel',   'Property',  '#34D399', _intelOk, true)  +
+                    _mkTab('chimnie', 'Chimnie',   '#60A5FA', _chimOk,  false) +
+                    _mkTab('area',    'Area',      '#FBBF24', _areaOk,  false) +
+                    _mkTab('hmlr',    'HMLR',      '#A78BFA', _hmlrOk,  false) +
+                    _mkTab('rics',    'RICS Val',  '#D4A853', false,    false) +
+                  '</div>';
+                const _wrapPane = (key, contentHtml, isDefault) =>
+                  '<div id="prop-tab-pane-' + p.id + '-' + key + '" data-prop-tab-pane="' + p.id + '" ' +
+                  'style="display:' + (isDefault ? 'block' : 'none') + ';padding:0;">' +
+                    contentHtml +
+                  '</div>';
+                const _ricsSlimHtml = (typeof window._buildValuationsPanel === 'function')
+                  ? window._buildValuationsPanel(p, deal) : '';
+
+                return _tabStripHtml +
+                  '<div id="prop-tab-panes-' + p.id + '" style="border:1px solid rgba(255,255,255,0.04);border-top:none;border-radius:0 0 6px 6px;padding:10px;background:rgba(255,255,255,0.01);">' +
+                    _wrapPane('intel',   _propIntelHtml, true)  +
+                    _wrapPane('chimnie', chimnieHtml,    false) +
+                    _wrapPane('area',    areaHtml,       false) +
+                    _wrapPane('hmlr',    hmlrHtml,       false) +
+                    _wrapPane('rics',    _ricsSlimHtml,  false) +
+                  '</div>';
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -8954,6 +8991,28 @@ window._togglePropPanel = function(propertyId) {
     if (summary) summary.style.display = 'inline';
     if (chevron) chevron.style.transform = '';
   }
+};
+
+// Sprint 2 #14 — Tabbed property card. Switches the active panel between
+// Property Intel / Chimnie / Area / HMLR / RICS by toggling pane visibility
+// and active tab styling. Each tab carries its semantic colour (green/blue/
+// amber/purple/gold) and re-applies it as bottom border + text colour when
+// activated; inactive tabs revert to muted slate.
+window._togglePropTab = function(propertyId, tabName) {
+  // Hide all panes for this property
+  document.querySelectorAll('[data-prop-tab-pane="' + propertyId + '"]').forEach(el => {
+    el.style.display = 'none';
+  });
+  // Show the selected pane
+  const selPane = document.getElementById('prop-tab-pane-' + propertyId + '-' + tabName);
+  if (selPane) selPane.style.display = 'block';
+  // Update tab strip styling — active tab gets its semantic colour, others go muted
+  document.querySelectorAll('[data-prop-tab="' + propertyId + '"]').forEach(t => {
+    const isActive = t.dataset.tabName === tabName;
+    const colour = t.dataset.tabColor || '#34D399';
+    t.style.color = isActive ? colour : '#94A3B8';
+    t.style.borderBottomColor = isActive ? colour : 'transparent';
+  });
 };
 
 // ── Toggle Chimnie panel expand/collapse (2026-04-21) ──────────────────────
