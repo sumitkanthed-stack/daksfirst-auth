@@ -86,6 +86,53 @@
     catch { return iso; }
   }
 
+  // Top-of-page toast (auto-dismiss). Used for save/upload/finalise feedback
+  // outside the modal. Multiple toasts stack.
+  function _toast(message, kind) {
+    let host = document.getElementById('val-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'val-toast-host';
+      host.style.cssText = 'position:fixed;top:20px;right:20px;z-index:300;display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+      document.body.appendChild(host);
+    }
+    const colors = {
+      success: { bg: 'rgba(62,207,142,0.95)', col: '#fff', border: '#2eb774' },
+      error:   { bg: 'rgba(239,91,91,0.95)',  col: '#fff', border: '#d54a4a' },
+      info:    { bg: 'rgba(78,161,255,0.95)', col: '#fff', border: '#3a8def' }
+    };
+    const c = colors[kind] || colors.info;
+    const t = document.createElement('div');
+    t.style.cssText = 'background:' + c.bg + ';color:' + c.col + ';border:1px solid ' + c.border + ';border-radius:6px;padding:10px 14px;font-size:13px;font-weight:500;max-width:480px;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:auto;';
+    t.textContent = message;
+    host.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.4s'; }, 4500);
+    setTimeout(() => t.remove(), 5000);
+  }
+
+  // Status pill summarising the panel's overall state — appears in the
+  // collapsed header so the underwriter knows whether RICS data exists
+  // without expanding.
+  function _statusPill(rows) {
+    if (!rows || rows.length === 0) {
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;background:rgba(100,116,139,0.12);color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;">— No valuation</span>';
+    }
+    const finalised = rows.filter(r => r.status === 'finalised');
+    const drafts = rows.filter(r => r.status === 'draft');
+    if (finalised.length > 0) {
+      const head = finalised[0];
+      const expired = head.expiry && head.expiry.state === 'expired';
+      if (expired) {
+        return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;background:rgba(239,91,91,0.15);color:#F87171;text-transform:uppercase;letter-spacing:.04em;">✗ Expired</span>';
+      }
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;background:rgba(62,207,142,0.15);color:#34D399;text-transform:uppercase;letter-spacing:.04em;">✓ Finalised</span>';
+    }
+    if (drafts.length > 0) {
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;background:rgba(244,183,64,0.15);color:#FBBF24;text-transform:uppercase;letter-spacing:.04em;">● Draft</span>';
+    }
+    return '';
+  }
+
   function _expiryPill(exp) {
     if (!exp) return '';
     const map = {
@@ -120,6 +167,7 @@
         '<div style="display:flex;align-items:center;gap:8px;">' +
           '<span id="val-chev-' + propId + '" style="font-size:10px;color:#64748B;transition:transform 0.15s;">▶</span>' +
           '<span style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RICS Valuation</span>' +
+          '<span id="val-statuspill-' + propId + '"></span>' +
           '<span id="val-summary-' + propId + '" style="font-size:11px;color:#94A3B8;">Loading…</span>' +
         '</div>' +
         '<div onclick="event.stopPropagation();" style="display:flex;gap:6px;">' +
@@ -154,9 +202,12 @@
   function _renderRows(propId, dealId, rows) {
     const body = document.getElementById('val-body-' + propId);
     const summary = document.getElementById('val-summary-' + propId);
+    const pillSlot = document.getElementById('val-statuspill-' + propId);
     if (!body) return;
+    // Status pill in header — visible whether expanded or not
+    if (pillSlot) pillSlot.innerHTML = _statusPill(rows);
     if (summary) {
-      if (rows.length === 0) summary.textContent = '· No valuations';
+      if (rows.length === 0) summary.textContent = '';
       else {
         const head = rows[0];
         const firm = head.valuer_firm_name || head.valuer_off_panel_name || 'Unknown';
@@ -535,31 +586,21 @@
         savedAction = 'New draft (id ' + valuationId + ') created — old valuation superseded';
       }
       console.log('[val-save] success —', savedAction);
-      // Update modal context so doc upload area appears for new draft
-      _modalCtx.valuationId = valuationId;
-      _modalCtx.mode = 'edit';
-      // Refresh document area (so upload widget shows)
-      const docArea = document.getElementById('vf-doc-area');
-      if (docArea) docArea.innerHTML = _docArea({});
-      // Refresh underlying panel
-      _refreshPanel(_modalCtx.propertyId, _modalCtx.dealId);
-      // Visible success feedback so user knows it worked
-      btn.textContent = '✓ Saved';
-      btn.style.background = '#3ecf8e';
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.textContent = 'Save Draft';
-        btn.style.background = '';
-      }, 1500);
-      // Inline banner inside the modal body
-      const body = document.getElementById('val-modal-body');
-      if (body) {
-        const banner = document.createElement('div');
-        banner.style.cssText = 'background:rgba(62,207,142,0.1);border:1px solid #3ecf8e;color:#3ecf8e;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;';
-        banner.textContent = '✓ ' + savedAction + '. Now attach the RICS PDF below to enable Finalise.';
-        body.insertBefore(banner, body.firstChild);
-        setTimeout(() => banner.remove(), 8000);
+      const propIdForRefresh = _modalCtx.propertyId;
+      const dealIdForRefresh = _modalCtx.dealId;
+      // Close modal and surface the new row in the panel
+      _closeModal();
+      // Force-expand the panel for this property so the new row is visible
+      const body = document.getElementById('val-body-' + propIdForRefresh);
+      const chev = document.getElementById('val-chev-' + propIdForRefresh);
+      if (body && body.style.display === 'none') {
+        body.style.display = 'block';
+        if (chev) chev.style.transform = 'rotate(90deg)';
       }
+      // Refresh rows from server
+      _refreshPanel(propIdForRefresh, dealIdForRefresh);
+      // Toast at top of page so user sees confirmation outside the modal
+      _toast('✓ ' + savedAction + '. Click Edit on the new row to upload the RICS PDF and Finalise.', 'success');
     } catch (err) {
       console.error('[val-save] failed:', err);
       alert('Save failed: ' + err.message);
@@ -612,6 +653,7 @@
         method: 'POST', body: JSON.stringify({ document_id: docId })
       });
       status.textContent = '✓ Attached (doc ' + docId + ')';
+      _toast('✓ PDF attached to draft. You can now Finalise this valuation.', 'success');
       _refreshPanel(_modalCtx.propertyId, _modalCtx.dealId);
     } catch (err) {
       status.textContent = '';
@@ -626,14 +668,15 @@
       // Refresh the panel — find which property this val is on
       const r = await _api('/api/admin/valuations/single/' + valuationId);
       _refreshPanel(r.data.property_id, dealId);
+      _toast('✓ Valuation finalised — lending value is now the LTV anchor for the rubric.', 'success');
     } catch (err) {
-      alert('Finalise failed: ' + err.message);
+      _toast('Finalise failed: ' + err.message, 'error');
     }
   };
 
   async function _refreshPanel(propertyId, dealId) {
-    const body = document.getElementById('val-body-' + propertyId);
-    if (!body || body.style.display === 'none') return; // don't auto-expand
+    // Always fetch — even if collapsed — so the status pill in the header
+    // is up to date. The body content stays hidden until expanded.
     try {
       const j = await _api('/api/admin/valuations/property/' + propertyId + '/' + dealId);
       _renderRows(propertyId, dealId, j.data || []);
@@ -641,6 +684,20 @@
       console.error('[valuations-panel] refresh failed:', err);
     }
   }
+
+  // Auto-load status pills for all property panels on the page so the
+  // header shows ✓ Finalised / ● Draft / — No valuation without the user
+  // having to expand each one.
+  async function _autoloadPills() {
+    if (!window.currentDeal || !window.currentDeal.id) return;
+    const dealId = window.currentDeal.id;
+    const props = (window.currentDeal.properties || []).map(p => p.id).filter(Boolean);
+    for (const propId of props) {
+      _refreshPanel(propId, dealId);
+    }
+  }
+  // Defer until DOM has rendered the property cards
+  setTimeout(_autoloadPills, 1500);
 
   console.log('[valuations-panel] Loaded — window._buildValuationsPanel available');
 })();
