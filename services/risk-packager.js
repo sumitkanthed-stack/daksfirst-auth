@@ -25,7 +25,7 @@
  *
  * Output shape (stable — n8n's "Build Risk Prompt" node expects this):
  *   {
- *     schema_version: 1,
+ *     schema_version: 2,                    // Sprint 5 #27 bumped from 1
  *     deal_id, submission_id, data_stage, packaged_at,
  *     rubric:  { prompt_key, version, prompt_id },
  *     macro:   { prompt_key, version, prompt_id },
@@ -36,6 +36,25 @@
  *     sensitivity_calculator_version,
  *     features: { deal, borrowers, properties },
  *     companies_house: [ { company_number, ... } ],
+ *     credit_checks:   [ ... ],             // Experian (EXP-B7)
+ *     kyc_checks:      [ ... ],             // SmartSearch (SS-B8)
+ *     valuations:      [ ... ],             // RICS Pattern B (Sprint 1b/2)
+ *     directorships:   [ ... ],             // CH directorships (Sprint 3 #18)
+ *     // Sprint 5 #27 (2026-04-28) — Sprint 3+4 data joins payload:
+ *     balance_sheet: {
+ *       consolidated: { counts, balance_sheet, income_expense,
+ *                       annualised_disposable, ubo_count_with_data },
+ *       per_ubo: [ { borrower_id, full_name, role, counts,
+ *                   balance_sheet, income_expense,
+ *                   months_runway_at_zero_income } ]
+ *     },
+ *     borrower_exposure: null | {            // concentration across deals
+ *       other_deals_count, active_other_deals, total_loan_other,
+ *       total_loan_active_other, match_keys_used, top_active_deals[3]
+ *     },
+ *     sources_uses: {                        // S&U computed summary
+ *       primary_use_type, totals, uses_breakdown, sources_breakdown, ratios
+ *     },
  *     source_provenance: { ... },
  *     feature_hash:     <sha256 of features>,
  *     risk_payload_hash: <sha256 of full payload incl. version pins>
@@ -52,8 +71,16 @@ const pool = require('../db/pool');
 const featurePackager = require('./deal-feature-packager');
 const valuationsService = require('./valuations');
 const directorshipsService = require('./directorships');
+// Sprint 5 #27 (2026-04-28) — wire balance sheet + I/E + exposure into payload
+const balanceSheetService = require('./borrower-balance-sheet');
+const exposureService = require('./borrower-exposure');
 
-const SCHEMA_VERSION = 1;
+// Bumped to 2 (2026-04-28) when Sprint 3+4 data joined the payload:
+// balance_sheet (consolidated + per_ubo aggregates), income_expenses (per_ubo),
+// borrower_exposure (concentration), sources_uses (computed summary).
+// Rubric prompts pinned to risk_view rows continue grading against the
+// schema_version they were captured under — older runs unaffected.
+const SCHEMA_VERSION = 2;
 const DEFAULT_SENSITIVITY_VERSION = 'v5.1';
 const VALID_STAGES = ['dip', 'underwriting', 'post_completion'];
 
@@ -264,6 +291,220 @@ async function loadValuations(dealId) {
   return await valuationsService.loadForRiskPackager(dealId);
 }
 
+// --- Balance sheet enrichment (2026-04-28, Sprint 5 #27) ---
+//
+// Ships TWO aggregate blocks:
+//   consolidated  — deal-wide rollup (single object). Critical signal —
+//                   total effective net worth, monthly disposable, the
+//                   "what's behind this loan" view.
+//   per_ubo[]     — per-borrower aggregates ONLY (counts + totals).
+//                   No row-level dumps — keeps payload bounded.
+//
+// Soft-fail on empty: returns { consolidated: null, per_ubo: [] } if no
+// balance-sheet rows exist for any UBO on the deal. Rubric's IA dimension
+// then catches the gap (information_availability grade downgrades).
+async function loadBalanceSheet(dealId) {
+  try {
+    const consolidated = await balanceSheetService.getConsolidatedForDeal(dealId);
+    if (!consolidated) return { consolidated: null, per_ubo: [] };
+
+    // Per-UBO summaries — aggregates only (no portfolio/asset/liability rows in payload)
+    const { rows: borrowers } = await pool.query(
+      `SELECT id, full_name, role, borrower_type, is_corporate
+         FROM deal_borrowers
+        WHERE deal_id = $1
+        ORDER BY id`,
+      [dealId]
+    );
+
+    const perUbo = [];
+    for (const b of borrowers) {
+      try {
+        const [nw, ie] = await Promise.all([
+          balanceSheetService.getNetWorthForBorrower(b.id),
+          balanceSheetService.getIncomeExpenseSummaryForBorrower(b.id)
+        ]);
+        // Only include UBOs that actually have data — skips empty rows
+        const hasData = nw.portfolio_properties_count > 0
+          || nw.other_assets_count > 0
+          || nw.other_liabilities_count > 0
+          || ie.income_count > 0
+          || ie.expense_count > 0;
+        if (!hasData) continue;
+        perUbo.push({
+          borrower_id: b.id,
+          full_name: b.full_name,
+          role: b.role,
+          borrower_type: b.borrower_type,
+          is_corporate: b.is_corporate,
+          counts: {
+            portfolio_properties: nw.portfolio_properties_count,
+            other_assets: nw.other_assets_count,
+            other_liabilities: nw.other_liabilities_count,
+            income_lines: ie.income_count,
+            expense_lines: ie.expense_count
+          },
+          balance_sheet: {
+            effective_property_equity: nw.effective_property_equity,
+            effective_other_assets: nw.effective_other_assets,
+            effective_other_liabilities: nw.effective_other_liabilities,
+            effective_net_worth: nw.effective_net_worth
+          },
+          income_expense: {
+            effective_monthly_income: ie.effective_monthly_income,
+            effective_monthly_expense: ie.effective_monthly_expense,
+            effective_monthly_net: ie.effective_monthly_net,
+            effective_monthly_net_rent: nw.effective_monthly_net_rent
+          },
+          // Single derived signal — months of expenses covered by liquid + rent.
+          // Useful proxy for short-term affordability stress.
+          months_runway_at_zero_income:
+            (ie.effective_monthly_expense > 0 && nw.effective_other_assets > 0)
+              ? Math.round(nw.effective_other_assets / ie.effective_monthly_expense)
+              : null
+        });
+      } catch (err) {
+        console.warn(`[risk-packager] balance-sheet UBO ${b.id} failed:`, err.message);
+      }
+    }
+
+    return {
+      consolidated: {
+        counts: consolidated.counts,
+        balance_sheet: consolidated.consolidated_balance_sheet,
+        income_expense: consolidated.consolidated_income_expense,
+        // Single derived signal: deal-level disposable annualised
+        annualised_disposable: (consolidated.consolidated_income_expense.effective_monthly_net || 0) * 12,
+        ubo_count_with_data: perUbo.length
+      },
+      per_ubo: perUbo
+    };
+  } catch (err) {
+    console.warn('[risk-packager] loadBalanceSheet failed:', err.message);
+    return { consolidated: null, per_ubo: [] };
+  }
+}
+
+// --- Borrower exposure / concentration (2026-04-28, Sprint 5 #27) ---
+//
+// Cross-deal concentration risk: how much existing Daksfirst exposure does
+// this borrower already have, across all OTHER deals? Single-borrower limit
+// policy depends on this. Aggregates + match_keys only — the deals[] list
+// is truncated to top-3 by loan amount to keep token cost bounded.
+async function loadBorrowerExposure(dealId) {
+  try {
+    const exp = await exposureService.getExposureForDeal(dealId);
+    if (!exp) return null;
+    // Truncate deals[] — Opus only needs the loudest signals
+    const topDeals = (exp.deals || [])
+      .filter(d => d.is_active)
+      .sort((a, b) => Number(b.loan_amount || 0) - Number(a.loan_amount || 0))
+      .slice(0, 3)
+      .map(d => ({
+        submission_id: d.submission_id,
+        deal_stage: d.deal_stage,
+        loan_amount: d.loan_amount,
+        created_at: d.created_at
+      }));
+    return {
+      other_deals_count: exp.other_deals_count,
+      active_other_deals: exp.active_other_deals,
+      total_loan_other: exp.total_loan_other,
+      total_loan_active_other: exp.total_loan_active_other,
+      match_keys_used: {
+        company_numbers: (exp.match_keys && exp.match_keys.company_numbers) || [],
+        emails_count: ((exp.match_keys && exp.match_keys.emails) || []).length,
+        name_dob_pairs_count: ((exp.match_keys && exp.match_keys.name_dob_pairs) || []).length
+      },
+      top_active_deals: topDeals
+    };
+  } catch (err) {
+    console.warn('[risk-packager] loadBorrowerExposure failed:', err.message);
+    return null;
+  }
+}
+
+// --- Sources & Uses computed summary (2026-04-28, Sprint 5 #27) ---
+//
+// The native S&U cols are already in features.deal (auto-shipped). This
+// helper pre-computes the balance state + ratios so Opus doesn't have to
+// do arithmetic on raw cols. ~100 tokens — high signal/token ratio.
+function buildSourcesUsesSummary(deal) {
+  const num = (v) => Number(v || 0);
+  const purchasePrice    = num(deal.purchase_price);
+  const sdlt             = num(deal.uses_sdlt);
+  const refurb           = num(deal.refurb_cost);
+  const legal            = num(deal.uses_legal_fees);
+  const otherUses        = num(deal.uses_other_amount);
+  const loanRedemption   = num(deal.uses_loan_redemption);
+
+  // Lender fees auto-derived from loan_amount_approved × pct
+  const loanApproved   = num(deal.loan_amount_approved) || num(deal.loan_amount);
+  const arrangementFee = (loanApproved * num(deal.arrangement_fee_pct)) / 100;
+  const brokerFee      = (loanApproved * num(deal.broker_fee_pct)) / 100;
+  const commitmentFee  = num(deal.commitment_fee);
+  const dipFee         = num(deal.dip_fee);
+  const lenderFeesTotal = arrangementFee + brokerFee + commitmentFee + dipFee;
+
+  const totalUses = purchasePrice + sdlt + refurb + legal + otherUses + lenderFeesTotal + loanRedemption;
+
+  // Sources
+  const seniorLoan   = loanApproved;
+  const secondCharge = num(deal.sources_second_charge);
+  const equity       = num(deal.sources_equity);
+  const otherSources = num(deal.sources_other_amount);
+  const totalSources = seniorLoan + secondCharge + equity + otherSources;
+
+  const balanceDiff = totalSources - totalUses;
+  const isBalanced  = Math.abs(balanceDiff) < 1;
+  const shortBy     = balanceDiff < 0 ? Math.abs(balanceDiff) : 0;
+  const overBy      = balanceDiff > 0 ? balanceDiff : 0;
+
+  // Implied LTC (loan to cost): senior loan / total uses
+  const ltcImplied = totalUses > 0 ? (seniorLoan / totalUses) * 100 : null;
+  // Equity in stack: how much skin does the borrower have
+  const equityPct  = totalSources > 0 ? (equity / totalSources) * 100 : null;
+  const seniorPct  = totalSources > 0 ? (seniorLoan / totalSources) * 100 : null;
+
+  return {
+    primary_use_type: deal.uses_primary_type || null,
+    totals: {
+      total_uses: totalUses,
+      total_sources: totalSources,
+      balance_diff: balanceDiff,
+      is_balanced: isBalanced,
+      short_by: shortBy,
+      over_by: overBy
+    },
+    uses_breakdown: {
+      purchase_price: purchasePrice,
+      sdlt: sdlt,
+      refurb: refurb,
+      legal: legal,
+      other: otherUses,
+      loan_redemption: loanRedemption,
+      lender_fees_total: lenderFeesTotal,
+      lender_fees_breakdown: {
+        arrangement: arrangementFee,
+        broker: brokerFee,
+        commitment: commitmentFee,
+        dip: dipFee
+      }
+    },
+    sources_breakdown: {
+      senior_loan: seniorLoan,
+      second_charge: secondCharge,
+      equity: equity,
+      other: otherSources
+    },
+    ratios: {
+      ltc_implied_pct: ltcImplied,
+      equity_in_stack_pct: equityPct,
+      senior_in_stack_pct: seniorPct
+    }
+  };
+}
+
 // --- Data-stage resolution ---
 
 function resolveDataStage(input) {
@@ -349,6 +590,18 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     console.warn('[risk-packager] directorships pull failed:', err.message);
   }
 
+  // Sprint 5 #27 (2026-04-28) — balance sheet + I/E aggregates + concentration.
+  // All three are soft-fail. loadBalanceSheet returns
+  //   { consolidated, per_ubo[] }
+  // loadBorrowerExposure returns null on empty / failure.
+  // S&U summary is computed from the deal row itself (always present).
+  const [balanceSheet, borrowerExposure] = await Promise.all([
+    loadBalanceSheet(dealId),
+    loadBorrowerExposure(dealId)
+  ]);
+
+  const sourcesUsesSummary = buildSourcesUsesSummary(m1.envelope.features.deal);
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -395,6 +648,19 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     valuations_off_panel_count: valuationOffPanelCount,
     valuations_expired_count:   valuationExpiredCount,
     valuations_valid_for_drawdown_count: valuationValidForDrawdown,
+    // Sprint 5 #27 — balance sheet + concentration provenance
+    balance_sheet_ubos_with_data: (balanceSheet.per_ubo || []).length,
+    balance_sheet_consolidated_present: !!balanceSheet.consolidated,
+    consolidated_net_worth: balanceSheet.consolidated
+      ? balanceSheet.consolidated.balance_sheet.effective_consolidated_net_worth
+      : null,
+    consolidated_monthly_disposable: balanceSheet.consolidated
+      ? balanceSheet.consolidated.income_expense.effective_monthly_net
+      : null,
+    borrower_exposure_other_deals: borrowerExposure ? borrowerExposure.other_deals_count : 0,
+    borrower_exposure_total_loan_other: borrowerExposure ? borrowerExposure.total_loan_other : 0,
+    sources_uses_balanced: sourcesUsesSummary.totals.is_balanced,
+    sources_uses_short_by: sourcesUsesSummary.totals.short_by,
     matrix_data_jsonb_present:
       !!m1.envelope.features.deal.matrix_data &&
       Object.keys(m1.envelope.features.deal.matrix_data || {}).length > 0,
@@ -420,6 +686,10 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     kyc_checks:       kycChecks,
     valuations:       valuations,
     directorships:    directorshipsByBorrower,
+    // Sprint 5 #27 — balance sheet + concentration + S&U computed summary
+    balance_sheet:    balanceSheet,         // { consolidated, per_ubo[] }
+    borrower_exposure: borrowerExposure,    // null | { aggregates + top_active_deals[3] }
+    sources_uses:     sourcesUsesSummary,   // computed totals + ratios + breakdown
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
@@ -443,6 +713,12 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     `(i=${provenance.kyc_individual_count},b=${provenance.kyc_business_count},s=${provenance.kyc_sanctions_count}) ` +
     `vals=${provenance.valuations_count}` +
     `(off=${provenance.valuations_off_panel_count},exp=${provenance.valuations_expired_count},ok=${provenance.valuations_valid_for_drawdown_count}) ` +
+    // Sprint 5 #27 telemetry
+    `bs=${provenance.balance_sheet_ubos_with_data}` +
+    `(nw=${provenance.consolidated_net_worth},disp=${provenance.consolidated_monthly_disposable}) ` +
+    `expo=${provenance.borrower_exposure_other_deals}` +
+    `(£${provenance.borrower_exposure_total_loan_other}) ` +
+    `s&u=${provenance.sources_uses_balanced ? 'BAL' : ('SHORT£' + provenance.sources_uses_short_by)} ` +
     `risk_hash=${payload.risk_payload_hash.slice(0, 12)}`
   );
 
@@ -463,6 +739,10 @@ module.exports = {
   loadCreditChecks,
   loadKycChecks,
   loadValuations,
+  // Sprint 5 #27
+  loadBalanceSheet,
+  loadBorrowerExposure,
+  buildSourcesUsesSummary,
   sha256,
   stableStringify,
   SCHEMA_VERSION,
