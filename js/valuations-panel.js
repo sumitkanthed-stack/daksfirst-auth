@@ -308,13 +308,15 @@
           '<div style="padding:12px 18px;border-top:1px solid #2a3340;display:flex;justify-content:flex-end;gap:8px;">' +
             '<button id="val-modal-cancel" style="background:transparent;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Cancel</button>' +
             '<button id="val-modal-save" style="background:#4ea1ff;color:white;border:none;border-radius:4px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save Draft</button>' +
+            '<button id="val-modal-save-finalise" style="background:#3ecf8e;color:white;border:none;border-radius:4px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save &amp; Finalise</button>' +
           '</div>' +
         '</div>' +
       '</div>';
     document.body.appendChild(div.firstElementChild);
     document.getElementById('val-modal-close').onclick = _closeModal;
     document.getElementById('val-modal-cancel').onclick = _closeModal;
-    document.getElementById('val-modal-save').onclick = _saveFromModal;
+    document.getElementById('val-modal-save').onclick = function () { _saveFromModal(false); };
+    document.getElementById('val-modal-save-finalise').onclick = function () { _saveFromModal(true); };
   }
 
   function _closeModal() {
@@ -451,18 +453,19 @@
   }
 
   function _docArea(values) {
-    if (values && values.document_id) {
-      return '<div style="font-size:11px;color:#34D399;">✓ PDF attached (document_id ' + values.document_id + ')</div>';
-    }
-    if (_modalCtx && _modalCtx.valuationId) {
-      // Existing draft, no doc yet — allow upload
-      return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+    // Always show file picker — saving handles upload+attach+save in one round-trip.
+    // If a doc is already attached, show that status alongside an option to replace.
+    const attached = values && values.document_id;
+    const attachedNote = attached
+      ? '<div style="font-size:11px;color:#34D399;margin-bottom:6px;">✓ Currently attached: document #' + values.document_id + '. Picking a new file will replace it on save.</div>'
+      : '';
+    return attachedNote +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
         '<input type="file" id="vf-doc-file" accept="application/pdf,.pdf" style="font-size:12px;color:#e7ecf3;">' +
-        '<button onclick="window._valUploadDoc(' + _modalCtx.valuationId + ')" style="padding:5px 12px;background:#4ea1ff;color:white;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Upload &amp; Attach</button>' +
-        '<span id="vf-doc-status" style="font-size:11px;color:#8a95a5;"></span>' +
+        '<span id="vf-doc-status" style="font-size:11px;color:#8a95a5;">' +
+          (attached ? '' : 'Pick the RICS PDF — it will upload when you click Save.') +
+        '</span>' +
       '</div>';
-    }
-    return '<div style="font-size:11px;color:#94A3B8;font-style:italic;">Save the draft first, then return here to upload the RICS PDF.</div>';
   }
 
   // Read form into payload
@@ -552,17 +555,69 @@
     }
   };
 
-  async function _saveFromModal() {
-    console.log('[val-save] click — ctx=', _modalCtx);
+  // Unified save handler — handles draft AND finalise in one button-press flow.
+  //   1. Read form
+  //   2. If a PDF is picked, upload it first → get document_id
+  //   3. Save (POST/PUT/supersede) the valuation with document_id attached
+  //   4. If alsoFinalise=true, call /finalise
+  //   5. Close modal, toast, refresh panel
+  async function _saveFromModal(alsoFinalise) {
+    console.log('[val-save] click — alsoFinalise=', alsoFinalise, 'ctx=', _modalCtx);
     if (!_modalCtx) {
       alert('Cannot save — modal context lost. Close and re-open the form.');
       return;
     }
-    const btn = document.getElementById('val-modal-save');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    const data = _readForm();
-    console.log('[val-save] payload=', data);
+    const btnDraft = document.getElementById('val-modal-save');
+    const btnFin = document.getElementById('val-modal-save-finalise');
+    btnDraft.disabled = true;
+    btnFin.disabled = true;
+    const activeBtn = alsoFinalise ? btnFin : btnDraft;
+    const origText = activeBtn.textContent;
+    activeBtn.textContent = 'Saving…';
+
+    const statusEl = document.getElementById('vf-doc-status');
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
+
     try {
+      const data = _readForm();
+      console.log('[val-save] payload=', data);
+
+      // STEP 1 — Upload PDF if a fresh file is picked. We get back a
+      // document_id and bake it into the save payload BEFORE writing the
+      // valuation row, so finalise can succeed in the same round-trip.
+      const fileInput = document.getElementById('vf-doc-file');
+      const hasNewFile = fileInput && fileInput.files && fileInput.files[0];
+      if (hasNewFile) {
+        setStatus('Uploading PDF…');
+        const submissionId =
+          (_modalCtx && _modalCtx.dealSubmissionId) ||
+          (window.currentDeal && window.currentDeal.submission_id);
+        if (!submissionId) throw new Error('Could not resolve deal submission_id for upload');
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        const r = await fetch(_apiBase() + '/api/admin/deals/' + submissionId + '/upload', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + _token() },
+          body: fd
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error((j && j.error) || ('Upload failed (HTTP ' + r.status + ')'));
+        const docId = j.documents && j.documents[0] && j.documents[0].id;
+        if (!docId) throw new Error('Upload succeeded but no document_id returned');
+        data.document_id = docId;
+        setStatus('✓ PDF uploaded (doc ' + docId + ')');
+      } else if (alsoFinalise && (!_modalCtx.valuationId || !_modalCtx.hasDoc)) {
+        // Trying to finalise without a PDF and none on file — fail fast with a friendly message.
+        // (We allow finalise without picking a fresh file IF the existing draft already has a doc.)
+        const existing = _modalCtx.valuationId
+          ? await _api('/api/admin/valuations/single/' + _modalCtx.valuationId).catch(() => null)
+          : null;
+        if (!existing || !existing.data || !existing.data.document_id) {
+          throw new Error('Cannot finalise without a RICS PDF attached. Pick a PDF and click Save & Finalise again.');
+        }
+      }
+
+      // STEP 2 — Save (create / update / supersede)
       let valuationId = _modalCtx.valuationId;
       let savedAction = '';
       if (_modalCtx.mode === 'add') {
@@ -583,28 +638,35 @@
           method: 'POST', body: JSON.stringify(data)
         });
         valuationId = j.data.newRow.id;
-        savedAction = 'New draft (id ' + valuationId + ') created — old valuation superseded';
+        savedAction = 'New draft (id ' + valuationId + ') — old valuation superseded';
       }
+
+      // STEP 3 — Finalise if requested
+      if (alsoFinalise) {
+        setStatus('Finalising…');
+        await _api('/api/admin/valuations/' + valuationId + '/finalise', { method: 'POST' });
+        savedAction += ' · finalised — lending value is now the LTV anchor';
+      }
+
       console.log('[val-save] success —', savedAction);
       const propIdForRefresh = _modalCtx.propertyId;
       const dealIdForRefresh = _modalCtx.dealId;
-      // Close modal and surface the new row in the panel
       _closeModal();
-      // Force-expand the panel for this property so the new row is visible
+      // Auto-expand the panel so the new/updated row is visible
       const body = document.getElementById('val-body-' + propIdForRefresh);
       const chev = document.getElementById('val-chev-' + propIdForRefresh);
       if (body && body.style.display === 'none') {
         body.style.display = 'block';
         if (chev) chev.style.transform = 'rotate(90deg)';
       }
-      // Refresh rows from server
       _refreshPanel(propIdForRefresh, dealIdForRefresh);
-      // Toast at top of page so user sees confirmation outside the modal
-      _toast('✓ ' + savedAction + '. Click Edit on the new row to upload the RICS PDF and Finalise.', 'success');
+      _toast('✓ ' + savedAction, 'success');
     } catch (err) {
       console.error('[val-save] failed:', err);
-      alert('Save failed: ' + err.message);
-      btn.disabled = false; btn.textContent = 'Save Draft';
+      _toast('Save failed: ' + err.message, 'error');
+      btnDraft.disabled = false;
+      btnFin.disabled = false;
+      activeBtn.textContent = origText;
     }
   }
 
