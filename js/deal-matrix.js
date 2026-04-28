@@ -1706,6 +1706,7 @@ export async function renderDealMatrix(deal) {
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
                   <thead>
                     <tr style="background:rgba(255,255,255,0.04);">
+                      <th style="text-align:center;padding:6px 4px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);width:24px;" title="Click row to expand property details"></th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">#</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Address</th>
                       <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Postcode</th>
@@ -1735,7 +1736,8 @@ export async function renderDealMatrix(deal) {
                                        : _occ.includes('owner') ? '#94A3B8'
                                        : '#64748B';
                       const _occDisplay = p.occupancy ? sanitizeHtml(p.occupancy) : '—';
-                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" id="prop-row-${p.id}">
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="prop-row-${p.id}" onclick="window._togglePropertyExpand(${p.id})">
+                      <td style="padding:6px 4px;text-align:center;color:#64748B;font-size:12px;width:24px;" id="prop-chev-${p.id}">▶</td>
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
                       <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
@@ -1746,7 +1748,7 @@ export async function renderDealMatrix(deal) {
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.property_type || deal.asset_type || '-')}</td>
                       <td style="padding:6px 8px;color:#94A3B8;font-size:11px;">${sanitizeHtml(p.tenure || deal.property_tenure || '-')}</td>
                       <td style="padding:6px 8px;color:${_occColor};font-size:11px;font-weight:${p.occupancy ? '600' : '400'};text-transform:capitalize;">${_occDisplay}</td>
-                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;">
+                      ${canEdit ? `<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">
                         <button onclick="window.editPropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>
                         <button onclick="window.deletePropertyRow(${p.id}, '${deal.submission_id}')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>
                       </td>` : ''}
@@ -2864,6 +2866,12 @@ export async function renderDealMatrix(deal) {
                     _wrapPane('hmlr',    hmlrHtml,       false) +
                     _wrapPane('rics',    _ricsSlimHtml,  false) +
                   '</div>';
+              }).map((_html, _i) => {
+                // Sprint 2 #14 Simplified C — wrap each property's panels in a
+                // hidden expand-div. Default display:none. Toggled by the row
+                // chevron via window._togglePropertyExpand.
+                const _pid = deal.properties[_i] && deal.properties[_i].id;
+                return '<div id="prop-expand-' + _pid + '" data-prop-expand="' + _pid + '" style="display:none;">' + _html + '</div>';
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -9013,6 +9021,52 @@ window._togglePropTab = function(propertyId, tabName) {
     t.style.color = isActive ? colour : '#94A3B8';
     t.style.borderBottomColor = isActive ? colour : 'transparent';
   });
+};
+
+// Sprint 2 #14 Simplified C — click-to-expand property row.
+// One property's panels open at a time. Click an expanded row again to collapse.
+// Behaviour:
+//   1. Hide all other prop-expand divs (display:none) + reset their chevrons + row backgrounds
+//   2. If clicked row was already open → collapse it
+//   3. Otherwise → show its prop-expand div, flip chevron to ▼, highlight row, scrollIntoView
+window._togglePropertyExpand = function(propertyId) {
+  const target = document.getElementById('prop-expand-' + propertyId);
+  if (!target) return;
+  const isOpen = target.style.display !== 'none';
+
+  // Hide all expand divs first
+  document.querySelectorAll('[data-prop-expand]').forEach(el => {
+    el.style.display = 'none';
+  });
+  // Reset all row chevrons + row background highlighting
+  document.querySelectorAll('[id^="prop-chev-"]').forEach(el => {
+    el.textContent = '▶';
+    el.style.color = '#64748B';
+  });
+  document.querySelectorAll('[id^="prop-row-"]').forEach(el => {
+    el.style.background = '';
+  });
+
+  if (isOpen) {
+    // Was already open — leave collapsed
+    return;
+  }
+
+  // Show this row's panels
+  target.style.display = 'block';
+  const chev = document.getElementById('prop-chev-' + propertyId);
+  if (chev) {
+    chev.textContent = '▼';
+    chev.style.color = '#4EA1FF';
+  }
+  const row = document.getElementById('prop-row-' + propertyId);
+  if (row) {
+    row.style.background = 'rgba(78,161,255,0.08)';
+  }
+  // Smooth scroll the panel block into view
+  setTimeout(() => {
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 50);
 };
 
 // ── Toggle Chimnie panel expand/collapse (2026-04-21) ──────────────────────
