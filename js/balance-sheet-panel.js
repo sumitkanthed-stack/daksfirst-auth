@@ -74,8 +74,58 @@
   // Main render entry
   // ════════════════════════════════════════════════════════════
 
+  // Sprint 4 #21 — Consolidated rollup loader. Populates the
+  // #consolidated-bs-host element rendered by deal-matrix.js with
+  // a roll-up summary of A/L and I/E across all UBOs on the deal.
+  window._loadConsolidatedBalanceSheet = async function (dealId) {
+    const host = document.getElementById('consolidated-bs-host');
+    if (!host || !dealId) return;
+    try {
+      const j = await _api('/api/admin/balance-sheet/deal/' + dealId + '/consolidated');
+      const d = j.data || {};
+      const cb = d.consolidated_balance_sheet || {};
+      const cie = d.consolidated_income_expense || {};
+      const counts = d.counts || {};
+      const netColor = cie.effective_monthly_net >= 0 ? '#34D399' : '#F87171';
+      host.innerHTML =
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' +
+          // BALANCE SHEET side
+          '<div style="background:rgba(212,168,83,0.04);border:1px solid rgba(212,168,83,0.25);border-radius:6px;padding:12px;">' +
+            '<div style="font-size:11px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📊 Consolidated Balance Sheet</div>' +
+            '<table style="width:100%;font-size:12px;">' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">Property value (effective)</td><td style="text-align:right;color:#F1F5F9;">' + _money(cb.effective_property_value) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">Property mortgages (effective)</td><td style="text-align:right;color:#F87171;">−' + _money(cb.effective_property_mortgage) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.06);"><strong>= Property equity (effective)</strong></td><td style="text-align:right;color:#34D399;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.06);">' + _money(cb.effective_property_equity) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">+ Other assets</td><td style="text-align:right;color:#F1F5F9;">' + _money(cb.effective_other_assets) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">− Other liabilities</td><td style="text-align:right;color:#F87171;">−' + _money(cb.effective_other_liabilities) + '</td></tr>' +
+              '<tr><td style="color:#4EA1FF;padding:6px 0 3px;border-top:2px solid rgba(78,161,255,0.4);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:11px;">Consolidated net worth</td><td style="text-align:right;color:#34D399;font-weight:800;font-size:14px;border-top:2px solid rgba(78,161,255,0.4);padding-top:6px;">' + _money(cb.effective_consolidated_net_worth) + '</td></tr>' +
+            '</table>' +
+            '<div style="margin-top:8px;font-size:10px;color:#64748B;">' + counts.portfolio_properties + ' properties · ' + counts.other_assets + ' assets · ' + counts.other_liabilities + ' liabilities across UBOs</div>' +
+          '</div>' +
+          // INCOME / EXPENSE side
+          '<div style="background:rgba(78,161,255,0.04);border:1px solid rgba(78,161,255,0.25);border-radius:6px;padding:12px;">' +
+            '<div style="font-size:11px;color:#4EA1FF;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">💰 Consolidated Income & Expenses (monthly)</div>' +
+            '<table style="width:100%;font-size:12px;">' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">Income (effective monthly)</td><td style="text-align:right;color:#34D399;font-weight:600;">' + _money(cie.effective_monthly_income) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">Expense (effective monthly)</td><td style="text-align:right;color:#F87171;font-weight:600;">−' + _money(cie.effective_monthly_expense) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.06);"><strong>= Net monthly</strong></td><td style="text-align:right;color:' + netColor + ';font-weight:700;border-bottom:1px solid rgba(255,255,255,0.06);">' + _money(cie.effective_monthly_net) + '</td></tr>' +
+              '<tr><td style="color:#94A3B8;padding:3px 0;">Property net rent (rent − interest)</td><td style="text-align:right;color:#34D399;">' + _money(cie.effective_monthly_net_rent) + '</td></tr>' +
+              '<tr><td style="color:#4EA1FF;padding:6px 0 3px;border-top:2px solid rgba(78,161,255,0.4);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:11px;">Disposable monthly</td><td style="text-align:right;color:' + netColor + ';font-weight:800;font-size:14px;border-top:2px solid rgba(78,161,255,0.4);padding-top:6px;">' + _money(Number(cie.effective_monthly_net || 0) + Number(cie.effective_monthly_net_rent || 0)) + '</td></tr>' +
+            '</table>' +
+            '<div style="margin-top:8px;font-size:10px;color:#64748B;">' + counts.income_lines + ' income lines · ' + counts.expense_lines + ' expense lines across UBOs</div>' +
+          '</div>' +
+        '</div>';
+    } catch (err) {
+      host.innerHTML = '<div style="color:#F87171;padding:6px;">Consolidated rollup load failed: ' + _esc(err.message) + '</div>';
+    }
+  };
+
   window._buildBalanceSheetSection = function (deal) {
     if (!deal || !deal.id) return '';
+    // Sprint 4 #21 — also kick off the consolidated rollup loader. The host
+    // div lives in deal-matrix.js (#consolidated-bs-host inside the
+    // Consolidated A/L + I/E sub-row).
+    setTimeout(() => window._loadConsolidatedBalanceSheet && window._loadConsolidatedBalanceSheet(deal.id), 500);
     const borrowers = (deal.borrowers || []).filter(b => b && b.id);
     // Filter to INDIVIDUAL borrowers only (UBOs, directors, joint individuals,
     // individual guarantors). Skip corporate borrowers — they have CH data
@@ -171,10 +221,129 @@
     const assets = (d.other_assets_liabilities || []).filter(r => r.kind === 'asset');
     const liabs = (d.other_assets_liabilities || []).filter(r => r.kind === 'liability');
 
+    // Sprint 4 #22 — embed directorships block if module is loaded
+    const dsBlock = (typeof window._buildDirectorshipsBlock === 'function')
+      ? window._buildDirectorshipsBlock({ id: borrowerId })
+      : '';
+
+    // Sprint 4 #20 — income/expenses block (lazy-loaded after DOM render)
+    const ieBlock = '<div id="bs-ie-' + borrowerId + '" style="margin-top:14px;">' +
+      '<div style="font-size:11px;color:#94A3B8;padding:6px;font-style:italic;">Loading income & expenses…</div>' +
+    '</div>';
+    setTimeout(() => _refreshIncomeExpenses(borrowerId), 100);
+
     return _renderPortfolioBlock(borrowerId, props, d) +
            _renderAssetsLiabsBlock(borrowerId, assets, liabs, d) +
-           _renderRollupBlock(d);
+           ieBlock +
+           _renderRollupBlock(d) +
+           dsBlock;
   }
+
+  // Sprint 4 #20 — fetch and render the income/expenses sub-block
+  async function _refreshIncomeExpenses(borrowerId) {
+    const host = document.getElementById('bs-ie-' + borrowerId);
+    if (!host) return;
+    try {
+      const j = await _api('/api/admin/balance-sheet/borrower/' + borrowerId + '/income-expenses');
+      const d = j.data || {};
+      host.innerHTML = _renderIeBlock(borrowerId, d);
+    } catch (err) {
+      host.innerHTML = '<div style="font-size:11px;color:#F87171;padding:6px;">Income/expenses load failed: ' + _esc(err.message) + '</div>';
+    }
+  }
+
+  function _renderIeBlock(borrowerId, d) {
+    const incomes = d.incomes || [];
+    const expenses = d.expenses || [];
+    const renderList = (rows, kind, color) => {
+      if (rows.length === 0) {
+        return '<div style="font-size:11px;color:#94A3B8;font-style:italic;padding:6px;">No ' + kind + 's yet.</div>';
+      }
+      return rows.map(r => {
+        const monthly = (r.derived && r.derived.monthly_gross) || 0;
+        const monthlyEff = (r.derived && r.derived.monthly_effective) || 0;
+        return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12px;">' +
+          '<div>' +
+            '<div style="color:#F1F5F9;font-weight:500;">' + _esc(r.description || r.category || '—') + '</div>' +
+            '<div style="font-size:10px;color:#94A3B8;">' + _esc(r.category || '') +
+              (r.frequency ? ' · ' + _esc(r.frequency) : '') +
+              (r.ownership_pct != null && r.ownership_pct < 100 ? ' · ' + _pct(r.ownership_pct) + ' owned' : '') +
+            '</div>' +
+          '</div>' +
+          '<div style="text-align:right;display:flex;gap:8px;align-items:center;">' +
+            '<div>' +
+              '<div style="color:' + color + ';font-weight:600;">' + _money(r.amount) + ' / ' + _esc(r.frequency || 'monthly') + '</div>' +
+              '<div style="font-size:10px;color:#94A3B8;">~' + _money(monthly) + '/mo' + (r.ownership_pct != null && r.ownership_pct < 100 ? ' · eff ' + _money(monthlyEff) + '/mo' : '') + '</div>' +
+            '</div>' +
+            '<button onclick="window._bsDeleteIncomeExpense(' + r.id + ', ' + borrowerId + ')" style="padding:2px 6px;background:rgba(248,113,113,0.1);color:#F87171;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;" title="Remove">×</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    };
+
+    const netColor = d.effective_monthly_net >= 0 ? '#34D399' : '#F87171';
+    return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px;">' +
+      '<div style="background:rgba(52,211,153,0.04);border:1px solid rgba(52,211,153,0.2);border-radius:6px;padding:10px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<div style="font-size:11px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">📈 Income</div>' +
+          '<button onclick="window._bsAddIncomeExpense(' + borrowerId + ', \'income\')" style="padding:3px 8px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add</button>' +
+        '</div>' +
+        renderList(incomes, 'income', '#34D399') +
+        '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:6px;border-top:1px solid rgba(52,211,153,0.25);font-size:13px;font-weight:700;color:#34D399;">' +
+          '<span>Effective monthly income</span><span>' + _money(d.effective_monthly_income) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div style="background:rgba(248,113,113,0.04);border:1px solid rgba(248,113,113,0.2);border-radius:6px;padding:10px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<div style="font-size:11px;color:#F87171;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">📉 Expenses</div>' +
+          '<button onclick="window._bsAddIncomeExpense(' + borrowerId + ', \'expense\')" style="padding:3px 8px;background:#F87171;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add</button>' +
+        '</div>' +
+        renderList(expenses, 'expense', '#F87171') +
+        '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:6px;border-top:1px solid rgba(248,113,113,0.25);font-size:13px;font-weight:700;color:#F87171;">' +
+          '<span>Effective monthly expense</span><span>' + _money(d.effective_monthly_expense) + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="background:rgba(78,161,255,0.04);border:1px solid rgba(78,161,255,0.2);border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;">' +
+      '<span style="color:#4EA1FF;text-transform:uppercase;letter-spacing:.04em;font-size:11px;">Net monthly (effective)</span>' +
+      '<span style="color:' + netColor + ';">' + _money(d.effective_monthly_net) + '/mo</span>' +
+    '</div>';
+  }
+
+  // Sprint 4 #20 — Add income/expense via prompts (matches existing v1 pattern)
+  window._bsAddIncomeExpense = async function (borrowerId, kind) {
+    const description = prompt(kind === 'income' ? 'Income source (e.g. "Salary @ Acme Ltd", "BTL rental"):' : 'Expense (e.g. "Mortgage on home", "School fees"):');
+    if (!description) return;
+    const category = prompt('Category (' + (kind === 'income' ? 'employment/self_employment/rental/dividend/pension/other_income' : 'mortgage/rent/utilities/living_costs/other_expense') + '):') || null;
+    const amount = prompt('Amount (£):');
+    const frequency = (prompt('Frequency (monthly / annually / one_off, default monthly):') || 'monthly').toLowerCase();
+    const pct = prompt('Ownership % (default 100):') || 100;
+    try {
+      await _api('/api/admin/balance-sheet/borrower/' + borrowerId + '/income-expenses', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind, description, category,
+          amount: Number(amount) || null,
+          frequency,
+          ownership_pct: Number(pct) || 100
+        })
+      });
+      await _refreshIncomeExpenses(borrowerId);
+      _refreshSummary(borrowerId);
+    } catch (err) {
+      alert('Add failed: ' + err.message);
+    }
+  };
+
+  window._bsDeleteIncomeExpense = async function (id, borrowerId) {
+    if (!confirm('Remove this row?')) return;
+    try {
+      await _api('/api/admin/balance-sheet/income-expenses/' + id, { method: 'DELETE' });
+      await _refreshIncomeExpenses(borrowerId);
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  };
 
   function _renderPortfolioBlock(borrowerId, props, d) {
     const rowsHtml = props.length === 0

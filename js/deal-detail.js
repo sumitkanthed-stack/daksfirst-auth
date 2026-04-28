@@ -346,6 +346,11 @@ export async function showDealDetail(dealId) {
       console.warn('[balance-sheet-panel] load failed:', err && err.message);
     });
 
+    // Sprint 4 #22 — directorships panel (sets window._buildDirectorshipsBlock)
+    import('./directorships-panel.js').catch(err => {
+      console.warn('[directorships-panel] load failed:', err && err.message);
+    });
+
     // Expose current deal globally for valuations-panel uploader (needs submission_id)
     try { window.currentDeal = deal; } catch (_) {}
 
