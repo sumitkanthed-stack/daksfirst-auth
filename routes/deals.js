@@ -12,6 +12,7 @@ const { generateDipPdf, buildDipHtml } = require('../services/dip-pdf');
 // const { sendForSigning } = require('../services/docusign'); // Parked — will use for Termsheet/Facility Letter
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
+const { getExposureForDeal } = require('../services/borrower-exposure');
 // Delegated Authority (2026-04-20, DA Session 2c)
 const { evaluateAutoRoute, compactReason, enrichPropertiesForEvaluator } = require('../services/delegated-authority');
 
@@ -3783,6 +3784,31 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[delete-deal] Error:', error);
     res.status(500).json({ error: 'Failed to delete deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sprint 3 #15 — Borrower exposure / concentration risk aggregator
+// ═══════════════════════════════════════════════════════════════════════════
+// GET /api/deals/:submissionId/borrower-exposure
+//
+// Returns the count + total loan exposure of OTHER Daksfirst deals whose
+// borrowers match this deal's borrowers (by CH number / email / name+DOB).
+// Internal users only — concentration is risk-team data, not broker-facing.
+router.get('/:submissionId/borrower-exposure', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const dealResult = await pool.query(
+      'SELECT id FROM deal_submissions WHERE submission_id = $1',
+      [req.params.submissionId]
+    );
+    if (dealResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+    const exposure = await getExposureForDeal(dealResult.rows[0].id);
+    res.json({ success: true, data: exposure });
+  } catch (err) {
+    console.error('[borrower-exposure] error:', err);
+    res.status(500).json({ error: 'Failed to compute borrower exposure' });
   }
 });
 

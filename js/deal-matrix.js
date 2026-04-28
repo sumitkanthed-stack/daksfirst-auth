@@ -787,6 +787,19 @@ export async function renderDealMatrix(deal) {
     { value: 'trust', label: 'Trust' }, { value: 'partnership', label: 'Partnership' }
   ];
 
+  // Sprint 3 #15 — Borrower exposure widget. Lazy fetches concentration data;
+  // shown only for internal users above the Borrower section.
+  if (isInternalUser) {
+    html += `
+      <div id="borrower-exposure-widget" style="margin:0 0 0 0;padding:8px 16px;background:rgba(212,168,83,0.04);border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">🔗 Borrower Portfolio</span>
+        <span id="borrower-exposure-summary" style="font-size:12px;color:#94A3B8;">Loading…</span>
+        <span id="borrower-exposure-action" style="margin-left:auto;"></span>
+      </div>
+    `;
+    setTimeout(() => window._loadBorrowerExposure && window._loadBorrowerExposure(deal.submission_id), 300);
+  }
+
   html += `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
       ${renderSectionHeader('s1', 'B', 'Borrower / KYC', 'Comprehensive identity verification', [
@@ -9021,6 +9034,99 @@ window._togglePropTab = function(propertyId, tabName) {
     t.style.color = isActive ? colour : '#94A3B8';
     t.style.borderBottomColor = isActive ? colour : 'transparent';
   });
+};
+
+// Sprint 3 #15 — Borrower exposure widget loader.
+// Fetches /api/deals/:submissionId/borrower-exposure (internal-only) and
+// renders the summary line + an inline list / "view all" link. Aggregates
+// only — no PII pollution in the at-a-glance widget.
+window._loadBorrowerExposure = async function (submissionId) {
+  if (!submissionId) return;
+  const summary = document.getElementById('borrower-exposure-summary');
+  const action = document.getElementById('borrower-exposure-action');
+  if (!summary) return;
+  try {
+    const apiBase = window.location.hostname.startsWith('apply-staging')
+      ? 'https://daksfirst-auth-staging.onrender.com'
+      : 'https://daksfirst-auth.onrender.com';
+    const tok = sessionStorage.getItem('daksfirst_token') || '';
+    const r = await fetch(apiBase + '/api/deals/' + submissionId + '/borrower-exposure', {
+      headers: { 'Authorization': 'Bearer ' + tok }
+    });
+    if (r.status === 401 || r.status === 403) {
+      summary.textContent = 'Sign in as admin to see concentration data.';
+      summary.style.color = '#F87171';
+      return;
+    }
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error || 'Failed');
+    const d = j.data || {};
+    const fmtMoney = (v) => '£' + Number(v || 0).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+    if (d.other_deals_count === 0) {
+      summary.innerHTML = '<span style="color:#34D399;">✓ No other Daksfirst deals on file</span> · first-time borrower';
+      return;
+    }
+    const activeBit = d.active_other_deals > 0
+      ? '<strong style="color:#FBBF24;">' + d.active_other_deals + ' active</strong>'
+      : '<span style="color:#94A3B8;">' + d.active_other_deals + ' active</span>';
+    const totBit = '<strong style="color:#F1F5F9;">' + fmtMoney(d.total_loan_active_other) + '</strong> active exposure';
+    const totAllBit = d.other_deals_count > d.active_other_deals
+      ? ' · ' + fmtMoney(d.total_loan_other) + ' all-time across ' + d.other_deals_count + ' deals'
+      : '';
+    summary.innerHTML = activeBit + ' · ' + totBit + totAllBit;
+    if (action) {
+      action.innerHTML = '<button onclick="window._showBorrowerExposureModal()" style="padding:3px 10px;background:rgba(212,168,83,0.15);color:#D4A853;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">View all</button>';
+    }
+    window._exposureCache = d;
+  } catch (err) {
+    summary.textContent = 'Could not load exposure: ' + err.message;
+    summary.style.color = '#F87171';
+  }
+};
+
+// Modal listing all linked deals for transparency. Click to open each
+// deal in a new tab.
+window._showBorrowerExposureModal = function () {
+  const d = window._exposureCache;
+  if (!d) return;
+  let host = document.getElementById('exposure-modal-overlay');
+  if (host) host.remove();
+  host = document.createElement('div');
+  host.id = 'exposure-modal-overlay';
+  host.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;display:flex;align-items:center;justify-content:center;';
+  const fmtMoney = (v) => '£' + Number(v || 0).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  const fmtDate = (v) => v ? new Date(v).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+  const rowsHtml = (d.deals || []).map(dl => {
+    const stagePill = dl.is_active
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(251,191,36,0.15);color:#FBBF24;text-transform:uppercase;">' + (dl.deal_stage || 'unknown') + '</span>'
+      : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(100,116,139,0.15);color:#94A3B8;text-transform:uppercase;">' + (dl.deal_stage || 'closed') + '</span>';
+    const bw = dl.borrower_company || dl.borrower_name || '—';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">' +
+      '<td style="padding:8px 10px;color:#F1F5F9;">' + (bw || '—') + '</td>' +
+      '<td style="padding:8px 10px;color:#94A3B8;font-size:11px;">' + (dl.company_number || '—') + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;color:#F1F5F9;font-weight:600;">' + fmtMoney(dl.loan_amount) + '</td>' +
+      '<td style="padding:8px 10px;">' + stagePill + '</td>' +
+      '<td style="padding:8px 10px;color:#94A3B8;font-size:11px;">' + fmtDate(dl.created_at) + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;"><a href="/deal/' + dl.id + '" target="_blank" rel="noopener" style="color:#4EA1FF;font-size:11px;text-decoration:none;font-weight:600;">↗ Open</a></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="6" style="padding:20px;text-align:center;color:#94A3B8;font-style:italic;">No matching deals.</td></tr>';
+  host.innerHTML = '<div style="background:#151a21;border:1px solid #2a3340;border-radius:8px;width:90%;max-width:900px;max-height:85vh;overflow-y:auto;color:#e7ecf3;">' +
+    '<div style="padding:14px 18px;border-bottom:1px solid #2a3340;background:#1c232c;display:flex;justify-content:space-between;align-items:center;">' +
+      '<div><div style="font-size:14px;font-weight:600;">Borrower portfolio · ' + d.other_deals_count + ' linked deals</div>' +
+      '<div style="font-size:11px;color:#8a95a5;margin-top:2px;">' + fmtMoney(d.total_loan_active_other) + ' active across ' + d.active_other_deals + ' active deals</div></div>' +
+      '<button onclick="document.getElementById(\'exposure-modal-overlay\').remove()" style="background:transparent;color:#8a95a5;border:none;font-size:20px;cursor:pointer;">×</button>' +
+    '</div>' +
+    '<div style="padding:0;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#1c232c;"><th style="text-align:left;padding:8px 10px;color:#8a95a5;font-size:10px;text-transform:uppercase;font-weight:500;">Borrower</th><th style="text-align:left;padding:8px 10px;color:#8a95a5;font-size:10px;text-transform:uppercase;font-weight:500;">CH#</th><th style="text-align:right;padding:8px 10px;color:#8a95a5;font-size:10px;text-transform:uppercase;font-weight:500;">Loan</th><th style="text-align:left;padding:8px 10px;color:#8a95a5;font-size:10px;text-transform:uppercase;font-weight:500;">Stage</th><th style="text-align:left;padding:8px 10px;color:#8a95a5;font-size:10px;text-transform:uppercase;font-weight:500;">Submitted</th><th></th></tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<div style="padding:8px 16px;border-top:1px solid #2a3340;font-size:11px;color:#8a95a5;background:#1c232c;">' +
+      'Match keys: ' + (d.match_keys.company_numbers.length || 0) + ' CH numbers · ' + (d.match_keys.emails.length || 0) + ' emails · ' + (d.match_keys.name_dob_pairs.length || 0) + ' name+DOB pairs' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(host);
 };
 
 // Sprint 2 #14 Simplified C — click-to-expand property row.
