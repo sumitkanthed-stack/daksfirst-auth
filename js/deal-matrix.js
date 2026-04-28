@@ -2972,6 +2972,17 @@ export async function renderDealMatrix(deal) {
                     ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
                   </div>`
               }
+
+              <!-- Sprint 2 #11 — RICS Valuations per property (lifted from per-property card) -->
+              ${isInternalUser ? `
+                <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.1);">
+                  <div style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">📋 RICS Valuations (per property)</div>
+                  <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;font-style:italic;">Add or edit a RICS valuation for each security property. Lending value here is the LTV anchor for the rubric. 6-month drawdown gate applies.</div>
+                  ${(typeof window._buildValuationsMatrixRow === 'function')
+                    ? window._buildValuationsMatrixRow(deal)
+                    : '<div style="font-size:11px;color:#F87171;">Valuations module not loaded. Refresh the page.</div>'}
+                </div>
+              ` : ''}
             </div>
           </div>
         </div>

@@ -151,30 +151,21 @@
   // PANEL RENDER (lazy fetches active vals when user expands)
   // ════════════════════════════════════════════════════════════
 
+  // Sprint 2 #11 — slim status line only on property cards. Editor moved to
+  // the matrix Property/Security → Valuation sub-row. Status pill + one-line
+  // summary auto-load on page open via _autoloadPills.
   window._buildValuationsPanel = function (p, deal) {
     if (!p || !p.id) return '';
     if (!_isAdmin()) return '';
-    const subId = deal && (deal.submission_id || deal.id);
-    if (!subId || !deal.id) return '';
-
+    if (!deal || !deal.id) return '';
     const propId = p.id;
-    const containerId = 'val-panel-' + propId;
-    const bodyId = 'val-body-' + propId;
-
-    return '<div id="' + containerId + '" style="margin-top:8px;padding:10px 12px;background:rgba(212,168,83,0.04);border:1px solid rgba(212,168,83,0.25);border-radius:6px;">' +
-      // Header (clickable to expand)
-      '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="window._valTogglePanel(' + propId + ', ' + deal.id + ')">' +
-        '<div style="display:flex;align-items:center;gap:8px;">' +
-          '<span id="val-chev-' + propId + '" style="font-size:10px;color:#64748B;transition:transform 0.15s;">▶</span>' +
-          '<span style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RICS Valuation</span>' +
-          '<span id="val-statuspill-' + propId + '"></span>' +
-          '<span id="val-summary-' + propId + '" style="font-size:11px;color:#94A3B8;">Loading…</span>' +
-        '</div>' +
-        '<div onclick="event.stopPropagation();" style="display:flex;gap:6px;">' +
-          '<button onclick="window._valOpenAdd(' + propId + ', ' + deal.id + ')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Valuation</button>' +
-        '</div>' +
+    return '<div style="margin-top:8px;padding:8px 12px;background:rgba(212,168,83,0.04);border-left:3px solid #D4A853;border-radius:6px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;font-size:11px;flex-wrap:wrap;">' +
+        '<span style="color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RICS Valuation</span>' +
+        '<span id="val-statuspill-' + propId + '"></span>' +
+        '<span id="val-summary-' + propId + '" style="color:#94A3B8;">Loading…</span>' +
+        '<span style="margin-left:auto;color:#64748B;font-size:10px;font-style:italic;">Edit in Property/Security → Valuation row</span>' +
       '</div>' +
-      '<div id="' + bodyId + '" style="display:none;margin-top:8px;"></div>' +
     '</div>';
   };
 
@@ -199,27 +190,80 @@
     }
   };
 
+  // Sprint 2 #11 — _renderRows now updates BOTH the slim summary on the
+  // property card (val-statuspill / val-summary) AND the per-property card
+  // in the matrix Valuation row (val-matrix-card). Either or both may exist
+  // on a given page; we update whatever we find.
   function _renderRows(propId, dealId, rows) {
-    const body = document.getElementById('val-body-' + propId);
     const summary = document.getElementById('val-summary-' + propId);
     const pillSlot = document.getElementById('val-statuspill-' + propId);
-    if (!body) return;
-    // Status pill in header — visible whether expanded or not
+    const matrixCardBody = document.getElementById('val-matrix-card-body-' + propId);
+
+    // 1. Slim status line on the property card
     if (pillSlot) pillSlot.innerHTML = _statusPill(rows);
     if (summary) {
-      if (rows.length === 0) summary.textContent = '';
-      else {
+      if (rows.length === 0) {
+        summary.textContent = '— No valuation on file';
+      } else {
         const head = rows[0];
         const firm = head.valuer_firm_name || head.valuer_off_panel_name || 'Unknown';
         summary.textContent = '· ' + firm + ' · ' + _money(head.lending_value_pence) + ' lending';
       }
     }
-    if (rows.length === 0) {
-      body.innerHTML = '<div style="font-size:12px;color:#94A3B8;font-style:italic;padding:6px 4px;">No valuation on file. Click "+ Add Valuation" to capture a RICS report.</div>';
-      return;
+
+    // 2. Full editor cards inside the matrix Valuation row
+    if (matrixCardBody) {
+      if (rows.length === 0) {
+        matrixCardBody.innerHTML = '<div style="font-size:12px;color:#94A3B8;font-style:italic;padding:6px 4px;">No valuation on file. Click + Add Valuation to capture a RICS report.</div>';
+      } else {
+        matrixCardBody.innerHTML = rows.map(r => _rowCard(r, dealId)).join('');
+      }
     }
-    body.innerHTML = rows.map(r => _rowCard(r, dealId)).join('');
+
+    // 3. Legacy gold-panel body (kept for backward compat — no-op if removed)
+    const body = document.getElementById('val-body-' + propId);
+    if (body) {
+      if (rows.length === 0) {
+        body.innerHTML = '<div style="font-size:12px;color:#94A3B8;font-style:italic;padding:6px 4px;">No valuation on file. Click "+ Add Valuation" to capture a RICS report.</div>';
+      } else {
+        body.innerHTML = rows.map(r => _rowCard(r, dealId)).join('');
+      }
+    }
   }
+
+  // Sprint 2 #11 — Per-property card list for the matrix Valuation sub-row.
+  // Renders a card per property in the deal with: address header + status
+  // pill + summary line + + Add Valuation button + body slot for active rows.
+  // Body content (active valuations) is auto-populated by _refreshPanel via
+  // _autoloadPills on page open.
+  window._buildValuationsMatrixRow = function (deal) {
+    if (!_isAdmin()) return '';
+    if (!deal || !deal.id) return '';
+    const props = (deal.properties || []).filter(p => p && p.id);
+    if (props.length === 0) {
+      return '<div style="font-size:12px;color:#94A3B8;font-style:italic;padding:6px 4px;">No properties on this deal yet. Add a property in the Property Details row first.</div>';
+    }
+    return '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">' +
+      props.map(p => {
+        const addr = _esc((p.address || p.security_address || '').trim()) ||
+                     ('Property ' + p.id);
+        return '<div style="background:#0F172A;border:1px solid rgba(212,168,83,0.25);border-left:3px solid #D4A853;border-radius:6px;padding:10px 14px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+              '<span style="font-size:13px;font-weight:600;color:#F1F5F9;">' + addr + '</span>' +
+              (p.postcode ? '<span style="font-size:11px;color:#94A3B8;">' + _esc(p.postcode) + '</span>' : '') +
+              '<span id="val-statuspill-' + p.id + '"></span>' +
+              '<span id="val-summary-' + p.id + '" style="font-size:11px;color:#94A3B8;">Loading…</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;">' +
+              '<button onclick="window._valOpenAdd(' + p.id + ', ' + deal.id + ')" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Valuation</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="val-matrix-card-body-' + p.id + '" style="margin-top:6px;"></div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  };
 
   function _rowCard(r, dealId) {
     const firm = r.valuer_firm_name || r.valuer_off_panel_name || 'Unknown';
