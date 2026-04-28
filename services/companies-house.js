@@ -407,6 +407,99 @@ function calculateRiskScore(flags) {
   return 'low';
 }
 
+// ════════════════════════════════════════════════════════════
+// Sprint 3 #18 (2026-04-28) — Officer appointments + troublesome scoring
+// ════════════════════════════════════════════════════════════
+
+// Companies whose CH numbers we treat as competitor lenders. Director of any
+// of these flags as 'competitor_lender' troublesome. Add or curate as needed.
+const COMPETITOR_LENDER_CH_NUMBERS = [
+  // Examples — replace with real numbers when you build the watchlist:
+  // '12345678', // West One Loans
+  // '87654321', // Together Financial
+];
+
+const TROUBLESOME_COMPANY_STATUSES = new Set([
+  'dissolved',
+  'liquidation',
+  'in_administration',
+  'receivership',
+  'voluntary_arrangement',
+  'converted_or_closed',
+  'insolvency_proceedings'
+]);
+
+/**
+ * Get all appointments (current + resigned) for a CH officer.
+ *
+ * @param {string} officerId — CH officer_id (NOT a company number; use the
+ *   officer.links.officer.appointments value from /company/{n}/officers).
+ * @returns {Promise<Array>} array of normalized appointment objects.
+ */
+async function getOfficerAppointments(officerId) {
+  if (!officerId) return [];
+  // CH endpoint: /officers/{officer_id}/appointments
+  const path = '/officers/' + encodeURIComponent(officerId) + '/appointments';
+  let raw;
+  try {
+    raw = await chFetch(path);
+  } catch (err) {
+    console.warn('[ch] getOfficerAppointments failed for ' + officerId + ':', err.message);
+    return [];
+  }
+  const items = (raw && raw.items) || [];
+  return items.map(it => {
+    const company = it.appointed_to || {};
+    const apptDate = it.appointed_on || null;
+    const resignDate = it.resigned_on || null;
+    const companyStatus = (company.company_status || '').toLowerCase();
+    return {
+      ch_officer_id: officerId,
+      company_number: company.company_number || null,
+      company_name: it.name_elements
+        ? null  // some responses have name_elements instead
+        : (company.company_name || null),
+      company_status: companyStatus,
+      officer_role: (it.officer_role || '').toLowerCase(),
+      appointment_date: apptDate,
+      resignation_date: resignDate,
+      raw_item: it
+    };
+  });
+}
+
+/**
+ * Apply troublesome rules to a normalized appointment row. Returns an
+ * array of reason strings (empty = clean). Used by the storage layer
+ * before INSERT.
+ *
+ * Rules (rubric-relevant):
+ *   - dissolved / liquidation / in_administration / receivership / etc.
+ *   - phoenix_pattern: resigned within 6 months pre-dissolution
+ *     (not detectable from a single appointment row alone — needs
+ *      cross-appointment analysis; flagged here when resignation date
+ *      is recent AND status is dissolved)
+ *   - competitor_lender: company_number on the watchlist
+ */
+function classifyTroublesomeAppointment(appt) {
+  const reasons = [];
+  if (!appt) return reasons;
+  const status = (appt.company_status || '').toLowerCase();
+  if (TROUBLESOME_COMPANY_STATUSES.has(status)) {
+    reasons.push(status);
+  }
+  // Phoenix-pattern proxy: resigned + dissolved (proper phoenix detection
+  // requires the company's dissolution date, which we don't have on the
+  // appointment payload — call this 'resigned_dissolved' for now).
+  if (status === 'dissolved' && appt.resignation_date) {
+    reasons.push('resigned_then_dissolved');
+  }
+  if (appt.company_number && COMPETITOR_LENDER_CH_NUMBERS.includes(appt.company_number)) {
+    reasons.push('competitor_lender');
+  }
+  return reasons;
+}
+
 module.exports = {
   searchCompany,
   getCompanyProfile,
@@ -414,5 +507,10 @@ module.exports = {
   getPSCs,
   getFilingHistory,
   getCharges,
-  verifyCompany
+  verifyCompany,
+  // Sprint 3 #18
+  getOfficerAppointments,
+  classifyTroublesomeAppointment,
+  COMPETITOR_LENDER_CH_NUMBERS,
+  TROUBLESOME_COMPANY_STATUSES
 };

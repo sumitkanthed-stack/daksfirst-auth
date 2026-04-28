@@ -51,6 +51,7 @@ const crypto = require('crypto');
 const pool = require('../db/pool');
 const featurePackager = require('./deal-feature-packager');
 const valuationsService = require('./valuations');
+const directorshipsService = require('./directorships');
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_SENSITIVITY_VERSION = 'v5.1';
@@ -338,6 +339,16 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
   // attribution + computed expiry. lending_value_pence is THE LTV anchor.
   const valuations = await loadValuations(dealId);
 
+  // CH directorships KYC (2026-04-28, Sprint 3 #18). Per-borrower aggregates
+  // plus troublesome list only (not the full appointment set — that would
+  // crowd the prompt). Soft-fail on empty.
+  let directorshipsByBorrower = [];
+  try {
+    directorshipsByBorrower = await directorshipsService.getSummaryForDeal(dealId);
+  } catch (err) {
+    console.warn('[risk-packager] directorships pull failed:', err.message);
+  }
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -408,6 +419,7 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     credit_checks:    creditChecks,
     kyc_checks:       kycChecks,
     valuations:       valuations,
+    directorships:    directorshipsByBorrower,
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
