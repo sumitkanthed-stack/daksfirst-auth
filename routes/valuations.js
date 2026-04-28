@@ -63,6 +63,9 @@ router.get('/schema', (req, res) => {
       valid_methods: valuations.VALID_METHODS,
       valid_condition: valuations.VALID_CONDITION,
       valid_marketability: valuations.VALID_MARKETABILITY,
+      // Sprint 2 — new enums for refurb + demand grading
+      valid_demand: valuations.VALID_DEMAND,
+      valid_lending_value_basis: valuations.VALID_LENDING_VALUE_BASIS,
       expiry_months: valuations.EXPIRY_MONTHS,
       common_key_risks: [
         'cladding', 'leasehold_short', 'damp', 'subsidence', 'japanese_knotweed',

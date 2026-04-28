@@ -46,12 +46,33 @@ const WRITABLE_COLUMNS = [
   'lending_value_pence', 'mortgage_lending_value_pence',
   'comparable_count', 'condition_grade', 'marketability_grade',
   'key_risks', 'assumptions', 'recommendations',
-  'underwriter_commentary'
+  'underwriter_commentary',
+  // Sprint 2 (2026-04-28) — Refurb cols (6)
+  'as_is_value_pence', 'market_value_180day_pence',
+  'gdv_pence', 'works_cost_estimate_pence',
+  'is_refurb_deal', 'lending_value_basis',
+  // Sprint 2 — Sale-side demand (5)
+  'valuer_days_to_sell_estimate', 'sale_demand_grade',
+  'recent_local_sales_count', 'local_price_trend_12m_pct',
+  'sale_marketability_commentary',
+  // Sprint 2 — Letting-side demand (7)
+  'valuer_days_to_let_estimate', 'letting_demand_grade',
+  'achievable_rent_pcm_pence', 'estimated_gross_yield_pct',
+  'recent_local_lettings_count', 'local_rent_trend_12m_pct',
+  'letting_marketability_commentary',
+  // Sprint 2 — Comparables (2 JSONB)
+  'comparable_sales_jsonb', 'comparable_lettings_jsonb'
 ];
 
 const VALID_METHODS = ['rics_red_book', 'desktop', 'drive_by', 'avm'];
 const VALID_CONDITION = ['excellent', 'good', 'fair', 'poor'];
 const VALID_MARKETABILITY = ['high', 'medium', 'low'];
+// Sprint 2 — sale and letting demand grades use the same enum as marketability
+const VALID_DEMAND = ['high', 'medium', 'low'];
+// Sprint 2 — lending_value_basis records WHICH of the four values anchors the LTV
+const VALID_LENDING_VALUE_BASIS = [
+  'as_is', '180_day_mv', 'gdv', 'mv', 'mv_subject_to_works'
+];
 
 // ------------------------------------------------------------
 // 2. Validation helpers
@@ -77,6 +98,16 @@ function _validateIdentity(data) {
   }
   if (data.marketability_grade && !VALID_MARKETABILITY.includes(data.marketability_grade)) {
     errs.push(`marketability_grade must be one of: ${VALID_MARKETABILITY.join(', ')}`);
+  }
+  // Sprint 2 — new enums
+  if (data.lending_value_basis && !VALID_LENDING_VALUE_BASIS.includes(data.lending_value_basis)) {
+    errs.push(`lending_value_basis must be one of: ${VALID_LENDING_VALUE_BASIS.join(', ')}`);
+  }
+  if (data.sale_demand_grade && !VALID_DEMAND.includes(data.sale_demand_grade)) {
+    errs.push(`sale_demand_grade must be one of: ${VALID_DEMAND.join(', ')}`);
+  }
+  if (data.letting_demand_grade && !VALID_DEMAND.includes(data.letting_demand_grade)) {
+    errs.push(`letting_demand_grade must be one of: ${VALID_DEMAND.join(', ')}`);
   }
   return errs;
 }
@@ -375,6 +406,30 @@ async function loadForRiskPackager(dealId) {
     vp_value_pence: r.vp_value_pence,
     lending_value_pence: r.lending_value_pence,
     mortgage_lending_value_pence: r.mortgage_lending_value_pence,
+    // Sprint 2 — Refurb
+    is_refurb_deal: r.is_refurb_deal,
+    lending_value_basis: r.lending_value_basis,
+    as_is_value_pence: r.as_is_value_pence,
+    market_value_180day_pence: r.market_value_180day_pence,
+    gdv_pence: r.gdv_pence,
+    works_cost_estimate_pence: r.works_cost_estimate_pence,
+    // Sprint 2 — Sale-side demand (RICS valuer's view of sale exit viability)
+    valuer_days_to_sell_estimate: r.valuer_days_to_sell_estimate,
+    sale_demand_grade: r.sale_demand_grade,
+    recent_local_sales_count: r.recent_local_sales_count,
+    local_price_trend_12m_pct: r.local_price_trend_12m_pct,
+    sale_marketability_commentary: r.sale_marketability_commentary,
+    // Sprint 2 — Letting-side demand (refi-to-BTL exit viability)
+    valuer_days_to_let_estimate: r.valuer_days_to_let_estimate,
+    letting_demand_grade: r.letting_demand_grade,
+    achievable_rent_pcm_pence: r.achievable_rent_pcm_pence,
+    estimated_gross_yield_pct: r.estimated_gross_yield_pct,
+    recent_local_lettings_count: r.recent_local_lettings_count,
+    local_rent_trend_12m_pct: r.local_rent_trend_12m_pct,
+    letting_marketability_commentary: r.letting_marketability_commentary,
+    // Sprint 2 — Comparables (JSONB arrays)
+    comparable_sales_jsonb: r.comparable_sales_jsonb,
+    comparable_lettings_jsonb: r.comparable_lettings_jsonb,
     // Qualitative
     comparable_count: r.comparable_count,
     condition_grade: r.condition_grade,
@@ -418,5 +473,7 @@ module.exports = {
   VALID_METHODS,
   VALID_CONDITION,
   VALID_MARKETABILITY,
+  VALID_DEMAND,
+  VALID_LENDING_VALUE_BASIS,
   EXPIRY_MONTHS
 };
