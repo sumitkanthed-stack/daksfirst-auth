@@ -985,6 +985,14 @@ export async function renderDealMatrix(deal) {
                       const _jointCorpCard = (g) => {
                         const kids = childrenOfJoint(g.id);
                         const chV = !!g.ch_verified_at;
+
+                        // SmartSearch + Experian panels (admin-only) — mirror primary corporate borrower (lines 881-886)
+                        // Bug-fix 2026-04-28: joint corporate co-borrower card never rendered these at the entity level.
+                        const ssPanelJ = (isInternalUser && typeof window._buildSmartSearchPanel === 'function')
+                          ? window._buildSmartSearchPanel(g, deal) : '';
+                        const expPanelJ = (isInternalUser && typeof window._buildExperianPanel === 'function')
+                          ? window._buildExperianPanel(g, deal) : '';
+
                         const chDetailBlock = chV ? (
                           '<div id="ch-cg-summary-' + g.id + '" onclick="window._toggleCorpGuarChDetail(\'' + (g.company_number || '').replace(/\'/g, '') + '\', ' + g.id + ')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;cursor:pointer;margin-bottom:10px;">' +
                             '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#34D399;font-size:14px;">\u2713</span><span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified \u2014 ' + sanitizeHtml(g.company_name || '') + '</span><span style="font-size:11px;color:#94A3B8;">\u2014 click to view full details</span></div>' +
@@ -1052,6 +1060,8 @@ export async function renderDealMatrix(deal) {
                               '</div>' +
                             '</div>' +
                           '</div>' +
+                          ssPanelJ +
+                          expPanelJ +
                           chDetailBlock +
                           '<div>' +
                             '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:6px;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this joint borrower') + ' — ' + kids.length + '</div>' +
@@ -1285,6 +1295,14 @@ export async function renderDealMatrix(deal) {
                       '</tbody></table>'
                     : '<p style="font-size:11px;color:#FBBF24;margin:6px 0 0 0;">No directors/PSCs captured yet. Add manually or run CH verification (coming).</p>';
 
+                  // SmartSearch + Experian panels (admin-only) — mirror primary corporate borrower (lines 881-886)
+                  // Bug-fix 2026-04-28: corporate guarantor card never rendered these at the entity level —
+                  // panels were only on the primary borrower + on individual director rows when expanded.
+                  const ssPanelG = (isInternalUser && typeof window._buildSmartSearchPanel === 'function')
+                    ? window._buildSmartSearchPanel(g, deal) : '';
+                  const expPanelG = (isInternalUser && typeof window._buildExperianPanel === 'function')
+                    ? window._buildExperianPanel(g, deal) : '';
+
                   // CH expandable detail block — only shown when verified, lazy-loaded on first click
                   const chDetailBlock = chVerified ? (
                     '<div id="ch-cg-summary-' + g.id + '" onclick="window._toggleCorpGuarChDetail(\'' + (g.company_number || '').replace(/'/g, '') + '\', ' + g.id + ')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(129,140,248,0.08);border:1px solid rgba(129,140,248,0.25);border-radius:8px;cursor:pointer;margin-bottom:10px;">' +
@@ -1380,6 +1398,8 @@ export async function renderDealMatrix(deal) {
                         '</div>' +
                       '</div>' +
                     '</div>' +
+                    ssPanelG +
+                    expPanelG +
                     chDetailBlock +
                     // Children block
                     '<div>' +
