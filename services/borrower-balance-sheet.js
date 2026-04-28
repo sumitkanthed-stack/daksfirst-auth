@@ -259,9 +259,15 @@ function _decorateAssetRow(row) {
 // ─────────────────────────────────────────────────
 
 async function getNetWorthForBorrower(borrowerId) {
-  const [props, others] = await Promise.all([
+  const [props, others, borrowerRow] = await Promise.all([
     listPortfolioForBorrower(borrowerId),
-    listAssetsLiabsForBorrower(borrowerId)
+    listAssetsLiabsForBorrower(borrowerId),
+    // Sprint 5 #24 — return borrower identity for directorships search prefill
+    pool.query(
+      `SELECT id, full_name, date_of_birth, ch_match_data
+         FROM deal_borrowers WHERE id = $1`,
+      [borrowerId]
+    ).then(r => r.rows[0] || null)
   ]);
 
   const effPropertyEquity = props.reduce((s, r) => s + Number(r.derived.effective_equity || 0), 0);
@@ -280,6 +286,11 @@ async function getNetWorthForBorrower(borrowerId) {
 
   return {
     borrower_id: borrowerId,
+    // Sprint 5 #24 — surface name + DoB for downstream UI (Find at CH prefill)
+    full_name: borrowerRow ? borrowerRow.full_name : null,
+    date_of_birth: borrowerRow ? borrowerRow.date_of_birth : null,
+    has_ch_officer_id: !!(borrowerRow && borrowerRow.ch_match_data &&
+      (borrowerRow.ch_match_data.officer_id || borrowerRow.ch_match_data.ch_officer_id)),
     portfolio_properties_count: props.length,
     other_assets_count: others.filter(r => r.kind === 'asset').length,
     other_liabilities_count: others.filter(r => r.kind === 'liability').length,

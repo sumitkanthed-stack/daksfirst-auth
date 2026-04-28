@@ -311,7 +311,10 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
         ch_officer_occupation: o.occupation || null,
         ch_officer_date_of_birth: o.date_of_birth || null,
         ch_officer_recursion_depth: depth,
-        ch_officer_merged_at: new Date().toISOString()
+        ch_officer_merged_at: new Date().toISOString(),
+        // Sprint 5 #23 — capture CH officer_id so directorships pull works automatically
+        officer_id: o.officer_id || null,
+        ch_officer_id: o.officer_id || null
       };
       try {
         // 2026-04-21 Step 3.5: also stamp CH verification on the existing row so
@@ -351,7 +354,10 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
       country_of_residence: o.country_of_residence || null,
       occupation: o.occupation || null,
       date_of_birth: o.date_of_birth || null,
-      recursion_depth: depth
+      recursion_depth: depth,
+      // Sprint 5 #23 — capture CH officer_id so directorships pull works automatically
+      officer_id: o.officer_id || null,
+      ch_officer_id: o.officer_id || null
     };
     try {
       const ins = await pool.query(

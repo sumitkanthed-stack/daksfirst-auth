@@ -201,21 +201,39 @@ async function getCompanyProfile(companyNumber) {
 }
 
 /**
+ * Extract the CH officer_id from an officer item's links.officer.appointments URL.
+ * URL shape: /officers/{officer_id}/appointments
+ * Used by getOfficers + searchOfficers (Sprint 5 #23/#24).
+ */
+function _extractOfficerId(item) {
+  if (!item) return null;
+  const link = item.links && item.links.officer && item.links.officer.appointments;
+  if (!link) return null;
+  const m = String(link).match(/\/officers\/([^/]+)\/appointments/i);
+  return (m && m[1]) || null;
+}
+
+/**
  * Get officers (directors, secretaries) for a company
  * @param {string} companyNumber
- * @returns {Array} Active officers
+ * @param {Object} [opts] - { includeResigned: boolean } default false
+ * @returns {Array} Officers (active by default)
  */
-async function getOfficers(companyNumber) {
+async function getOfficers(companyNumber, opts) {
+  const includeResigned = !!(opts && opts.includeResigned);
   const num = companyNumber.trim().padStart(8, '0');
   const data = await chFetch(`/company/${num}/officers?items_per_page=50`);
   if (!data || !data.items) return [];
 
   return data.items
-    .filter(o => !o.resigned_on) // Only active officers
+    .filter(o => includeResigned || !o.resigned_on)
     .map(o => ({
+      // Sprint 5 #23 — officer_id needed for downstream "Other Directorships" pulls
+      officer_id: _extractOfficerId(o),
       name: o.name,
       officer_role: o.officer_role,           // director, secretary, llp-member, etc.
       appointed_on: o.appointed_on,
+      resigned_on: o.resigned_on || null,
       nationality: o.nationality || null,
       country_of_residence: o.country_of_residence || null,
       occupation: o.occupation || null,
@@ -230,6 +248,57 @@ async function getOfficers(companyNumber) {
         country: o.address.country || ''
       } : null
     }));
+}
+
+/**
+ * Sprint 5 #24 — Search Companies House for officers matching a name (and optional DoB).
+ * Endpoint: /search/officers?q=...
+ * @param {string} query - Officer name to search
+ * @param {Object} [filter] - { dobYear, dobMonth } optional DoB filter applied client-side
+ * @param {number} [limit] - max results (default 25, max 100)
+ * @returns {Array} matching officers with officer_id, name, dob, current appointments
+ */
+async function searchOfficers(query, filter, limit) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const items_per_page = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
+  const path = `/search/officers?q=${encodeURIComponent(q)}&items_per_page=${items_per_page}`;
+  let data;
+  try {
+    data = await chFetch(path);
+  } catch (err) {
+    console.warn('[ch] searchOfficers failed for "' + q + '":', err.message);
+    throw err;
+  }
+  if (!data || !Array.isArray(data.items)) return [];
+
+  let rows = data.items.map(it => ({
+    officer_id: _extractOfficerId(it),
+    title: it.title || it.name || '',
+    description: it.description || '',
+    description_identifiers: it.description_identifiers || [],
+    address_snippet: it.address_snippet || '',
+    appointment_count: it.appointment_count || null,
+    date_of_birth: it.date_of_birth ? {
+      month: it.date_of_birth.month,
+      year: it.date_of_birth.year
+    } : null,
+    matches: it.matches || null
+  })).filter(r => r.officer_id);
+
+  // Optional DoB filter (CH's API doesn't filter by DoB server-side)
+  if (filter && filter.dobYear) {
+    const y = parseInt(filter.dobYear, 10);
+    const m = filter.dobMonth ? parseInt(filter.dobMonth, 10) : null;
+    rows = rows.filter(r => {
+      if (!r.date_of_birth) return false;
+      if (r.date_of_birth.year !== y) return false;
+      if (m && r.date_of_birth.month !== m) return false;
+      return true;
+    });
+  }
+
+  return rows;
 }
 
 /**
@@ -500,6 +569,138 @@ function classifyTroublesomeAppointment(appt) {
   return reasons;
 }
 
+// ════════════════════════════════════════════════════════════
+// Sprint 5 #23 (2026-04-28) — Officer-id auto-link for individual UBOs
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Normalise a name for matching: lowercase, strip honorifics, sort tokens.
+ * Mirrors _normaliseNameKey in routes/borrowers.js so collapses
+ * "Sumit KANTHED" / "KANTHED, Sumit" / "Mr Sumit Kanthed" → same key.
+ */
+function _normaliseNameKey(name) {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t && !['mr','mrs','ms','miss','dr','prof','sir','dame','lord','lady'].includes(t))
+    .sort()
+    .join(' ');
+}
+
+/**
+ * Auto-link CH officer_ids to deal_borrowers rows that are children of a corporate.
+ *
+ * Given a verified corporate borrower (parent_borrower_id), pulls the officers
+ * list from CH and matches each officer (by name + DoB month/year if both have it)
+ * against the corporate's child deal_borrowers rows. On match, writes
+ * ch_match_data.officer_id so the directorships pull works without manual lookup.
+ *
+ * Idempotent: only writes officer_id when missing on the child row. Safe to re-run.
+ *
+ * @param {Object} pool - pg pool (passed in to avoid circular requires)
+ * @param {number} corporateBorrowerId - deal_borrowers.id of the corporate parent
+ * @param {string} companyNumber - corporate's CH company_number
+ * @returns {Promise<Object>} { linked: [{ borrower_id, officer_id, name }], unmatched: [...], skipped: [...] }
+ */
+async function linkOfficersToBorrowers(pool, corporateBorrowerId, companyNumber) {
+  if (!pool) throw new Error('pool required');
+  if (!corporateBorrowerId) throw new Error('corporateBorrowerId required');
+  if (!companyNumber) throw new Error('companyNumber required');
+
+  // Pull officers (incl. resigned so we can match resigned-then-still-on-deal directors)
+  const officers = await getOfficers(companyNumber, { includeResigned: true });
+  if (!officers.length) {
+    return { linked: [], unmatched: [], skipped: [], reason: 'no_officers_returned' };
+  }
+
+  // Load child borrowers under this corporate
+  const r = await pool.query(
+    `SELECT id, full_name, date_of_birth, ch_match_data, is_corporate, borrower_type
+       FROM deal_borrowers
+      WHERE parent_borrower_id = $1
+        AND (is_corporate IS NULL OR is_corporate = false)`,
+    [corporateBorrowerId]
+  );
+  const children = r.rows || [];
+  if (!children.length) {
+    return { linked: [], unmatched: officers.map(o => o.name), skipped: [], reason: 'no_children' };
+  }
+
+  // Index children by normalised name
+  const childByName = new Map();
+  for (const c of children) {
+    childByName.set(_normaliseNameKey(c.full_name), c);
+  }
+
+  const linked = [];
+  const unmatched = [];
+  const skipped = [];
+
+  for (const o of officers) {
+    if (!o.officer_id) {
+      skipped.push({ name: o.name, reason: 'no_officer_id_in_ch_response' });
+      continue;
+    }
+    const key = _normaliseNameKey(o.name);
+    const child = childByName.get(key);
+    if (!child) {
+      unmatched.push({ ch_name: o.name, officer_id: o.officer_id });
+      continue;
+    }
+
+    // DoB sanity check (year+month if both have it)
+    let dobOk = true;
+    if (o.date_of_birth && o.date_of_birth.year && child.date_of_birth) {
+      const childYear = new Date(child.date_of_birth).getUTCFullYear();
+      if (childYear && o.date_of_birth.year && childYear !== o.date_of_birth.year) {
+        dobOk = false;
+      }
+    }
+    if (!dobOk) {
+      skipped.push({
+        name: child.full_name,
+        reason: 'dob_mismatch',
+        ch_dob: o.date_of_birth,
+        deal_dob: child.date_of_birth
+      });
+      continue;
+    }
+
+    const existingId = child.ch_match_data && (child.ch_match_data.officer_id || child.ch_match_data.ch_officer_id);
+    if (existingId === o.officer_id) {
+      skipped.push({ borrower_id: child.id, reason: 'already_linked' });
+      continue;
+    }
+
+    // Patch officer_id into ch_match_data (preserve existing keys)
+    const patch = {
+      officer_id: o.officer_id,
+      ch_officer_id: o.officer_id,           // alias for older readers
+      ch_officer_linked_at: new Date().toISOString(),
+      ch_officer_link_source: 'auto_link_via_corporate_' + companyNumber
+    };
+    await pool.query(
+      `UPDATE deal_borrowers
+          SET ch_match_data = COALESCE(ch_match_data, '{}'::jsonb) || $1::jsonb,
+              updated_at = NOW()
+        WHERE id = $2`,
+      [JSON.stringify(patch), child.id]
+    );
+
+    linked.push({
+      borrower_id: child.id,
+      officer_id: o.officer_id,
+      name: child.full_name,
+      ch_name: o.name,
+      ch_role: o.officer_role
+    });
+  }
+
+  return { linked, unmatched, skipped, total_officers: officers.length };
+}
+
 module.exports = {
   searchCompany,
   getCompanyProfile,
@@ -512,5 +713,8 @@ module.exports = {
   getOfficerAppointments,
   classifyTroublesomeAppointment,
   COMPETITOR_LENDER_CH_NUMBERS,
-  TROUBLESOME_COMPANY_STATUSES
+  TROUBLESOME_COMPANY_STATUSES,
+  // Sprint 5 #23/#24 — officer-id linking
+  searchOfficers,
+  linkOfficersToBorrowers
 };

@@ -221,9 +221,14 @@
     const assets = (d.other_assets_liabilities || []).filter(r => r.kind === 'asset');
     const liabs = (d.other_assets_liabilities || []).filter(r => r.kind === 'liability');
 
-    // Sprint 4 #22 — embed directorships block if module is loaded
+    // Sprint 4 #22 / Sprint 5 #24 — embed directorships block; pass identity
+    // for Find at CH search prefill (name + DoB)
     const dsBlock = (typeof window._buildDirectorshipsBlock === 'function')
-      ? window._buildDirectorshipsBlock({ id: borrowerId })
+      ? window._buildDirectorshipsBlock({
+          id: borrowerId,
+          full_name: d.full_name || null,
+          date_of_birth: d.date_of_birth || null
+        })
       : '';
 
     // Sprint 4 #20 — income/expenses block (lazy-loaded after DOM render)

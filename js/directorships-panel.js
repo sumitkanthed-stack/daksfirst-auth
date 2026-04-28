@@ -68,17 +68,33 @@
   /**
    * Returns the HTML for a directorships block to be embedded inside
    * a borrower's expanded card. Auto-fetches summary on render.
+   *
+   * Stores borrower name + DoB on the block element so Find at CH
+   * search can pre-fill the query without a re-fetch.
    */
   window._buildDirectorshipsBlock = function (borrower) {
     if (!borrower || !borrower.id) return '';
     const bid = borrower.id;
-    const html = '<div id="ds-block-' + bid + '" style="margin-top:10px;padding:10px 12px;background:rgba(167,139,250,0.04);border:1px solid rgba(167,139,250,0.2);border-left:3px solid #A78BFA;border-radius:6px;">' +
+    const fullName = _esc(borrower.full_name || '');
+    let dobYear = '';
+    let dobMonth = '';
+    if (borrower.date_of_birth) {
+      try {
+        const d = new Date(borrower.date_of_birth);
+        if (!isNaN(d.getTime())) {
+          dobYear = String(d.getUTCFullYear());
+          dobMonth = String(d.getUTCMonth() + 1);
+        }
+      } catch (_) {}
+    }
+    const html = '<div id="ds-block-' + bid + '" data-name="' + fullName + '" data-dob-year="' + dobYear + '" data-dob-month="' + dobMonth + '" style="margin-top:10px;padding:10px 12px;background:rgba(167,139,250,0.04);border:1px solid rgba(167,139,250,0.2);border-left:3px solid #A78BFA;border-radius:6px;">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
           '<span style="font-size:10px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">🔍 CH Other Directorships</span>' +
           '<span id="ds-summary-' + bid + '" style="font-size:11px;color:#94A3B8;">Loading…</span>' +
         '</div>' +
-        '<div style="display:flex;gap:6px;">' +
+        '<div id="ds-actions-' + bid + '" style="display:flex;gap:6px;flex-wrap:wrap;">' +
+          '<button onclick="window._dsFindAtCh(' + bid + ')" style="padding:3px 10px;background:rgba(96,165,250,0.18);color:#60A5FA;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Manually search Companies House for this person">🔎 Find at CH</button>' +
           '<button onclick="window._dsPullForBorrower(' + bid + ')" style="padding:3px 10px;background:rgba(167,139,250,0.2);color:#A78BFA;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">↻ Pull from CH</button>' +
         '</div>' +
       '</div>' +
@@ -167,13 +183,141 @@
       const j = await _api('/api/admin/directorships/borrower/' + borrowerId + '/pull', { method: 'POST' });
       const r = j.data || {};
       if (r.skipped) {
-        if (summary) summary.innerHTML = '<span style="color:#F87171;">Skipped — no ch_officer_id available. Verify the corporate borrower at Companies House first.</span>';
+        if (summary) summary.innerHTML = '<span style="color:#F87171;">Skipped — no ch_officer_id. Click 🔎 Find at CH to search manually.</span>';
         return;
       }
       // Refresh display
       await _refreshBlock(borrowerId);
     } catch (err) {
-      if (summary) summary.innerHTML = '<span style="color:#F87171;">Pull failed: ' + _esc(err.message) + '</span>';
+      const msg = String((err && err.message) || '');
+      if (/no ch_officer_id/i.test(msg)) {
+        if (summary) summary.innerHTML = '<span style="color:#F87171;">No CH officer linked yet. Click 🔎 Find at CH to search and pick this person\'s Companies House record.</span>';
+      } else {
+        if (summary) summary.innerHTML = '<span style="color:#F87171;">Pull failed: ' + _esc(msg) + '</span>';
+      }
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // Sprint 5 #24 — "Find at CH" manual search + pick modal
+  // ════════════════════════════════════════════════════════════
+
+  window._dsFindAtCh = function (borrowerId) {
+    const block = document.getElementById('ds-block-' + borrowerId);
+    if (!block) return;
+    const initialName = block.getAttribute('data-name') || '';
+    const dobYear = block.getAttribute('data-dob-year') || '';
+    const dobMonth = block.getAttribute('data-dob-month') || '';
+    _openSearchModal(borrowerId, initialName, dobYear, dobMonth);
+  };
+
+  function _openSearchModal(borrowerId, initialName, dobYear, dobMonth) {
+    // Tear down any previous modal
+    const prev = document.getElementById('ds-search-modal');
+    if (prev) prev.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'ds-search-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;overflow-y:auto;';
+    modal.innerHTML =
+      '<div style="background:#0F172A;border:1px solid rgba(167,139,250,0.3);border-radius:8px;width:100%;max-width:720px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+          '<div style="font-size:13px;color:#A78BFA;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">🔎 Find at Companies House</div>' +
+          '<button onclick="document.getElementById(\'ds-search-modal\').remove()" style="background:transparent;color:#94A3B8;border:none;font-size:18px;cursor:pointer;line-height:1;">×</button>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#94A3B8;margin-bottom:10px;">Search the CH officer index. Pick the matching record to enable the "Pull from CH" button.</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 90px 90px auto;gap:6px;margin-bottom:10px;">' +
+          '<input id="ds-search-q" type="text" placeholder="Officer name" value="' + _esc(initialName) + '" style="padding:6px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#F1F5F9;border-radius:4px;font-size:12px;" />' +
+          '<input id="ds-search-dob-year" type="number" placeholder="DoB yr" value="' + _esc(dobYear) + '" style="padding:6px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#F1F5F9;border-radius:4px;font-size:12px;" />' +
+          '<input id="ds-search-dob-month" type="number" placeholder="DoB mo" min="1" max="12" value="' + _esc(dobMonth) + '" style="padding:6px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#F1F5F9;border-radius:4px;font-size:12px;" />' +
+          '<button onclick="window._dsRunSearch(' + borrowerId + ')" style="padding:6px 14px;background:#A78BFA;color:#0F172A;border:none;border-radius:4px;font-weight:700;font-size:12px;cursor:pointer;">Search</button>' +
+        '</div>' +
+        '<div id="ds-search-results" style="max-height:380px;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);border-radius:4px;padding:6px;background:rgba(0,0,0,0.2);">' +
+          '<div style="color:#94A3B8;font-size:11px;padding:20px;text-align:center;">Press Search to query Companies House.</div>' +
+        '</div>' +
+        '<div style="font-size:10px;color:#64748B;margin-top:8px;">DoB filter is applied client-side — leave blank to skip filtering by year/month.</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+
+    // Auto-search on open if we already have a name
+    if (initialName) {
+      setTimeout(() => window._dsRunSearch(borrowerId), 200);
+    }
+
+    // Close on backdrop click
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.remove();
+    });
+
+    // Enter key triggers search
+    const qEl = document.getElementById('ds-search-q');
+    if (qEl) qEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') window._dsRunSearch(borrowerId);
+    });
+  }
+
+  window._dsRunSearch = async function (borrowerId) {
+    const qEl = document.getElementById('ds-search-q');
+    const yEl = document.getElementById('ds-search-dob-year');
+    const mEl = document.getElementById('ds-search-dob-month');
+    const out = document.getElementById('ds-search-results');
+    if (!qEl || !out) return;
+    const q = qEl.value.trim();
+    if (!q || q.length < 2) {
+      out.innerHTML = '<div style="color:#F87171;font-size:11px;padding:14px;text-align:center;">Enter at least 2 characters.</div>';
+      return;
+    }
+    out.innerHTML = '<div style="color:#FBBF24;font-size:11px;padding:14px;text-align:center;">⟳ Searching Companies House…</div>';
+    const params = ['q=' + encodeURIComponent(q)];
+    if (yEl && yEl.value) params.push('dob_year=' + encodeURIComponent(yEl.value));
+    if (mEl && mEl.value) params.push('dob_month=' + encodeURIComponent(mEl.value));
+    try {
+      const j = await _api('/api/admin/directorships/officer-search?' + params.join('&'));
+      const rows = j.data || [];
+      if (!rows.length) {
+        out.innerHTML = '<div style="color:#94A3B8;font-size:11px;padding:14px;text-align:center;">No officers matched. Try removing DoB filters or simplifying the name.</div>';
+        return;
+      }
+      out.innerHTML = rows.map(r => {
+        const dob = r.date_of_birth
+          ? (r.date_of_birth.month ? r.date_of_birth.month + '/' : '') + r.date_of_birth.year
+          : '—';
+        const apptCount = r.appointment_count != null ? r.appointment_count : '?';
+        const safeOid = _esc(r.officer_id);
+        const safeName = _esc(r.title);
+        return '<div style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+          '<div style="flex:1;min-width:200px;">' +
+            '<div style="color:#F1F5F9;font-weight:600;font-size:12px;">' + safeName + '</div>' +
+            '<div style="color:#94A3B8;font-size:10px;margin-top:2px;">DoB ' + _esc(dob) + ' · ' + _esc(apptCount) + ' appointment' + (apptCount === 1 ? '' : 's') + (r.address_snippet ? ' · ' + _esc(r.address_snippet) : '') + '</div>' +
+            '<div style="color:#64748B;font-size:9px;margin-top:1px;font-family:monospace;">officer_id: ' + safeOid + '</div>' +
+          '</div>' +
+          '<button onclick="window._dsPickOfficer(' + borrowerId + ',\'' + safeOid + '\',\'' + safeName.replace(/'/g, "&#039;") + '\')" style="padding:5px 12px;background:#34D399;color:#0F172A;border:none;border-radius:4px;font-weight:700;font-size:11px;cursor:pointer;">✓ Pick</button>' +
+        '</div>';
+      }).join('');
+    } catch (err) {
+      out.innerHTML = '<div style="color:#F87171;font-size:11px;padding:14px;text-align:center;">Search failed: ' + _esc(err.message) + '</div>';
+    }
+  };
+
+  window._dsPickOfficer = async function (borrowerId, officerId, chName) {
+    if (!officerId) return;
+    const out = document.getElementById('ds-search-results');
+    if (out) out.innerHTML = '<div style="color:#FBBF24;font-size:11px;padding:14px;text-align:center;">⟳ Linking + pulling appointments…</div>';
+    try {
+      // 1. Save officer_id
+      await _api('/api/admin/directorships/borrower/' + borrowerId + '/officer-id', {
+        method: 'PUT',
+        body: JSON.stringify({ officer_id: officerId, ch_name: chName || null })
+      });
+      // 2. Trigger pull
+      await _api('/api/admin/directorships/borrower/' + borrowerId + '/pull', { method: 'POST' });
+      // 3. Close modal + refresh inline block
+      const modal = document.getElementById('ds-search-modal');
+      if (modal) modal.remove();
+      await _refreshBlock(borrowerId);
+    } catch (err) {
+      if (out) out.innerHTML = '<div style="color:#F87171;font-size:11px;padding:14px;text-align:center;">Link failed: ' + _esc(err.message) + '</div>';
     }
   };
 
