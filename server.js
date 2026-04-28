@@ -27,6 +27,7 @@ const hmlrRoutes = require('./routes/hmlr');
 const { adminRouter: kycAdminRoutes, webhookRouter: smartsearchWebhookRoutes } = require('./routes/kyc');
 const { adminRouter: creditAdminRoutes } = require('./routes/credit');
 const panelsRoutes = require('./routes/panels');
+const valuationsRoutes = require('./routes/valuations');
 
 // Initialize Express app
 const app = express();
@@ -113,6 +114,7 @@ app.use('/api/admin/kyc', kycAdminRoutes); // SmartSearch KYC/AML — admin-only
 app.use('/api/webhooks/smartsearch', smartsearchWebhookRoutes); // SmartSearch ongoing-monitoring webhook (HMAC-verified, public)
 app.use('/api/admin/credit', creditAdminRoutes); // Experian credit bureau — admin-only (status, personal, business, hunter, sweep, checks, check, latest)
 app.use('/api/admin/panels', panelsRoutes); // Approved valuer + lawyer panel CRUD — admin-only (Sprint 1b 2026-04-28)
+app.use('/api/admin/valuations', valuationsRoutes); // RICS valuation evidence — admin-only Pattern B (Sprint 1b 2026-04-28)
 
 // Error handling
 app.use((err, req, res, next) => {
