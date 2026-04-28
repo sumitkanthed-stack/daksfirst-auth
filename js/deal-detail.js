@@ -335,6 +335,15 @@ export async function showDealDetail(dealId) {
     // ── TAB: Documents ──
     renderDocumentsList(deal.documents || []);
 
+    // ── Side-effect import: valuations panel (sets window._buildValuationsPanel) ──
+    // Loaded alongside deal-matrix.js so the matrix can render RICS val cards inline.
+    import('./valuations-panel.js').catch(err => {
+      console.warn('[valuations-panel] load failed:', err && err.message);
+    });
+
+    // Expose current deal globally for valuations-panel uploader (needs submission_id)
+    try { window.currentDeal = deal; } catch (_) {}
+
     // ── TAB: Deal Matrix (lazy-loaded to avoid breaking deal-detail if file missing) ──
     import('./deal-matrix.js').then(async (mod) => {
       try {

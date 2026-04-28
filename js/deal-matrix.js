@@ -2824,7 +2824,9 @@ export async function renderDealMatrix(deal) {
                 '</div>' +
                 chimnieHtml +
                 areaHtml +
-                hmlrHtml;
+                hmlrHtml +
+                ((typeof window._buildValuationsPanel === 'function')
+                  ? window._buildValuationsPanel(p, deal) : '');
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
