@@ -2117,6 +2117,171 @@ async function runMigrations() {
       console.log('[migrate] Note on credit_checks:', err.message.substring(0, 160));
     }
 
+    // ============================================================
+    // 2026-04-28: approved_valuers — admin-managed panel of RICS valuation firms
+    //   - Soft policy (Sumit's call 2026-04-28): off-panel valuer allowed but
+    //     flagged in IA grade. RM picks from approved list OR types "Other" via
+    //     deal_valuations.valuer_off_panel_name.
+    //   - approved_by_funder TEXT[] tracks which funders (daksfirst, gb_bank,
+    //     starling_warehouse) have approved each firm — different funders have
+    //     different panels (GB Bank's panel may be subset/superset of ours).
+    //   - PI insurance fields for compliance audit (provider, amount, expiry).
+    //   - Soft-delete via status ('active'|'suspended'|'removed') + audit
+    //     (added_by/at, removed_by/at/reason). Never hard-delete — historic
+    //     deals must keep their valuer attribution intact.
+    //   - GIN index on approved_by_funder for "show me firms approved by
+    //     daksfirst" filter in admin/panels.html.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS approved_valuers (
+          id                          SERIAL PRIMARY KEY,
+          firm_name                   VARCHAR(255) NOT NULL,
+          firm_address                TEXT,
+          firm_postcode               VARCHAR(10),
+          firm_phone                  VARCHAR(50),
+          firm_email                  VARCHAR(255),
+          firm_website                VARCHAR(255),
+          rics_regulated              BOOLEAN      NOT NULL DEFAULT TRUE,
+          rics_firm_number            VARCHAR(50),
+          companies_house_number      VARCHAR(20),
+          specialisms                 TEXT[],
+          geographic_coverage         TEXT[],
+          approved_by_funder          TEXT[]       NOT NULL DEFAULT ARRAY['daksfirst']::TEXT[],
+          pi_insurance_provider       VARCHAR(255),
+          pi_insurance_amount_pence   BIGINT,
+          pi_insurance_expiry         DATE,
+          status                      VARCHAR(20)  NOT NULL DEFAULT 'active',
+          notes                       TEXT,
+          added_by_user_id            INT,
+          added_at                    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          removed_by_user_id          INT,
+          removed_at                  TIMESTAMPTZ,
+          removed_reason              TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_valuers_status     ON approved_valuers(status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_valuers_firm_name  ON approved_valuers(firm_name)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_valuers_funders    ON approved_valuers USING GIN(approved_by_funder)`);
+      console.log('[migrate] ✓ approved_valuers table + indexes ready (panel of RICS firms)');
+    } catch (err) {
+      console.log('[migrate] Note on approved_valuers:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
+    // 2026-04-28: approved_lawyers — admin-managed panel of conveyancing firms
+    //   Same pattern as approved_valuers; SRA-regulated; cdd_undertaking_signed
+    //   flag tracks whether they've signed Daksfirst's CDD undertaking template
+    //   (a prereq for instructing them on completion). Used by future
+    //   deal_legal_status table (Sprint 1a item #8 — solicitor data).
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS approved_lawyers (
+          id                          SERIAL PRIMARY KEY,
+          firm_name                   VARCHAR(255) NOT NULL,
+          firm_address                TEXT,
+          firm_postcode               VARCHAR(10),
+          firm_phone                  VARCHAR(50),
+          firm_email                  VARCHAR(255),
+          firm_website                VARCHAR(255),
+          sra_regulated               BOOLEAN      NOT NULL DEFAULT TRUE,
+          sra_number                  VARCHAR(20),
+          companies_house_number      VARCHAR(20),
+          specialisms                 TEXT[],
+          geographic_coverage         TEXT[],
+          approved_by_funder          TEXT[]       NOT NULL DEFAULT ARRAY['daksfirst']::TEXT[],
+          pi_insurance_provider       VARCHAR(255),
+          pi_insurance_amount_pence   BIGINT,
+          pi_insurance_expiry         DATE,
+          cdd_undertaking_signed      BOOLEAN      NOT NULL DEFAULT FALSE,
+          cdd_undertaking_date        DATE,
+          status                      VARCHAR(20)  NOT NULL DEFAULT 'active',
+          notes                       TEXT,
+          added_by_user_id            INT,
+          added_at                    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          removed_by_user_id          INT,
+          removed_at                  TIMESTAMPTZ,
+          removed_reason              TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_lawyers_status    ON approved_lawyers(status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_lawyers_firm_name ON approved_lawyers(firm_name)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_approved_lawyers_funders   ON approved_lawyers USING GIN(approved_by_funder)`);
+      console.log('[migrate] ✓ approved_lawyers table + indexes ready (panel of conveyancing firms)');
+    } catch (err) {
+      console.log('[migrate] Note on approved_lawyers:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
+    // 2026-04-28: deal_valuations — Pattern B evidence table for RICS valuation reports.
+    //   - Append-only with revision chain (superseded_by_id + status enum).
+    //     Status: draft | finalised | superseded.
+    //   - lending_value_pence is THE LTV anchor (replaces broker-stated value
+    //     in rubric/pricing layers, per Sumit's lock 2026-04-28).
+    //   - 6-month drawdown gate enforced at SELECT-time, NOT via generated col
+    //     (CURRENT_DATE is not immutable so generated cols can't reference it):
+    //       SELECT * FROM deal_valuations
+    //       WHERE deal_id=$1 AND status='finalised' AND superseded_by_id IS NULL
+    //         AND valuation_date >= CURRENT_DATE - INTERVAL '6 months'
+    //   - valuer_id FK to approved_valuers (nullable for soft policy).
+    //     When NULL, valuer_off_panel_name carries free-text firm name and the
+    //     rubric flags this as off-panel risk in the IA grade.
+    //   - document_id FK to deal_documents — RICS PDF stored once via existing
+    //     deal_documents BYTEA layer; valuation references it.
+    //   - property_id FK to deal_properties — multi-property deals get N
+    //     valuations, one per property.
+    //   - All money fields stored as BIGINT pence (existing convention,
+    //     mirrors fee_*_pence and recommended_limit_pence).
+    //   - Pattern B scaffolding (Sumit's design 2026-04-28) — same shape will
+    //     be reused by deal_environmental and borrower_tax_returns later.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS deal_valuations (
+          id                            SERIAL PRIMARY KEY,
+          deal_id                       INT          NOT NULL,
+          property_id                   INT,
+          status                        VARCHAR(20)  NOT NULL DEFAULT 'draft',
+          document_id                   INT,
+          valuer_id                     INT,
+          valuer_off_panel_name         VARCHAR(255),
+          valuation_method              VARCHAR(30),
+          rics_member_name              VARCHAR(255),
+          rics_member_number            VARCHAR(50),
+          valuation_date                DATE,
+          inspection_date               DATE,
+          market_value_pence            BIGINT,
+          vp_value_pence                BIGINT,
+          lending_value_pence           BIGINT,
+          mortgage_lending_value_pence  BIGINT,
+          comparable_count              INT,
+          condition_grade               VARCHAR(20),
+          marketability_grade           VARCHAR(20),
+          key_risks                     TEXT[],
+          assumptions                   TEXT,
+          recommendations               TEXT,
+          underwriter_commentary        TEXT,
+          submitted_by_user_id          INT,
+          submitted_at                  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          finalised_by_user_id          INT,
+          finalised_at                  TIMESTAMPTZ,
+          superseded_by_id              INT,
+          superseded_at                 TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_deal        ON deal_valuations(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_property    ON deal_valuations(property_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_valuer      ON deal_valuations(valuer_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_status      ON deal_valuations(status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_superseded  ON deal_valuations(superseded_by_id)`);
+      // Composite for the 6-month drawdown gate query (active rows only)
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_valuations_deal_active ON deal_valuations(deal_id, valuation_date DESC) WHERE status = 'finalised' AND superseded_by_id IS NULL`);
+      console.log('[migrate] ✓ deal_valuations table + indexes ready (Pattern B evidence — RICS val)');
+    } catch (err) {
+      console.log('[migrate] Note on deal_valuations:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
