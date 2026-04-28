@@ -2416,7 +2416,12 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'exit_target_refi_ltv_pct', 'exit_target_refi_rate_pct_pa',
       'exit_expected_disposal_proceeds',
       'exit_borrower_stated_confidence', 'exit_underwriter_assessed_confidence',
-      'exit_underwriter_commentary'
+      'exit_underwriter_commentary',
+      // Sprint 3 #16 (2026-04-28): Sources & Uses funding stack — 8 cols.
+      // Existing purchase_price/refurb_cost/fees cover the rest of uses;
+      // loan_amount_approved is the senior_loan source.
+      'uses_sdlt', 'uses_legal_fees', 'uses_other_amount', 'uses_other_description',
+      'sources_second_charge', 'sources_equity', 'sources_other_amount', 'sources_other_description'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;
@@ -2434,7 +2439,10 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       // Sprint 2 — exit strategy numerics
       'exit_target_disposal_window_days', 'exit_target_refi_loan',
       'exit_target_refi_ltv_pct', 'exit_target_refi_rate_pct_pa',
-      'exit_expected_disposal_proceeds'
+      'exit_expected_disposal_proceeds',
+      // Sprint 3 #16 — Sources & Uses numerics
+      'uses_sdlt', 'uses_legal_fees', 'uses_other_amount',
+      'sources_second_charge', 'sources_equity', 'sources_other_amount'
     ];
 
     // M2c+M4d (Matrix-SSOT auto-revoke): editing any field in an approval section's

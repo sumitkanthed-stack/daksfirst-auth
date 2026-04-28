@@ -2389,6 +2389,123 @@ async function runMigrations() {
     }
 
     // ============================================================
+    // 2026-04-28 (Sprint 3 #16): Sources & Uses balanced funding stack
+    //   Existing cols already cover: purchase_price (uses), refurb_cost (uses),
+    //   loan_amount_approved (sources_senior_loan derived), arrangement_fee_pct
+    //   + broker_fee_pct + commitment_fee + dip_fee (uses, derived).
+    //
+    //   Adding 8 new cols for the gaps:
+    //     Uses:    SDLT, legal fees, other (amount + description)
+    //     Sources: second_charge, equity, other (amount + description)
+    //
+    //   Sources MUST equal Uses (soft balance check in UI). Stored as NUMERIC
+    //   in £ (matching existing matrix money convention — purchase_price,
+    //   current_value etc. are all £-direct, not pence).
+    // ============================================================
+    try {
+      const susColumns = [
+        // Uses gaps
+        'ADD COLUMN IF NOT EXISTS uses_sdlt              NUMERIC',
+        'ADD COLUMN IF NOT EXISTS uses_legal_fees        NUMERIC',
+        'ADD COLUMN IF NOT EXISTS uses_other_amount      NUMERIC',
+        'ADD COLUMN IF NOT EXISTS uses_other_description VARCHAR(255)',
+        // Sources gaps
+        'ADD COLUMN IF NOT EXISTS sources_second_charge  NUMERIC',
+        'ADD COLUMN IF NOT EXISTS sources_equity         NUMERIC',
+        'ADD COLUMN IF NOT EXISTS sources_other_amount   NUMERIC',
+        'ADD COLUMN IF NOT EXISTS sources_other_description VARCHAR(255)'
+      ];
+      for (const colSql of susColumns) {
+        try {
+          await pool.query('ALTER TABLE deal_submissions ' + colSql);
+        } catch (err) {
+          console.log('[migrate] Note on S&U col:', err.message.substring(0, 160));
+        }
+      }
+      console.log('[migrate] ✓ deal_submissions Sources & Uses cols ready (Sprint 3 #16 — 8 cols)');
+    } catch (err) {
+      console.log('[migrate] Note on Sources & Uses:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
+    // 2026-04-28 (Sprint 3 #17): Per-UBO assets, liabilities, and
+    // property portfolio with ownership %.
+    //   borrower_id FK → deal_borrowers(id) so this works for ANY
+    //   individual party on a deal: primary, joint, guarantor, director,
+    //   PSC, UBO. UBOs get their own balance sheet alongside other roles.
+    //
+    //   ownership_pct (0-100) records the share they BENEFICIALLY own —
+    //   they may own a property 50/50 with spouse, or hold an asset
+    //   indirectly via an SPV. Effective net worth = Σ(asset × pct/100)
+    //   − Σ(liability × pct/100).
+    //
+    //   Two tables:
+    //     borrower_portfolio_properties — properties only, with rental
+    //       income + interest charges so net rental is computable.
+    //     borrower_other_assets_liabilities — everything else (cash,
+    //       investments, director loans, personal loans, credit cards,
+    //       etc.) split by `kind` (asset|liability).
+    //
+    //   Both append-style — no soft-delete, but a deleted_at column
+    //   for retention + audit.
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS borrower_portfolio_properties (
+          id                       SERIAL PRIMARY KEY,
+          borrower_id              INT NOT NULL,
+          address                  TEXT,
+          postcode                 VARCHAR(20),
+          property_type            VARCHAR(50),
+          tenure                   VARCHAR(20),
+          occupancy                VARCHAR(20),
+          market_value             NUMERIC,
+          mortgage_outstanding     NUMERIC,
+          mortgage_lender          VARCHAR(255),
+          mortgage_rate_pct_pa     NUMERIC(6,3),
+          monthly_rent             NUMERIC,
+          monthly_interest         NUMERIC,
+          ownership_pct            NUMERIC(5,2),
+          ownership_via            TEXT,
+          notes                    TEXT,
+          added_by_user_id         INT,
+          added_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          deleted_at               TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bpp_borrower    ON borrower_portfolio_properties(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_bpp_active      ON borrower_portfolio_properties(borrower_id) WHERE deleted_at IS NULL`);
+      console.log('[migrate] ✓ borrower_portfolio_properties table + indexes ready (Sprint 3 #17)');
+    } catch (err) {
+      console.log('[migrate] Note on borrower_portfolio_properties:', err.message.substring(0, 160));
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS borrower_other_assets_liabilities (
+          id                       SERIAL PRIMARY KEY,
+          borrower_id              INT NOT NULL,
+          kind                     VARCHAR(20) NOT NULL,
+          category                 VARCHAR(50),
+          description              TEXT,
+          amount                   NUMERIC,
+          ownership_pct            NUMERIC(5,2),
+          ownership_via            TEXT,
+          notes                    TEXT,
+          added_by_user_id         INT,
+          added_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          deleted_at               TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_boal_borrower   ON borrower_other_assets_liabilities(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_boal_kind       ON borrower_other_assets_liabilities(kind)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_boal_active     ON borrower_other_assets_liabilities(borrower_id, kind) WHERE deleted_at IS NULL`);
+      console.log('[migrate] ✓ borrower_other_assets_liabilities table + indexes ready (Sprint 3 #17)');
+    } catch (err) {
+      console.log('[migrate] Note on borrower_other_assets_liabilities:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
     // 2026-04-28 (Sprint 2 fix): rename two exit money cols to drop the
     // _pence suffix. Matrix convention on deal_submissions stores £ values
     // directly in BIGINT/NUMERIC cols (current_value, purchase_price, etc.),

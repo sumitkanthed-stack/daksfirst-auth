@@ -3578,12 +3578,65 @@ export async function renderDealMatrix(deal) {
                 ${renderEditableField('refurb_cost', 'Refurb Cost (£)' + (['light_refurb','heavy_refurb'].includes(deal.loan_purpose) ? ' *' : ''), deal.refurb_cost, 'money', canEdit)}
                 ${renderEditableField('purchase_price', 'Purchase Price (£)', deal.purchase_price, 'money', canEdit)}
               </div>
+
+              <!-- ═══════════════════════════════════════════════ -->
+              <!-- Sprint 3 #16 — Sources & Uses (must balance)     -->
+              <!-- ═══════════════════════════════════════════════ -->
+              <div style="margin-top:18px;padding-top:14px;border-top:1px dashed rgba(255,255,255,0.1);">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <div style="font-size:13px;font-weight:700;color:#4EA1FF;">⚖ Sources & Uses</div>
+                  <div id="sus-balance-pill" style="font-size:10px;padding:3px 10px;border-radius:10px;background:rgba(100,116,139,0.12);color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">— Calculating</div>
+                </div>
+                <p style="font-size:11px;color:#94A3B8;margin:0 0 10px 0;font-style:italic;">Sources must equal Uses. Auto-totals update as you edit fields. SDLT auto-calculates for purchase deals (residential bands incl. 3% second-home surcharge — override if buyer is non-standard).</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;">
+
+                  <!-- USES column -->
+                  <div>
+                    <div style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid rgba(251,191,36,0.25);padding-bottom:4px;">Uses</div>
+                    ${renderEditableField('purchase_price', 'Purchase price (£)', deal.purchase_price, 'money', canEdit)}
+                    ${renderEditableField('uses_sdlt', 'Stamp Duty / SDLT (£)', deal.uses_sdlt, 'money', canEdit)}
+                    ${canEdit ? '<button onclick="window._autoCalcSdlt(' + (Number(deal.purchase_price) || 0) + ')" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>' : ''}
+                    ${renderEditableField('refurb_cost', 'Refurb cost (£)', deal.refurb_cost, 'money', canEdit)}
+                    ${renderEditableField('uses_legal_fees', 'Legal fees (£)', deal.uses_legal_fees, 'money', canEdit)}
+                    <div style="font-size:11px;color:#94A3B8;margin:6px 0 4px 0;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.06);">Lender fees (auto from Loan Terms):</div>
+                    <div id="sus-fees-list" style="font-size:11px;color:#CBD5E1;margin-bottom:8px;line-height:1.7;">Loading…</div>
+                    ${renderEditableField('uses_other_amount', 'Other uses (£)', deal.uses_other_amount, 'money', canEdit)}
+                    ${renderEditableField('uses_other_description', 'Other description', deal.uses_other_description, 'text', canEdit)}
+                    <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(251,191,36,0.25);font-size:13px;font-weight:700;color:#FBBF24;display:flex;justify-content:space-between;">
+                      <span>Total Uses</span>
+                      <span id="sus-total-uses">£—</span>
+                    </div>
+                  </div>
+
+                  <!-- SOURCES column -->
+                  <div>
+                    <div style="font-size:10px;color:#34D399;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid rgba(52,211,153,0.25);padding-bottom:4px;">Sources</div>
+                    <div style="margin-bottom:12px;">
+                      <label style="display:block;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Senior secured — Daksfirst loan (£)</label>
+                      <div style="padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:6px;color:#34D399;font-size:13px;font-weight:700;" id="sus-senior-loan">£${Number(deal.loan_amount_approved || deal.loan_amount || 0).toLocaleString()}</div>
+                      <div style="font-size:9px;color:#64748B;margin-top:2px;">Auto from Loan Terms (loan_amount_approved). 1st charge on security.</div>
+                    </div>
+                    ${renderEditableField('sources_second_charge', 'Second charge (£)', deal.sources_second_charge, 'money', canEdit)}
+                    ${renderEditableField('sources_equity', 'Borrower equity (£)', deal.sources_equity, 'money', canEdit)}
+                    ${renderEditableField('sources_other_amount', 'Other sources (£)', deal.sources_other_amount, 'money', canEdit)}
+                    ${renderEditableField('sources_other_description', 'Other description', deal.sources_other_description, 'text', canEdit)}
+                    <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(52,211,153,0.25);font-size:13px;font-weight:700;color:#34D399;display:flex;justify-content:space-between;">
+                      <span>Total Sources</span>
+                      <span id="sus-total-sources">£—</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
       </div>
     </div>
   `;
+  // Defer the initial S&U totals calc until DOM is rendered
+  setTimeout(() => window._recalcSourcesUses && window._recalcSourcesUses(deal), 400);
 
   // ═══════════════════════════════════════════════════════════════════
   // EMIT buffered sections in the NEW commercial order:
@@ -9034,6 +9087,158 @@ window._togglePropTab = function(propertyId, tabName) {
     t.style.color = isActive ? colour : '#94A3B8';
     t.style.borderBottomColor = isActive ? colour : 'transparent';
   });
+};
+
+// Sprint 3 #16 — Sources & Uses helpers.
+//
+// _recalcSourcesUses(deal) — read all S&U input fields from the DOM, sum
+//   uses + sources, update the total spans + balance pill. Auto-derives
+//   arrangement fee + broker fee from loan_amount_approved × pct (matching
+//   the existing fee formulae). Called on page load + on every input blur
+//   via a global focusout listener (lazy-installed below).
+//
+// _autoCalcSdlt(purchasePrice) — compute UK residential SDLT with the
+//   standard 3% second-home / additional-property surcharge. Result is
+//   written into the SDLT field which auto-saves via the existing
+//   matrixValidateAndSave hook. Bands as of 2026-04 — update if HMRC
+//   changes them.
+window._recalcSourcesUses = function (deal) {
+  const $ = (id) => document.getElementById(id);
+  const numFromField = (id) => {
+    const el = $(id);
+    if (!el) return 0;
+    const raw = String(el.value || '').replace(/[^0-9.]/g, '');
+    return Number(raw) || 0;
+  };
+  const valFromDeal = (k) => Number((deal && deal[k]) || 0);
+
+  // USES
+  const purchasePrice = numFromField('mf-purchase_price') || valFromDeal('purchase_price');
+  const sdlt          = numFromField('mf-uses_sdlt') || valFromDeal('uses_sdlt');
+  const refurb        = numFromField('mf-refurb_cost') || valFromDeal('refurb_cost');
+  const legal         = numFromField('mf-uses_legal_fees') || valFromDeal('uses_legal_fees');
+  const otherUses     = numFromField('mf-uses_other_amount') || valFromDeal('uses_other_amount');
+
+  // Lender fees auto-derived from loan_amount_approved × pct (matches
+  // services/fee-formulae.js convention). DIP fee + commitment fee are
+  // already absolute £ values. Default arrangement_fee_pct = 2.0% if unset.
+  const loanApproved   = numFromField('mf-loan_amount_approved') || valFromDeal('loan_amount_approved') || valFromDeal('loan_amount');
+  const arrFeePct      = numFromField('mf-arrangement_fee_pct') || valFromDeal('arrangement_fee_pct') || 0;
+  const brokerFeePct   = numFromField('mf-broker_fee_pct') || valFromDeal('broker_fee_pct') || 0;
+  const commitmentFee  = numFromField('mf-commitment_fee') || valFromDeal('commitment_fee');
+  const dipFee         = numFromField('mf-dip_fee') || valFromDeal('dip_fee');
+  const arrangementFee = (loanApproved * arrFeePct) / 100;
+  const brokerFee      = (loanApproved * brokerFeePct) / 100;
+  const lenderFeesTotal = arrangementFee + brokerFee + commitmentFee + dipFee;
+
+  const totalUses = purchasePrice + sdlt + refurb + legal + otherUses + lenderFeesTotal;
+
+  // SOURCES
+  const seniorLoan   = numFromField('mf-loan_amount_approved') || loanApproved;
+  const secondCharge = numFromField('mf-sources_second_charge') || valFromDeal('sources_second_charge');
+  const equity       = numFromField('mf-sources_equity') || valFromDeal('sources_equity');
+  const otherSources = numFromField('mf-sources_other_amount') || valFromDeal('sources_other_amount');
+  const totalSources = seniorLoan + secondCharge + equity + otherSources;
+
+  // Render the inline lender-fees breakdown
+  const feesEl = $('sus-fees-list');
+  if (feesEl) {
+    const fmt = (v) => '£' + Math.round(v).toLocaleString('en-GB');
+    feesEl.innerHTML =
+      '<div>· Arrangement fee (' + (arrFeePct || 0).toFixed(2) + '%): <strong>' + fmt(arrangementFee) + '</strong></div>' +
+      '<div>· Broker fee ('       + (brokerFeePct || 0).toFixed(2) + '%): <strong>' + fmt(brokerFee) + '</strong></div>' +
+      '<div>· Commitment fee: <strong>' + fmt(commitmentFee) + '</strong></div>' +
+      '<div>· DIP fee: <strong>' + fmt(dipFee) + '</strong></div>';
+  }
+
+  // Update total spans
+  const usesEl = $('sus-total-uses');
+  if (usesEl) usesEl.textContent = '£' + Math.round(totalUses).toLocaleString('en-GB');
+  const srcEl = $('sus-total-sources');
+  if (srcEl) srcEl.textContent = '£' + Math.round(totalSources).toLocaleString('en-GB');
+
+  // Balance pill
+  const pill = $('sus-balance-pill');
+  if (pill) {
+    const diff = Math.round(totalSources - totalUses);
+    if (totalUses === 0 && totalSources === 0) {
+      pill.style.background = 'rgba(100,116,139,0.12)';
+      pill.style.color = '#94A3B8';
+      pill.textContent = '— No data yet';
+    } else if (Math.abs(diff) < 1) {
+      pill.style.background = 'rgba(52,211,153,0.15)';
+      pill.style.color = '#34D399';
+      pill.textContent = '✓ Balanced';
+    } else if (diff > 0) {
+      pill.style.background = 'rgba(244,183,64,0.15)';
+      pill.style.color = '#FBBF24';
+      pill.textContent = '⚠ Sources over by £' + diff.toLocaleString('en-GB');
+    } else {
+      pill.style.background = 'rgba(239,91,91,0.15)';
+      pill.style.color = '#F87171';
+      pill.textContent = '⚠ Short by £' + Math.abs(diff).toLocaleString('en-GB');
+    }
+  }
+};
+
+// Lazy-install a focusout listener so any S&U field edit re-runs the calc.
+if (!window._susFocusoutInstalled) {
+  document.addEventListener('focusout', (e) => {
+    const id = e.target && e.target.id;
+    if (!id || !id.startsWith('mf-')) return;
+    const watched = ['purchase_price','uses_sdlt','refurb_cost','uses_legal_fees',
+                     'uses_other_amount','loan_amount_approved','arrangement_fee_pct',
+                     'broker_fee_pct','commitment_fee','dip_fee',
+                     'sources_second_charge','sources_equity','sources_other_amount'];
+    const field = id.substring(3);
+    if (!watched.includes(field)) return;
+    if (typeof window._recalcSourcesUses === 'function') {
+      // Pass the cached deal if present, else empty object — DOM values still drive totals.
+      window._recalcSourcesUses(window.currentDeal || {});
+    }
+  });
+  window._susFocusoutInstalled = true;
+}
+
+// UK residential SDLT auto-calc (2026-04 rates with 3% second-home surcharge).
+// Override-able — user can edit the field after auto-calc if buyer is non-standard.
+// Bands (residential, second home / additional property — most bridging cases):
+//   £0 – £250,000     5%
+//   £250,001 – £925k  10%
+//   £925k – £1.5m     15%
+//   above £1.5m       17%
+// (Standard residential rates are 0/5/10/12, but bridging deals are nearly
+// always second-home/BTL purchases → +3% surcharge applies.)
+window._autoCalcSdlt = function (purchasePrice) {
+  const p = Number(purchasePrice) || 0;
+  if (p <= 0) {
+    alert('Set the Purchase Price first, then click Auto-calc again.');
+    return;
+  }
+  const bands = [
+    { from: 0,        to: 250000,   rate: 0.05 },
+    { from: 250000,   to: 925000,   rate: 0.10 },
+    { from: 925000,   to: 1500000,  rate: 0.15 },
+    { from: 1500000,  to: Infinity, rate: 0.17 }
+  ];
+  let sdlt = 0;
+  for (const b of bands) {
+    if (p <= b.from) break;
+    const taxable = Math.min(p, b.to) - b.from;
+    sdlt += taxable * b.rate;
+  }
+  const sdltRounded = Math.round(sdlt);
+  const el = document.getElementById('mf-uses_sdlt');
+  if (el) {
+    el.value = sdltRounded.toLocaleString('en-GB');
+    // Trigger save via existing matrix hook
+    if (typeof window.matrixValidateAndSave === 'function') {
+      window.matrixValidateAndSave('uses_sdlt', String(sdltRounded), 'money');
+    }
+  }
+  if (typeof window._recalcSourcesUses === 'function') {
+    window._recalcSourcesUses(window.currentDeal || {});
+  }
 };
 
 // Sprint 3 #15 — Borrower exposure widget loader.
