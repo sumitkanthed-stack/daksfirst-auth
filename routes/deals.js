@@ -2421,7 +2421,9 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       // Existing purchase_price/refurb_cost/fees cover the rest of uses;
       // loan_amount_approved is the senior_loan source.
       'uses_sdlt', 'uses_legal_fees', 'uses_other_amount', 'uses_other_description',
-      'sources_second_charge', 'sources_equity', 'sources_other_amount', 'sources_other_description'
+      'sources_second_charge', 'sources_equity', 'sources_other_amount', 'sources_other_description',
+      // Sprint 4 #19 — refinance-aware S&U
+      'uses_loan_redemption'
     ];
 
     const allowedFields = ['rm', 'admin'].includes(role) ? rmFields : clientFields;
@@ -2442,7 +2444,9 @@ router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) =
       'exit_expected_disposal_proceeds',
       // Sprint 3 #16 — Sources & Uses numerics
       'uses_sdlt', 'uses_legal_fees', 'uses_other_amount',
-      'sources_second_charge', 'sources_equity', 'sources_other_amount'
+      'sources_second_charge', 'sources_equity', 'sources_other_amount',
+      // Sprint 4 #19
+      'uses_loan_redemption'
     ];
 
     // M2c+M4d (Matrix-SSOT auto-revoke): editing any field in an approval section's

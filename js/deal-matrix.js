@@ -3611,12 +3611,44 @@ export async function renderDealMatrix(deal) {
 
                   <!-- USES column -->
                   <div>
-                    <div style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid rgba(251,191,36,0.25);padding-bottom:4px;">Uses</div>
-                    ${renderEditableField('purchase_price', 'Purchase price (£)', deal.purchase_price, 'money', canEdit)}
-                    ${renderEditableField('uses_sdlt', 'Stamp Duty / SDLT (£)', deal.uses_sdlt, 'money', canEdit)}
-                    ${canEdit ? '<button onclick="window._autoCalcSdlt(' + (Number(deal.purchase_price) || 0) + ')" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>' : ''}
-                    ${renderEditableField('refurb_cost', 'Refurb cost (£)', deal.refurb_cost, 'money', canEdit)}
-                    ${renderEditableField('uses_legal_fees', 'Legal fees (£)', deal.uses_legal_fees, 'money', canEdit)}
+                    <div style="font-size:10px;color:#FBBF24;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid rgba(251,191,36,0.25);padding-bottom:4px;">Uses
+                      <span style="font-size:9px;color:#94A3B8;font-weight:500;text-transform:none;letter-spacing:0;margin-left:8px;">${(() => {
+                        const lp = (deal.loan_purpose || '').toLowerCase();
+                        const isAcq = ['acquisition','auction_purchase','chain_break'].includes(lp);
+                        const isRefi = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp);
+                        const isRefurb = ['light_refurb','heavy_refurb'].includes(lp);
+                        const tag = isAcq ? 'Acquisition layout' : isRefi ? 'Refinance layout' : isRefurb ? 'Refurb layout' : 'Generic layout — set Loan Purpose to refine';
+                        return '· ' + tag;
+                      })()}</span>
+                    </div>
+                    ${(() => {
+                      // Sprint 4 #19 — conditional Uses fields by loan_purpose.
+                      // Acquisition/auction/chain-break → Purchase price + SDLT.
+                      // Refinance/cash-out/bridge-* → Loan redemption (existing lender payoff).
+                      // Refurb → keep refurb cost in front; show purchase price too if also acquisition.
+                      const lp = (deal.loan_purpose || '').toLowerCase();
+                      const isAcq    = ['acquisition','auction_purchase','chain_break'].includes(lp);
+                      const isRefi   = ['refinance','cash_out','bridge_to_sale','bridge_to_let','development_exit'].includes(lp);
+                      const isRefurb = ['light_refurb','heavy_refurb'].includes(lp);
+                      let html = '';
+                      if (isAcq || isRefurb || !lp) {
+                        html += renderEditableField('purchase_price', 'Purchase price (£)', deal.purchase_price, 'money', canEdit);
+                        html += renderEditableField('uses_sdlt', 'Stamp Duty / SDLT (£)', deal.uses_sdlt, 'money', canEdit);
+                        if (canEdit) {
+                          html += '<button onclick="window._autoCalcSdlt(' + (Number(deal.purchase_price) || 0) + ')" style="padding:3px 10px;background:rgba(78,161,255,0.12);color:#4EA1FF;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-bottom:10px;">↻ Auto-calc SDLT from purchase price</button>';
+                        }
+                      }
+                      if (isRefi) {
+                        html += renderEditableField('uses_loan_redemption', 'Loan redemption — existing lender payoff (£)', deal.uses_loan_redemption, 'money', canEdit);
+                        // SDLT can still apply (e.g. SPV transfer on refi); show optionally
+                        html += renderEditableField('uses_sdlt', 'Stamp Duty / SDLT if any (£)', deal.uses_sdlt, 'money', canEdit);
+                      }
+                      // Refurb cost is always relevant if it's a refurb deal,
+                      // and editable for refi-with-refurb scenarios too
+                      html += renderEditableField('refurb_cost', 'Refurb cost (£)', deal.refurb_cost, 'money', canEdit);
+                      html += renderEditableField('uses_legal_fees', 'Legal fees (£)', deal.uses_legal_fees, 'money', canEdit);
+                      return html;
+                    })()}
                     <div style="font-size:11px;color:#94A3B8;margin:6px 0 4px 0;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.06);">Lender fees (auto from Loan Terms):</div>
                     <div id="sus-fees-list" style="font-size:11px;color:#CBD5E1;margin-bottom:8px;line-height:1.7;">Loading…</div>
                     ${renderEditableField('uses_other_amount', 'Other uses (£)', deal.uses_other_amount, 'money', canEdit)}
@@ -9137,6 +9169,8 @@ window._recalcSourcesUses = function (deal) {
   const refurb        = numFromField('mf-refurb_cost') || valFromDeal('refurb_cost');
   const legal         = numFromField('mf-uses_legal_fees') || valFromDeal('uses_legal_fees');
   const otherUses     = numFromField('mf-uses_other_amount') || valFromDeal('uses_other_amount');
+  // Sprint 4 #19 — loan redemption (refinance deals) flows into total uses
+  const loanRedemption = numFromField('mf-uses_loan_redemption') || valFromDeal('uses_loan_redemption');
 
   // Lender fees auto-derived from loan_amount_approved × pct (matches
   // services/fee-formulae.js convention). DIP fee + commitment fee are
@@ -9150,7 +9184,7 @@ window._recalcSourcesUses = function (deal) {
   const brokerFee      = (loanApproved * brokerFeePct) / 100;
   const lenderFeesTotal = arrangementFee + brokerFee + commitmentFee + dipFee;
 
-  const totalUses = purchasePrice + sdlt + refurb + legal + otherUses + lenderFeesTotal;
+  const totalUses = purchasePrice + sdlt + refurb + legal + otherUses + lenderFeesTotal + loanRedemption;
 
   // SOURCES
   const seniorLoan   = numFromField('mf-loan_amount_approved') || loanApproved;
@@ -9206,7 +9240,8 @@ if (!window._susFocusoutInstalled) {
     const id = e.target && e.target.id;
     if (!id || !id.startsWith('mf-')) return;
     const watched = ['purchase_price','uses_sdlt','refurb_cost','uses_legal_fees',
-                     'uses_other_amount','loan_amount_approved','arrangement_fee_pct',
+                     'uses_other_amount','uses_loan_redemption',
+                     'loan_amount_approved','arrangement_fee_pct',
                      'broker_fee_pct','commitment_fee','dip_fee',
                      'sources_second_charge','sources_equity','sources_other_amount'];
     const field = id.substring(3);

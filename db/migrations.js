@@ -2550,6 +2550,20 @@ async function runMigrations() {
     }
 
     // ============================================================
+    // 2026-04-28 (Sprint 4 #19): refinance-aware Sources & Uses.
+    //   Acquisition deals use purchase_price (existing). Refinance /
+    //   cash-out / chain-break / bridge-to-* deals use loan_redemption
+    //   (the existing lender's payoff figure). Conditional rendering
+    //   in the matrix UI driven by loan_purpose.
+    // ============================================================
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS uses_loan_redemption NUMERIC`);
+      console.log('[migrate] ✓ deal_submissions.uses_loan_redemption ready (Sprint 4 #19)');
+    } catch (err) {
+      console.log('[migrate] Note on uses_loan_redemption:', err.message.substring(0, 160));
+    }
+
+    // ============================================================
     // 2026-04-28 (Sprint 2 fix): rename two exit money cols to drop the
     // _pence suffix. Matrix convention on deal_submissions stores £ values
     // directly in BIGINT/NUMERIC cols (current_value, purchase_price, etc.),
