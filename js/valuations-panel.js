@@ -346,6 +346,11 @@
 
     const opt = (arr, v) => arr.map(o => '<option value="' + o + '"' + (v === o ? ' selected' : '') + '>' + o.replace(/_/g, ' ') + '</option>').join('');
 
+    // Sprint 2 — schema-driven enums for new sections
+    const demands = (_schema && _schema.valid_demand) || ['high', 'medium', 'low'];
+    const valueBases = (_schema && _schema.valid_lending_value_basis)
+      || ['as_is', '180_day_mv', 'gdv', 'mv', 'mv_subject_to_works'];
+
     const checkedRisks = new Set(values.key_risks || []);
     const risksGrid = risks.map(k =>
       '<label style="display:inline-flex;gap:4px;align-items:center;font-size:11px;margin:0 8px 4px 0;cursor:pointer;">' +
@@ -397,6 +402,58 @@
           '<input type="number" id="vf-vp_value" value="' + penceToPounds(values.vp_value_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
         _formRow('mortgage_lending_value', 'MLV (£)',
           '<input type="number" id="vf-mortgage_lending_value" value="' + penceToPounds(values.mortgage_lending_value_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('lending_value_basis', 'Lending value basis (which value anchors the LTV)',
+          '<select id="vf-lending_value_basis" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;">' +
+            '<option value="">— select —</option>' + opt(valueBases, values.lending_value_basis) +
+          '</select>', 2) +
+
+        // ═══ Sprint 2 — Refurb (if applicable) ═══
+        '<div style="grid-column:span 2;font-size:11px;color:#4ea1ff;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #2a3340;padding-bottom:4px;margin-top:8px;">Refurb (if applicable)</div>' +
+        _formRow('is_refurb_deal_check', '',
+          '<label style="display:inline-flex;gap:6px;align-items:center;font-size:12px;cursor:pointer;">' +
+            '<input type="checkbox" id="vf-is_refurb_deal"' + (values.is_refurb_deal ? ' checked' : '') + ' style="accent-color:#4ea1ff;">' +
+            'This is a refurb deal — works planned post-completion' +
+          '</label>', 2) +
+        _formRow('as_is_value', 'As-is value (£) — current state',
+          '<input type="number" id="vf-as_is_value" value="' + penceToPounds(values.as_is_value_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('market_value_180day', '180-day MV (£) — forced disposal',
+          '<input type="number" id="vf-market_value_180day" value="' + penceToPounds(values.market_value_180day_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('gdv', 'GDV (£) — post-refurb',
+          '<input type="number" id="vf-gdv" value="' + penceToPounds(values.gdv_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('works_cost_estimate', 'Works cost estimate (£)',
+          '<input type="number" id="vf-works_cost_estimate" value="' + penceToPounds(values.works_cost_estimate_pence) + '" step="1000" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+
+        // ═══ Sprint 2 — Sale & Letting Demand ═══
+        '<div style="grid-column:span 2;font-size:11px;color:#4ea1ff;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #2a3340;padding-bottom:4px;margin-top:8px;">Sale &amp; Letting Demand <span style="font-size:10px;color:#8a95a5;text-transform:none;letter-spacing:0;font-weight:400;">(RICS valuer view of exit viability)</span></div>' +
+        _formRow('sale_demand_grade', 'Sale demand',
+          '<select id="vf-sale_demand_grade" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;">' +
+            '<option value="">— select —</option>' + opt(demands, values.sale_demand_grade) +
+          '</select>') +
+        _formRow('valuer_days_to_sell_estimate', 'Days to sell (RICS estimate)',
+          '<input type="number" id="vf-valuer_days_to_sell_estimate" value="' + (values.valuer_days_to_sell_estimate == null ? '' : values.valuer_days_to_sell_estimate) + '" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('recent_local_sales_count', 'Recent local sales count',
+          '<input type="number" id="vf-recent_local_sales_count" value="' + (values.recent_local_sales_count == null ? '' : values.recent_local_sales_count) + '" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('local_price_trend_12m_pct', 'Local price trend 12m (%)',
+          '<input type="number" id="vf-local_price_trend_12m_pct" value="' + (values.local_price_trend_12m_pct == null ? '' : values.local_price_trend_12m_pct) + '" step="0.1" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('sale_marketability_commentary', 'Sale marketability commentary',
+          '<textarea id="vf-sale_marketability_commentary" rows="2" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;font-family:inherit;">' + _esc(values.sale_marketability_commentary || '') + '</textarea>', 2) +
+
+        _formRow('letting_demand_grade', 'Letting demand',
+          '<select id="vf-letting_demand_grade" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;">' +
+            '<option value="">— select —</option>' + opt(demands, values.letting_demand_grade) +
+          '</select>') +
+        _formRow('valuer_days_to_let_estimate', 'Days to let (RICS estimate)',
+          '<input type="number" id="vf-valuer_days_to_let_estimate" value="' + (values.valuer_days_to_let_estimate == null ? '' : values.valuer_days_to_let_estimate) + '" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('achievable_rent_pcm', 'Achievable rent (£/month)',
+          '<input type="number" id="vf-achievable_rent_pcm" value="' + penceToPounds(values.achievable_rent_pcm_pence) + '" step="50" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('estimated_gross_yield_pct', 'Gross yield estimate (%)',
+          '<input type="number" id="vf-estimated_gross_yield_pct" value="' + (values.estimated_gross_yield_pct == null ? '' : values.estimated_gross_yield_pct) + '" step="0.01" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('recent_local_lettings_count', 'Recent local lettings count',
+          '<input type="number" id="vf-recent_local_lettings_count" value="' + (values.recent_local_lettings_count == null ? '' : values.recent_local_lettings_count) + '" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('local_rent_trend_12m_pct', 'Local rent trend 12m (%)',
+          '<input type="number" id="vf-local_rent_trend_12m_pct" value="' + (values.local_rent_trend_12m_pct == null ? '' : values.local_rent_trend_12m_pct) + '" step="0.1" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;">') +
+        _formRow('letting_marketability_commentary', 'Letting marketability commentary',
+          '<textarea id="vf-letting_marketability_commentary" rows="2" style="width:100%;background:#0b0e13;color:#e7ecf3;border:1px solid #2a3340;border-radius:4px;padding:6px 10px;font-size:13px;font-family:inherit;">' + _esc(values.letting_marketability_commentary || '') + '</textarea>', 2) +
 
         '<div style="grid-column:span 2;font-size:11px;color:#4ea1ff;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #2a3340;padding-bottom:4px;margin-top:8px;">Qualitative</div>' +
         _formRow('condition_grade', 'Condition',
@@ -490,10 +547,36 @@
     out.comparable_count = v('comparable_count') === '' ? null : Number(v('comparable_count'));
 
     const poundsToPence = (s) => s === '' ? null : Math.round(Number(s) * 100);
+    const numOrNull = (s) => s === '' ? null : Number(s);
     out.lending_value_pence = poundsToPence(v('lending_value'));
     out.market_value_pence = poundsToPence(v('market_value'));
     out.vp_value_pence = poundsToPence(v('vp_value'));
     out.mortgage_lending_value_pence = poundsToPence(v('mortgage_lending_value'));
+
+    // Sprint 2 — Refurb fields
+    const refurbCheckEl = document.getElementById('vf-is_refurb_deal');
+    out.is_refurb_deal = !!(refurbCheckEl && refurbCheckEl.checked);
+    out.lending_value_basis = v('lending_value_basis') || null;
+    out.as_is_value_pence = poundsToPence(v('as_is_value'));
+    out.market_value_180day_pence = poundsToPence(v('market_value_180day'));
+    out.gdv_pence = poundsToPence(v('gdv'));
+    out.works_cost_estimate_pence = poundsToPence(v('works_cost_estimate'));
+
+    // Sprint 2 — Sale-side demand
+    out.sale_demand_grade = v('sale_demand_grade') || null;
+    out.valuer_days_to_sell_estimate = numOrNull(v('valuer_days_to_sell_estimate'));
+    out.recent_local_sales_count = numOrNull(v('recent_local_sales_count'));
+    out.local_price_trend_12m_pct = numOrNull(v('local_price_trend_12m_pct'));
+    out.sale_marketability_commentary = v('sale_marketability_commentary').trim() || null;
+
+    // Sprint 2 — Letting-side demand
+    out.letting_demand_grade = v('letting_demand_grade') || null;
+    out.valuer_days_to_let_estimate = numOrNull(v('valuer_days_to_let_estimate'));
+    out.achievable_rent_pcm_pence = poundsToPence(v('achievable_rent_pcm'));
+    out.estimated_gross_yield_pct = numOrNull(v('estimated_gross_yield_pct'));
+    out.recent_local_lettings_count = numOrNull(v('recent_local_lettings_count'));
+    out.local_rent_trend_12m_pct = numOrNull(v('local_rent_trend_12m_pct'));
+    out.letting_marketability_commentary = v('letting_marketability_commentary').trim() || null;
 
     out.condition_grade = v('condition_grade') || null;
     out.marketability_grade = v('marketability_grade') || null;
