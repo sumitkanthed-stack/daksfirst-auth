@@ -3280,6 +3280,22 @@ export async function renderDealMatrix(deal) {
               const balanceVal = p.existing_charge_balance_pence != null
                 ? (Number(p.existing_charge_balance_pence) / 100).toFixed(0)
                 : '';
+              // HMLR-aware placeholders so RM knows whether the field is auto-fed
+              // (HMLR has been pulled and we have structured charge data) or
+              // manual (HMLR pending — RM types from broker pack).
+              const hmlrPulled = !!p.hmlr_pulled_at;
+              const hmlrChargesArr = Array.isArray(p.hmlr_charges_jsonb)
+                ? p.hmlr_charges_jsonb
+                : (p.hmlr_charges_jsonb && p.hmlr_charges_jsonb.charges) || [];
+              const hmlrChargeCount = hmlrChargesArr.length;
+              const balancePlaceholder = hmlrPulled
+                ? (hmlrChargeCount > 0 ? `HMLR: ${hmlrChargeCount} charge${hmlrChargeCount === 1 ? '' : 's'} · enter £`
+                                       : 'HMLR clean')
+                : '⏳ HMLR pending';
+              const notesPlaceholder = hmlrPulled
+                ? (hmlrChargeCount > 0 ? `${hmlrChargeCount} charge${hmlrChargeCount === 1 ? '' : 's'} on HMLR · add ERC, restrictions…`
+                                       : 'HMLR clean · add notes if needed')
+                : '⏳ HMLR pending — note existing charges';
               return `<div style="display:grid;grid-template-columns:32px 1fr 130px 160px 130px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
                 <div style="background:#374151;color:#D4A853;font-weight:700;font-size:11px;padding:3px 8px;border-radius:3px;text-align:center;">${i + 1}</div>
                 <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(p.address || 'Address pending')}</div><div style="color:#94A3B8;font-size:10.5px;">${sanitizeHtml(p.postcode || '')}</div></div>
@@ -3305,14 +3321,14 @@ export async function renderDealMatrix(deal) {
                 </div>
                 <div>
                   <input type="number" id="sg-balance-${p.id}" value="${balanceVal}" min="0" step="1000"
-                    placeholder="£ outstanding"
+                    placeholder="${sanitizeHtml(balancePlaceholder)}"
                     onblur="window.sgSavePropertyBalance && window.sgSavePropertyBalance('${deal.submission_id}', ${p.id}, this.value)"
                     style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
                     ${!canEdit ? 'disabled' : ''}/>
                 </div>
                 <div>
                   <input type="text" id="sg-encum-${p.id}" value="${sanitizeHtml(p.existing_charges_note || '')}"
-                    placeholder="Lender, ERC, restrictions…"
+                    placeholder="${sanitizeHtml(notesPlaceholder)}"
                     onblur="window.sgSavePropertyEncumbrance && window.sgSavePropertyEncumbrance('${deal.submission_id}', ${p.id}, this.value)"
                     style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
                     ${!canEdit ? 'disabled' : ''}/>
