@@ -107,26 +107,33 @@ async function getRentalsByPostcode(postcode, beds = null) {
   }
   // PropertyData /rents response shape (typical):
   //   { status: 'success', data: { long_let: { '70pc_range': [low,high], '80pc_range': [...], average, median, samples }, short_let: {...} }, process_time, postcode }
+  //
+  // ⚠ UNIT — PropertyData /rents returns rents in £ per WEEK, not per month.
+  // (Industry convention: agency feeds use £/wk; consumers think £/PCM.)
+  // We convert to PCM using the standard formula: weekly × 52 / 12.
+  // Verified 2026-04-29: smoke test on E14 9GR returned £535/wk = £2,318/PCM,
+  // consistent with Canary Wharf 2-bed market median.
+  const W2M = 52 / 12;
   const longLet = json?.data?.long_let || {};
   const samples = longLet.samples || 0;
-  // PropertyData publishes 'average' (asking) — achieved rents not directly published
-  // by /rents endpoint in their default response; we approximate achieved as
-  // asking × 0.92 (industry-typical asking-to-achieved discount). For real
-  // achieved rents we'd need a separate endpoint or 3rd party.
-  const askingAvg = longLet.average ?? null;
+  const askingAvgWeekly = longLet.average ?? null;
   const range = longLet['70pc_range'] || [null, null];
+  const askingAvgPcm = askingAvgWeekly ? Math.round(askingAvgWeekly * W2M) : null;
+  const askingMinPcm = range[0] ? Math.round(range[0] * W2M) : null;
+  const askingMaxPcm = range[1] ? Math.round(range[1] * W2M) : null;
+  // Achieved rents not directly published by /rents — approximate as asking × 0.92
+  // (industry-typical asking-to-achieved discount). For real achieved rents
+  // we'd need a separate endpoint or third-party source.
   return {
     ok: true, mode, postcode: norm, beds,
     asking_pcm: {
-      avg: askingAvg ? Math.round(askingAvg) : null,
-      min: range[0] ? Math.round(range[0]) : null,
-      max: range[1] ? Math.round(range[1]) : null,
+      avg: askingAvgPcm, min: askingMinPcm, max: askingMaxPcm,
       sample: samples,
     },
     achieved_pcm: {
-      avg: askingAvg ? Math.round(askingAvg * 0.92) : null,
-      min: range[0] ? Math.round(range[0] * 0.92) : null,
-      max: range[1] ? Math.round(range[1] * 0.92) : null,
+      avg: askingAvgPcm ? Math.round(askingAvgPcm * 0.92) : null,
+      min: askingMinPcm ? Math.round(askingMinPcm * 0.92) : null,
+      max: askingMaxPcm ? Math.round(askingMaxPcm * 0.92) : null,
       sample: samples,  // same comp pool
     },
     yield_gross_pct: null,  // would need a value to compute; populated by /yields
