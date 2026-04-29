@@ -167,6 +167,14 @@
   // ─── State ───────────────────────────────────────────────────────────
   const PD_BANDS = [1,2,3,4,5,6,7,8,9];
   const LGD_BANDS = ['A','B','C','D','E'];
+  // LTV proxy for RM-friendly column labels — RMs think LTV, not LGD
+  const LGD_TO_LTV = {
+    A: '≤50% LTV',
+    B: '50-65% LTV',
+    C: '65-72% LTV',
+    D: '72-80% LTV',
+    E: '80%+ LTV',
+  };
   let activeVersion = null;
   let allVersions = [];
   let sectors = [];
@@ -238,7 +246,9 @@
     const el = document.getElementById('grid-area');
     const cells = cellsBySector[activeSector] || {};
     let html = `<table class="grid-table"><thead><tr><th>&nbsp;</th>`;
-    for (const lgd of LGD_BANDS) html += `<th>LGD-${lgd}</th>`;
+    for (const lgd of LGD_BANDS) {
+      html += `<th><div style="font-size:11px;">LGD-${lgd}</div><div style="font-size:9px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-top:2px;">${LGD_TO_LTV[lgd]}</div></th>`;
+    }
     html += `</tr></thead><tbody>`;
     for (const pd of PD_BANDS) {
       html += `<tr><th class="row-head">PD${pd}</th>`;
@@ -300,7 +310,7 @@
 
     const panel = document.getElementById('editor-panel');
     panel.innerHTML = `
-      <h3>Cell <span class="coords">${sector} &middot; PD${pd} &middot; LGD-${lgd}</span></h3>
+      <h3>Cell <span class="coords">${sector} &middot; PD${pd} &middot; LGD-${lgd}</span> <span style="color:var(--muted);font-size:11px;font-weight:400;">(${LGD_TO_LTV[lgd]})</span></h3>
       <div class="editor-grid">
         <label>Rate</label>
         <span><input type="number" id="lvr-rate" value="${cur.base_rate_bps_pm}"> <span class="unit">bps/pm</span></span>

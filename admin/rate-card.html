@@ -157,7 +157,9 @@
     html += `<div class="meta">Default mode: <strong style="color:var(--ink);">${modeLabel}</strong> &middot; floor: <strong style="color:var(--err);">${bps2pm(floorBpsPm)}</strong> &middot; ceiling: <strong style="color:var(--warn);">${bps2pm(assumptions.standard_rate_ceiling_bps_pm?.value_bps || 200)}</strong> standard / <strong style="color:var(--warn);">${bps2pm(assumptions.stressed_rate_ceiling_bps_pm?.value_bps || 250)}</strong> stressed</div>`;
 
     html += `<table class="grid"><thead><tr><th style="width:8%;">PD</th>`;
-    for (const lgd of LGD_BANDS) html += `<th>LGD-${lgd}</th>`;
+    for (const lgd of LGD_BANDS) {
+      html += `<th><div style="font-size:11px;font-weight:600;">LGD-${lgd}</div><div style="font-size:9px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-top:2px;">${LGD_TO_LTV[lgd]}</div></th>`;
+    }
     html += `<th style="width:18%;">Market median (mkt min-max)</th></tr></thead><tbody>`;
 
     for (const pd of PD_BANDS) {
