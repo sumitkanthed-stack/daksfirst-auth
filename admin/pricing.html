@@ -102,15 +102,19 @@
   </div>
 </div>
 
-<script type="module">
-  import { fetchWithAuth } from '/js/auth.js';
-  import { API_BASE } from '/js/config.js';
+<script>
+  // ─── Standalone admin page — read token DIRECTLY from sessionStorage ──
+  // This page is NOT part of the SPA boot, so the SPA's in-memory authToken
+  // is never populated here. Mirrors the admin/models.html pattern: read
+  // sessionStorage, send Bearer header on raw fetch(). Don't import the
+  // SPA's fetchWithAuth — it depends on state that doesn't exist here.
+  const TOKEN = sessionStorage.getItem('daksfirst_token') || '';
+  const API_BASE = window.location.hostname.startsWith('apply-staging')
+    ? 'https://daksfirst-auth-staging.onrender.com'
+    : 'https://daksfirst-auth.onrender.com';
 
   // ─── Auth guard: fail closed if no session (redirects to portal home) ──
-  // Without this, an unauthenticated user (e.g. incognito) sees a stuck
-  // "Failed to load: Authentication required" banner with no path forward.
-  // With this guard, they're immediately bounced to the login screen.
-  if (!sessionStorage.getItem('daksfirst_token')) {
+  if (!TOKEN) {
     document.body.innerHTML = `
       <div style="text-align:center;padding:60px 20px;color:#8a95a5;font-family:-apple-system,sans-serif;">
         <div style="font-size:18px;color:#e7ecf3;margin-bottom:8px;">Login required</div>
@@ -118,6 +122,14 @@
       </div>`;
     setTimeout(() => { window.location.href = '/'; }, 1200);
     throw new Error('No daksfirst_token in sessionStorage — redirecting to login.');
+  }
+
+  // ─── Drop-in replacement for fetchWithAuth on this page ──────────────
+  async function fetchWithAuth(url, options = {}) {
+    options.headers = Object.assign({}, options.headers || {}, {
+      'Authorization': 'Bearer ' + TOKEN,
+    });
+    return fetch(url, options);
   }
 
   // ─── State ───────────────────────────────────────────────────────────
