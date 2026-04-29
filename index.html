@@ -951,6 +951,28 @@
             </div>
           </div>
 
+          <!-- ══ 6c. PRICING RECOMMENDATION (PRICE-8) ══ -->
+          <div class="deal-section" data-roles="rm,credit,compliance,admin" id="section-pricing">
+            <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('pricing')">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:rgba(96,165,250,0.12);color:#60A5FA;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:'Inter',sans-serif;">P</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:#F1F5F9;">Pricing Recommendation</div>
+                  <div style="font-size:11px;color:#64748b;">Engine reads latest risk grade · 6 levers + cost stack + stress matrix · coach not gate · pricing engine v1</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span id="pricing-headline-pill" style="display:none;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;"></span>
+                <div class="deal-section-chevron" id="chev-pricing">&#9658;</div>
+              </div>
+            </div>
+            <div class="deal-section-body collapsed" id="body-pricing">
+              <div id="pricing-content" style="padding:0;">
+                <p style="color:#64748b;text-align:center;padding:40px 0;font-size:13px;">Loading Pricing Recommendation…</p>
+              </div>
+            </div>
+          </div>
+
           <!-- ══ 7. FEE ══ -->
           <div class="deal-section" data-roles="broker,borrower,rm,admin" id="section-fee">
             <div class="deal-section-header" onclick="window.toggleDealSection && window.toggleDealSection('fee')">

@@ -10,6 +10,9 @@ import { floatingProgress } from './floating-progress.js';
 // 2026-04-26: Risk View — Risk MVP step 9. Renders /api/admin/risk-view/:dealId/runs
 // into section-risk. Manual-trigger only, append-only, RBAC=rm/credit/compliance/admin.
 import { renderRiskSection } from './deal-risk.js';
+// 2026-04-29: Pricing recommendation — PRICE-8. Renders /api/admin/pricing/preview/:dealId
+// into section-pricing. Read-only coach panel; engine is NOT a gate.
+import { renderPricingSection } from './deal-pricing.js';
 // 2026-04-21: shared display helpers. Single source of truth for stage
 // synthesis, stage labels, portfolio reads, and primary borrower display.
 import {
@@ -991,231 +994,6 @@ export function renderAdminSection(deal) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ANALYSIS (OE-5) — Credit Guys Analysis panel
-//
-// Shows: Run button, latest run status, 3 download links (memo / ts / gbb),
-// compact run history. Uses Output Engine (n8n → memo-api → Postgres).
-// Polling-based (every 3 s) while a run is active — simpler than SSE and
-// invisible latency for a ~2 min job.
-// ═══════════════════════════════════════════════════════════════
-
-let _analysisPollTimer = null;
-
-export async function renderAnalysisSection(deal, role) {
-  const container = document.getElementById('analysis-content');
-  if (!container) return;
-  if (!deal || !deal.id) {
-    container.innerHTML = `<p style="color:#94a3b8;text-align:center;padding:30px 0;">Open a deal to load analysis.</p>`;
-    return;
-  }
-  // Non-internal roles: keep the static placeholder. Section visibility is
-  // role-gated by applyRoleGating so brokers/borrowers won't see this at all,
-  // but render defensively.
-  const internal = ['rm','credit','compliance','admin'].includes(role);
-  if (!internal) {
-    container.innerHTML = `<p style="color:#94a3b8;text-align:center;padding:30px 0;">Analysis results will appear here once the credit review is complete.</p>`;
-    return;
-  }
-
-  container.innerHTML = `<p style="color:#94a3b8;text-align:center;padding:20px 0;">Loading analysis runs…</p>`;
-
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/admin/deals/${deal.id}/output-engine-runs`);
-    if (!resp.ok) {
-      container.innerHTML = _analysisError('Failed to load runs (HTTP ' + resp.status + ')');
-      return;
-    }
-    const { runs = [] } = await resp.json();
-    _paintAnalysisPanel(deal.id, runs);
-    if (runs[0] && runs[0].status === 'running') {
-      _startAnalysisPoll(deal.id);
-    }
-  } catch (err) {
-    console.error('[analysis] load error', err);
-    container.innerHTML = _analysisError('Network error loading runs');
-  }
-}
-
-function _paintAnalysisPanel(dealId, runs) {
-  const container = document.getElementById('analysis-content');
-  if (!container) return;
-  const latest = runs[0] || null;
-  const history = runs.slice(1, 6);
-
-  const runBtnDisabled = latest && latest.status === 'running';
-  const runBtn = `
-    <button onclick="window.runCreditAnalysisForDeal && window.runCreditAnalysisForDeal(${dealId})"
-      ${runBtnDisabled ? 'disabled' : ''}
-      style="padding:10px 18px;background:${runBtnDisabled ? '#3f3f46' : '#10B981'};color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:${runBtnDisabled ? 'not-allowed' : 'pointer'};">
-      ${runBtnDisabled ? '⏳ Running…' : '▶ Run Credit Analysis'}
-    </button>`;
-
-  let statusBlock = '';
-  if (!latest) {
-    statusBlock = `<div style="color:#94a3b8;padding:16px 0;font-size:13px;">No runs yet. Click <strong>Run Credit Analysis</strong> to generate the Credit Memo, Initial Term Sheet, and GBB Approval Memo.</div>`;
-  } else if (latest.status === 'running') {
-    statusBlock = `
-      <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:600;color:#60A5FA;margin-bottom:4px;">⏳ Analysis in progress…</div>
-        <div style="font-size:12px;color:#94A3B8;">Started ${_relTime(latest.triggered_at)}. Typically takes ~2 min.</div>
-        <div style="font-size:11px;color:#64748B;margin-top:6px;font-family:monospace;">runId: ${sanitizeHtml(latest.run_id)}</div>
-      </div>`;
-  } else if (latest.status === 'failed') {
-    statusBlock = `
-      <div style="background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:600;color:#F87171;margin-bottom:4px;">✗ Last run failed</div>
-        <div style="font-size:12px;color:#94A3B8;">${sanitizeHtml(latest.error || 'Unknown error')}</div>
-        <div style="font-size:11px;color:#64748B;margin-top:6px;font-family:monospace;">runId: ${sanitizeHtml(latest.run_id)}</div>
-      </div>`;
-  } else if (latest.status === 'complete') {
-    const cost = latest.cost_gbp != null ? '£' + Number(latest.cost_gbp).toFixed(2) : 'n/a';
-    statusBlock = `
-      <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:600;color:#34D399;margin-bottom:8px;">✓ Analysis complete</div>
-        <div style="font-size:12px;color:#94A3B8;margin-bottom:10px;">
-          Completed ${_relTime(latest.completed_at)} ·
-          Cost: ${cost} ·
-          Model: ${sanitizeHtml(latest.model_version || 'n/a')}
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${_dlBtn(latest.run_id, 'memo', 'Credit Memo', latest.has_memo)}
-          ${_dlBtn(latest.run_id, 'termsheet', 'Initial Term Sheet', latest.has_termsheet)}
-          ${_dlBtn(latest.run_id, 'gbb', 'GBB Approval Memo', latest.has_gbb)}
-        </div>
-        <div style="font-size:11px;color:#64748B;margin-top:10px;font-family:monospace;">runId: ${sanitizeHtml(latest.run_id)}</div>
-      </div>`;
-  }
-
-  let historyBlock = '';
-  if (history.length > 0) {
-    historyBlock = `
-      <details style="margin-top:12px;">
-        <summary style="cursor:pointer;font-size:12px;color:#94A3B8;padding:8px 0;">Previous runs (${history.length})</summary>
-        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
-          ${history.map(r => _histRow(r)).join('')}
-        </div>
-      </details>`;
-  }
-
-  container.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
-      <div style="font-size:12px;color:#64748B;">Credit memo · Initial term sheet · GBB approval memo — generated by Output Engine</div>
-      ${runBtn}
-    </div>
-    ${statusBlock}
-    ${historyBlock}
-  `;
-}
-
-function _dlBtn(runId, type, label, available) {
-  if (!available) {
-    return `<button disabled style="padding:8px 14px;background:#1F2937;color:#6B7280;border:1px solid rgba(255,255,255,0.06);border-radius:6px;font-size:12px;font-weight:600;cursor:not-allowed;">📄 ${label} (unavailable)</button>`;
-  }
-  return `<button onclick="window.downloadAnalysisDocx && window.downloadAnalysisDocx('${sanitizeHtml(runId)}', '${type}')" style="padding:8px 14px;background:#1E3A8A;color:#F1F5F9;border:1px solid #3B82F6;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📄 ${label}</button>`;
-}
-
-function _histRow(r) {
-  const icon = r.status === 'complete' ? '✓' : r.status === 'failed' ? '✗' : '⏳';
-  const color = r.status === 'complete' ? '#34D399' : r.status === 'failed' ? '#F87171' : '#60A5FA';
-  return `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#111827;border-radius:6px;font-size:12px;">
-      <div><span style="color:${color};">${icon}</span> ${sanitizeHtml(r.status)} · ${_relTime(r.triggered_at)}</div>
-      <div style="font-family:monospace;font-size:11px;color:#64748B;">${sanitizeHtml((r.run_id || '').slice(0,8))}…</div>
-    </div>`;
-}
-
-function _analysisError(msg) {
-  return `
-    <div style="background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:14px 16px;">
-      <div style="font-size:13px;font-weight:600;color:#F87171;">✗ ${sanitizeHtml(msg)}</div>
-    </div>`;
-}
-
-function _relTime(isoStr) {
-  if (!isoStr) return 'n/a';
-  const then = new Date(isoStr).getTime();
-  if (isNaN(then)) return 'n/a';
-  const diffSec = Math.round((Date.now() - then) / 1000);
-  if (diffSec < 60) return `${diffSec}s ago`;
-  if (diffSec < 3600) return `${Math.round(diffSec/60)}m ago`;
-  if (diffSec < 86400) return `${Math.round(diffSec/3600)}h ago`;
-  return new Date(isoStr).toLocaleString('en-GB');
-}
-
-function _startAnalysisPoll(dealId) {
-  if (_analysisPollTimer) clearInterval(_analysisPollTimer);
-  _analysisPollTimer = setInterval(async () => {
-    try {
-      const resp = await fetchWithAuth(`${API_BASE}/api/admin/deals/${dealId}/output-engine-runs`);
-      if (!resp.ok) return;
-      const { runs = [] } = await resp.json();
-      _paintAnalysisPanel(dealId, runs);
-      if (!runs[0] || runs[0].status !== 'running') {
-        clearInterval(_analysisPollTimer);
-        _analysisPollTimer = null;
-        if (runs[0] && runs[0].status === 'complete') showToast('Credit analysis ready', 'success');
-        if (runs[0] && runs[0].status === 'failed')   showToast('Credit analysis failed', 'error');
-      }
-    } catch (_) { /* swallow and keep polling */ }
-  }, 3000);
-}
-
-// ── Global handlers wired to onclick attrs ──────────────────────
-
-window.runCreditAnalysisForDeal = async function(dealId) {
-  if (!dealId) dealId = window.currentDealId;
-  if (!dealId) { showToast('No deal selected', 'error'); return; }
-  try {
-    showToast('Dispatching credit analysis…', 'info');
-    const resp = await fetchWithAuth(`${API_BASE}/api/admin/deals/${dealId}/run-output-engine`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage_id: 'dip_submission' })
-    });
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => '');
-      showToast('Dispatch failed: ' + String(txt).slice(0, 140), 'error');
-      return;
-    }
-    const data = await resp.json().catch(() => ({}));
-    showToast(`Dispatched — runId ${String(data.runId || '').slice(0,8)}…`, 'success');
-    // Reload panel (which will detect running status and start polling)
-    if (window.currentDealData) {
-      renderAnalysisSection(window.currentDealData, getCurrentRole());
-    }
-  } catch (err) {
-    console.error('[runCreditAnalysisForDeal] error', err);
-    showToast('Network error dispatching analysis', 'error');
-  }
-};
-
-window.downloadAnalysisDocx = async function(runId, type) {
-  if (!runId || !['memo','termsheet','gbb'].includes(type)) return;
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/admin/output-engine-runs/${encodeURIComponent(runId)}/${type}.docx`);
-    if (!resp.ok) {
-      showToast('Download failed (HTTP ' + resp.status + ')', 'error');
-      return;
-    }
-    const blob = await resp.blob();
-    const cd = resp.headers.get('Content-Disposition') || '';
-    const m = cd.match(/filename="?([^"]+)"?/i);
-    const filename = m ? m[1] : `${type}.docx`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (err) {
-    console.error('[downloadAnalysisDocx] error', err);
-    showToast('Network error downloading document', 'error');
-  }
-};
-
-// ═══════════════════════════════════════════════════════════════
 // NOTES / COMMENTS — Basic in-memory thread (DB integration later)
 // ═══════════════════════════════════════════════════════════════
 const noteColors = { admin: '#dc2626', rm: '#2563eb', credit: '#7c3aed', compliance: '#c9a84c', broker: '#059669', borrower: '#059669' };
@@ -1303,16 +1081,20 @@ export async function renderDealSections(deal, role) {
   // 5. Notes
   renderNotesSection(deal);
 
-  // 5b. Analysis (OE-5) — internal roles only. Async but we don't await;
-  // the panel paints a loading state and swaps in the real content.
-  renderAnalysisSection(deal, role);
-
   // 6b. Risk View (Risk MVP step 9) — sits between Analysis and Fee in index.html.
   // Reader-only paint of risk_view ledger; trigger button is RBAC-gated inside.
   try {
     await renderRiskSection(deal, role);
   } catch (err) {
     console.error('[deal-sections] renderRiskSection failed:', err);
+  }
+
+  // 6c. Pricing recommendation (PRICE-8) — read-only coach panel reading the
+  // latest v3.1 risk grade. Falls back gracefully if no risk run exists yet.
+  try {
+    await renderPricingSection(deal, role);
+  } catch (err) {
+    console.error('[deal-sections] renderPricingSection failed:', err);
   }
 
   // 6. Fee
