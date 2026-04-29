@@ -3916,6 +3916,65 @@ async function runMigrations() {
       console.log('[migrate] Note on PropertyData schema:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PD-4 (2026-04-29 night): risk_rubric v6 deploy — adds PropertyData
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  v6 = v5 body + v6_addendum (PropertyData rental signals + PAF address
+    //  verification guidance). Built by concatenation at deploy time so we
+    //  don't need to maintain two near-identical 25k-char files.
+    //
+    //  Same activation pattern as the v5 deploy upstream. Old risk_view rows
+    //  pinned to v5 keep grading against v5 — no retroactive change.
+    //
+    //  If either body file is missing, skip silently — risk pipeline continues
+    //  against v5 until next deploy.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const v5BodyPath = path.join(__dirname, '..', 'prompts', 'rubric_v5_body.md');
+      const v6AddendumPath = path.join(__dirname, '..', 'prompts', 'rubric_v6_addendum.md');
+      let v5Body = null, v6Addendum = null;
+      try { v5Body = fs.readFileSync(v5BodyPath, 'utf8'); } catch (_) { /* missing */ }
+      try { v6Addendum = fs.readFileSync(v6AddendumPath, 'utf8'); } catch (_) { /* missing */ }
+
+      if (!v5Body || !v6Addendum) {
+        console.log('[migrate] Note: rubric v6 source files missing, skipping deploy');
+      } else {
+        const v6Body = v5Body.trimEnd() + '\n\n---\n\n' + v6Addendum;
+        const existing = await pool.query(
+          `SELECT id FROM llm_prompts WHERE prompt_key = 'risk_rubric' AND version = 6`
+        );
+        if (existing.rows.length > 0) {
+          console.log('[migrate] ✓ risk_rubric v6 already present, skipping deploy');
+        } else {
+          await pool.query('BEGIN');
+          try {
+            await pool.query(
+              `INSERT INTO llm_prompts (prompt_key, version, body, is_active, created_at)
+               VALUES ('risk_rubric', 6, $1, FALSE, NOW())`,
+              [v6Body]
+            );
+            await pool.query(
+              `UPDATE llm_prompts
+                  SET is_active = FALSE
+                WHERE prompt_key = 'risk_rubric' AND version <> 6 AND is_active = TRUE`
+            );
+            await pool.query(
+              `UPDATE llm_prompts
+                  SET is_active = TRUE
+                WHERE prompt_key = 'risk_rubric' AND version = 6`
+            );
+            await pool.query('COMMIT');
+            console.log(`[migrate] ✓ risk_rubric v6 deployed (${v6Body.length} chars), v5 deactivated`);
+          } catch (txErr) {
+            await pool.query('ROLLBACK').catch(() => {});
+            throw txErr;
+          }
+        }
+      }
+    } catch (err) {
+      console.log('[migrate] Note on rubric v6 deploy:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
