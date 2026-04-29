@@ -227,6 +227,20 @@
     area.innerHTML = html;
   }
 
+  // ─── JSONB shape detection ───────────────────────────────────────────
+  // Returns 'tier-bps' | 'tier-adder' | 'string-array' | 'json' (fallback)
+  function detectJsonbShape(v) {
+    if (Array.isArray(v) && v.length > 0) {
+      const first = v[0];
+      if (typeof first === 'string') return 'string-array';
+      if (typeof first === 'object' && first !== null) {
+        if ('bps' in first) return 'tier-bps';        // broker, margin, opex
+        if ('adder' in first) return 'tier-adder';    // concentration buckets
+      }
+    }
+    return 'json';
+  }
+
   function renderEditRow(r) {
     const ftype = rowFieldType(r);
     const staged = edits[r.key] || {};
@@ -239,7 +253,82 @@
       editor = `<input type="number" id="edit-${r.key}-val" value="${cur ?? ''}" placeholder="pence"> <span class="notes">pence (£1 = 100 pence)</span>`;
     } else if (ftype === 'jsonb') {
       const cur = 'value_jsonb' in staged ? staged.value_jsonb : r.value_jsonb;
-      editor = `<textarea id="edit-${r.key}-val" class="json-textarea">${JSON.stringify(cur, null, 2)}</textarea>`;
+      const shape = detectJsonbShape(cur);
+
+      if (shape === 'tier-bps') {
+        // Structured table editor: one row per tier, editable bps input.
+        // Tier structure (max_pence, label) is preserved — admin only edits
+        // the rate. To restructure, fall back to raw JSON via the "advanced"
+        // toggle below.
+        editor = `
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr>
+              <th style="text-align:left;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">Tier</th>
+              <th style="text-align:right;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">bps (% pa)</th>
+              <th style="text-align:right;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">% equivalent</th>
+            </tr></thead>
+            <tbody>
+              ${cur.map((tier, i) => `
+                <tr>
+                  <td style="padding:5px 8px;color:var(--ink);">${tier.label || '(unlabeled)'}</td>
+                  <td style="padding:5px 8px;text-align:right;">
+                    <input type="number" id="edit-${r.key}-tier-${i}-bps" value="${tier.bps}" style="width:90px;text-align:right;">
+                  </td>
+                  <td style="padding:5px 8px;text-align:right;color:var(--muted);font-size:11px;">
+                    <span id="edit-${r.key}-tier-${i}-pct" data-key="${r.key}" data-idx="${i}">${(tier.bps/100).toFixed(2)}%</span>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <details style="margin-top:8px;">
+            <summary style="font-size:11px;color:var(--muted);cursor:pointer;">Advanced — edit raw JSON (add/remove tiers, change labels)</summary>
+            <textarea id="edit-${r.key}-val-json" class="json-textarea" style="margin-top:6px;">${JSON.stringify(cur, null, 2)}</textarea>
+          </details>
+        `;
+      } else if (shape === 'tier-adder') {
+        // Concentration buckets — same shape but `adder` field name
+        editor = `
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr>
+              <th style="text-align:left;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">Bucket</th>
+              <th style="text-align:right;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">EL adder bps</th>
+              <th style="text-align:right;padding:5px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">% equivalent</th>
+            </tr></thead>
+            <tbody>
+              ${cur.map((b, i) => `
+                <tr>
+                  <td style="padding:5px 8px;color:var(--ink);">${b.label || '(unlabeled)'}</td>
+                  <td style="padding:5px 8px;text-align:right;">
+                    <input type="number" id="edit-${r.key}-bucket-${i}-adder" value="${b.adder}" style="width:90px;text-align:right;">
+                  </td>
+                  <td style="padding:5px 8px;text-align:right;color:var(--muted);font-size:11px;">${(b.adder/100).toFixed(2)}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <details style="margin-top:8px;">
+            <summary style="font-size:11px;color:var(--muted);cursor:pointer;">Advanced — edit raw JSON</summary>
+            <textarea id="edit-${r.key}-val-json" class="json-textarea" style="margin-top:6px;">${JSON.stringify(cur, null, 2)}</textarea>
+          </details>
+        `;
+      } else if (shape === 'string-array') {
+        // One textarea per reason
+        editor = `
+          <div id="edit-${r.key}-strings" style="display:flex;flex-direction:column;gap:6px;">
+            ${cur.map((s, i) => `
+              <input type="text" id="edit-${r.key}-str-${i}" value="${String(s).replace(/"/g, '&quot;')}" style="width:100%;font-family:inherit;">
+            `).join('')}
+          </div>
+          <details style="margin-top:8px;">
+            <summary style="font-size:11px;color:var(--muted);cursor:pointer;">Advanced — edit raw JSON (add/remove items)</summary>
+            <textarea id="edit-${r.key}-val-json" class="json-textarea" style="margin-top:6px;">${JSON.stringify(cur, null, 2)}</textarea>
+          </details>
+        `;
+      } else {
+        // Fallback: raw JSON textarea (anchors, joint tables, complex objects)
+        editor = `<textarea id="edit-${r.key}-val-json" class="json-textarea">${JSON.stringify(cur, null, 2)}</textarea><div class="notes" style="margin-top:4px;font-size:11px;">Complex shape — edit JSON directly.</div>`;
+      }
     } else {
       editor = `<em class="notes">unsupported field type</em>`;
     }
@@ -273,25 +362,59 @@
   window._stageEdit = (key) => {
     const r = rows.find(x => x.key === key);
     const ftype = rowFieldType(r);
-    const valEl = document.getElementById(`edit-${key}-val`);
     const reasonEl = document.getElementById(`edit-${key}-reason`);
     const reason = reasonEl.value.trim();
     if (!reason) { showBanner(`Change reason is required for ${key}`, 'err'); reasonEl.focus(); return; }
 
     let staged = { change_reason: reason };
     if (ftype === 'bps') {
-      const v = Number(valEl.value);
+      const v = Number(document.getElementById(`edit-${key}-val`).value);
       if (!Number.isFinite(v)) { showBanner('Value must be an integer (bps)', 'err'); return; }
       staged.value_bps = Math.round(v);
     } else if (ftype === 'pence') {
-      const v = Number(valEl.value);
+      const v = Number(document.getElementById(`edit-${key}-val`).value);
       if (!Number.isFinite(v)) { showBanner('Value must be an integer (pence)', 'err'); return; }
       staged.value_pence = Math.round(v);
     } else if (ftype === 'jsonb') {
-      try {
-        staged.value_jsonb = JSON.parse(valEl.value);
-      } catch (e) {
-        showBanner('Invalid JSON: ' + e.message, 'err'); return;
+      const orig = r.value_jsonb;
+      const shape = detectJsonbShape(orig);
+      // Advanced JSON override always wins if user opened it AND content differs
+      const jsonEl = document.getElementById(`edit-${key}-val-json`);
+      const advancedOpen = jsonEl && jsonEl.closest('details') && jsonEl.closest('details').open;
+
+      if (advancedOpen || shape === 'json') {
+        // Parse the raw JSON textarea
+        try {
+          staged.value_jsonb = JSON.parse(jsonEl.value);
+        } catch (e) {
+          showBanner('Invalid JSON: ' + e.message, 'err'); return;
+        }
+      } else if (shape === 'tier-bps') {
+        // Reconstruct array from per-tier bps inputs, preserving max_pence + label
+        try {
+          staged.value_jsonb = orig.map((tier, i) => {
+            const inp = document.getElementById(`edit-${key}-tier-${i}-bps`);
+            const v = Number(inp.value);
+            if (!Number.isFinite(v)) throw new Error(`Tier "${tier.label}" bps invalid`);
+            return { ...tier, bps: Math.round(v) };
+          });
+        } catch (e) { showBanner(e.message, 'err'); return; }
+      } else if (shape === 'tier-adder') {
+        try {
+          staged.value_jsonb = orig.map((b, i) => {
+            const inp = document.getElementById(`edit-${key}-bucket-${i}-adder`);
+            const v = Number(inp.value);
+            if (!Number.isFinite(v)) throw new Error(`Bucket "${b.label}" adder invalid`);
+            return { ...b, adder: Math.round(v) };
+          });
+        } catch (e) { showBanner(e.message, 'err'); return; }
+      } else if (shape === 'string-array') {
+        try {
+          staged.value_jsonb = orig.map((_, i) => {
+            const inp = document.getElementById(`edit-${key}-str-${i}`);
+            return inp.value;
+          });
+        } catch (e) { showBanner(e.message, 'err'); return; }
       }
     }
     edits[key] = staged;
