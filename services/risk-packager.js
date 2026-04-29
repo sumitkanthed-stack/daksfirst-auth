@@ -652,6 +652,7 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     valuations_off_panel_count: valuationOffPanelCount,
     valuations_expired_count:   valuationExpiredCount,
     valuations_valid_for_drawdown_count: valuationValidForDrawdown,
+    directorships_count:        (directorshipsByBorrower || []).length,
     // Sprint 5 #27 — balance sheet + concentration provenance
     balance_sheet_ubos_with_data: (balanceSheet.per_ubo || []).length,
     balance_sheet_consolidated_present: !!balanceSheet.consolidated,
