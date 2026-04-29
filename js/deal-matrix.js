@@ -2897,6 +2897,12 @@ export async function renderDealMatrix(deal) {
                   if (!isInternalUser) return '';
                   const fmtMoney = (n) => n != null && !isNaN(n) ? '£' + Math.round(Number(n)).toLocaleString() : '—';
                   const fmtPct = (n) => n != null && !isNaN(n) ? Number(n).toFixed(2) + '%' : '—';
+                  // Convert PCM to weekly using industry-standard 12/52 factor
+                  const pcmToPw = (pcm) => pcm != null && !isNaN(pcm) ? Math.round(Number(pcm) * 12 / 52) : null;
+                  const fmtMoneyDual = (pcm) => {
+                    if (pcm == null || isNaN(pcm)) return '—';
+                    return fmtMoney(pcm) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm · ' + fmtMoney(pcmToPw(pcm)) + ' pw</span>';
+                  };
                   const stated = p.market_rent_pcm ?? p.chimnie_rental_pcm ?? null;
                   const aA = p.pd_rental_pcm_asking_avg, aMin = p.pd_rental_pcm_asking_min, aMax = p.pd_rental_pcm_asking_max;
                   const eA = p.pd_rental_pcm_achieved_avg, eMin = p.pd_rental_pcm_achieved_min, eMax = p.pd_rental_pcm_achieved_max;
@@ -2931,26 +2937,26 @@ export async function renderDealMatrix(deal) {
                                : 'Above market median (premium tenancy)';
                     gapHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
                       '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:4px;">Deal Position</div>' +
-                      '<div style="display:flex;justify-content:space-between;font-size:12px;color:#F1F5F9;">' +
-                        '<span>Stated rent: <strong>' + fmtMoney(stated) + '</strong> pcm</span>' +
-                        '<span>vs market median achieved: <strong>' + fmtMoney(eA) + '</strong> pcm</span>' +
+                      '<div style="display:flex;justify-content:space-between;font-size:12px;color:#F1F5F9;flex-wrap:wrap;gap:6px;">' +
+                        '<span>Stated rent: <strong>' + fmtMoney(stated) + '</strong> pcm <span style="color:#94A3B8;font-size:11px;">(' + fmtMoney(pcmToPw(stated)) + ' pw)</span></span>' +
+                        '<span>vs market median achieved: <strong>' + fmtMoney(eA) + '</strong> pcm <span style="color:#94A3B8;font-size:11px;">(' + fmtMoney(pcmToPw(eA)) + ' pw)</span></span>' +
                         '<span style="color:' + positionColour + ';">' + (delta >= 0 ? '+' : '') + fmtMoney(Math.abs(delta)) + ' (' + (delta >= 0 ? '+' : '') + pct + '%)</span>' +
                       '</div>' +
                       '<div style="font-size:11px;color:' + positionColour + ';margin-top:4px;font-style:italic;">' + label + '</div>' +
                     '</div>';
                   }
 
-                  // Market benchmarks grid
+                  // Market benchmarks grid — show both PCM and PW for each value
                   const benchHtml = '<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
                     '<div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
                       '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Asking rent</div>' +
-                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(aA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm median</span></div>' +
-                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range ' + fmtMoney(aMin) + '-' + fmtMoney(aMax) + '</div>' +
+                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(aA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm</span> · ' + fmtMoney(pcmToPw(aA)) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pw</span> <span style="font-size:10px;color:#94A3B8;font-weight:400;">median</span></div>' +
+                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range pcm: ' + fmtMoney(aMin) + '-' + fmtMoney(aMax) + ' · pw: ' + fmtMoney(pcmToPw(aMin)) + '-' + fmtMoney(pcmToPw(aMax)) + '</div>' +
                     '</div>' +
                     '<div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
                       '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Achieved rent (est)</div>' +
-                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(eA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm median</span></div>' +
-                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range ' + fmtMoney(eMin) + '-' + fmtMoney(eMax) + '</div>' +
+                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(eA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm</span> · ' + fmtMoney(pcmToPw(eA)) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pw</span> <span style="font-size:10px;color:#94A3B8;font-weight:400;">median</span></div>' +
+                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range pcm: ' + fmtMoney(eMin) + '-' + fmtMoney(eMax) + ' · pw: ' + fmtMoney(pcmToPw(eMin)) + '-' + fmtMoney(pcmToPw(eMax)) + '</div>' +
                     '</div>' +
                   '</div>';
 
