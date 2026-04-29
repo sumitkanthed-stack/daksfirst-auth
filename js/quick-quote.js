@@ -57,11 +57,16 @@ function buildResultHtml(data) {
   const p = data.property || {};
   const c = data.company || null;
   const pr = data.pricing || null;
+  const noAvm = !p.avm_pence;
+  const manualAvm = p.avm_source === 'broker_estimate';
 
   const verdictColor = v.eligible ? '#34D399' : '#FBBF24';
   const verdictBg    = v.eligible ? 'rgba(52,211,153,0.10)' : 'rgba(251,191,36,0.10)';
   const verdictBorder = v.eligible ? 'rgba(52,211,153,0.35)' : 'rgba(251,191,36,0.35)';
   const verdictIcon = v.eligible ? '✓' : '⚠';
+
+  const avmSourceLabel = manualAvm ? 'broker estimate'
+                       : (p.avm_pence ? 'Chimnie AVM' : 'No AVM available');
 
   const kpiCard = (label, value, sub) => `
     <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:12px 14px;">
@@ -82,8 +87,29 @@ function buildResultHtml(data) {
       ${v.eligible ? `<button id="qq-submit-deal" type="button" style="background:#D4A853;color:#111;border:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;" data-quick-quote-id="${data.quick_quote_id}">Submit full deal pack →</button>` : ''}
     </div>
 
+    ${noAvm ? `
+      <!-- Manual AVM fallback panel -->
+      <div style="background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.30);border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:12px;color:#60A5FA;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Provide your estimated value</div>
+            <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Chimnie has no AVM for this property. Enter your own valuation and we'll re-quote against it. Marked as broker-supplied — final rate still subject to RICS valuation.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="color:#94A3B8;font-size:14px;">£</span>
+          <input id="qq-manual-avm" type="text" inputmode="numeric" placeholder="e.g. 925,000"
+            style="flex:1;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;" />
+          <button id="qq-requote-with-avm" type="button"
+            style="background:#60A5FA;color:#111;border:none;padding:9px 18px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+            Re-quote with my estimate
+          </button>
+        </div>
+      </div>
+    ` : ''}
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:12px;">
-      ${kpiCard('AVM', fmtMoneyPence(p.avm_pence), p.property_type || (p.avm_pence ? '' : 'No AVM available'))}
+      ${kpiCard('Property value', fmtMoneyPence(p.avm_pence), avmSourceLabel + (p.property_type ? ' · ' + p.property_type : ''))}
       ${kpiCard('Effective LTV', fmtPct(v.ltv_pct), v.ltv_pct == null ? 'Needs valuation' : '')}
       ${pr ? kpiCard('Indicative rate', fmtRate(pr.rate_bps_pm), `at typical PD5/LGDC/IAC grade · min term ${pr.min_term_months || '?'}m`) : kpiCard('Indicative rate', '—', 'Pricing not run (LTV or company gate)')}
       ${p.rental_pcm_pence ? kpiCard('Estimated rental', fmtMoneyPence(p.rental_pcm_pence) + '/m', `gross yield ${p.yield_gross_pct ?? '?'}%`) : ''}
@@ -99,9 +125,54 @@ function buildResultHtml(data) {
     ` : ''}
 
     <div style="margin-top:10px;padding:8px 12px;background:rgba(96,165,250,0.04);border-left:3px solid #60A5FA;border-radius:3px;font-size:10.5px;color:#94A3B8;">
-      ℹ Quick Quote uses default mid-grade (PD5/LGDC/IAC) for indicative pricing. Final rate depends on full underwriting (RICS valuation, full credit + KYC, IC review).
+      ℹ Quick Quote uses default mid-grade (PD5/LGDC/IAC) for indicative pricing.${manualAvm ? ' Valuation is broker-supplied — final rate subject to RICS valuation at full submission.' : ''} Final rate depends on full underwriting (RICS valuation, full credit + KYC, IC review).
     </div>
   `;
+}
+
+// Re-fire the quote with the broker's own valuation when Chimnie has no AVM.
+// Re-uses the form's existing values; just adds manual_avm to the body.
+async function reQuoteWithManualAvm(manualAvmPounds) {
+  const postcode = (document.getElementById('qq-postcode')?.value || '').trim().toUpperCase();
+  const address  = (document.getElementById('qq-address')?.value  || '').trim();
+  const cn       = (document.getElementById('qq-company-number')?.value || '').trim().toUpperCase();
+  const cname    = (document.getElementById('qq-company-name')?.value   || '').trim();
+  const amt      = (document.getElementById('qq-loan-amount')?.value    || '').replace(/,/g, '').trim();
+  const purpose  = document.getElementById('qq-purpose')?.value;
+  const date     = document.getElementById('qq-drawdown-date')?.value;
+
+  setBusy(true);
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/broker/quick-quote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postcode, address_text: address || null,
+        company_number: cn || null, company_name_input: cname || null,
+        loan_amount: Number(amt), purpose,
+        drawdown_target_date: date || null,
+        manual_avm: manualAvmPounds,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showQqResult(`<div style="background:rgba(248,113,113,0.10);border:1px solid rgba(248,113,113,0.3);padding:10px 14px;border-radius:6px;color:#F87171;font-size:13px;">Re-quote failed: ${data.error || res.status}</div>`);
+      return;
+    }
+    showQqResult(buildResultHtml(data));
+    // Re-wire CTAs on the new result HTML
+    const ctaBtn2 = document.getElementById('qq-submit-deal');
+    if (ctaBtn2) {
+      ctaBtn2.addEventListener('click', () => {
+        try { sessionStorage.setItem('qq_pending_id', ctaBtn2.getAttribute('data-quick-quote-id')); } catch (_) {}
+        if (typeof window.showDealForm === 'function') window.showDealForm();
+      });
+    }
+  } catch (err) {
+    showQqResult(`<div style="background:rgba(248,113,113,0.10);border:1px solid rgba(248,113,113,0.3);padding:10px 14px;border-radius:6px;color:#F87171;font-size:13px;">Connection error: ${err.message}</div>`);
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function handleQqSubmit(e) {
@@ -148,14 +219,28 @@ async function handleQqSubmit(e) {
     if (ctaBtn) {
       ctaBtn.addEventListener('click', () => {
         const qqid = ctaBtn.getAttribute('data-quick-quote-id');
-        // Pre-fill flow comes in QQ-4 — for now route to the existing form
-        // and stash the quick_quote_id in sessionStorage so the form can pick it up.
         try { sessionStorage.setItem('qq_pending_id', qqid); } catch (_) {}
         if (typeof window.showDealForm === 'function') {
           window.showDealForm();
         } else {
           alert('Submission form unavailable. Please refresh the page.');
         }
+      });
+    }
+    // Wire the manual-AVM re-quote button (only present when no Chimnie AVM)
+    const manualAvmInput = document.getElementById('qq-manual-avm');
+    const requoteBtn = document.getElementById('qq-requote-with-avm');
+    if (manualAvmInput) attachCommaFormatter(manualAvmInput);
+    if (requoteBtn && manualAvmInput) {
+      requoteBtn.addEventListener('click', async () => {
+        const manualVal = manualAvmInput.value.replace(/,/g, '').trim();
+        const num = Number(manualVal);
+        if (!num || num < 100000) {
+          alert('Enter a realistic property value (≥ £100,000) to re-quote.');
+          return;
+        }
+        // Re-fire with manual_avm — re-uses the original form values
+        await reQuoteWithManualAvm(num);
       });
     }
   } catch (err) {

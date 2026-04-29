@@ -81,6 +81,7 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       loan_amount,           // £ (frontend sends pounds)
       purpose,               // 'acquisition' | 'refinance' | 'equity_release'
       drawdown_target_date,  // 'YYYY-MM-DD'
+      manual_avm,            // £ (optional — broker's own valuation when Chimnie has no AVM)
     } = req.body || {};
 
     // ── Validate ────────────────────────────────────────────────────────
@@ -102,7 +103,20 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'loan_amount above £15m — use full deal submission for jumbo' });
     }
 
-    const addressQuery = address_text || postcode;
+    // Chimnie's fuzzy matcher works much better when address + postcode are
+    // both supplied. Match the matrix's address-build pattern: "ADDRESS, POSTCODE".
+    let addressQuery;
+    if (address_text && postcode) {
+      const addrUpper = String(address_text).toUpperCase();
+      const pcUpper = String(postcode).toUpperCase().replace(/\s+/g, '');
+      const addrPcStripped = addrUpper.replace(/\s+/g, '');
+      // Don't double-append postcode if it's already in the address text
+      addressQuery = addrPcStripped.includes(pcUpper)
+        ? address_text
+        : `${address_text}, ${postcode}`.trim().replace(/^,\s*/, '');
+    } else {
+      addressQuery = address_text || postcode;
+    }
     const cleanCompanyNumber = company_number ? String(company_number).trim().toUpperCase() : null;
 
     // ── Parallel fan-out ────────────────────────────────────────────────
@@ -136,6 +150,16 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       propertyType = flat.chimnie_property_type || flat.chimnie_classification || null;
     }
 
+    // Manual AVM override — broker provides their own estimate when Chimnie
+    // returns nothing. We mark the quote as "broker-supplied valuation" so the
+    // verdict + audit row reflect it's not an independent number.
+    let manualAvmUsed = false;
+    const manualAvmPence = poundsToPence(manual_avm);
+    if (manualAvmPence && manualAvmPence > 0) {
+      chimnieAvmPence = manualAvmPence;
+      manualAvmUsed = true;
+    }
+
     let pdRentalPcmPence = null;
     let pdYieldGrossPct = null;
     if (pdResult && pdResult.ok && pdResult.achieved_pcm) {
@@ -166,17 +190,21 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
 
     let eligibleFlag = false;
     let eligibleReason = '';
+    const valuationLabel = manualAvmUsed ? 'broker-supplied estimate' : 'Chimnie AVM';
     if (!chimnieAvmPence) {
-      eligibleReason = 'No AVM available — full surveyor valuation will be needed at full submission.';
+      eligibleReason = 'No AVM available — provide an estimated value below to get an indicative quote, or commission a full surveyor valuation at submission.';
     } else if (ltvPct > 75) {
-      eligibleReason = `${ltvPct}% effective LTV exceeds Daksfirst's 75% ceiling. Additional 1st-charge security or equity contribution required.`;
+      eligibleReason = `${ltvPct}% effective LTV (against ${valuationLabel}) exceeds Daksfirst's 75% ceiling. Additional 1st-charge security or equity contribution required.`;
     } else if (companyStatus && companyStatus !== 'active') {
       eligibleReason = `Borrower company is "${companyStatus}" at Companies House — needs an active corporate borrower.`;
     } else {
       eligibleFlag = true;
-      eligibleReason = ltvPct <= 65
+      const baseReason = ltvPct <= 65
         ? `${ltvPct}% LTV — comfortably within Daksfirst's 75% ceiling.`
         : `${ltvPct}% LTV — within ceiling but in stretch zone. Pricing reflects.`;
+      eligibleReason = manualAvmUsed
+        ? baseReason + ' Indicative — based on broker-supplied valuation. Final rate subject to RICS valuation.'
+        : baseReason;
     }
 
     // ── Pricing engine — indicative rate at typical grade ────────────────
@@ -249,6 +277,8 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
           property_data: pdResult ? { ok: pdResult.ok, sample: pdResult.asking_pcm?.sample } : null,
           companies_house: chResult ? { status: companyStatus, age_years: companyAgeYears } : null,
           pricing: pricingDetail,
+          manual_avm_used: manualAvmUsed,
+          manual_avm_pence: manualAvmUsed ? manualAvmPence : null,
         }),
         clientIp(req),
         req.headers['user-agent'] || null,
@@ -268,6 +298,7 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       },
       property: {
         avm_pence: chimnieAvmPence,
+        avm_source: manualAvmUsed ? 'broker_estimate' : (chimnieAvmPence ? 'chimnie' : 'none'),
         property_type: propertyType,
         rental_pcm_pence: pdRentalPcmPence,
         yield_gross_pct: pdYieldGrossPct,
