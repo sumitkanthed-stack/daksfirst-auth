@@ -3273,30 +3273,52 @@ export async function renderDealMatrix(deal) {
           <!-- Charge over Property -->
           <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:4px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Charge over Property</div>
           ${sgProperties.length === 0 ? `<div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No properties yet — add in the Property / Security section above.</div>` : `
-            <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:40px 1fr 200px 1fr;gap:12px;padding:4px 0;font-weight:700;">
-              <div>#</div><div>Property</div><div>Charge Type</div><div>Existing encumbrance (manual)</div>
+            <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;display:grid;grid-template-columns:32px 1fr 130px 160px 130px 1fr;gap:10px;padding:4px 0;font-weight:700;">
+              <div>#</div><div>Property</div><div>Purpose</div><div>Charge Type</div><div>Existing balance</div><div>Encumbrance notes</div>
             </div>
-            ${sgProperties.map((p, i) => `<div style="display:grid;grid-template-columns:40px 1fr 200px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
-              <div style="background:#374151;color:#D4A853;font-weight:700;font-size:11px;padding:3px 8px;border-radius:3px;text-align:center;">${i + 1}</div>
-              <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(p.address || 'Address pending')}</div><div style="color:#94A3B8;font-size:10.5px;">${sanitizeHtml(p.postcode || '')}</div></div>
-              <div>
-                <select id="sg-charge-${p.id}" onchange="window.sgSavePropertyCharge && window.sgSavePropertyCharge('${deal.submission_id}', ${p.id}, this.value)"
-                  style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
-                  ${!canEdit ? 'disabled' : ''}>
-                  <option value="first_charge" ${(p.security_charge_type || 'first_charge') === 'first_charge' ? 'selected' : ''}>First Legal Charge</option>
-                  <option value="second_charge" ${p.security_charge_type === 'second_charge' ? 'selected' : ''}>Second Charge</option>
-                  <option value="third_charge" ${p.security_charge_type === 'third_charge' ? 'selected' : ''}>Third Charge</option>
-                  <option value="no_charge" ${p.security_charge_type === 'no_charge' ? 'selected' : ''}>No Charge</option>
-                </select>
-              </div>
-              <div>
-                <input type="text" id="sg-encum-${p.id}" value="${sanitizeHtml(p.existing_charges_note || '')}"
-                  placeholder="⏳ HMLR pending — note existing charges"
-                  onblur="window.sgSavePropertyEncumbrance && window.sgSavePropertyEncumbrance('${deal.submission_id}', ${p.id}, this.value)"
-                  style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
-                  ${!canEdit ? 'disabled' : ''}/>
-              </div>
-            </div>`).join('')}
+            ${sgProperties.map((p, i) => {
+              const balanceVal = p.existing_charge_balance_pence != null
+                ? (Number(p.existing_charge_balance_pence) / 100).toFixed(0)
+                : '';
+              return `<div style="display:grid;grid-template-columns:32px 1fr 130px 160px 130px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:center;">
+                <div style="background:#374151;color:#D4A853;font-weight:700;font-size:11px;padding:3px 8px;border-radius:3px;text-align:center;">${i + 1}</div>
+                <div><div style="font-weight:600;color:#E5E7EB;font-size:12px;">${sanitizeHtml(p.address || 'Address pending')}</div><div style="color:#94A3B8;font-size:10.5px;">${sanitizeHtml(p.postcode || '')}</div></div>
+                <div>
+                  <select id="sg-purpose-${p.id}" onchange="window.sgSavePropertyPurpose && window.sgSavePropertyPurpose('${deal.submission_id}', ${p.id}, this.value)"
+                    style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                    ${!canEdit ? 'disabled' : ''}>
+                    <option value="" ${!p.loan_purpose ? 'selected' : ''}>— select —</option>
+                    <option value="acquisition" ${p.loan_purpose === 'acquisition' ? 'selected' : ''}>Acquisition</option>
+                    <option value="refinance" ${p.loan_purpose === 'refinance' ? 'selected' : ''}>Refinance</option>
+                    <option value="equity_release" ${p.loan_purpose === 'equity_release' ? 'selected' : ''}>Equity release</option>
+                  </select>
+                </div>
+                <div>
+                  <select id="sg-charge-${p.id}" onchange="window.sgSavePropertyCharge && window.sgSavePropertyCharge('${deal.submission_id}', ${p.id}, this.value)"
+                    style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                    ${!canEdit ? 'disabled' : ''}>
+                    <option value="first_charge" ${(p.security_charge_type || 'first_charge') === 'first_charge' ? 'selected' : ''}>First Legal Charge</option>
+                    <option value="second_charge" ${p.security_charge_type === 'second_charge' ? 'selected' : ''}>Second Charge</option>
+                    <option value="third_charge" ${p.security_charge_type === 'third_charge' ? 'selected' : ''}>Third Charge</option>
+                    <option value="no_charge" ${p.security_charge_type === 'no_charge' ? 'selected' : ''}>No Charge</option>
+                  </select>
+                </div>
+                <div>
+                  <input type="number" id="sg-balance-${p.id}" value="${balanceVal}" min="0" step="1000"
+                    placeholder="£ outstanding"
+                    onblur="window.sgSavePropertyBalance && window.sgSavePropertyBalance('${deal.submission_id}', ${p.id}, this.value)"
+                    style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                    ${!canEdit ? 'disabled' : ''}/>
+                </div>
+                <div>
+                  <input type="text" id="sg-encum-${p.id}" value="${sanitizeHtml(p.existing_charges_note || '')}"
+                    placeholder="Lender, ERC, restrictions…"
+                    onblur="window.sgSavePropertyEncumbrance && window.sgSavePropertyEncumbrance('${deal.submission_id}', ${p.id}, this.value)"
+                    style="background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:5px 8px;border-radius:4px;font-size:11px;width:100%;"
+                    ${!canEdit ? 'disabled' : ''}/>
+                </div>
+              </div>`;
+            }).join('')}
           `}
 
           <!-- Corporate Borrower Security -->
@@ -4661,6 +4683,24 @@ export async function renderDealMatrix(deal) {
     const ok = await _sgFlashSave(`sg-encum-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { existing_charges_note: value || null });
     if (ok && Array.isArray(deal.properties)) {
       const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.existing_charges_note = value;
+    }
+  };
+
+  // XCOLL-1 (2026-04-29): Loan purpose per property
+  window.sgSavePropertyPurpose = async function(submissionId, propertyId, value) {
+    const ok = await _sgFlashSave(`sg-purpose-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { loan_purpose: value || null });
+    if (ok && Array.isArray(deal.properties)) {
+      const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.loan_purpose = value || null;
+    }
+  };
+
+  // XCOLL-1 (2026-04-29): Existing-lender outstanding balance (in pounds, sent as pence)
+  window.sgSavePropertyBalance = async function(submissionId, propertyId, value) {
+    const pounds = value === '' || value == null ? null : Number(value);
+    const pence = (pounds == null || isNaN(pounds)) ? null : Math.round(pounds * 100);
+    const ok = await _sgFlashSave(`sg-balance-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { existing_charge_balance_pence: pence });
+    if (ok && Array.isArray(deal.properties)) {
+      const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.existing_charge_balance_pence = pence;
     }
   };
 

@@ -1165,7 +1165,7 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       [dealId]
     );
     const propertiesResult = await pool.query(
-      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
+      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note, loan_purpose, existing_charge_balance_pence FROM deal_properties WHERE deal_id = $1 ORDER BY id`,
       [dealId]
     );
     // G5: build both legacy flat array (backward compat) + new grouped structure
@@ -1409,7 +1409,8 @@ router.get('/:submissionId/dip-preview-html', authenticateToken, async (req, res
 
     // Properties
     const propertiesResult = await pool.query(
-      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note
+      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note,
+              loan_purpose, existing_charge_balance_pence
        FROM deal_properties WHERE deal_id = $1 ORDER BY market_value DESC NULLS LAST, id`,
       [dealId]
     );
@@ -1525,7 +1526,7 @@ router.get('/:submissionId/dip-pdf', authenticateToken, async (req, res) => {
 
     // Get properties (individual addresses, postcodes, valuations)
     const propertiesResult = await pool.query(
-      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note FROM deal_properties WHERE deal_id = $1 ORDER BY id`, [dealId]
+      `SELECT id, address, postcode, market_value, property_type, tenure, security_charge_type, existing_charges_note, loan_purpose, existing_charge_balance_pence FROM deal_properties WHERE deal_id = $1 ORDER BY id`, [dealId]
     );
 
     // G5: build both legacy flat array + new grouped structure (mirrors issue-dip handler)

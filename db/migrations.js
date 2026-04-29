@@ -3957,6 +3957,34 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  XCOLL-1 (2026-04-29): Cross-collateral / loan purpose schema
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Adds two cols to deal_properties to model the loan-purpose-per-property
+    //  case (acquisition vs refinance vs equity-release on existing collateral).
+    //  Combined with the existing security_charge_type (1st/2nd/3rd), this lets
+    //  us drive the effective security value calc:
+    //
+    //     1st charge + acquisition or refinance  → full market_value
+    //     2nd or 3rd charge                       → £0 (comfort only, never LTV)
+    //
+    //  loan_purpose:
+    //    'acquisition'    — new property being purchased
+    //    'refinance'      — Daksfirst takes 1st after redeeming existing lender
+    //    'equity_release' — Daksfirst takes 2nd; existing 1st remains; cash to borrower
+    //
+    //  existing_charge_balance_pence powers the redemption_amount used in S&U
+    //  for refinance properties, and the prior-charge subtraction for any
+    //  edge-case where we ever decide to give partial credit to a 2nd-charge.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS loan_purpose                    VARCHAR(20)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS existing_charge_balance_pence   BIGINT`);
+      console.log('[migrate] ✓ XCOLL-1 cols ready (loan_purpose, existing_charge_balance_pence)');
+    } catch (err) {
+      console.log('[migrate] Note on XCOLL-1 schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  PD-4 (2026-04-29 night): risk_rubric v6 deploy — adds PropertyData
     //  ─────────────────────────────────────────────────────────────────────────
     //  v6 = v5 body + v6_addendum (PropertyData rental signals + PAF address
