@@ -9,7 +9,8 @@
  * Loaded as a module by app.js bootstrapping.
  */
 
-import { fetchWithAuth, API_BASE } from './auth.js';
+import { API_BASE } from './config.js';
+import { fetchWithAuth } from './auth.js';
 
 function fmtMoneyPence(pence) {
   if (pence == null || isNaN(pence)) return '—';
