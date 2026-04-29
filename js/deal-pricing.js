@@ -77,29 +77,49 @@ function bufferStyle(bps) {
 // Renderers (return HTML strings — assembled in renderPricingSection)
 // ─────────────────────────────────────────────────────────────────
 
-function renderHeader(env) {
+function renderHeader(env, dealId) {
   const { inputs, pricing_versions, context } = env;
   const sectorLabel = inputs.sector ? inputs.sector.replace(/_/g, ' ') : '—';
   const sectorOrigin = context?.sector_inferred_from || '—';
   return `
     <div style="padding:14px 18px;border-bottom:1px solid rgba(148,163,184,0.15);background:rgba(96,165,250,0.04);">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-        <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:${COLOURS.accent.bg};color:${COLOURS.accent.fg};border:1px solid ${COLOURS.accent.border};">
-          PD${inputs.pd} · LGD-${inputs.lgd} · IA-${inputs.ia}
-        </span>
-        <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
-          Sector: ${sanitizeHtml(sectorLabel)} <span style="opacity:0.6;">(${sectorOrigin})</span>
-        </span>
-        <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
-          Mode: ${sanitizeHtml(inputs.mode)}${inputs.channel === 'direct' ? ' · direct' : ''}
-        </span>
-        <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
-          Pricing v${pricing_versions.assumptions} / grid v${pricing_versions.grid} / IA v${pricing_versions.ia_modifiers}
-        </span>
-        <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
-          ${fmtPence(inputs.loan_amount_pence)} · ${inputs.term_months} mo
-        </span>
-        ${inputs.stress_flagged ? `<span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:${COLOURS.bad.bg};color:${COLOURS.bad.fg};border:1px solid ${COLOURS.bad.border};">STRESS FLAGGED</span>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+          <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:${COLOURS.accent.bg};color:${COLOURS.accent.fg};border:1px solid ${COLOURS.accent.border};">
+            PD${inputs.pd} · LGD-${inputs.lgd} · IA-${inputs.ia}
+          </span>
+          <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
+            Sector: ${sanitizeHtml(sectorLabel)} <span style="opacity:0.6;">(${sectorOrigin})</span>
+          </span>
+          <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
+            Mode: ${sanitizeHtml(inputs.mode)}${inputs.channel === 'direct' ? ' · direct' : ''}
+          </span>
+          <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
+            Pricing v${pricing_versions.assumptions} / grid v${pricing_versions.grid} / IA v${pricing_versions.ia_modifiers}
+          </span>
+          <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
+            ${fmtPence(inputs.loan_amount_pence)} · ${inputs.term_months} mo
+          </span>
+          ${inputs.stress_flagged ? `<span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:${COLOURS.bad.bg};color:${COLOURS.bad.fg};border:1px solid ${COLOURS.bad.border};">STRESS FLAGGED</span>` : ''}
+        </div>
+        <button id="pricing-save-btn" data-deal-id="${dealId}"
+                style="padding:6px 14px;background:${COLOURS.accent.bg};color:${COLOURS.accent.fg};border:1px solid ${COLOURS.accent.border};border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+          💾 Save snapshot
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistoryPanel() {
+  return `
+    <div style="padding:14px 18px;border-top:1px solid rgba(148,163,184,0.10);">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#94A3B8;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+        <span>Recent Snapshots</span>
+        <button id="pricing-history-refresh" style="background:none;border:none;color:#60A5FA;cursor:pointer;font-size:11px;font-weight:600;">↻ refresh</button>
+      </div>
+      <div id="pricing-history-content" style="font-size:13px;color:#94A3B8;">
+        <span style="font-style:italic;">Loading…</span>
       </div>
     </div>
   `;
@@ -334,12 +354,13 @@ export async function renderPricingSection(deal, role) {
   // Render all sections
   container.innerHTML = `
     ${renderDeclineBanner(envelope)}
-    ${renderHeader(envelope)}
+    ${renderHeader(envelope, deal.id)}
     ${renderRecommended(envelope)}
     ${renderCostStack(envelope)}
     ${renderYieldReconcile(envelope)}
     ${renderStressMatrix(envelope)}
     ${renderWholeLoanAlt(envelope)}
+    ${renderHistoryPanel()}
   `;
 
   // Update headline pill in section header (if present)
@@ -355,6 +376,115 @@ export async function renderPricingSection(deal, role) {
     headlinePill.textContent = `Buffer ${fmtBuffer(buf)}${declineSuffix}`;
   }
 
+  // Wire up Save button
+  const saveBtn = document.getElementById('pricing-save-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const originalText = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const r = await fetchWithAuth(`${API_BASE}/api/admin/pricing/save/${deal.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const json = await r.json();
+        if (!r.ok || !json.ok) {
+          showToast('Save failed: ' + (json.error || `HTTP ${r.status}`), 'error');
+          saveBtn.textContent = originalText;
+          saveBtn.disabled = false;
+          return;
+        }
+        showToast(`Snapshot saved (id ${json.deal_pricing_id})`, 'success');
+        saveBtn.textContent = '✓ Saved';
+        setTimeout(() => {
+          saveBtn.textContent = originalText;
+          saveBtn.disabled = false;
+        }, 2000);
+        // Refresh history
+        await loadPricingHistory(deal.id);
+      } catch (err) {
+        console.error('[deal-pricing] save failed:', err);
+        showToast('Save error: ' + (err.message || err), 'error');
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+      }
+    });
+  }
+
+  // Wire up history refresh
+  const refreshBtn = document.getElementById('pricing-history-refresh');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => loadPricingHistory(deal.id));
+  }
+
+  // Initial history load (fire-and-forget)
+  loadPricingHistory(deal.id);
+
   // Stash for debugging / export
   window._pricingEnvelope = envelope;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// History loader — fetched separately, populates "Recent Snapshots"
+// ─────────────────────────────────────────────────────────────────
+async function loadPricingHistory(dealId) {
+  const target = document.getElementById('pricing-history-content');
+  if (!target) return;
+  target.innerHTML = '<span style="font-style:italic;color:#64748b;">Loading…</span>';
+
+  try {
+    const r = await fetchWithAuth(`${API_BASE}/api/admin/pricing/history/${dealId}?limit=10`, { method: 'GET' });
+    const json = await r.json();
+    if (!r.ok || !json.ok) {
+      target.innerHTML = `<span style="color:#F87171;">Error loading history: ${sanitizeHtml(json.error || `HTTP ${r.status}`)}</span>`;
+      return;
+    }
+    const rows = json.history || [];
+    if (rows.length === 0) {
+      target.innerHTML = '<span style="color:#64748b;font-style:italic;">No snapshots saved yet. Click "Save snapshot" above to record this pricing.</span>';
+      return;
+    }
+
+    const tableRows = rows.map(h => {
+      const buf = h.margin_buffer_bps;
+      const bufC = bufferStyle(buf);
+      const dt = new Date(h.created_at);
+      const ddmm = dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      const hhmm = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const who = (h.created_by_first || '') + (h.created_by_last ? ' ' + h.created_by_last.charAt(0) : '');
+      return `
+        <tr>
+          <td style="padding:5px 10px;color:#94A3B8;font-size:11px;font-variant-numeric:tabular-nums;">#${h.id}</td>
+          <td style="padding:5px 10px;color:#CBD5E1;font-size:12px;">${ddmm} ${hhmm}</td>
+          <td style="padding:5px 10px;color:#94A3B8;font-size:11px;">${sanitizeHtml(who.trim() || '—')}</td>
+          <td style="padding:5px 10px;color:#94A3B8;font-size:11px;">PD${h.input_pd}·${h.input_lgd}·${h.input_ia}</td>
+          <td style="padding:5px 10px;color:#CBD5E1;font-size:12px;font-variant-numeric:tabular-nums;">${fmtBpsAsPm(h.recommended_rate_bps_pm)}</td>
+          <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;color:${bufC.fg};font-weight:600;font-size:12px;">${fmtBuffer(buf)}</td>
+          <td style="padding:5px 10px;text-align:center;">${h.decline_flag ? `<span style="padding:2px 6px;border-radius:6px;font-size:10px;background:${COLOURS.bad.bg};color:${COLOURS.bad.fg};">DECLINE</span>` : ''}${h.override_used ? `<span style="padding:2px 6px;border-radius:6px;font-size:10px;background:${COLOURS.warn.bg};color:${COLOURS.warn.fg};margin-left:4px;">override</span>` : ''}</td>
+        </tr>
+      `;
+    }).join('');
+
+    target.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(148,163,184,0.20);">
+            <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">ID</th>
+            <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">When</th>
+            <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">By</th>
+            <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">Grade</th>
+            <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">Rate</th>
+            <th style="padding:5px 10px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">Buffer</th>
+            <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#64748b;">Flags</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    console.error('[deal-pricing] history load failed:', err);
+    target.innerHTML = `<span style="color:#F87171;">History error: ${sanitizeHtml(err.message || String(err))}</span>`;
+  }
 }
