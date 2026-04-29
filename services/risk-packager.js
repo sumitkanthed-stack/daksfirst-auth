@@ -605,6 +605,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
+  const propsWithPaf     = m1.envelope.features.properties.filter((p) => p.paf_uprn);
+  const propsWithPd      = m1.envelope.features.properties.filter((p) => p.pd_pulled_at);
 
   // Per-product breakdown for provenance + log telemetry.
   const creditByProduct = creditChecks.reduce((acc, c) => {
@@ -635,6 +637,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     chimnie_attached_count: propsWithChimnie.length,
     ptal_attached_count:    propsWithPtal.length,
     area_intel_attached_count: propsWithArea.length,
+    paf_attached_count:     propsWithPaf.length,
+    propertydata_attached_count: propsWithPd.length,
     companies_house_count:  companiesHouse.length,
     credit_checks_count:    creditChecks.length,
     credit_commercial_count: creditByProduct.commercial_delphi || 0,

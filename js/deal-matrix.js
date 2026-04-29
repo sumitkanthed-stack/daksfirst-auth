@@ -2890,6 +2890,80 @@ export async function renderDealMatrix(deal) {
                 const _chimOk = !!p.chimnie_uprn;
                 const _areaOk = !!p.chimnie_local_authority;
                 const _hmlrOk = !!(p.hmlr_title_number || p.hmlr_searched_at);
+                const _pdOk = !!p.pd_pulled_at;
+
+                // ─── Rental tab content (PD-3, 2026-04-29) ───────────────────
+                const rentalHtml = (() => {
+                  if (!isInternalUser) return '';
+                  const fmtMoney = (n) => n != null && !isNaN(n) ? '£' + Math.round(Number(n)).toLocaleString() : '—';
+                  const fmtPct = (n) => n != null && !isNaN(n) ? Number(n).toFixed(2) + '%' : '—';
+                  const stated = p.market_rent_pcm ?? p.chimnie_rental_pcm ?? null;
+                  const aA = p.pd_rental_pcm_asking_avg, aMin = p.pd_rental_pcm_asking_min, aMax = p.pd_rental_pcm_asking_max;
+                  const eA = p.pd_rental_pcm_achieved_avg, eMin = p.pd_rental_pcm_achieved_min, eMax = p.pd_rental_pcm_achieved_max;
+                  const yld = p.pd_rental_yield_gross_pct;
+                  const sample = p.pd_sample_size;
+                  const beds = p.pd_beds_filter || p.chimnie_bedrooms || null;
+
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                      '<span style="font-size:10px;color:#FB7185;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Rental Intelligence (PropertyData)</span>' +
+                      (sample ? '<span style="font-size:9px;color:#94A3B8;">' + sample + ' lettings</span>' : '') +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;">' +
+                      (p.pd_pulled_at ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(p.pd_pulled_at).toLocaleDateString('en-GB') + '</span>' : '') +
+                      '<button onclick="window._propertyDataPull(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (p.pd_pulled_at ? 'rgba(251,113,133,0.12)' : '#FB7185') + ';color:' + (p.pd_pulled_at ? '#FB7185' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (p.pd_pulled_at ? 'Refresh' : 'Pull rental data') + '</button>' +
+                    '</div>' +
+                  '</div>';
+
+                  if (!p.pd_pulled_at) {
+                    return headerRow + '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No PropertyData yet. Click Pull to fetch postcode rental benchmarks (asking + achieved + yield + comparables).</div>';
+                  }
+
+                  // Deal-vs-market gap
+                  let gapHtml = '';
+                  if (stated && eA) {
+                    const delta = stated - eA;
+                    const pct = ((delta / eA) * 100).toFixed(1);
+                    const positionColour = delta < -eA*0.10 ? '#F87171' : (delta < 0 ? '#FBBF24' : '#34D399');
+                    const label = delta < -eA*0.10 ? 'BELOW market — likely sitting tenant or below-market deal'
+                               : delta < 0 ? 'Slightly below market median'
+                               : delta < eA*0.10 ? 'At market median'
+                               : 'Above market median (premium tenancy)';
+                    gapHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
+                      '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:4px;">Deal Position</div>' +
+                      '<div style="display:flex;justify-content:space-between;font-size:12px;color:#F1F5F9;">' +
+                        '<span>Stated rent: <strong>' + fmtMoney(stated) + '</strong> pcm</span>' +
+                        '<span>vs market median achieved: <strong>' + fmtMoney(eA) + '</strong> pcm</span>' +
+                        '<span style="color:' + positionColour + ';">' + (delta >= 0 ? '+' : '') + fmtMoney(Math.abs(delta)) + ' (' + (delta >= 0 ? '+' : '') + pct + '%)</span>' +
+                      '</div>' +
+                      '<div style="font-size:11px;color:' + positionColour + ';margin-top:4px;font-style:italic;">' + label + '</div>' +
+                    '</div>';
+                  }
+
+                  // Market benchmarks grid
+                  const benchHtml = '<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+                    '<div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
+                      '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Asking rent</div>' +
+                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(aA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm median</span></div>' +
+                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range ' + fmtMoney(aMin) + '-' + fmtMoney(aMax) + '</div>' +
+                    '</div>' +
+                    '<div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:5px;">' +
+                      '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">Achieved rent (est)</div>' +
+                      '<div style="font-size:14px;color:#F1F5F9;font-weight:600;margin-top:2px;">' + fmtMoney(eA) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm median</span></div>' +
+                      '<div style="font-size:10px;color:#94A3B8;margin-top:2px;">range ' + fmtMoney(eMin) + '-' + fmtMoney(eMax) + '</div>' +
+                    '</div>' +
+                  '</div>';
+
+                  // Yield + meta
+                  const yieldHtml = '<div style="margin-top:8px;display:flex;gap:12px;font-size:11px;color:#94A3B8;flex-wrap:wrap;">' +
+                    (yld != null ? '<span>Gross yield: <strong style="color:#F1F5F9;">' + fmtPct(yld) + '</strong></span>' : '') +
+                    (beds ? '<span>Filter: <strong style="color:#F1F5F9;">' + beds + '-bed</strong></span>' : '') +
+                    (sample ? '<span>Sample: <strong style="color:#F1F5F9;">' + sample + ' lettings</strong> (90d)</span>' : '') +
+                    (p.chimnie_rental_pcm ? '<span>Chimnie estimate: <strong style="color:#60A5FA;">' + fmtMoney(p.chimnie_rental_pcm) + '</strong> pcm</span>' : '') +
+                  '</div>';
+
+                  return headerRow + gapHtml + benchHtml + yieldHtml;
+                })();
                 const _tabBadge = (ok) => ok
                   ? '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(52,211,153,0.15);color:#34D399;font-weight:700;">✓</span>'
                   : '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(100,116,139,0.12);color:#64748B;font-weight:700;">—</span>';
@@ -2904,6 +2978,7 @@ export async function renderDealMatrix(deal) {
                     _mkTab('intel',   'Property',  '#34D399', _intelOk, true)  +
                     _mkTab('chimnie', 'Chimnie',   '#60A5FA', _chimOk,  false) +
                     _mkTab('area',    'Area',      '#FBBF24', _areaOk,  false) +
+                    _mkTab('rental',  'Rental',    '#FB7185', _pdOk,    false) +
                     _mkTab('hmlr',    'HMLR',      '#A78BFA', _hmlrOk,  false) +
                     _mkTab('rics',    'RICS Val',  '#D4A853', false,    false) +
                   '</div>';
@@ -2920,6 +2995,7 @@ export async function renderDealMatrix(deal) {
                     _wrapPane('intel',   _propIntelHtml, true)  +
                     _wrapPane('chimnie', chimnieHtml,    false) +
                     _wrapPane('area',    areaHtml,       false) +
+                    _wrapPane('rental',  rentalHtml,     false) +
                     _wrapPane('hmlr',    hmlrHtml,       false) +
                     _wrapPane('rics',    _ricsSlimHtml,  false) +
                   '</div>';
@@ -10742,6 +10818,34 @@ window._chimnieLookup = async function(propertyId, submissionId) {
     console.error('[chimnie-lookup] Error:', err);
     alert('Chimnie lookup error: ' + err.message);
     if (btn) { btn.disabled = false; btn.textContent = 'Fetch'; btn.style.opacity = '1'; }
+  }
+};
+
+// ─── PD-3 (2026-04-29): PropertyData rental pull ────────────────────────────
+// Fires POST /api/admin/property/property-data-pull/:propertyId. On success,
+// refreshes the deal panel so pd_* columns populate the Rental sub-tab.
+window._propertyDataPull = async function(propertyId, submissionId) {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/property/property-data-pull/${propertyId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    if (!res.ok || !data.ok) {
+      alert('PropertyData lookup failed (' + res.status + '): ' + (data.error || 'Unknown'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Pull rental data'; btn.style.opacity = '1'; }
+      return;
+    }
+    setTimeout(() => _refreshDealInPlace(submissionId), 400);
+  } catch (err) {
+    console.error('[property-data-pull] Error:', err);
+    alert('PropertyData error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Pull rental data'; btn.style.opacity = '1'; }
   }
 };
 

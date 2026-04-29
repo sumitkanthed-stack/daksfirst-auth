@@ -3861,6 +3861,61 @@ async function runMigrations() {
       console.log('[migrate] Note on PAF schema:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PD-2 (2026-04-29 night): PropertyData rental integration
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Cols on deal_properties for postcode rental data + a pd_lookups history
+    //  table for audit. PropertyData fills the gap Chimnie misses: actual
+    //  asking-vs-achieved rent spread + yield + sample size at the postcode level.
+    //
+    //  Vendor: propertydata.co.uk — PAYG £0.014/credit on API 2k @ £28/mo plan.
+    //  Mode env: PROPERTY_DATA_MODE = mock|test|live (default mock).
+    //
+    //  Why a separate Rental tab vs appending to Chimnie:
+    //    - Independent pull cycle (Chimnie + PD refresh on different cadences)
+    //    - Independent cost tracking (each in its own audit history)
+    //    - PD's deal-vs-market gap is a primary RM signal — deserves own surface
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_asking_avg     INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_asking_min     INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_asking_max     INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_achieved_avg   INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_achieved_min   INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_pcm_achieved_max   INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_rental_yield_gross_pct    NUMERIC(5,2)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_sample_size               INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_beds_filter               INTEGER`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_pulled_at                 TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_pull_mode                 VARCHAR(10)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS pd_raw_jsonb                 JSONB`);
+
+      // Audit history (mirrors paf_lookups / kyc_checks pattern)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS pd_lookups (
+          id              SERIAL PRIMARY KEY,
+          deal_id         INTEGER REFERENCES deal_submissions(id),
+          property_id     INTEGER,
+          lookup_type     VARCHAR(20) NOT NULL,
+          postcode        VARCHAR(15),
+          beds_filter     INTEGER,
+          result_jsonb    JSONB,
+          mode            VARCHAR(10) NOT NULL DEFAULT 'mock',
+          cost_pence      INTEGER NOT NULL DEFAULT 0,
+          requested_by    INTEGER REFERENCES users(id),
+          requested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          pull_error      TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_pd_lookups_deal_id     ON pd_lookups(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_pd_lookups_property_id ON pd_lookups(property_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_pd_lookups_at          ON pd_lookups(requested_at DESC)`);
+
+      console.log('[migrate] ✓ PropertyData integration cols + pd_lookups table ready');
+    } catch (err) {
+      console.log('[migrate] Note on PropertyData schema:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

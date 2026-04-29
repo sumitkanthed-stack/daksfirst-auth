@@ -22,6 +22,7 @@ const pool = require('../db/pool');
 const config = require('../config');
 const { authenticateToken } = require('../middleware/auth');
 const addressLookup = require('../services/address-lookup');
+const propertyData = require('../services/property-data');
 
 function authenticateInternal(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
@@ -174,6 +175,105 @@ router.post(
       });
     } catch (err) {
       console.error('[property/select-address] error:', err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/admin/property/property-data-pull/:propertyId   (PD-2)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Pulls postcode rental data + yield from PropertyData. Uses property's
+//  postcode + bedrooms (if set on chimnie_bedrooms or notes). Persists to
+//  deal_properties pd_* columns + audit row in pd_lookups.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post(
+  '/admin/property/property-data-pull/:propertyId',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    const propertyId = Number(req.params.propertyId);
+    if (!Number.isInteger(propertyId) || propertyId <= 0) {
+      return res.status(400).json({ ok: false, error: 'invalid propertyId' });
+    }
+
+    try {
+      const propRow = (await pool.query(
+        `SELECT id, deal_id, postcode, paf_address_jsonb, chimnie_bedrooms, market_value
+           FROM deal_properties WHERE id = $1`,
+        [propertyId]
+      )).rows[0];
+      if (!propRow) return res.status(404).json({ ok: false, error: `property ${propertyId} not found` });
+
+      const postcode = propRow.postcode || propRow.paf_address_jsonb?.postcode;
+      if (!postcode) {
+        return res.status(422).json({ ok: false, error: 'property has no postcode — add address first' });
+      }
+      const beds = propRow.chimnie_bedrooms || req.body?.beds || null;
+
+      const result = await propertyData.getRentalsByPostcode(postcode, beds);
+      if (!result.ok) {
+        await pool.query(
+          `INSERT INTO pd_lookups (deal_id, property_id, lookup_type, postcode, beds_filter, mode, cost_pence, requested_by, pull_error)
+           VALUES ($1, $2, 'rents', $3, $4, $5, 0, $6, $7)`,
+          [propRow.deal_id, propertyId, postcode, beds, result.mode, req.user.id, result.error || 'unknown']
+        ).catch(() => {});
+        return res.status(502).json({ ok: false, error: result.error || 'PropertyData lookup failed' });
+      }
+
+      // Compute yield against actual property value if available
+      let yieldGross = result.yield_gross_pct;
+      if (!yieldGross && propRow.market_value && result.achieved_pcm?.avg) {
+        yieldGross = Number(((result.achieved_pcm.avg * 12 / Number(propRow.market_value)) * 100).toFixed(2));
+      }
+
+      // Persist to deal_properties
+      await pool.query(
+        `UPDATE deal_properties
+            SET pd_rental_pcm_asking_avg = $1,
+                pd_rental_pcm_asking_min = $2,
+                pd_rental_pcm_asking_max = $3,
+                pd_rental_pcm_achieved_avg = $4,
+                pd_rental_pcm_achieved_min = $5,
+                pd_rental_pcm_achieved_max = $6,
+                pd_rental_yield_gross_pct = $7,
+                pd_sample_size = $8,
+                pd_beds_filter = $9,
+                pd_pulled_at = NOW(),
+                pd_pull_mode = $10,
+                pd_raw_jsonb = $11::jsonb
+          WHERE id = $12`,
+        [
+          result.asking_pcm?.avg, result.asking_pcm?.min, result.asking_pcm?.max,
+          result.achieved_pcm?.avg, result.achieved_pcm?.min, result.achieved_pcm?.max,
+          yieldGross,
+          result.asking_pcm?.sample,
+          beds,
+          result.mode,
+          result.raw ? JSON.stringify(result.raw) : null,
+          propertyId,
+        ]
+      );
+
+      // Audit
+      await pool.query(
+        `INSERT INTO pd_lookups (deal_id, property_id, lookup_type, postcode, beds_filter, result_jsonb, mode, cost_pence, requested_by)
+         VALUES ($1, $2, 'rents', $3, $4, $5::jsonb, $6, $7, $8)`,
+        [propRow.deal_id, propertyId, postcode, beds, JSON.stringify(result), result.mode, result.cost_pence, req.user.id]
+      ).catch(() => {});
+
+      return res.json({
+        ok: true,
+        mode: result.mode,
+        postcode,
+        beds,
+        asking_pcm: result.asking_pcm,
+        achieved_pcm: result.achieved_pcm,
+        yield_gross_pct: yieldGross,
+        cost_pence: result.cost_pence,
+      });
+    } catch (err) {
+      console.error('[property/property-data-pull] error:', err);
       return res.status(500).json({ ok: false, error: err.message });
     }
   }
