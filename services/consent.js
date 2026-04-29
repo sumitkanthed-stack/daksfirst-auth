@@ -27,7 +27,7 @@ const config = require('../config');
 // ─────────────────────────────────────────────────────────────────────────
 const CONSENT_TEXT_VERSION = 'v1';
 
-const CONSENT_TEXT_BODY = `By providing my consent, I agree that Daksfirst Capital Limited (FRN 937220), its appointed agents, and any broker acting on my behalf may carry out the following checks for the purpose of evaluating my loan application and, where applicable, for the duration of the loan:
+const CONSENT_TEXT_BODY = `By providing my consent, I agree that Daksfirst Limited (FRN 937220), its appointed agents, and any broker acting on my behalf may carry out the following checks for the purpose of evaluating my loan application and, where applicable, for the duration of the loan:
 
 1. Personal credit checks against my record at the major credit reference agencies (including Experian Delphi Select).
 

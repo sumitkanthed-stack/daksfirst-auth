@@ -138,7 +138,7 @@ router.post('/admin/consent/send-link/:dealId/:borrowerId', authenticateToken, a
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#222;line-height:1.5;max-width:560px;">
         <p>Dear ${escapeHtml(borrower.full_name || 'Borrower')},</p>
-        <p>Daksfirst Capital has received your loan application via your broker. Before we can proceed with the credit and identity checks needed for your application, we require your consent.</p>
+        <p>Daksfirst Limited has received your loan application via your broker. Before we can proceed with the credit and identity checks needed for your application, we require your consent.</p>
         <p>Please click the secure link below to read what you are consenting to and provide your confirmation. The process takes about a minute.</p>
         <p style="text-align:center;margin:24px 0;">
           <a href="${consentUrl}" style="display:inline-block;padding:12px 28px;background:#D4A853;color:#111;text-decoration:none;border-radius:5px;font-weight:600;">
@@ -146,7 +146,7 @@ router.post('/admin/consent/send-link/:dealId/:borrowerId', authenticateToken, a
           </a>
         </p>
         <p style="font-size:12px;color:#666;">This link will expire in 30 days. If you did not request this, please ignore this email or contact us at ${config.GRAPH_USER_EMAIL || 'support@daksfirst.com'}.</p>
-        <p style="font-size:12px;color:#666;">Daksfirst Capital Limited — FRN 937220</p>
+        <p style="font-size:12px;color:#666;">Daksfirst Limited — FRN 937220</p>
       </div>`.trim();
 
     // Send via Graph using a thin direct call (sendDealEmail expects template
@@ -348,7 +348,7 @@ function consentPageShell(inner) {
 function consentLandingPage({ token, borrower, payload }) {
   const expiresOn = new Date(payload.expires_at * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   return consentPageShell(`
-    <h1>Daksfirst Capital — Consent for credit and identity checks</h1>
+    <h1>Daksfirst Limited — Consent for credit and identity checks</h1>
     <p>Hello <strong>${escapeHtml(borrower.full_name || 'Borrower')}</strong>,</p>
     <p>To progress your loan application, please read the consent below carefully and confirm by ticking the box and clicking <strong>Confirm consent</strong>.</p>
     <h2>What you are agreeing to</h2>
@@ -363,7 +363,7 @@ function consentLandingPage({ token, borrower, payload }) {
     </form>
     <div class="meta">
       Consent text version: <strong>${escapeHtml(payload.consent_text_version)}</strong> · Link expires: <strong>${escapeHtml(expiresOn)}</strong><br />
-      Daksfirst Capital Limited — FRN 937220 — Privacy: <a href="https://daksfirst.com/privacy">daksfirst.com/privacy</a>
+      Daksfirst Limited — FRN 937220 — Privacy: <a href="https://daksfirst.com/privacy">daksfirst.com/privacy</a>
     </div>
   `);
 }
@@ -373,7 +373,7 @@ function consentLandingThankYou() {
     <h1>Thank you</h1>
     <div class="ok-banner">Your consent has been recorded. We have received your authorisation to proceed with credit and identity checks for your loan application.</div>
     <p style="margin-top:18px;">You can close this page. Your broker will be in touch with the next steps.</p>
-    <div class="meta">Daksfirst Capital Limited — FRN 937220</div>
+    <div class="meta">Daksfirst Limited — FRN 937220</div>
   `);
 }
 
@@ -383,7 +383,7 @@ function consentLandingAlreadyDone(borrower, firstConsentAt) {
     <h1>Consent already recorded</h1>
     <div class="ok-banner">Hello ${escapeHtml(borrower.full_name || 'there')}, we already recorded your consent on ${escapeHtml(when)}. No further action needed.</div>
     <p style="margin-top:18px;">If you wish to withdraw consent or have questions, contact your broker or Daksfirst at support@daksfirst.com.</p>
-    <div class="meta">Daksfirst Capital Limited — FRN 937220</div>
+    <div class="meta">Daksfirst Limited — FRN 937220</div>
   `);
 }
 
@@ -392,7 +392,7 @@ function consentLandingError(message) {
     <h1>Unable to load consent page</h1>
     <div class="err-banner">${escapeHtml(message)}</div>
     <p style="margin-top:18px;">If this link came from us recently, please request a fresh link from your Daksfirst contact or your broker.</p>
-    <div class="meta">Daksfirst Capital Limited — FRN 937220</div>
+    <div class="meta">Daksfirst Limited — FRN 937220</div>
   `);
 }
 
