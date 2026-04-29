@@ -1294,6 +1294,11 @@
           <button class="admin-nav-item" onclick="switchAdminTab('analytics')">Analytics</button>
           <button class="admin-nav-item" onclick="switchAdminTab('create-user')">Create User</button>
           <button class="admin-nav-item" onclick="switchAdminTab('delegated-authority')">Auto-Routing</button>
+          <!-- 2026-04-29: Admin tools (separate static pages, not SPA tabs) -->
+          <span style="border-left:1px solid var(--border);height:24px;margin:6px 8px;align-self:center;"></span>
+          <button class="admin-nav-item" onclick="window.location.href='/admin/pricing.html'" title="Pricing engine assumptions editor (PRICE-4)">Pricing Engine</button>
+          <button class="admin-nav-item" onclick="window.location.href='/admin/models.html'" title="LLM model configuration">LLM Config</button>
+          <button class="admin-nav-item" onclick="window.location.href='/admin/panels.html'" title="Approved valuers / lawyers panels">Approved Panels</button>
         </div>
 
         <div class="admin-content">
