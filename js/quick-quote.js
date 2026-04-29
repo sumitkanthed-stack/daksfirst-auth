@@ -165,12 +165,173 @@ async function handleQqSubmit(e) {
   }
 }
 
+// ─── Autocomplete: postcode (PAF via Ideal Postcodes) ──────────────────────
+// Listens on #qq-postcode. When a full postcode is typed, hit
+// /api/broker/postcode-lookup and show a dropdown of addresses. On click,
+// fill #qq-postcode + #qq-address.
+function attachPostcodeAutocomplete() {
+  const pcInput = document.getElementById('qq-postcode');
+  const addrInput = document.getElementById('qq-address');
+  if (!pcInput) return;
+
+  // Build a dropdown next to the input
+  let dropdown = pcInput.parentNode.querySelector('.qq-pc-dropdown');
+  if (!dropdown) {
+    pcInput.parentNode.style.position = 'relative';
+    dropdown = document.createElement('div');
+    dropdown.className = 'qq-pc-dropdown';
+    dropdown.style.cssText = 'display:none;position:absolute;top:100%;left:0;right:0;background:#151a21;border:1px solid #2a3340;border-radius:6px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-size:13px;';
+    pcInput.parentNode.appendChild(dropdown);
+  }
+
+  const POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i;
+  let timer = null;
+  let lastQuery = '';
+
+  function hide() { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
+
+  pcInput.addEventListener('input', () => {
+    const q = pcInput.value.trim().toUpperCase();
+    if (q === lastQuery) return;
+    lastQuery = q;
+    if (timer) clearTimeout(timer);
+    if (!POSTCODE_RE.test(q)) { hide(); return; }
+    timer = setTimeout(async () => {
+      try {
+        const r = await fetchWithAuth(`${API_BASE}/api/broker/postcode-lookup?postcode=${encodeURIComponent(q)}`);
+        const json = await r.json();
+        if (!r.ok || !json.ok) { hide(); return; }
+        const addresses = json.addresses || [];
+        if (!addresses.length) { hide(); return; }
+        dropdown.innerHTML = addresses.slice(0, 12).map((a, i) =>
+          `<div data-pc-idx="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #2a3340;color:#E5E7EB;">${(a.line_1 || '') + (a.line_2 ? ', ' + a.line_2 : '') + (a.post_town ? ', ' + a.post_town : '')}</div>`
+        ).join('');
+        dropdown.style.display = 'block';
+        dropdown.querySelectorAll('[data-pc-idx]').forEach((el) => {
+          el.addEventListener('mouseover', () => el.style.background = '#1e2531');
+          el.addEventListener('mouseout',  () => el.style.background = 'transparent');
+          el.addEventListener('click', () => {
+            const idx = Number(el.getAttribute('data-pc-idx'));
+            const a = addresses[idx];
+            if (a) {
+              if (addrInput) {
+                const line = [a.line_1, a.line_2, a.line_3, a.post_town].filter(Boolean).join(', ');
+                addrInput.value = line;
+              }
+              if (a.postcode) pcInput.value = a.postcode;
+            }
+            hide();
+          });
+        });
+      } catch (err) {
+        console.warn('[qq/postcode] lookup failed:', err.message);
+        hide();
+      }
+    }, 250);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!pcInput.parentNode.contains(e.target)) hide();
+  });
+}
+
+// ─── Autocomplete: company (Companies House) ────────────────────────────────
+// Listens on #qq-company-name AND #qq-company-number. Type 2+ chars in either,
+// hit /api/companies-house/search?q=, show dropdown. On click, fill both fields.
+function attachCompanyAutocomplete() {
+  const numInput = document.getElementById('qq-company-number');
+  const nameInput = document.getElementById('qq-company-name');
+  if (!numInput && !nameInput) return;
+
+  // Mount one dropdown shared between the two inputs (whichever has focus)
+  let dropdown = document.querySelector('.qq-co-dropdown');
+  if (!dropdown) {
+    dropdown = document.createElement('div');
+    dropdown.className = 'qq-co-dropdown';
+    dropdown.style.cssText = 'display:none;position:absolute;background:#151a21;border:1px solid #2a3340;border-radius:6px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-size:13px;';
+    document.body.appendChild(dropdown);
+  }
+  let activeInput = null;
+  let timer = null;
+  let lastQ = '';
+
+  function hide() { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
+  function positionUnder(el) {
+    const r = el.getBoundingClientRect();
+    dropdown.style.top  = (window.scrollY + r.bottom) + 'px';
+    dropdown.style.left = (window.scrollX + r.left) + 'px';
+    dropdown.style.width = r.width + 'px';
+  }
+
+  async function lookup(q) {
+    try {
+      const r = await fetchWithAuth(`${API_BASE}/api/companies-house/search?q=${encodeURIComponent(q)}`);
+      const json = await r.json();
+      if (!r.ok || !json.success) { hide(); return; }
+      const results = (json.results || []).slice(0, 10);
+      if (!results.length) { hide(); return; }
+      dropdown.innerHTML = results.map((c, i) =>
+        `<div data-co-idx="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #2a3340;color:#E5E7EB;">
+           <div style="font-weight:600;">${c.title || c.company_name || ''}</div>
+           <div style="font-size:11px;color:#94A3B8;">${c.company_number || ''} · ${c.company_status || ''}</div>
+         </div>`
+      ).join('');
+      if (activeInput) positionUnder(activeInput);
+      dropdown.style.display = 'block';
+      dropdown.querySelectorAll('[data-co-idx]').forEach((el) => {
+        el.addEventListener('mouseover', () => el.style.background = '#1e2531');
+        el.addEventListener('mouseout',  () => el.style.background = 'transparent');
+        el.addEventListener('mousedown', (e) => {
+          // mousedown beats blur — keeps the click landing
+          e.preventDefault();
+          const idx = Number(el.getAttribute('data-co-idx'));
+          const c = results[idx];
+          if (c) {
+            if (numInput) numInput.value = c.company_number || '';
+            if (nameInput) nameInput.value = c.title || c.company_name || '';
+          }
+          hide();
+        });
+      });
+    } catch (err) {
+      console.warn('[qq/company] search failed:', err.message);
+      hide();
+    }
+  }
+
+  function onInput(e) {
+    activeInput = e.target;
+    const q = activeInput.value.trim();
+    if (q === lastQ) return;
+    lastQ = q;
+    if (timer) clearTimeout(timer);
+    if (q.length < 2) { hide(); return; }
+    timer = setTimeout(() => lookup(q), 300);
+  }
+
+  if (numInput) {
+    numInput.addEventListener('input', onInput);
+    numInput.addEventListener('focus', onInput);
+  }
+  if (nameInput) {
+    nameInput.addEventListener('input', onInput);
+    nameInput.addEventListener('focus', onInput);
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target !== numInput && e.target !== nameInput && !dropdown.contains(e.target)) hide();
+  });
+}
+
 export function initQuickQuote() {
   const toggle = document.getElementById('qq-toggle');
   const formContainer = document.getElementById('qq-form-container');
   const cancel = document.getElementById('qq-cancel');
   const form = document.getElementById('qq-form');
   if (!toggle || !formContainer || !form) return;  // Section not in DOM (older page or different role)
+
+  // Wire autocompletes once — they don't need re-mounting on form open/close
+  attachPostcodeAutocomplete();
+  attachCompanyAutocomplete();
 
   toggle.addEventListener('click', () => {
     const isOpen = formContainer.style.display !== 'none';

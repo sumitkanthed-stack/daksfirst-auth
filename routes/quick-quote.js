@@ -30,6 +30,7 @@ const chimnie = require('../services/chimnie');
 const propertyData = require('../services/property-data');
 const companiesHouse = require('../services/companies-house');
 const pricingEngine = require('../services/pricing-engine');
+const addressLookup = require('../services/address-lookup');
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function clientIp(req) {
@@ -310,6 +311,38 @@ router.get('/broker/quick-quote/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('[quick-quote/get] error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Broker-accessible PAF lookups (auth-only, no internal gate)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Used by the Quick Quote form's postcode autocomplete. Mirrors the admin
+//  /api/admin/property/postcode-lookup + /autocomplete routes but is open
+//  to any authenticated user including brokers. PAF lookups are cheap (~£0.04)
+//  and don't expose any deal data — fine to surface to brokers.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/broker/postcode-lookup', authenticateToken, async (req, res) => {
+  try {
+    const postcode = String(req.query.postcode || '').trim();
+    if (!postcode) return res.status(400).json({ ok: false, error: 'postcode query param required' });
+    const result = await addressLookup.searchByPostcode(postcode);
+    return res.json(result);
+  } catch (err) {
+    console.error('[broker/postcode-lookup] error:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/broker/postcode-autocomplete', authenticateToken, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ ok: true, suggestions: [], cost_pence: 0 });
+    const result = await addressLookup.autocomplete(q);
+    return res.json(result);
+  } catch (err) {
+    console.error('[broker/postcode-autocomplete] error:', err);
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
