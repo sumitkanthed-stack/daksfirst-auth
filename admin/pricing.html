@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daksfirst — Pricing Assumptions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #151a21;
+    --panel-2: #1c232c;
+    --border: #2a3340;
+    --ink: #e7ecf3;
+    --muted: #8a95a5;
+    --accent: #4ea1ff;
+    --ok: #3ecf8e;
+    --warn: #f4b740;
+    --err: #ef5b5b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+  header { padding:20px 28px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  header a.back { color:var(--muted); text-decoration:none; font-size:12px; }
+  header a.back:hover { color:var(--accent); }
+  .pill { padding:4px 12px; border-radius:14px; font-size:11px; font-weight:600; letter-spacing:0.4px; }
+  .pill.active { background:rgba(62,207,142,0.15); color:var(--ok); border:1px solid rgba(62,207,142,0.4); }
+  .pill.draft { background:rgba(244,183,64,0.15); color:var(--warn); border:1px solid rgba(244,183,64,0.4); }
+  main { padding:20px 28px; max-width:1600px; }
+  .banner { padding:10px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; }
+  .banner.err { background:rgba(239,91,91,0.1); border:1px solid var(--err); color:var(--err); }
+  .banner.ok  { background:rgba(62,207,142,0.1); border:1px solid var(--ok); color:var(--ok); }
+  .banner.warn { background:rgba(244,183,64,0.1); border:1px solid var(--warn); color:var(--warn); }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:16px; }
+  .card-head { padding:12px 16px; border-bottom:1px solid var(--border); background:var(--panel-2); display:flex; justify-content:space-between; align-items:center; }
+  .card-head h2 { margin:0; font-size:14px; font-weight:600; }
+  .card-head .meta { color:var(--muted); font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; background:var(--panel-2); }
+  tr:last-child td { border-bottom:none; }
+  td.key { font-family:var(--mono); color:var(--accent); font-size:12px; white-space:nowrap; }
+  td.value { font-family:var(--mono); font-size:13px; color:var(--ink); }
+  td.value.changed { color:var(--warn); font-weight:600; }
+  td.notes { color:var(--muted); font-size:11px; max-width:280px; }
+  td.source-cell { font-size:11px; }
+  .source-badge { display:inline-block; padding:2px 7px; border-radius:8px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; margin-right:4px; }
+  .source-canonical { background:rgba(78,161,255,0.15); color:var(--accent); border:1px solid rgba(78,161,255,0.4); }
+  .source-tuned { background:rgba(244,183,64,0.15); color:var(--warn); border:1px solid rgba(244,183,64,0.4); }
+  .source-derived { background:rgba(138,149,165,0.15); color:var(--muted); border:1px solid var(--border); }
+  .source-live { background:rgba(62,207,142,0.15); color:var(--ok); border:1px solid rgba(62,207,142,0.4); }
+  input, textarea { background:#0b0e13; color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font:inherit; font-family:var(--mono); font-size:12px; }
+  input[type="number"] { width:120px; text-align:right; }
+  input[type="text"], textarea { width:100%; }
+  textarea { min-height:50px; resize:vertical; }
+  input:focus, textarea:focus { outline:2px solid var(--accent); border-color:var(--accent); }
+  button { background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:5px 10px; font:inherit; font-size:11px; cursor:pointer; }
+  button:hover { color:var(--accent); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:white; border-color:var(--accent); font-weight:500; padding:8px 18px; font-size:13px; }
+  button.primary:hover { background:#6bb3ff; border-color:#6bb3ff; color:white; }
+  button.primary:disabled { opacity:0.4; cursor:not-allowed; }
+  button.danger { color:var(--err); border-color:var(--err); }
+  .edit-row { display:none; background:rgba(78,161,255,0.04); }
+  .edit-row.open { display:table-row; }
+  .edit-row td { padding:14px 12px; border-top:1px dashed var(--accent); }
+  .edit-grid { display:grid; grid-template-columns:1fr 2fr; gap:10px 16px; align-items:start; }
+  .edit-grid label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; padding-top:7px; }
+  .edit-actions { display:flex; gap:8px; margin-top:10px; }
+  .activation-bar { position:sticky; bottom:0; background:var(--panel-2); border-top:2px solid var(--accent); padding:14px 28px; margin-top:24px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  .json-textarea { font-family:var(--mono); font-size:11px; min-height:80px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Pricing Assumptions</h1>
+    <div class="sub">28 cost-stack scalars + tier tables · v1 LOCKED 2026-04-29 · changes create new version, append-only</div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <span id="active-version-pill" class="pill active">loading…</span>
+    <a class="back" href="/">← back to portal</a>
+  </div>
+</header>
+<main>
+  <div id="banner-area"></div>
+  <div id="cards-area">
+    <p style="color:var(--muted);text-align:center;padding:40px 0;">Loading active config…</p>
+  </div>
+</main>
+
+<div class="activation-bar" id="activation-bar" style="display:none;">
+  <div>
+    <span style="color:var(--warn);font-weight:600;font-size:13px;">⚠ <span id="changed-count">0</span> field(s) staged for activation</span>
+    <span class="pill draft" id="next-version-pill" style="margin-left:10px;">→ v?</span>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <input type="text" id="activate-reason" placeholder="Why activate this version? (audit log)" style="width:320px;">
+    <button id="reset-edits-btn">↻ Reset edits</button>
+    <button class="primary" id="activate-btn">Activate new version</button>
+  </div>
+</div>
+
+<script type="module">
+  import { fetchWithAuth } from '/js/auth.js';
+  import { API_BASE } from '/js/config.js';
+
+  // ─── State ───────────────────────────────────────────────────────────
+  let activeVersion = null;
+  let rows = [];                  // current active version rows (read-only)
+  let edits = {};                 // key → { value_bps?, value_pence?, value_jsonb?, change_reason }
+
+  // ─── Group keys into UI sections ─────────────────────────────────────
+  const SECTIONS = [
+    { title: 'Funding & SONIA',
+      keys: ['sonia_value_bps','sonia_last_pulled_at','gbb_warehouse_spread_bps','gbb_structuring_fee_bps','gbb_facility_size_pence','expected_book_rotation','gbb_structuring_annualised_bps'] },
+    { title: 'Origination Channels',
+      keys: ['broker_fee_tiers_bps','direct_channel_broker_bps'] },
+    { title: 'Operating Expense',
+      keys: ['total_annual_opex_pence','expected_avg_book_pence','blended_opex_bps','opex_tiers_bps'] },
+    { title: 'Capital & Profit',
+      keys: ['capital_ratio_bps','equity_target_return_bps','capital_cost_bps','min_required_margin_bps','margin_tiers_bps','whole_loan_margin_bps','whole_loan_threshold_pence'] },
+    { title: 'Concentration',
+      keys: ['concentration_adder_buckets_bps'] },
+    { title: 'Rate Ceilings',
+      keys: ['standard_rate_ceiling_bps_pm','stressed_rate_ceiling_bps_pm','regulatory_apr_cap_bps'] },
+    { title: 'PD/LGD Anchors (canonical, rarely tuned)',
+      keys: ['pd_anchors_pct','lgd_anchors_pct'] },
+    { title: 'Min-Term Joint Lookup',
+      keys: ['min_term_lgd_ia_table'] },
+    { title: 'Stress Triggers (audit metadata)',
+      keys: ['stress_trigger_reasons'] },
+  ];
+
+  // ─── Format helpers ──────────────────────────────────────────────────
+  function fmtBps(v) { return v === null || v === undefined ? '—' : `${v} bps (${(v/100).toFixed(2)}%)`; }
+  function fmtPence(v) { return v === null || v === undefined ? '—' : `£${(Number(v)/100).toLocaleString('en-GB',{maximumFractionDigits:0})} (${v} p)`; }
+  function fmtJsonb(v) { if (v === null || v === undefined) return '—'; const s = JSON.stringify(v); return s.length > 90 ? s.substring(0,87) + '…' : s; }
+  function rowValueDisplay(r) {
+    if (r.value_bps !== null && r.value_bps !== undefined) return fmtBps(r.value_bps);
+    if (r.value_pence !== null && r.value_pence !== undefined) return fmtPence(r.value_pence);
+    if (r.value_jsonb !== null && r.value_jsonb !== undefined) return fmtJsonb(r.value_jsonb);
+    return '—';
+  }
+  function rowFieldType(r) {
+    if (r.value_bps !== null && r.value_bps !== undefined) return 'bps';
+    if (r.value_pence !== null && r.value_pence !== undefined) return 'pence';
+    if (r.value_jsonb !== null && r.value_jsonb !== undefined) return 'jsonb';
+    return 'unknown';
+  }
+
+  function sourceBadge(src) {
+    const s = (src || 'unknown').toLowerCase();
+    return `<span class="source-badge source-${s}">${s}</span>`;
+  }
+
+  function showBanner(msg, kind) {
+    const area = document.getElementById('banner-area');
+    area.innerHTML = `<div class="banner ${kind}">${msg}</div>`;
+    if (kind === 'ok') setTimeout(() => { area.innerHTML = ''; }, 4000);
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────
+  function render() {
+    const area = document.getElementById('cards-area');
+    const byKey = Object.fromEntries(rows.map(r => [r.key, r]));
+    let html = '';
+    for (const section of SECTIONS) {
+      html += `<div class="card"><div class="card-head"><h2>${section.title}</h2><span class="meta">${section.keys.length} field(s)</span></div>`;
+      html += `<table><thead><tr><th style="width:24%;">Key</th><th style="width:30%;">Current value</th><th style="width:30%;">Source / citation</th><th style="width:16%;">Action</th></tr></thead><tbody>`;
+      for (const key of section.keys) {
+        const r = byKey[key];
+        if (!r) {
+          html += `<tr><td class="key">${key}</td><td class="notes" colspan="3"><em>(not in active version — possible v1 mismatch)</em></td></tr>`;
+          continue;
+        }
+        const isEdited = edits[key];
+        const valueClass = isEdited ? 'value changed' : 'value';
+        let displayValue;
+        if (isEdited) {
+          if ('value_bps' in isEdited) displayValue = fmtBps(isEdited.value_bps);
+          else if ('value_pence' in isEdited) displayValue = fmtPence(isEdited.value_pence);
+          else if ('value_jsonb' in isEdited) displayValue = fmtJsonb(isEdited.value_jsonb);
+          else displayValue = rowValueDisplay(r);
+          displayValue = `<span style="text-decoration:line-through;color:var(--muted);font-size:11px;">${rowValueDisplay(r)}</span><br>${displayValue} <span style="color:var(--warn);font-size:10px;">→ staged</span>`;
+        } else {
+          displayValue = rowValueDisplay(r);
+        }
+
+        html += `<tr id="row-${r.key}">
+          <td class="key">${r.key}</td>
+          <td class="${valueClass}">${displayValue}</td>
+          <td class="source-cell">${sourceBadge(r.source)}<span class="notes" style="font-size:11px;">${r.citation || ''}</span></td>
+          <td><button onclick="window._toggleEdit('${r.key}')">${isEdited ? '✎ editing' : 'edit'}</button></td>
+        </tr>`;
+        html += renderEditRow(r);
+      }
+      html += `</tbody></table></div>`;
+    }
+    area.innerHTML = html;
+  }
+
+  function renderEditRow(r) {
+    const ftype = rowFieldType(r);
+    const staged = edits[r.key] || {};
+    let editor;
+    if (ftype === 'bps') {
+      const cur = 'value_bps' in staged ? staged.value_bps : r.value_bps;
+      editor = `<input type="number" id="edit-${r.key}-val" value="${cur ?? ''}" placeholder="bps"> <span class="notes">bps (1% = 100 bps)</span>`;
+    } else if (ftype === 'pence') {
+      const cur = 'value_pence' in staged ? staged.value_pence : r.value_pence;
+      editor = `<input type="number" id="edit-${r.key}-val" value="${cur ?? ''}" placeholder="pence"> <span class="notes">pence (£1 = 100 pence)</span>`;
+    } else if (ftype === 'jsonb') {
+      const cur = 'value_jsonb' in staged ? staged.value_jsonb : r.value_jsonb;
+      editor = `<textarea id="edit-${r.key}-val" class="json-textarea">${JSON.stringify(cur, null, 2)}</textarea>`;
+    } else {
+      editor = `<em class="notes">unsupported field type</em>`;
+    }
+    const reason = staged.change_reason || '';
+    return `<tr class="edit-row" id="editrow-${r.key}">
+      <td colspan="4">
+        <div class="edit-grid">
+          <label>New value</label>
+          <div>${editor}</div>
+          <label>Change reason <span style="color:var(--err);">*</span></label>
+          <textarea id="edit-${r.key}-reason" placeholder="Why are you changing this value? (required for audit log)">${reason}</textarea>
+        </div>
+        <div class="edit-actions">
+          <button class="primary" style="padding:5px 14px;font-size:11px;" onclick="window._stageEdit('${r.key}')">Stage edit</button>
+          <button onclick="window._closeEdit('${r.key}')">Cancel</button>
+          ${edits[r.key] ? `<button class="danger" onclick="window._unstageEdit('${r.key}')">Discard staged edit</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  // ─── Edit ops ────────────────────────────────────────────────────────
+  window._toggleEdit = (key) => {
+    const tr = document.getElementById(`editrow-${key}`);
+    if (tr) tr.classList.toggle('open');
+  };
+  window._closeEdit = (key) => {
+    const tr = document.getElementById(`editrow-${key}`);
+    if (tr) tr.classList.remove('open');
+  };
+  window._stageEdit = (key) => {
+    const r = rows.find(x => x.key === key);
+    const ftype = rowFieldType(r);
+    const valEl = document.getElementById(`edit-${key}-val`);
+    const reasonEl = document.getElementById(`edit-${key}-reason`);
+    const reason = reasonEl.value.trim();
+    if (!reason) { showBanner(`Change reason is required for ${key}`, 'err'); reasonEl.focus(); return; }
+
+    let staged = { change_reason: reason };
+    if (ftype === 'bps') {
+      const v = Number(valEl.value);
+      if (!Number.isFinite(v)) { showBanner('Value must be an integer (bps)', 'err'); return; }
+      staged.value_bps = Math.round(v);
+    } else if (ftype === 'pence') {
+      const v = Number(valEl.value);
+      if (!Number.isFinite(v)) { showBanner('Value must be an integer (pence)', 'err'); return; }
+      staged.value_pence = Math.round(v);
+    } else if (ftype === 'jsonb') {
+      try {
+        staged.value_jsonb = JSON.parse(valEl.value);
+      } catch (e) {
+        showBanner('Invalid JSON: ' + e.message, 'err'); return;
+      }
+    }
+    edits[key] = staged;
+    showBanner(`Staged change to ${key} — activate at the bottom to apply`, 'ok');
+    render();
+    refreshActivationBar();
+  };
+  window._unstageEdit = (key) => {
+    delete edits[key];
+    render();
+    refreshActivationBar();
+    showBanner(`Discarded staged edit for ${key}`, 'warn');
+  };
+
+  function refreshActivationBar() {
+    const bar = document.getElementById('activation-bar');
+    const count = Object.keys(edits).length;
+    if (count === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    document.getElementById('changed-count').textContent = String(count);
+  }
+
+  document.getElementById('reset-edits-btn').addEventListener('click', () => {
+    if (Object.keys(edits).length === 0) return;
+    if (!confirm(`Discard all ${Object.keys(edits).length} staged edits?`)) return;
+    edits = {};
+    render();
+    refreshActivationBar();
+    showBanner('All staged edits discarded.', 'warn');
+  });
+
+  document.getElementById('activate-btn').addEventListener('click', async () => {
+    const reason = document.getElementById('activate-reason').value.trim();
+    if (!reason) { showBanner('Activation reason is required (audit log).', 'err'); document.getElementById('activate-reason').focus(); return; }
+    const changes = Object.entries(edits).map(([key, e]) => ({ key, ...e }));
+    if (changes.length === 0) return;
+    const btn = document.getElementById('activate-btn');
+    btn.disabled = true;
+    btn.textContent = 'Activating…';
+    try {
+      const r = await fetchWithAuth(`${API_BASE}/api/admin/pricing/assumptions/activate-new`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activate_reason: reason, changes }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.ok) {
+        showBanner(`Activation failed: ${json.error || `HTTP ${r.status}`}`, 'err');
+        btn.disabled = false; btn.textContent = 'Activate new version';
+        return;
+      }
+      showBanner(`✓ Activated ${json.new_version} from ${json.old_version} (${json.changed_count}/${json.total_count} changed). Reloading…`, 'ok');
+      edits = {};
+      setTimeout(() => location.reload(), 1500);
+    } catch (err) {
+      showBanner('Activation error: ' + err.message, 'err');
+      btn.disabled = false; btn.textContent = 'Activate new version';
+    }
+  });
+
+  // ─── Load active config ──────────────────────────────────────────────
+  async function load() {
+    try {
+      const r = await fetchWithAuth(`${API_BASE}/api/admin/pricing/assumptions/list`);
+      const json = await r.json();
+      if (!r.ok || !json.ok) {
+        showBanner('Failed to load: ' + (json.error || `HTTP ${r.status}`), 'err');
+        return;
+      }
+      activeVersion = json.version;
+      rows = json.rows;
+      const pill = document.getElementById('active-version-pill');
+      pill.textContent = `${activeVersion.version} · active`;
+      // Compute next version label
+      const nextN = (json.all_versions?.length || 1) + 1;
+      document.getElementById('next-version-pill').textContent = `→ v${nextN}`;
+      render();
+    } catch (err) {
+      showBanner('Load error: ' + err.message, 'err');
+    }
+  }
+  load();
+</script>
+</body>
+</html>

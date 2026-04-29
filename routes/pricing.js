@@ -312,6 +312,205 @@ router.get(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  GET /api/admin/pricing/assumptions/list   (PRICE-4)
+//  ─────────────────────────────────────────────────────────────────────────
+//  List all assumption rows for a given version (default: active). Used by
+//  admin/pricing.html to render the editor table.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get(
+  '/admin/pricing/assumptions/list',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    try {
+      let version = req.query.version;
+      if (!version) {
+        const r = await pool.query(
+          `SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE LIMIT 1`
+        );
+        if (!r.rows[0]) return res.status(404).json({ ok: false, error: 'No active assumptions version' });
+        version = r.rows[0].version;
+      }
+
+      const versionMeta = (await pool.query(
+        `SELECT version, description, is_active, activated_at, change_reason, created_at
+           FROM pricing_assumptions_versions WHERE version = $1`,
+        [version]
+      )).rows[0];
+      if (!versionMeta) return res.status(404).json({ ok: false, error: `Version ${version} not found` });
+
+      const rows = (await pool.query(
+        `SELECT id, key, label, value_bps, value_pence, value_jsonb,
+                source, citation, last_changed_by, last_changed_at, change_reason
+           FROM pricing_assumptions
+          WHERE version = $1
+          ORDER BY id ASC`,
+        [version]
+      )).rows;
+
+      const allVersions = (await pool.query(
+        `SELECT version, is_active, created_at, change_reason
+           FROM pricing_assumptions_versions
+          ORDER BY created_at DESC LIMIT 20`
+      )).rows;
+
+      return res.json({ ok: true, version: versionMeta, rows, all_versions: allVersions });
+    } catch (err) {
+      console.error('[pricing/assumptions/list] error:', err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/admin/pricing/assumptions/activate-new   (PRICE-4)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Body: {
+//    description?: string,
+//    activate_reason?: string,
+//    changes: [
+//      { key, value_bps?, value_pence?, value_jsonb?, change_reason }
+//    ]
+//  }
+//
+//  In a single transaction:
+//    1. Compute next version number (vN+1 by row count)
+//    2. INSERT new pricing_assumptions_versions row
+//    3. For each row in the current active version, INSERT a copy under new
+//       version. If the key is in `changes`, apply the new value/reason
+//       AND record last_changed_by = req.user.id.
+//    4. UPDATE old version is_active=FALSE; UPDATE new version is_active=TRUE.
+//    5. COMMIT.
+//
+//  Every changed row REQUIRES a non-empty change_reason (per design Q1).
+//  Returns: { ok, new_version, changed_count, total_count }
+// ═══════════════════════════════════════════════════════════════════════════
+router.post(
+  '/admin/pricing/assumptions/activate-new',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    const body = req.body || {};
+    const changes = Array.isArray(body.changes) ? body.changes : [];
+
+    if (changes.length === 0) {
+      return res.status(400).json({ ok: false, error: 'No changes provided — include at least one row in `changes`' });
+    }
+    for (const c of changes) {
+      if (!c.key) return res.status(400).json({ ok: false, error: 'Every change requires a `key`' });
+      if (!c.change_reason || !String(c.change_reason).trim()) {
+        return res.status(400).json({ ok: false, error: `change for key '${c.key}' missing required change_reason` });
+      }
+    }
+    const changesByKey = Object.fromEntries(changes.map(c => [c.key, c]));
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Find current active version
+      const activeRow = (await client.query(
+        `SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+      )).rows[0];
+      if (!activeRow) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ ok: false, error: 'No active assumptions version to fork from' });
+      }
+      const oldVersion = activeRow.version;
+
+      // 2. Compute next version (vN where N = current count + 1)
+      const countRow = (await client.query(
+        `SELECT COUNT(*)::int AS n FROM pricing_assumptions_versions`
+      )).rows[0];
+      const newVersion = `v${countRow.n + 1}`;
+
+      // 3. INSERT new pricing_assumptions_versions row (is_active=FALSE for now)
+      await client.query(
+        `INSERT INTO pricing_assumptions_versions (version, description, is_active, activated_at, activated_by, change_reason)
+         VALUES ($1, $2, FALSE, NOW(), $3, $4)`,
+        [newVersion, body.description || `Tuned from ${oldVersion} on ${new Date().toISOString().substring(0,10)}`,
+         req.user.id, body.activate_reason || `${changes.length} field(s) changed`]
+      );
+
+      // 4. Copy all rows from old version → new version, applying changes
+      const oldRows = (await client.query(
+        `SELECT key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason
+           FROM pricing_assumptions WHERE version = $1`,
+        [oldVersion]
+      )).rows;
+
+      let changedCount = 0;
+      for (const old of oldRows) {
+        const change = changesByKey[old.key];
+        let value_bps = old.value_bps;
+        let value_pence = old.value_pence;
+        let value_jsonb = old.value_jsonb;
+        let source = old.source;
+        let citation = old.citation;
+        let change_reason = old.change_reason;
+        let last_changed_by = null;
+
+        if (change) {
+          changedCount++;
+          if ('value_bps' in change && change.value_bps !== undefined) value_bps = change.value_bps;
+          if ('value_pence' in change && change.value_pence !== undefined) value_pence = change.value_pence;
+          if ('value_jsonb' in change && change.value_jsonb !== undefined) value_jsonb = change.value_jsonb;
+          source = change.source || 'tuned';
+          if (change.citation) citation = change.citation;
+          change_reason = change.change_reason;
+          last_changed_by = req.user.id;
+        }
+
+        await client.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, value_pence, value_jsonb,
+              source, citation, last_changed_by, last_changed_at, change_reason)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW(), $10)`,
+          [newVersion, old.key, old.label,
+           value_bps, value_pence,
+           value_jsonb !== null && value_jsonb !== undefined ? JSON.stringify(value_jsonb) : null,
+           source, citation, last_changed_by, change_reason]
+        );
+      }
+
+      // 5. Validate all change keys actually existed in the old version
+      const knownKeys = new Set(oldRows.map(r => r.key));
+      const unknownChanges = Object.keys(changesByKey).filter(k => !knownKeys.has(k));
+      if (unknownChanges.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `Unknown keys in changes: ${unknownChanges.join(', ')}` });
+      }
+
+      // 6. Flip is_active (partial unique index allows only one TRUE at a time)
+      await client.query(
+        `UPDATE pricing_assumptions_versions SET is_active = FALSE WHERE version = $1`,
+        [oldVersion]
+      );
+      await client.query(
+        `UPDATE pricing_assumptions_versions SET is_active = TRUE WHERE version = $1`,
+        [newVersion]
+      );
+
+      await client.query('COMMIT');
+      console.log(`[pricing/activate-new] User ${req.user.id} activated ${newVersion} from ${oldVersion} (${changedCount} changes)`);
+      return res.json({
+        ok: true,
+        new_version: newVersion,
+        old_version: oldVersion,
+        changed_count: changedCount,
+        total_count: oldRows.length,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('[pricing/activate-new] error:', err);
+      return res.status(500).json({ ok: false, error: err.message || 'Activation failed' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  POST /api/admin/pricing/sonia-pull   (PRICE-10)
 //  ─────────────────────────────────────────────────────────────────────────
 //  Triggers a fresh SONIA pull from BoE IADB (CSV endpoint, series IUDSOIA)
