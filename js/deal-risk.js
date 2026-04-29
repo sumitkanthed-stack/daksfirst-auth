@@ -93,6 +93,7 @@ let __riskState = {
   activeRunId: null,
   activeRun: null,        // full row when fetched
   activeTab: 'narrative', // narrative | dimensions | latents | telemetry | history
+  pollingFor: new Set(),  // runIds we're currently polling — prevents duplicate timers
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -136,6 +137,10 @@ export async function renderRiskSection(deal, role) {
   __riskState.activeTab = isV31Run(__riskState.activeRun) ? 'verdict' : 'narrative';
 
   paint(deal, role);
+
+  // RISK-POLL: any non-terminal runs (e.g. user reloaded the page mid-run, or
+  // navigated away and back) get auto-resumed polling. Dedupe in pollUntilSettled.
+  resumePollingForInFlight(deal);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -309,9 +314,24 @@ function extractHeadline(raw) {
 // ═════════════════════════════════════════════════════════════════
 function renderRunRail() {
   if (__riskState.runs.length === 0) return '';
+  // RISK-POLL: show a pulsing dot when polling is active, and a manual refresh
+  // button so the RM can pull a fresh state without firing a new run.
+  const isPolling = __riskState.pollingFor && __riskState.pollingFor.size > 0;
+  const pollingIndicator = isPolling
+    ? `<span title="Polling for in-flight run(s)" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#34D399;animation:risk-poll-pulse 1.4s ease-in-out infinite;flex-shrink:0;"></span>`
+    : '';
   return `
+    <style>
+      @keyframes risk-poll-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+      #risk-rail-refresh:hover { background: rgba(255,255,255,0.06) !important; }
+    </style>
     <div style="display:flex;align-items:center;gap:8px;padding:10px 24px;background:#0a0f1a;border-bottom:1px solid rgba(255,255,255,0.06);overflow-x:auto;">
       <span style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:.6px;font-weight:600;flex-shrink:0;">Run history</span>
+      ${pollingIndicator}
+      <button id="risk-rail-refresh" title="Refresh run list"
+        style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#94A3B8;font-size:12px;cursor:pointer;flex-shrink:0;transition:all .15s;line-height:1;">
+        ↻
+      </button>
       ${__riskState.runs.map(r => renderRunPill(r)).join('')}
     </div>
   `;
@@ -1333,6 +1353,10 @@ function wireTriggerButton(deal) {
 }
 
 function pollUntilSettled(runId, deal) {
+  // RISK-POLL: dedupe — if we're already polling this run, skip.
+  if (__riskState.pollingFor.has(runId)) return;
+  __riskState.pollingFor.add(runId);
+
   let attempts = 0;
   const maxAttempts = 60; // ~3 min at 3s
   const tick = async () => {
@@ -1342,13 +1366,41 @@ function pollUntilSettled(runId, deal) {
       const data = await res.json();
       const st = data.run?.status;
       if (st === 'success' || st === 'failed') {
+        __riskState.pollingFor.delete(runId);
+        // RISK-POLL: surface completion in a toast so the user knows even if
+        // they switched tabs while the run was in flight.
+        if (st === 'success') {
+          const verdict = data.run?.verdict ? data.run.verdict.toUpperCase() : 'OK';
+          showToast(`Risk run #${runId} complete · ${verdict}`, 'success');
+        } else {
+          showToast(`Risk run #${runId} failed`, 'error');
+        }
         await renderRiskSection(deal, getCurrentRoleSafe());
         return;
       }
     } catch { /* swallow, keep polling */ }
-    if (attempts < maxAttempts) setTimeout(tick, 3000);
+    if (attempts < maxAttempts) {
+      setTimeout(tick, 3000);
+    } else {
+      // Gave up — let the user know so they don't wait silently.
+      __riskState.pollingFor.delete(runId);
+      showToast(`Risk run #${runId} still in flight after 3 min — refresh manually`, 'info');
+    }
   };
   setTimeout(tick, 3000);
+}
+
+// RISK-POLL: scan loaded runs for any in-flight; resume polling for them.
+// Called at the end of renderRiskSection so re-loading the page (or even just
+// switching to the Risk tab) auto-attaches polling to any running run.
+function resumePollingForInFlight(deal) {
+  if (!Array.isArray(__riskState.runs)) return;
+  for (const r of __riskState.runs) {
+    const st = r.status;
+    if (st !== 'success' && st !== 'failed') {
+      pollUntilSettled(r.id, deal);
+    }
+  }
 }
 
 function inferDataStage(deal) {
@@ -1383,6 +1435,26 @@ function wireRunRailClicks(deal, role) {
       paint(deal, role);
     });
   });
+
+  // RISK-POLL: manual refresh button — re-fetches runs without firing a new
+  // analysis. Useful when user wants the latest state without waiting for the
+  // poll tick, or when polling has stopped.
+  const refreshBtn = document.getElementById('risk-rail-refresh');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      refreshBtn.disabled = true;
+      refreshBtn.style.opacity = '0.5';
+      try {
+        await renderRiskSection(deal, role);
+      } catch (err) {
+        showToast(`Refresh failed: ${err.message}`, 'error');
+      } finally {
+        // The button gets re-rendered as part of renderRiskSection so we
+        // don't need to restore state explicitly.
+      }
+    });
+  }
 }
 
 function wireSubTabClicks(deal) {
