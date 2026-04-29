@@ -3212,6 +3212,185 @@ async function runMigrations() {
       console.log('[migrate] Note on pricing v1 seed:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-2.1 (2026-04-29 late): wide-ladder reseed
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Sumit pushed back on the v1 ladder (caps at 1.25%pm at PD 8-9 — too
+    //  compressed). New ladder puts 1.25 at PD 5 (median), runs 0.65 → 2.00.
+    //  Standard ceiling lifts 125 → 200 bps/pm; stressed ceiling 175 → 250.
+    //  Also adds market_rate_benchmarks_pm to pricing_assumptions for the
+    //  grid editor's "vs market median" comparison surface.
+    //
+    //  Approach: create new ASSUMPTIONS + GRID versions (next sequential
+    //  vN+1 by count), copy from currently-active version, override 3 keys
+    //  on assumptions (ceilings + market benchmarks) and base_rate_bps_pm
+    //  on all 270 grid cells uniformly across sectors. Flip is_active.
+    //
+    //  Idempotent: gated by description-tag check. Re-running migration
+    //  is a no-op once 'wide-ladder-2026-04-29' marker is present.
+    //
+    //  Citation: Bridging Trends Q4 2025 (West One/MTF) + Knight Frank UK
+    //  Specialist Lending H1 2025 (overall avg 0.99% pm, KF stretched
+    //  reaching 1.50-1.75%, distressed bridging 1.70-2.00%+).
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const WIDE_MARKER = 'wide-ladder-2026-04-29';
+
+      const wideAssumpExists = (await pool.query(
+        `SELECT 1 FROM pricing_assumptions_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${WIDE_MARKER}%`]
+      )).rows.length > 0;
+      const wideGridExists = (await pool.query(
+        `SELECT 1 FROM pricing_grid_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${WIDE_MARKER}%`]
+      )).rows.length > 0;
+
+      if (wideAssumpExists && wideGridExists) {
+        console.log('[migrate] ✓ wide-ladder pricing already seeded, skipping');
+      } else {
+        // Build the wide rate ladder (PD → bps/pm)
+        const wideRateLadder = {
+          1: 65,  2: 80,  3: 95,  4: 110, 5: 125,
+          6: 140, 7: 155, 8: 175, 9: 200,
+        };
+        // Market benchmarks (BT Q4 2025 + KF H1 2025, in bps/pm)
+        const marketBenchmarks = {
+          source: 'Bridging Trends Q4 2025 + Knight Frank UK Specialist Lending H1 2025',
+          unit: 'bps_per_month',
+          by_pd: [
+            { pd: 1, min: 70,  med: 82,  max: 95  },
+            { pd: 2, min: 75,  med: 88,  max: 100 },
+            { pd: 3, min: 85,  med: 99,  max: 115 },
+            { pd: 4, min: 95,  med: 110, max: 130 },
+            { pd: 5, min: 105, med: 120, max: 145 },
+            { pd: 6, min: 115, med: 130, max: 155 },
+            { pd: 7, min: 125, med: 140, max: 170 },
+            { pd: 8, min: 140, med: 155, max: 185 },
+            { pd: 9, min: 155, med: 170, max: 200 },
+          ],
+        };
+
+        await pool.query('BEGIN');
+
+        // ── Assumptions: new version with bumped ceilings + market benchmarks ──
+        const a_active = (await pool.query(
+          `SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!a_active) throw new Error('no active assumptions version to fork from');
+        const a_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_assumptions_versions`)).rows[0].n;
+        const aNew = `v${a_count + 1}`;
+
+        await pool.query(
+          `INSERT INTO pricing_assumptions_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [aNew, `Wide ladder + market benchmarks · marker:${WIDE_MARKER}`,
+           'PRICE-2.1 reseed: ladder reshaped so 1.25%pm = median (PD5), ceiling 125→200, stressed 175→250, +market benchmarks JSONB']
+        );
+
+        const aOldRows = (await pool.query(
+          `SELECT key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason
+             FROM pricing_assumptions WHERE version = $1`,
+          [a_active.version]
+        )).rows;
+
+        for (const old of aOldRows) {
+          let value_bps = old.value_bps;
+          let value_pence = old.value_pence;
+          let value_jsonb = old.value_jsonb;
+          let source = old.source;
+          let citation = old.citation;
+          let change_reason = old.change_reason;
+
+          if (old.key === 'standard_rate_ceiling_bps_pm') {
+            value_bps = 200;
+            source = 'tuned';
+            citation = 'Daksfirst wide-ladder 2026-04-29';
+            change_reason = 'Median 1.25%pm at PD 5; ceiling lifted to 2.00%pm';
+          } else if (old.key === 'stressed_rate_ceiling_bps_pm') {
+            value_bps = 250;
+            source = 'tuned';
+            citation = 'Daksfirst wide-ladder 2026-04-29';
+            change_reason = 'Stressed ceiling lifted in lockstep with standard ceiling';
+          }
+          await pool.query(
+            `INSERT INTO pricing_assumptions
+               (version, key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW())`,
+            [aNew, old.key, old.label, value_bps, value_pence,
+             value_jsonb !== null && value_jsonb !== undefined ? JSON.stringify(value_jsonb) : null,
+             source, citation, change_reason]
+          );
+        }
+
+        // Add new market_rate_benchmarks_pm key
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_jsonb, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'market_rate_benchmarks_pm', 'market_rate_benchmarks_pm', $2::jsonb, 'canonical', $3, $4, NOW())`,
+          [aNew, JSON.stringify(marketBenchmarks),
+           'Bridging Trends Q4 2025 + Knight Frank H1 2025',
+           'Market rate min/median/max by PD band; powers /admin/pricing-grid.html "vs market" cell tag']
+        );
+
+        // ── Grid: new version with wide ladder applied uniformly across sectors ──
+        const g_active = (await pool.query(
+          `SELECT version FROM pricing_grid_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!g_active) throw new Error('no active grid version to fork from');
+        const g_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_grid_versions`)).rows[0].n;
+        const gNew = `v${g_count + 1}`;
+
+        await pool.query(
+          `INSERT INTO pricing_grid_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [gNew, `Wide ladder grid · marker:${WIDE_MARKER}`,
+           'PRICE-2.1 reseed: rate ladder 0.65→2.00, applied uniformly across all 6 sectors; other levers carried from previous active grid']
+        );
+
+        const gOldRows = (await pool.query(
+          `SELECT sector, pd_band, lgd_band,
+                  base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                  retained_months, base_exit_fee_bps, min_term_months,
+                  source, citation, change_reason
+             FROM pricing_grid WHERE version = $1`,
+          [g_active.version]
+        )).rows;
+
+        let cellsUpdated = 0;
+        for (const old of gOldRows) {
+          const newRate = wideRateLadder[old.pd_band] ?? old.base_rate_bps_pm;
+          const isChanged = newRate !== old.base_rate_bps_pm;
+          if (isChanged) cellsUpdated++;
+          await pool.query(
+            `INSERT INTO pricing_grid
+               (version, sector, pd_band, lgd_band,
+                base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                retained_months, base_exit_fee_bps, min_term_months,
+                source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())`,
+            [gNew, old.sector, old.pd_band, old.lgd_band,
+             newRate, old.base_upfront_fee_bps, old.base_commitment_fee_bps,
+             old.retained_months, old.base_exit_fee_bps, old.min_term_months,
+             isChanged ? 'tuned' : old.source,
+             isChanged ? 'Daksfirst wide-ladder 2026-04-29' : old.citation,
+             isChanged ? `PRICE-2.1: PD${old.pd_band} rate raised to ${newRate} bps/pm (wide ladder)` : old.change_reason]
+          );
+        }
+
+        // Flip is_active (assumptions + grid in lockstep)
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = FALSE WHERE version = $1`, [a_active.version]);
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = TRUE  WHERE version = $1`, [aNew]);
+        await pool.query(`UPDATE pricing_grid_versions        SET is_active = FALSE WHERE version = $1`, [g_active.version]);
+        await pool.query(`UPDATE pricing_grid_versions        SET is_active = TRUE  WHERE version = $1`, [gNew]);
+
+        await pool.query('COMMIT');
+        console.log(`[migrate] ✓ wide-ladder reseed applied (assumptions ${a_active.version}→${aNew}, grid ${g_active.version}→${gNew}, ${cellsUpdated} cells updated)`);
+      }
+    } catch (err) {
+      await pool.query('ROLLBACK').catch(() => {});
+      console.log('[migrate] Note on wide-ladder reseed:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

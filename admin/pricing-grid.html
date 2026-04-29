@@ -56,6 +56,7 @@
   .cell-rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   .cell-rate.capped { color:var(--warn); }
   .cell-meta { display:block; font-size:10px; color:var(--muted); margin-top:2px; }
+  .cell-market { display:block; font-size:9px; color:var(--muted); margin-top:3px; font-style:italic; font-family:var(--mono); }
 
   /* Cell editor (inline panel below grid) */
   .editor-panel { margin-top:14px; padding:16px; background:var(--panel-2); border:1px solid var(--accent); border-radius:8px; display:none; }
@@ -172,6 +173,7 @@
   let edits = {};               // 'sector|pd|lgd' -> { base_rate_bps_pm?, ..., change_reason }
   let editingKey = null;        // currently expanded cell key
   let previewTimer = null;
+  let marketByPd = {};          // PD -> { min, med, max } from pricing_assumptions.market_rate_benchmarks_pm
 
   // ─── Helpers ─────────────────────────────────────────────────────────
   function bps2pm(bps) { return (bps / 100).toFixed(2) + '%pm'; }
@@ -238,11 +240,25 @@
         const editingClass = isEditing ? 'active-edit' : '';
         const displayCell = isEdited ? Object.assign({}, cell, edits[k]) : cell;
         const rate = displayCell.base_rate_bps_pm;
-        const cappedClass = rate >= 125 ? 'capped' : '';
+        const cappedClass = rate >= 200 ? 'capped' : '';
+
+        // Market benchmark for this PD (if loaded)
+        const mkt = marketByPd[pd];
+        let marketHtml = '';
+        let marketTagClass = '';
+        if (mkt) {
+          // Compare rate vs market: green if ≤ med, amber if med < rate ≤ max, red if > max
+          let dot = '🟢';
+          if (rate > mkt.max) { dot = '🔴'; marketTagClass = 'over-mkt'; }
+          else if (rate > mkt.med) { dot = '🟡'; marketTagClass = 'premium-mkt'; }
+          marketHtml = `<span class="cell-market">${dot} mkt ${(mkt.med/100).toFixed(2)} <span style="opacity:0.6;">(${(mkt.min/100).toFixed(2)}-${(mkt.max/100).toFixed(2)})</span></span>`;
+        }
+
         const meta = isEdited ? '<span style="color:var(--warn);">staged</span>' : (cell.source === 'tuned' ? `<span style="color:var(--warn);">tuned</span>` : '');
         html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}" data-key="${k}">
           <span class="cell-rate ${cappedClass}">${bps2pm(rate)}</span>
-          <span class="cell-meta">${meta}</span>
+          ${marketHtml}
+          ${meta ? `<span class="cell-meta">${meta}</span>` : ''}
         </td>`;
       }
       html += `</tr>`;
@@ -359,12 +375,39 @@
       }
       const buf = json.margin_buffer_bps;
       const bufC = bufferClass(buf);
+      const myRate = json.recommended.rate_bps_pm;
+
+      // Market comparison line — only if benchmarks loaded
+      let marketLine = '';
+      const mkt = marketByPd[pd];
+      if (mkt) {
+        const deltaBps = myRate - mkt.med;
+        const deltaPct = mkt.med > 0 ? (deltaBps / mkt.med * 100) : 0;
+        let positionLabel, positionColour;
+        if (myRate < mkt.min) { positionLabel = 'below market range — competitive'; positionColour = 'var(--ok)'; }
+        else if (myRate <= mkt.med) { positionLabel = 'at or below market median'; positionColour = 'var(--ok)'; }
+        else if (myRate <= mkt.max) { positionLabel = 'above median, within market range'; positionColour = 'var(--warn)'; }
+        else { positionLabel = 'above market max — likely uncompetitive'; positionColour = 'var(--err)'; }
+        const sign = deltaBps >= 0 ? '+' : '';
+        marketLine = `
+          <div class="impact-row" style="border-top:1px dashed rgba(78,161,255,0.2);padding-top:8px;margin-top:6px;">
+            <span class="lbl">Market for PD${pd}</span>
+            <span class="val">${(mkt.med/100).toFixed(2)}<span style="opacity:0.6;"> (${(mkt.min/100).toFixed(2)}-${(mkt.max/100).toFixed(2)})</span> %pm</span>
+          </div>
+          <div class="impact-row" style="font-size:11px;">
+            <span class="lbl" style="color:${positionColour};">${positionLabel}</span>
+            <span class="val" style="color:${positionColour};">${sign}${deltaBps} bps (${sign}${deltaPct.toFixed(0)}%) vs median</span>
+          </div>
+        `;
+      }
+
       document.getElementById('impact-body').innerHTML = `
-        <div class="impact-row"><span class="lbl">Rec. rate (after IA delta + ceiling)</span><span class="val">${bps2pm(json.recommended.rate_bps_pm)}${json.recommended.rate_capped ? ' <span style="color:var(--warn);font-size:10px;">(capped)</span>' : ''}</span></div>
+        <div class="impact-row"><span class="lbl">Rec. rate (after IA delta + ceiling)</span><span class="val">${bps2pm(myRate)}${json.recommended.rate_capped ? ' <span style="color:var(--warn);font-size:10px;">(capped)</span>' : ''}</span></div>
         <div class="impact-row"><span class="lbl">Required APR</span><span class="val">${bps2pct(json.cost_stack.required_yield_apr_bps)}</span></div>
         <div class="impact-row"><span class="lbl">Gross APR</span><span class="val">${bps2pct(json.gross_yield_apr_bps)}</span></div>
         <div class="impact-row"><span class="lbl">Net APR (after broker)</span><span class="val">${bps2pct(json.net_yield_after_broker_apr_bps)}</span></div>
         <div class="impact-row buffer"><span class="lbl">Margin buffer</span><span class="val ${bufC}">${fmtBuffer(buf)}${json.decline_flag ? ' &nbsp;DECLINE' : ''}</span></div>
+        ${marketLine}
       `;
     } catch (err) {
       document.getElementById('impact-body').innerHTML = `<span style="color:var(--err);">network error: ${err.message}</span>`;
@@ -469,6 +512,19 @@
 
       document.getElementById('active-version-pill').textContent = `${activeVersion.version} · active`;
       document.getElementById('next-version-pill').textContent = `→ v${(allVersions.length || 1) + 1}`;
+
+      // Load market benchmarks from active assumptions config
+      try {
+        const ar = await fetchAuth(`${API_BASE}/api/admin/pricing/assumptions/list`);
+        const aj = await ar.json();
+        if (ar.ok && aj.ok) {
+          const bench = aj.rows.find(row => row.key === 'market_rate_benchmarks_pm');
+          if (bench && bench.value_jsonb && Array.isArray(bench.value_jsonb.by_pd)) {
+            for (const row of bench.value_jsonb.by_pd) marketByPd[row.pd] = row;
+          }
+        }
+      } catch(e) { /* benchmarks optional — page still works without */ }
+
       renderSectorTabs();
       renderGrid();
     } catch (err) {
