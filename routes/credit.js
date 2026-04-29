@@ -24,7 +24,28 @@
 const express = require('express');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const exp = require('../services/experian');
+const consent = require('../services/consent');
 const pool = require('../db/pool');
+
+// CONS-3 (2026-04-29): consent gate helper. Personal Delphi + Hunter Fraud
+// require explicit borrower consent (UK Consumer Credit Act + UK GDPR + CIFAS
+// rules). Public commercial Delphi does NOT need consent — public business
+// data. Mock mode bypasses the gate (testing without burning credits).
+async function requireConsent(borrowerId, consentType, mode) {
+  if (mode === 'mock') return null;  // mock fires freely
+  const row = await consent.hasValidConsent(borrowerId, consentType);
+  if (!row) {
+    return {
+      status: 403,
+      body: {
+        error: `Consent gate: no valid consent for borrower ${borrowerId} on ${consentType}. Capture consent first via broker attestation or email-link.`,
+        consent_type_required: consentType,
+        consent_paths: ['broker_attestation', 'email_link_token'],
+      },
+    };
+  }
+  return null;
+}
 
 // ============================================================
 //  Helpers
@@ -169,6 +190,11 @@ adminRouter.post('/personal/:borrowerId', async (req, res) => {
       });
     }
 
+    // CONS-3 consent gate
+    const status = exp.getStatus();
+    const block = await requireConsent(b.id, 'personal_credit', status.mode);
+    if (block) return res.status(block.status).json(block.body);
+
     const result = await exp.runPersonalCredit({ firstName, lastName, dob, address });
     const checkId = await persistCheck({
       result, product: 'personal_credit',
@@ -247,6 +273,11 @@ adminRouter.post('/hunter/:borrowerId', async (req, res) => {
     const lastName  = (req.body && req.body.lastName)  || lnFromName;
     const dob       = (req.body && req.body.dob)       || (b.date_of_birth ? b.date_of_birth.toISOString().slice(0, 10) : null);
     const address   = (req.body && req.body.address)   || b.address;
+
+    // CONS-3 consent gate
+    const status = exp.getStatus();
+    const block = await requireConsent(b.id, 'hunter_fraud', status.mode);
+    if (block) return res.status(block.status).json(block.body);
 
     const result = await exp.runHunterFraud({ firstName, lastName, dob, address });
     const checkId = await persistCheck({

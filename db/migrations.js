@@ -3985,6 +3985,89 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  CONS-1 (2026-04-29): borrower_consents append-only table
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Records every explicit consent the borrower has given for paid /
+    //  consent-gated data checks. Append-only — revocation creates a new row
+    //  with revoked_at populated rather than mutating the original.
+    //
+    //  Routes that fire paid checks (credit, KYC, open banking) check this
+    //  table for a current, non-revoked, non-expired consent row before
+    //  hitting the live vendor API. Mock mode is unaffected.
+    //
+    //  consent_type — one row per data-product category:
+    //    'personal_credit'         (Experian Delphi Select on individuals)
+    //    'hunter_fraud'            (CIFAS Hunter)
+    //    'kyc_smartsearch'         (SmartSearch ID + sanctions on individuals)
+    //    'open_banking_truelayer'  (TruLayer bank account access — future)
+    //
+    //  Note: commercial_delphi (corporate, public data) does NOT need a
+    //  consent row — public business data, no consent required under MLR.
+    //
+    //  evidence_source — how the consent was acquired:
+    //    'docusign_envelope'  — primary path (DIP signing covers DIP-stage consents)
+    //    'email_link_token'   — Daksfirst-issued one-time link, future re-consent
+    //    'broker_paper_form'  — fallback, broker uploads signed paper form
+    //
+    //  Expiry policy (as of 2026-04-29):
+    //    personal_credit         — 6 months
+    //    hunter_fraud            — 6 months
+    //    kyc_smartsearch         — 12 months
+    //    open_banking_truelayer  — 180 days (PSD2 hard limit)
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS borrower_consents (
+          id                      SERIAL PRIMARY KEY,
+          deal_id                 INTEGER REFERENCES deal_submissions(id),
+          borrower_id             INTEGER NOT NULL,
+          consent_type            VARCHAR(40) NOT NULL,
+          consent_text_version    VARCHAR(20) NOT NULL DEFAULT 'v1',
+          consent_text_snapshot   TEXT,                              -- exact text borrower agreed to
+          evidence_source         VARCHAR(30) NOT NULL,
+          evidence_id             VARCHAR(120),                      -- DocuSign envelope_id or token or upload_id
+          evidence_url            TEXT,                              -- pointer to signed PDF / audit cert
+          consented_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          consent_ip              VARCHAR(45),
+          consent_user_agent      TEXT,
+          expires_at              TIMESTAMPTZ NOT NULL,
+          revoked_at              TIMESTAMPTZ,
+          revoked_by              INTEGER REFERENCES users(id),
+          revoked_reason          TEXT,
+          recorded_by             INTEGER REFERENCES users(id),      -- internal user who recorded (NULL for webhook auto-write)
+          created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_borrower_consents_deal_id      ON borrower_consents(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_borrower_consents_borrower_id  ON borrower_consents(borrower_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_borrower_consents_type         ON borrower_consents(consent_type)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_borrower_consents_evidence_id  ON borrower_consents(evidence_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_borrower_consents_expires_at   ON borrower_consents(expires_at)`);
+
+      console.log('[migrate] ✓ borrower_consents table ready');
+    } catch (err) {
+      console.log('[migrate] Note on borrower_consents schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  CONS-2a (2026-04-29): broker attestation cols on deal_submissions
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Records the broker's confirmation that consent was obtained in their
+    //  FCA-regulated fact-find with the borrower. One attestation per deal
+    //  covers all UBOs on the deal (one row in borrower_consents per UBO is
+    //  written when the attestation lands, all sharing this same evidence_id).
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_consent_attested_at  TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_consent_attested_by  INTEGER REFERENCES users(id)`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_consent_attested_ip  VARCHAR(45)`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS broker_consent_text_version VARCHAR(20)`);
+      console.log('[migrate] ✓ CONS-2a broker attestation cols ready');
+    } catch (err) {
+      console.log('[migrate] Note on CONS-2a schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  PD-4 (2026-04-29 night): risk_rubric v6 deploy — adds PropertyData
     //  ─────────────────────────────────────────────────────────────────────────
     //  v6 = v5 body + v6_addendum (PropertyData rental signals + PAF address

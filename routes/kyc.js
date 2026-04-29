@@ -17,6 +17,25 @@
 const express = require('express');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const ss = require('../services/smartsearch');
+const consent = require('../services/consent');
+
+// CONS-3 (2026-04-29): consent gate helper for individual_kyc + sanctions_pep.
+// Mock mode bypasses the gate. Business KYB doesn't need consent — public data.
+async function requireConsent(borrowerId, consentType, mode) {
+  if (mode === 'mock') return null;
+  const row = await consent.hasValidConsent(borrowerId, consentType);
+  if (!row) {
+    return {
+      status: 403,
+      body: {
+        error: `Consent gate: no valid consent for borrower ${borrowerId} on ${consentType}. Capture consent first via broker attestation or email-link.`,
+        consent_type_required: consentType,
+        consent_paths: ['broker_attestation', 'email_link_token'],
+      },
+    };
+  }
+  return null;
+}
 const pool = require('../db/pool');
 
 // ============================================================
@@ -135,6 +154,11 @@ adminRouter.post('/individual/:borrowerId', async (req, res) => {
     const dob       = (req.body && req.body.dob)       || (b.date_of_birth ? b.date_of_birth.toISOString().slice(0, 10) : null);
     const address   = (req.body && req.body.address)   || b.address;
 
+    // CONS-3 consent gate
+    const status = ss.getStatus();
+    const block = await requireConsent(b.id, 'kyc_smartsearch', status.mode);
+    if (block) return res.status(block.status).json(block.body);
+
     const result = await ss.runIndividualKyc({ firstName, lastName, dob, address });
     const checkId = await persistCheck({
       result, checkType: 'individual_kyc',
@@ -207,6 +231,11 @@ adminRouter.post('/sanctions/:borrowerId', async (req, res) => {
     const lastName  = (req.body && req.body.lastName)  || lnFromName;
     const dob       = (req.body && req.body.dob)       || (b.date_of_birth ? b.date_of_birth.toISOString().slice(0, 10) : null);
     const address   = (req.body && req.body.address)   || b.address;
+
+    // CONS-3 consent gate (sanctions_pep falls under kyc_smartsearch consent)
+    const status = ss.getStatus();
+    const block = await requireConsent(b.id, 'kyc_smartsearch', status.mode);
+    if (block) return res.status(block.status).json(block.body);
 
     const result = await ss.runSanctionsPep({ firstName, lastName, dob, address });
     const checkId = await persistCheck({
