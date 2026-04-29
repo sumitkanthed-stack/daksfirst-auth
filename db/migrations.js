@@ -4045,6 +4045,72 @@ async function runMigrations() {
       console.log('[migrate] Note on rubric v6 deploy:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  XCOLL-3 (2026-04-29): risk_rubric v7 deploy — adds cross-collateral
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  v7 = v6 body + v7_addendum (cross-collateral grading guidance).
+    //  Same concatenation + activation pattern as v6.
+    //
+    //  v7 body resolution: load v6 body from llm_prompts (avoids reconstructing
+    //  v5+v6_addendum at deploy time) + concatenate v7 addendum.
+    //
+    //  If v6 isn't deployed yet OR addendum file is missing, skip silently.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const v7AddendumPath = path.join(__dirname, '..', 'prompts', 'rubric_v7_addendum.md');
+      let v7Addendum = null;
+      try { v7Addendum = fs.readFileSync(v7AddendumPath, 'utf8'); } catch (_) { /* missing */ }
+
+      if (!v7Addendum) {
+        console.log('[migrate] Note: rubric v7 addendum missing, skipping deploy');
+      } else {
+        // Load v6 body from DB (single source of truth for the prior version)
+        const v6Row = await pool.query(
+          `SELECT body FROM llm_prompts WHERE prompt_key = 'risk_rubric' AND version = 6 LIMIT 1`
+        );
+        if (v6Row.rows.length === 0) {
+          console.log('[migrate] Note: rubric v6 not in DB, skipping v7 deploy');
+        } else {
+          const v6Body = v6Row.rows[0].body;
+          const existing = await pool.query(
+            `SELECT id FROM llm_prompts WHERE prompt_key = 'risk_rubric' AND version = 7`
+          );
+          if (existing.rows.length > 0) {
+            console.log('[migrate] ✓ risk_rubric v7 already present, skipping deploy');
+          } else {
+            const v7Body = v6Body.trimEnd() + '\n\n---\n\n' + v7Addendum;
+            await pool.query('BEGIN');
+            try {
+              await pool.query(
+                `INSERT INTO llm_prompts (prompt_key, version, body, is_active, edited_by, edited_at, description, changelog)
+                 VALUES ('risk_rubric', 7, $1, FALSE, 'system:migrate', NOW(),
+                         'v6 body + v7 XCOLL addendum (cross-collateral / mixed-purpose deals)',
+                         'XCOLL: effective LTV = 1st-charge security only, 2nd-charge as comfort-only mitigant, refi/equity-release purpose semantics, logical consistency checks')`,
+                [v7Body]
+              );
+              await pool.query(
+                `UPDATE llm_prompts
+                    SET is_active = FALSE
+                  WHERE prompt_key = 'risk_rubric' AND version <> 7 AND is_active = TRUE`
+              );
+              await pool.query(
+                `UPDATE llm_prompts
+                    SET is_active = TRUE
+                  WHERE prompt_key = 'risk_rubric' AND version = 7`
+              );
+              await pool.query('COMMIT');
+              console.log(`[migrate] ✓ risk_rubric v7 deployed (${v7Body.length} chars), v6 deactivated`);
+            } catch (txErr) {
+              await pool.query('ROLLBACK').catch(() => {});
+              throw txErr;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.log('[migrate] Note on rubric v7 deploy:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
