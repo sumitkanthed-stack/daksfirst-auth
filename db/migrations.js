@@ -2713,6 +2713,216 @@ async function runMigrations() {
       console.log('[migrate] Note on exit cols rename:', err.message.substring(0, 160));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-1 (2026-04-29): Pricing engine v1 schema — 7 tables
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Mirrors risk_taxonomy / risk_view pattern: 3 versioned config tables
+    //  (assumptions / grid / IA modifiers) + 1 audit table (deal_pricings).
+    //
+    //  Versioning (one row per active config snapshot):
+    //    pricing_assumptions_versions  — global cost-stack scalars + tiers
+    //    pricing_grid_versions         — 9×5×6 PD×LGD×sector cell grids
+    //    ia_modifiers_versions         — 5-row IA-band delta tables
+    //
+    //  Each version table has a partial unique index enforcing at most one
+    //  is_active = TRUE row at a time. Activation flips are 2-step txns
+    //  (UPDATE old → FALSE, INSERT/UPDATE new → TRUE).
+    //
+    //  Config rows are append-only (UNIQUE on (version, key) etc.). Tuning a
+    //  cell creates a new version, NEVER mutates an existing row. This is the
+    //  same pattern as risk_taxonomy/llm_prompts — every pricing_version is
+    //  fully reproducible long after activation.
+    //
+    //  Audit:
+    //    deal_pricings — append-only run-log. One row per pricing engine
+    //    evaluation on a deal. FKs pin the row to assumption/grid/IA versions
+    //    AND to the risk_view row that drove the grades, so any historical
+    //    recommendation can be replayed identically.
+    //
+    //  v1 defaults seeded by PRICE-2 (next bundle). This bundle is schema only.
+    //  See memory: project_pricing_engine_design_2026_04_28.md for the LOCKED
+    //  defaults — every value, tier table, and architecture answer.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      // ── 1/7  pricing_assumptions_versions ────────────────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS pricing_assumptions_versions (
+          version       TEXT PRIMARY KEY,
+          description   TEXT,
+          is_active     BOOLEAN NOT NULL DEFAULT FALSE,
+          activated_at  TIMESTAMPTZ,
+          activated_by  INTEGER REFERENCES users(id),
+          change_reason TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS pricing_assumptions_versions_one_active
+          ON pricing_assumptions_versions (is_active) WHERE is_active = TRUE
+      `);
+
+      // ── 2/7  pricing_assumptions  ────────────────────────────────────────
+      // Scalar rows use value_bps OR value_pence; tiered/banded rows
+      // (broker tiers, opex tiers, margin tiers, PD/LGD anchors) use
+      // value_jsonb. Engine reads whichever is non-null per key.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS pricing_assumptions (
+          id              SERIAL PRIMARY KEY,
+          version         TEXT NOT NULL REFERENCES pricing_assumptions_versions(version),
+          key             TEXT NOT NULL,
+          label           TEXT,
+          value_bps       INTEGER,
+          value_pence     BIGINT,
+          value_jsonb     JSONB,
+          source          VARCHAR(20),
+          citation        TEXT,
+          last_changed_by INTEGER REFERENCES users(id),
+          last_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          change_reason   TEXT,
+          UNIQUE (version, key)
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS pricing_assumptions_version_idx ON pricing_assumptions(version)`);
+
+      // ── 3/7  pricing_grid_versions ───────────────────────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS pricing_grid_versions (
+          version       TEXT PRIMARY KEY,
+          description   TEXT,
+          is_active     BOOLEAN NOT NULL DEFAULT FALSE,
+          activated_at  TIMESTAMPTZ,
+          activated_by  INTEGER REFERENCES users(id),
+          change_reason TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS pricing_grid_versions_one_active
+          ON pricing_grid_versions (is_active) WHERE is_active = TRUE
+      `);
+
+      // ── 4/7  pricing_grid  ───────────────────────────────────────────────
+      // 9 PD × 5 LGD × 6 sectors = 270 cells per active version.
+      // sector references risk_taxonomy node_keys (kind='sector') as a soft
+      // link — no FK so sector inventory can evolve without grid rewrite.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS pricing_grid (
+          id                       SERIAL PRIMARY KEY,
+          version                  TEXT NOT NULL REFERENCES pricing_grid_versions(version),
+          sector                   TEXT NOT NULL,
+          pd_band                  INTEGER NOT NULL CHECK (pd_band BETWEEN 1 AND 9),
+          lgd_band                 CHAR(1) NOT NULL CHECK (lgd_band IN ('A','B','C','D','E')),
+          base_rate_bps_pm         INTEGER NOT NULL,
+          base_upfront_fee_bps     INTEGER NOT NULL,
+          base_commitment_fee_bps  INTEGER NOT NULL,
+          retained_months          INTEGER NOT NULL,
+          base_exit_fee_bps        INTEGER NOT NULL,
+          min_term_months          INTEGER NOT NULL,
+          source                   VARCHAR(20) NOT NULL DEFAULT 'canonical',
+          citation                 TEXT,
+          last_changed_by          INTEGER REFERENCES users(id),
+          last_changed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          change_reason            TEXT,
+          UNIQUE (version, sector, pd_band, lgd_band)
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS pricing_grid_version_sector_idx ON pricing_grid(version, sector)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS pricing_grid_lookup_idx ON pricing_grid(version, sector, pd_band, lgd_band)`);
+
+      // ── 5/7  ia_modifiers_versions ───────────────────────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS ia_modifiers_versions (
+          version       TEXT PRIMARY KEY,
+          description   TEXT,
+          is_active     BOOLEAN NOT NULL DEFAULT FALSE,
+          activated_at  TIMESTAMPTZ,
+          activated_by  INTEGER REFERENCES users(id),
+          change_reason TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS ia_modifiers_versions_one_active
+          ON ia_modifiers_versions (is_active) WHERE is_active = TRUE
+      `);
+
+      // ── 6/7  ia_modifiers  ───────────────────────────────────────────────
+      // 5 rows per version (A/B/C/D/E). Deltas applied on top of grid cell.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS ia_modifiers (
+          id                          SERIAL PRIMARY KEY,
+          version                     TEXT NOT NULL REFERENCES ia_modifiers_versions(version),
+          ia_band                     CHAR(1) NOT NULL CHECK (ia_band IN ('A','B','C','D','E')),
+          rate_bps_delta              INTEGER NOT NULL DEFAULT 0,
+          upfront_fee_bps_delta       INTEGER NOT NULL DEFAULT 0,
+          commitment_fee_bps_delta    INTEGER NOT NULL DEFAULT 0,
+          retained_months_delta       INTEGER NOT NULL DEFAULT 0,
+          min_term_months_delta       INTEGER NOT NULL DEFAULT 0,
+          source                      VARCHAR(20) NOT NULL DEFAULT 'canonical',
+          citation                    TEXT,
+          last_changed_by             INTEGER REFERENCES users(id),
+          last_changed_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          change_reason               TEXT,
+          UNIQUE (version, ia_band)
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS ia_modifiers_version_idx ON ia_modifiers(version)`);
+
+      // ── 7/7  deal_pricings (audit) ───────────────────────────────────────
+      // Append-only run-log. One row per pricing engine evaluation on a deal.
+      // FKs pin the row to the assumption/grid/IA versions live at the time
+      // AND to the risk_view row that drove PD/LGD/IA, so any historical
+      // recommendation can be replayed bit-for-bit. Future tuning re-runs
+      // create new rows, NEVER mutate.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS deal_pricings (
+          id                              SERIAL PRIMARY KEY,
+          deal_id                         INTEGER NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
+          risk_view_id                    INTEGER REFERENCES risk_view(id),
+          pricing_assumptions_version     TEXT NOT NULL REFERENCES pricing_assumptions_versions(version),
+          pricing_grid_version            TEXT NOT NULL REFERENCES pricing_grid_versions(version),
+          ia_modifiers_version            TEXT NOT NULL REFERENCES ia_modifiers_versions(version),
+          input_loan_amount_pence         BIGINT NOT NULL,
+          input_term_months               INTEGER NOT NULL,
+          input_sector                    TEXT NOT NULL,
+          input_pd                        INTEGER CHECK (input_pd BETWEEN 1 AND 9),
+          input_lgd                       CHAR(1) CHECK (input_lgd IN ('A','B','C','D','E')),
+          input_ia                        CHAR(1) CHECK (input_ia IN ('A','B','C','D','E')),
+          input_mode                      VARCHAR(20) NOT NULL DEFAULT 'warehouse',
+          input_concentration_bps         INTEGER,
+          input_stress_flagged            BOOLEAN NOT NULL DEFAULT FALSE,
+          input_stress_reason             TEXT,
+          recommended_rate_bps_pm         INTEGER,
+          recommended_upfront_fee_bps     INTEGER,
+          recommended_commitment_fee_bps  INTEGER,
+          recommended_retained_months     INTEGER,
+          recommended_exit_fee_bps        INTEGER,
+          recommended_min_term_months     INTEGER,
+          calculated_yield_apr_bps        INTEGER,
+          required_yield_apr_bps          INTEGER,
+          margin_buffer_bps               INTEGER,
+          net_yield_after_broker_apr_bps  INTEGER,
+          stress_matrix_jsonb             JSONB,
+          decline_flag                    BOOLEAN NOT NULL DEFAULT FALSE,
+          decline_reason                  TEXT,
+          whole_loan_alternative_jsonb    JSONB,
+          override_used                   BOOLEAN NOT NULL DEFAULT FALSE,
+          override_by                     INTEGER REFERENCES users(id),
+          override_reason                 TEXT,
+          created_by                      INTEGER REFERENCES users(id),
+          created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS deal_pricings_deal_idx     ON deal_pricings(deal_id, created_at DESC)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS deal_pricings_risk_idx     ON deal_pricings(risk_view_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS deal_pricings_grid_ver_idx ON deal_pricings(pricing_grid_version)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS deal_pricings_decline_idx  ON deal_pricings(decline_flag) WHERE decline_flag = TRUE`);
+
+      console.log('[migrate] ✓ pricing engine v1 schema deployed (7 tables: 3 versions + 3 config + deal_pricings audit)');
+    } catch (err) {
+      console.log('[migrate] Note on pricing v1 schema:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
