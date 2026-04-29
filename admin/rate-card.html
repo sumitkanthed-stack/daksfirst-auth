@@ -40,10 +40,13 @@
   table.grid td.cell { font-family:var(--mono); }
   table.grid td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
   table.grid td.cell.uncompetitive { background:rgba(239,91,91,0.06); }
+  table.grid td.cell.target-zone { background:rgba(62,207,142,0.08); }
   table.grid td.cell .rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   table.grid td.cell .rate.below { color:var(--err); }
   table.grid td.cell .rate.uncompetitive { color:var(--err); }
+  table.grid td.cell .rate.target-zone { color:var(--ok); }
   table.grid td.cell .uncompetitive-tag { display:block; font-size:8px; color:var(--err); font-weight:600; text-transform:uppercase; letter-spacing:0.4px; margin-top:2px; }
+  table.grid td.cell .target-tag { display:block; font-size:8px; color:var(--ok); font-weight:600; text-transform:uppercase; letter-spacing:0.4px; margin-top:2px; }
   table.grid td.cell .market { display:block; font-size:9px; color:var(--muted); margin-top:2px; font-style:italic; }
   table.grid td.cell .market.over-mkt { color:var(--warn); }
   table.grid td.cell .market.over-max { color:var(--err); }
@@ -176,18 +179,22 @@
         const rate = cell.base_rate_bps_pm;
         const belowFloor = rate < floorBpsPm;
         const uncompetitive = !belowFloor && rate > commercial_viable_ceiling;
+        const targetZone = !belowFloor && !uncompetitive;
         const cellClasses = [
           'cell',
           belowFloor ? 'below-floor' : '',
           uncompetitive ? 'uncompetitive' : '',
+          targetZone ? 'target-zone' : '',
         ].filter(Boolean).join(' ');
         const rateClasses = [
           'rate',
           belowFloor ? 'below' : '',
           uncompetitive ? 'uncompetitive' : '',
+          targetZone ? 'target-zone' : '',
         ].filter(Boolean).join(' ');
         html += `<td class="${cellClasses}">
           <span class="${rateClasses}">${bps2pm(rate)}</span>
+          ${targetZone ? '<span class="target-tag">target</span>' : ''}
           ${uncompetitive ? '<span class="uncompetitive-tag">borrower walks</span>' : ''}
           ${belowFloor ? '<span class="uncompetitive-tag">below floor</span>' : ''}
         </td>`;

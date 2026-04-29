@@ -56,6 +56,8 @@
   .grid-table td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
   .grid-table td.cell.uncompetitive { background:rgba(239,91,91,0.06); }
   .grid-table td.cell.uncompetitive .cell-rate { color:var(--err); }
+  .grid-table td.cell.target-zone { background:rgba(62,207,142,0.06); }
+  .grid-table td.cell.target-zone .cell-rate { color:var(--ok); }
   .cell-rate.below-floor-rate { color:var(--err); }
   .cell-rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   .cell-rate.capped { color:var(--warn); }
@@ -281,12 +283,13 @@
         const sectorFloor = floorForSector(activeSector);
         const belowFloor = rate < sectorFloor;
         const uncompetitive = !belowFloor && rate > commercial_viable_ceiling_bps_pm;
-        const floorClass = belowFloor ? ' below-floor' : (uncompetitive ? ' uncompetitive' : '');
+        const targetZone = !belowFloor && !uncompetitive;
+        const floorClass = belowFloor ? ' below-floor' : (uncompetitive ? ' uncompetitive' : (targetZone ? ' target-zone' : ''));
         const floorWarning = belowFloor
           ? `<span class="cell-market" style="color:var(--err);">⚠ below floor ${(sectorFloor/100).toFixed(2)}%pm</span>`
           : (uncompetitive
               ? `<span class="cell-market" style="color:var(--err);">⚠ borrower walks (>${(commercial_viable_ceiling_bps_pm/100).toFixed(2)}%pm)</span>`
-              : '');
+              : `<span class="cell-market" style="color:var(--ok);">✓ target zone</span>`);
 
         const meta = isEdited ? '<span style="color:var(--warn);">staged</span>' : (cell.source === 'tuned' ? `<span style="color:var(--warn);">tuned</span>` : '');
         html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}${floorClass}" data-key="${k}">
