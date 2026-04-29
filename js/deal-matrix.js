@@ -11,6 +11,8 @@ import { getCurrentRole } from './state.js';
 import { floatingProgress } from './floating-progress.js';
 import { renderFullVerification } from './companies-house.js';
 import { showDealDetail } from './deal-detail.js';
+// 2026-04-29: Royal Mail PAF address autocomplete (PROP-3 widget)
+import { mountAddressAutocomplete } from './address-autocomplete.js';
 // 2026-04-21: shared display helpers for consistent stage labels across views.
 import { getStageLabel, LOAN_PURPOSE_OPTIONS, EXIT_ROUTE_OPTIONS, EXIT_CONFIDENCE_OPTIONS } from './deal-display.js';
 
@@ -5521,6 +5523,13 @@ export async function renderDealMatrix(deal) {
             <button onclick="document.getElementById('dkf-property-modal').remove()" style="background:none;border:none;color:#94A3B8;font-size:20px;cursor:pointer;">&times;</button>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            ${!isEdit ? `
+            <div style="grid-column:1/-1;padding:10px;background:rgba(78,161,255,0.06);border:1px solid rgba(78,161,255,0.2);border-radius:6px;">
+              <label style="font-size:10px;color:#60A5FA;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">🔎 Royal Mail PAF address lookup (recommended)</label>
+              <div id="pm-paf-mount" style="margin-top:6px;"></div>
+              <div style="font-size:10px;color:#64748b;margin-top:4px;font-style:italic;">Type a postcode (e.g. W6 9RH) or part of an address. Pick from the dropdown to auto-fill the fields below + capture UPRN.</div>
+            </div>
+            ` : ''}
             <div style="grid-column:1/-1;">
               <label style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;">Address *</label>
               <input id="pm-address" value="${_escAttr(v.address || '')}" placeholder="Full property address" style="width:100%;padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#F1F5F9;font-size:13px;box-sizing:border-box;" />
@@ -5589,6 +5598,38 @@ export async function renderDealMatrix(deal) {
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
+    // ─── PAF address autocomplete (new property only) ─────────────────────
+    // When user picks a verified address: auto-fill the form fields + stash
+    // the udprn in modal scope. After the property is saved (and we have
+    // the new property_id), call /admin/property/select-address to attach
+    // the PAF metadata (UPRN/UDPRN/lat/lng/raw) to the deal_properties row.
+    let _pafSelectedUdprn = null;
+    let _pafSelectedAddress = null;
+    if (!isEdit) {
+      const mountEl = document.getElementById('pm-paf-mount');
+      if (mountEl) {
+        mountAddressAutocomplete({
+          containerEl: mountEl,
+          // Don't pass property_id — property doesn't exist yet. Defer the
+          // select-address call until after the property save returns its id.
+          dealId: null,
+          onSelect: (addr) => {
+            _pafSelectedUdprn = addr.udprn;
+            _pafSelectedAddress = addr;
+            // Auto-populate the address + postcode fields
+            const addressInput = document.getElementById('pm-address');
+            const postcodeInput = document.getElementById('pm-postcode');
+            if (addressInput) {
+              const parts = [addr.line_1, addr.line_2, addr.line_3, addr.post_town]
+                .filter(s => s && String(s).trim());
+              addressInput.value = parts.join(', ');
+            }
+            if (postcodeInput) postcodeInput.value = addr.postcode || '';
+          },
+        });
+      }
+    }
+
     // Wire up save button
     document.getElementById('pm-save-btn').addEventListener('click', async () => {
       const payload = {
@@ -5626,8 +5667,27 @@ export async function renderDealMatrix(deal) {
         });
         const data = await resp.json();
         if (data.success) {
+          // PAF post-save attach (new property only) — fire-and-forget; the
+          // property is already saved, this just enriches it. Fail silently
+          // if it doesn't work; user sees the address they typed/picked.
+          const newPropertyId = data.property?.id || data.id || null;
+          if (!isEdit && _pafSelectedUdprn && newPropertyId) {
+            try {
+              await fetchWithAuth(`${API_BASE}/api/admin/property/select-address`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  property_id: newPropertyId,
+                  deal_id: data.property?.deal_id || null,
+                  udprn: _pafSelectedUdprn,
+                }),
+              });
+            } catch (pafErr) {
+              console.warn('[paf-attach] non-fatal:', pafErr.message);
+            }
+          }
           document.getElementById('dkf-property-modal').remove();
-          showToast(isEdit ? 'Property updated' : 'Property added', 'success');
+          showToast(isEdit ? 'Property updated' : (_pafSelectedUdprn ? 'Property added (PAF verified)' : 'Property added'), 'success');
           setTimeout(() => _refreshDealInPlace(submissionId), 800);
         } else {
           showToast(data.error || 'Failed to save property', 'error');
