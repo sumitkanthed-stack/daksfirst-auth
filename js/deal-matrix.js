@@ -3482,6 +3482,81 @@ export async function renderDealMatrix(deal) {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // SECTION CONSENT (CONS-2c, 2026-04-29) — Borrower consent capture
+  // ═══════════════════════════════════════════════════════════════════
+  if (isInternalUser) {
+    const sgIndividuals = (deal.borrowers || []).filter((b) =>
+      b.borrower_type !== 'corporate' &&
+      (b.role === 'borrower' || b.role === 'guarantor' || b.role === 'director' || b.role === 'ubo' || b.role === 'shareholder' || !b.role)
+    );
+    const brokerAttestedAt = deal.broker_consent_attested_at;
+    const brokerAttestLabel = brokerAttestedAt
+      ? new Date(brokerAttestedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : null;
+
+    html += `
+    <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
+      ${renderSectionHeader('sc', '✓', 'Consent & Compliance', 'Borrower consent for credit, KYC, and identity checks', [
+        renderStatusDot(0, brokerAttestedAt ? 'complete' : 'not-started'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started'),
+        renderStatusDot(0, 'not-started')
+      ], isInternalUser)}
+
+      <div id="content-sc" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
+        <div style="padding:16px 24px 20px;background:#111827;">
+
+          <!-- Broker attestation card -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:4px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Broker attestation</div>
+          <div style="background:${brokerAttestedAt ? 'rgba(52,211,153,0.08)' : 'rgba(251,191,36,0.06)'};border:1px solid ${brokerAttestedAt ? 'rgba(52,211,153,0.30)' : 'rgba(251,191,36,0.30)'};border-radius:6px;padding:12px 14px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+              <div>
+                <div style="font-size:13px;color:#E5E7EB;font-weight:600;">${brokerAttestedAt ? '✓ Broker has attested consent in fact-find' : '⚠ No broker attestation on record'}</div>
+                <div style="font-size:11px;color:#94A3B8;margin-top:3px;">${brokerAttestedAt
+                  ? `Attested ${sanitizeHtml(brokerAttestLabel)} · text version ${sanitizeHtml(deal.broker_consent_text_version || 'v1')}`
+                  : 'Broker confirms they obtained consent in their FCA-regulated fact-find with the borrower.'}</div>
+              </div>
+              <button onclick="window.consentRecordBrokerAttestation && window.consentRecordBrokerAttestation('${deal.submission_id}', ${deal.id})"
+                ${!canEdit ? 'disabled' : ''}
+                style="padding:7px 14px;background:${brokerAttestedAt ? 'rgba(212,168,83,0.15)' : '#D4A853'};color:${brokerAttestedAt ? '#D4A853' : '#111'};border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                ${brokerAttestedAt ? 'Re-attest' : 'Record attestation'}
+              </button>
+            </div>
+          </div>
+
+          <!-- Per-borrower email-link consent -->
+          <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:18px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Direct borrower consent (email link)</div>
+          ${sgIndividuals.length === 0 ? `
+            <div style="padding:10px;color:#64748B;font-size:12px;font-style:italic;">No individual borrowers/UBOs on this deal yet.</div>
+          ` : `
+            <div id="consent-borrowers-${deal.id}" style="display:flex;flex-direction:column;gap:8px;">
+              ${sgIndividuals.map((b) => `
+                <div data-consent-bid="${b.id}" style="background:rgba(255,255,255,0.02);border:1px solid #2d3748;border-radius:5px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                  <div style="min-width:0;flex:1;">
+                    <div style="font-size:12px;color:#E5E7EB;font-weight:600;">${sanitizeHtml(b.full_name || b.name || 'Unnamed borrower')}</div>
+                    <div style="font-size:10.5px;color:#94A3B8;margin-top:2px;">${sanitizeHtml(b.email || 'No email on file — add before sending link')} <span id="consent-pill-${b.id}" style="margin-left:6px;font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(100,116,139,0.12);color:#64748B;font-weight:700;">CHECKING…</span></div>
+                  </div>
+                  <button onclick="window.consentSendEmailLink && window.consentSendEmailLink('${deal.submission_id}', ${deal.id}, ${b.id}, '${sanitizeHtml(b.email || '').replace(/'/g, '\\\'')}')"
+                    ${!canEdit || !b.email ? 'disabled' : ''}
+                    title="${b.email ? 'Send a one-time consent link via email' : 'Add an email address to enable sending'}"
+                    style="padding:5px 12px;background:${b.email ? '#60A5FA' : 'rgba(100,116,139,0.15)'};color:${b.email ? '#111' : '#94A3B8'};border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:${b.email ? 'pointer' : 'not-allowed'};white-space:nowrap;">
+                    Send consent link
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          `}
+
+          <div style="margin-top:14px;padding:8px 12px;background:rgba(96,165,250,0.06);border-left:3px solid #60A5FA;border-radius:3px;font-size:10.5px;color:#94A3B8;">
+            ℹ Consent is required for personal credit (Experian Delphi), Hunter Fraud, and SmartSearch identity checks before live mode fires. Commercial Delphi (corporate) does not require consent — fires on public business data only.
+          </div>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // M4d 2026-04-20 — Section reorder:
   // Sections 4 (Loan Terms) and 5 (Exit Strategy) are buffered here and
   // emitted further down in a NEW order: [Use of Funds] → [Exit Strategy]
@@ -4734,6 +4809,139 @@ export async function renderDealMatrix(deal) {
       _refreshXcollAfterSave();
     }
   };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CONS-2c (2026-04-29) — Borrower consent capture handlers
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Record broker attestation — RM has confirmed broker obtained consent in
+  // their FCA-regulated fact-find. Stamps deal_submissions cols + writes one
+  // borrower_consents row per UBO (covering all 4 consent types).
+  window.consentRecordBrokerAttestation = async function(submissionId, dealId) {
+    const ok = window.confirm(
+      'Record broker attestation for deal #' + dealId + '?\n\n' +
+      'This certifies that the broker has obtained the borrower\'s consent for credit, KYC, ' +
+      'identity, and fraud checks in their FCA-regulated fact-find.\n\n' +
+      'A borrower_consents row will be written for every individual borrower/UBO on this deal, ' +
+      'covering personal credit, hunter fraud, KYC, and open banking.\n\n' +
+      'Confirm?'
+    );
+    if (!ok) return;
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/consent/broker-attest/${dealId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert('Broker attestation failed: ' + (data.error || `HTTP ${res.status}`));
+        return;
+      }
+      showToast(`Broker attestation recorded for ${data.borrowers ? data.borrowers.length : '?'} borrower(s)`, 'success');
+      setTimeout(() => _refreshDealInPlace(submissionId), 500);
+    } catch (err) {
+      console.error('[consent/attest] error:', err);
+      alert('Connection error: ' + err.message);
+    }
+  };
+
+  // Send email-link consent to a specific borrower. RM clicks → backend mints
+  // signed token → emails borrower → borrower clicks link → public landing
+  // page → confirms → consent rows written automatically.
+  window.consentSendEmailLink = async function(submissionId, dealId, borrowerId, email) {
+    if (!email) {
+      alert('Borrower has no email address on file. Add one in the Borrower section first.');
+      return;
+    }
+    const ok = window.confirm(
+      'Send consent link to ' + email + '?\n\n' +
+      'The borrower will receive an email with a one-time link (valid 30 days). ' +
+      'They click the link, read the consent text, tick the box, and confirm. ' +
+      'No login required.\n\n' +
+      'Confirm send?'
+    );
+    if (!ok) return;
+    const btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; btn.style.opacity = '0.6'; }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/consent/send-link/${dealId}/${borrowerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert('Send failed: ' + (data.error || `HTTP ${res.status}`));
+        if (btn) { btn.disabled = false; btn.textContent = 'Send consent link'; btn.style.opacity = '1'; }
+        return;
+      }
+      showToast(`Consent link sent to ${email} (expires in ${data.link_expires_in_days || 30} days)`, 'success');
+      if (btn) {
+        btn.textContent = 'Sent ✓';
+        btn.style.background = 'rgba(52,211,153,0.15)';
+        btn.style.color = '#34D399';
+      }
+    } catch (err) {
+      console.error('[consent/send-link] error:', err);
+      alert('Connection error: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Send consent link'; btn.style.opacity = '1'; }
+    }
+  };
+
+  // After deal mounts, fetch consent status and paint per-borrower pills.
+  // Called from showDealMatrix (or whatever wires up post-render hooks).
+  window.consentLoadStatusPills = async function(submissionId, dealId) {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/consent/status/${dealId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success) return;
+      const consentRows = data.consent_rows || [];
+      // Group by borrower_id, pick best evidence_source for the pill.
+      const byBorrower = {};
+      consentRows.forEach((r) => {
+        if (r.revoked_at) return;
+        if (!byBorrower[r.borrower_id]) byBorrower[r.borrower_id] = { sources: new Set(), latestAt: null };
+        byBorrower[r.borrower_id].sources.add(r.evidence_source);
+        if (!byBorrower[r.borrower_id].latestAt || new Date(r.consented_at) > new Date(byBorrower[r.borrower_id].latestAt)) {
+          byBorrower[r.borrower_id].latestAt = r.consented_at;
+        }
+      });
+      // Update pills
+      document.querySelectorAll('[id^="consent-pill-"]').forEach((pill) => {
+        const bid = Number(pill.id.replace('consent-pill-', ''));
+        const state = byBorrower[bid];
+        if (!state) {
+          pill.style.background = 'rgba(100,116,139,0.12)';
+          pill.style.color = '#94A3B8';
+          pill.textContent = 'NO CONSENT';
+        } else if (state.sources.has('email_link_token')) {
+          pill.style.background = 'rgba(52,211,153,0.15)';
+          pill.style.color = '#34D399';
+          pill.textContent = '✓ EMAIL CONFIRMED';
+        } else if (state.sources.has('broker_attestation')) {
+          pill.style.background = 'rgba(167,139,250,0.15)';
+          pill.style.color = '#A78BFA';
+          pill.textContent = '✓ BROKER ATTESTED';
+        } else {
+          pill.style.background = 'rgba(96,165,250,0.15)';
+          pill.style.color = '#60A5FA';
+          pill.textContent = state.sources.values().next().value.toUpperCase();
+        }
+      });
+    } catch (err) {
+      console.error('[consent/status] error:', err);
+    }
+  };
+
+  // Auto-load status pills shortly after the deal renders (lets the consent
+  // section DOM exist before we try to update pills).
+  setTimeout(() => {
+    if (window.consentLoadStatusPills && deal && deal.id) {
+      window.consentLoadStatusPills(deal.submission_id, deal.id);
+    }
+  }, 600);
 
   window.sgSavePgStatus = async function(submissionId, borrowerId, value) {
     const ok = await _sgFlashSave(`sg-pg-status-${borrowerId}`, `${API_BASE}/api/deals/${submissionId}/borrowers/${borrowerId}`, { pg_status: value });
