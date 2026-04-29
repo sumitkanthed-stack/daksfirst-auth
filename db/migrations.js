@@ -3609,6 +3609,125 @@ async function runMigrations() {
       console.log('[migrate] Note on sectoral-floors reseed:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-2.3 (2026-04-29 night): LGD spread on rate ladder
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Sumit observation: market lenders DO move rate by LTV (proxy for LGD).
+    //  Reference data point: hospitality term loan @ 65% LTV = 325 over base.
+    //  Sumit's LTV ramp rule:
+    //    +5% LTV  → ×1.15 (added 15% to rate for that 5% LTV step)
+    //    +5% more → ×1.20 incrementally (so 75% LTV = 1.15 × 1.20 = 1.38)
+    //
+    //  Applied as LGD multipliers on top of the existing LGD-C-baseline rates:
+    //    Non-hospitality:  A=0.78  B=0.87  C=1.00  D=1.20  E=1.50
+    //    Hospitality:      A=0.75  B=0.85  C=1.00  D=1.30  E=1.75   (wider per Sumit)
+    //
+    //  Rate card and engine already support per-cell rates — this just populates
+    //  the variance. Floors still apply per-cell at engine evaluation time.
+    //
+    //  Idempotent: gated by description marker 'lgd-spread-2026-04-29'.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const LGD_MARKER = 'lgd-spread-2026-04-29';
+      const lgdSpreadExists = (await pool.query(
+        `SELECT 1 FROM pricing_grid_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${LGD_MARKER}%`]
+      )).rows.length > 0;
+
+      if (lgdSpreadExists) {
+        console.log('[migrate] ✓ lgd-spread reseed already applied, skipping');
+      } else {
+        const LGD_MULT_DEFAULT = { A: 0.78, B: 0.87, C: 1.00, D: 1.20, E: 1.50 };
+        const LGD_MULT_HOSPITALITY = { A: 0.75, B: 0.85, C: 1.00, D: 1.30, E: 1.75 };
+
+        await pool.query('BEGIN');
+
+        const g_active = (await pool.query(
+          `SELECT version FROM pricing_grid_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!g_active) throw new Error('no active grid version');
+        const g_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_grid_versions`)).rows[0].n;
+        const gNew = `v${g_count + 1}`;
+
+        // Read standard ceiling for clamp
+        const ceilingRow = (await pool.query(
+          `SELECT value_bps FROM pricing_assumptions
+            WHERE version = (SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE)
+              AND key = 'standard_rate_ceiling_bps_pm'`
+        )).rows[0];
+        const ceiling = ceilingRow?.value_bps || 200;
+
+        await pool.query(
+          `INSERT INTO pricing_grid_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [gNew, `LGD spread on rate ladder · marker:${LGD_MARKER}`,
+           'PRICE-2.3: LGD multipliers applied per Sumit LTV ramp rule (×0.78 to ×1.50; hospitality ×0.75 to ×1.75); rates clamped at standard ceiling']
+        );
+
+        // Need an LGD-C "baseline" rate per (sector, pd) — use whatever the
+        // current active grid has at LGD-C as the baseline.
+        const baselineRows = (await pool.query(
+          `SELECT sector, pd_band, base_rate_bps_pm
+             FROM pricing_grid
+            WHERE version = $1 AND lgd_band = 'C'`,
+          [g_active.version]
+        )).rows;
+        const baselineByKey = Object.fromEntries(
+          baselineRows.map(r => [`${r.sector}|${r.pd_band}`, r.base_rate_bps_pm])
+        );
+
+        const gOldRows = (await pool.query(
+          `SELECT sector, pd_band, lgd_band,
+                  base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                  retained_months, base_exit_fee_bps, min_term_months,
+                  source, citation, change_reason
+             FROM pricing_grid WHERE version = $1`,
+          [g_active.version]
+        )).rows;
+
+        let cellsUpdated = 0;
+        let cellsCapped = 0;
+        for (const old of gOldRows) {
+          const baseline = baselineByKey[`${old.sector}|${old.pd_band}`] || old.base_rate_bps_pm;
+          const mults = old.sector === 'hospitality' ? LGD_MULT_HOSPITALITY : LGD_MULT_DEFAULT;
+          const mult = mults[old.lgd_band] || 1.00;
+          let newRate = Math.round(baseline * mult);
+          let wasCapped = false;
+          if (newRate > ceiling) {
+            newRate = ceiling;
+            wasCapped = true;
+            cellsCapped++;
+          }
+          const isChanged = newRate !== old.base_rate_bps_pm;
+          if (isChanged) cellsUpdated++;
+
+          await pool.query(
+            `INSERT INTO pricing_grid
+               (version, sector, pd_band, lgd_band,
+                base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                retained_months, base_exit_fee_bps, min_term_months,
+                source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())`,
+            [gNew, old.sector, old.pd_band, old.lgd_band,
+             newRate, old.base_upfront_fee_bps, old.base_commitment_fee_bps,
+             old.retained_months, old.base_exit_fee_bps, old.min_term_months,
+             'canonical',
+             `Daksfirst LGD spread 2026-04-29 (Sumit LTV ramp ×${mult.toFixed(2)})${wasCapped ? ' [ceiling-capped]' : ''}`,
+             `LGD ${old.lgd_band} multiplier ×${mult.toFixed(2)} on ${old.sector} PD${old.pd_band} baseline ${baseline} bps/pm = ${newRate} bps/pm${wasCapped ? ' (capped at ceiling)' : ''}`]
+          );
+        }
+
+        await pool.query(`UPDATE pricing_grid_versions SET is_active = FALSE WHERE version = $1`, [g_active.version]);
+        await pool.query(`UPDATE pricing_grid_versions SET is_active = TRUE  WHERE version = $1`, [gNew]);
+
+        await pool.query('COMMIT');
+        console.log(`[migrate] ✓ lgd-spread applied (grid ${g_active.version}→${gNew}, ${cellsUpdated} cells updated, ${cellsCapped} ceiling-capped)`);
+      }
+    } catch (err) {
+      await pool.query('ROLLBACK').catch(() => {});
+      console.log('[migrate] Note on lgd-spread reseed:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

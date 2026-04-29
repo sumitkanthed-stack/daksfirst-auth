@@ -129,6 +129,14 @@
   };
   const PD_BANDS = [1,2,3,4,5,6,7,8,9];
   const LGD_BANDS = ['A','B','C','D','E'];
+  // LTV proxy for RM-friendly column labels — RMs think in LTV, not LGD
+  const LGD_TO_LTV = {
+    A: '≤50% LTV',
+    B: '50-65% LTV',
+    C: '65-72% LTV',
+    D: '72-80% LTV',
+    E: '80%+ LTV',
+  };
 
   let assumptions = {};
   let marketBenchmarks = {};
