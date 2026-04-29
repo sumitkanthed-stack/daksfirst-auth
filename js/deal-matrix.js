@@ -2893,16 +2893,14 @@ export async function renderDealMatrix(deal) {
                 const _pdOk = !!p.pd_pulled_at;
 
                 // ─── Rental tab content (PD-3, 2026-04-29) ───────────────────
+                // FRESH-GATE follow-up (2026-04-29): added collapse/expand to match
+                // Chimnie/HMLR panels — chevron + inline summary when collapsed.
                 const rentalHtml = (() => {
                   if (!isInternalUser) return '';
                   const fmtMoney = (n) => n != null && !isNaN(n) ? '£' + Math.round(Number(n)).toLocaleString() : '—';
                   const fmtPct = (n) => n != null && !isNaN(n) ? Number(n).toFixed(2) + '%' : '—';
                   // Convert PCM to weekly using industry-standard 12/52 factor
                   const pcmToPw = (pcm) => pcm != null && !isNaN(pcm) ? Math.round(Number(pcm) * 12 / 52) : null;
-                  const fmtMoneyDual = (pcm) => {
-                    if (pcm == null || isNaN(pcm)) return '—';
-                    return fmtMoney(pcm) + ' <span style="font-size:10px;color:#94A3B8;font-weight:400;">pcm · ' + fmtMoney(pcmToPw(pcm)) + ' pw</span>';
-                  };
                   const stated = p.market_rent_pcm ?? p.chimnie_rental_pcm ?? null;
                   const aA = p.pd_rental_pcm_asking_avg, aMin = p.pd_rental_pcm_asking_min, aMax = p.pd_rental_pcm_asking_max;
                   const eA = p.pd_rental_pcm_achieved_avg, eMin = p.pd_rental_pcm_achieved_min, eMax = p.pd_rental_pcm_achieved_max;
@@ -2910,19 +2908,49 @@ export async function renderDealMatrix(deal) {
                   const sample = p.pd_sample_size;
                   const beds = p.pd_beds_filter || p.chimnie_bedrooms || null;
 
-                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">' +
-                    '<div style="display:flex;align-items:center;gap:6px;">' +
+                  // Collapsed by default once data is pulled — RM clicks chevron to expand.
+                  // Same pattern as Chimnie + HMLR for visual consistency.
+                  const rentalCollapsed = !!p.pd_pulled_at;
+                  const rentalBodyDisplay = rentalCollapsed ? 'none' : 'block';
+                  const rentalSummaryDisplay = rentalCollapsed ? 'inline' : 'none';
+                  const rentalChevronRotate = rentalCollapsed ? '' : 'transform:rotate(90deg);';
+
+                  // Build inline summary — shown when collapsed. Includes stated rent,
+                  // gap vs market, and yield. Colours match the deal-position rule.
+                  let summaryInline = '';
+                  if (p.pd_pulled_at) {
+                    const bits = [];
+                    if (stated) bits.push('<strong>' + fmtMoney(stated) + '</strong> pcm');
+                    if (stated && eA) {
+                      const delta = stated - eA;
+                      const pct = ((delta / eA) * 100).toFixed(1);
+                      const positionColour = delta < -eA*0.10 ? '#F87171' : (delta < 0 ? '#FBBF24' : '#34D399');
+                      const tag = delta < -eA*0.10 ? 'BELOW market' : delta < 0 ? 'slightly below' : delta < eA*0.10 ? 'at market' : 'above market';
+                      bits.push('<span style="color:' + positionColour + ';">' + (delta >= 0 ? '+' : '') + pct + '% ' + tag + '</span>');
+                    } else if (eA) {
+                      bits.push('market <strong>' + fmtMoney(eA) + '</strong> pcm');
+                    }
+                    if (yld != null) bits.push('<strong>' + fmtPct(yld) + '</strong> yield');
+                    summaryInline = bits.join(' · ');
+                  } else {
+                    summaryInline = 'No PropertyData yet';
+                  }
+
+                  const headerRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;cursor:pointer;" onclick="window._toggleRentalPanel(' + p.id + ')">' +
+                    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+                      '<span id="rental-chevron-' + p.id + '" style="display:inline-block;font-size:10px;color:#64748B;' + rentalChevronRotate + 'transition:transform 0.15s;">▶</span>' +
                       '<span style="font-size:10px;color:#FB7185;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">' + propLabel + 'Rental Intelligence (PropertyData)</span>' +
                       (sample ? '<span style="font-size:9px;color:#94A3B8;">' + sample + ' lettings</span>' : '') +
+                      '<span id="rental-summary-' + p.id + '" style="display:' + rentalSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">' + summaryInline + '</span>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       (p.pd_pulled_at ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(p.pd_pulled_at).toLocaleDateString('en-GB') + ' · ' + (window._freshAge ? window._freshAge(p.pd_pulled_at, 30) : '') + '</span>' : '') +
-                      '<button onclick="window._propertyDataPull(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (p.pd_pulled_at ? 'rgba(251,113,133,0.12)' : '#FB7185') + ';color:' + (p.pd_pulled_at ? '#FB7185' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (p.pd_pulled_at ? 'Refresh' : 'Pull rental data') + '</button>' +
+                      '<button onclick="event.stopPropagation();window._propertyDataPull(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (p.pd_pulled_at ? 'rgba(251,113,133,0.12)' : '#FB7185') + ';color:' + (p.pd_pulled_at ? '#FB7185' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (p.pd_pulled_at ? 'Refresh' : 'Pull rental data') + '</button>' +
                     '</div>' +
                   '</div>';
 
                   if (!p.pd_pulled_at) {
-                    return headerRow + '<div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No PropertyData yet. Click Pull to fetch postcode rental benchmarks (asking + achieved + yield + comparables).</div>';
+                    return headerRow + '<div id="rental-body-' + p.id + '" style="display:block;"><div style="font-size:11px;color:#64748B;margin-top:6px;font-style:italic;">No PropertyData yet. Click Pull to fetch postcode rental benchmarks (asking + achieved + yield + comparables).</div></div>';
                   }
 
                   // Deal-vs-market gap
@@ -2968,7 +2996,7 @@ export async function renderDealMatrix(deal) {
                     (p.chimnie_rental_pcm ? '<span>Chimnie estimate: <strong style="color:#60A5FA;">' + fmtMoney(p.chimnie_rental_pcm) + '</strong> pcm</span>' : '') +
                   '</div>';
 
-                  return headerRow + gapHtml + benchHtml + yieldHtml;
+                  return headerRow + '<div id="rental-body-' + p.id + '" style="display:' + rentalBodyDisplay + ';">' + gapHtml + benchHtml + yieldHtml + '</div>';
                 })();
                 const _tabBadge = (ok) => ok
                   ? '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(52,211,153,0.15);color:#34D399;font-weight:700;">✓</span>'
@@ -9896,6 +9924,26 @@ window._toggleHmlrPanel = function(propertyId) {
   const body = document.getElementById('hmlr-body-' + propertyId);
   const chevron = document.getElementById('hmlr-chevron-' + propertyId);
   const summary = document.getElementById('hmlr-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (summary) summary.style.display = 'none';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    if (summary) summary.style.display = 'inline';
+    if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── Toggle Rental panel (2026-04-29) ───────────────────────────────────────
+// Mirrors _toggleChimniePanel/_toggleHmlrPanel for the PropertyData rental
+// intelligence sub-panel.
+window._toggleRentalPanel = function(propertyId) {
+  const body = document.getElementById('rental-body-' + propertyId);
+  const chevron = document.getElementById('rental-chevron-' + propertyId);
+  const summary = document.getElementById('rental-summary-' + propertyId);
   if (!body) return;
   const isCollapsed = body.style.display === 'none';
   if (isCollapsed) {
