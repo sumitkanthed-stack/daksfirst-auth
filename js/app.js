@@ -10,6 +10,7 @@ import { switchDetailTab, saveOnboardingTab, aiAutoFill, toggleBrokerCompanyFiel
 import { handleSmartDrop, handleSmartFileSelect, toggleWhatsappPaste, handleWhatsappSubmit, confirmSmartParse, cancelSmartParse, toggleExistingDealSelect } from './smart-parse.js';
 import { handleDocumentDragOver, handleDocumentDragLeave, handleDocumentDrop, handleFileSelect, downloadDocumentById, viewDocumentInline } from './documents.js';
 import { showToast } from './utils.js';
+import { initQuickQuote } from './quick-quote.js';
 
 // Expose global functions to window for inline onclick handlers
 window.showScreen = showScreen;
@@ -208,6 +209,9 @@ window.createInternalUser = () => import('./admin.js').then(m => m.createInterna
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize auth and routing
   initAuthAndRouting();
+
+  // QQ-3: wire Quick Quote panel handlers (idempotent — checks DOM presence)
+  try { initQuickQuote(); } catch (e) { console.warn('[quick-quote] init failed:', e.message); }
 
   // Add drag-drop listeners for documents if element exists
   const uploadZone = document.getElementById('upload-zone');

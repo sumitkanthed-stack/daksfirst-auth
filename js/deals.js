@@ -4,6 +4,17 @@ import { getAuthToken, getCurrentUser, getCurrentRole, fetchWithAuth } from './a
 import { setCurrentDealData, setCurrentDealId, getCurrentDealId } from './state.js';
 import { initBrokerSidebar } from './broker-sidebar.js';
 import { initCompaniesHouse } from './companies-house.js';
+// 2026-04-21: shared display helpers — same stage labels, property headlines,
+// and borrower names used across Snapshot, Matrix header, Deal Progress bar,
+// and this deals list. Single source of truth.
+import {
+  getStageLabel,
+  deriveDisplayStage,
+  getPrimaryPropertyAddress,
+  getPrimaryPostcodeArea,
+  getPrimaryBorrowerName,
+  isPrimaryBorrowerCorporate
+} from './deal-display.js';
 
 let currentDealTab = 0;
 const dealTabIds = ['dt-overview', 'dt-borrower', 'dt-property', 'dt-funds'];
@@ -38,6 +49,47 @@ export function showDealForm() {
 
   // Initialize Companies House auto-verification for corporate borrowers
   try { initCompaniesHouse(); } catch (e) { console.warn('[deals] Companies House init:', e.message); }
+
+  // QQ-4 (2026-04-29): pre-fill from a Quick Quote if broker just clicked
+  // "Submit full deal pack" CTA. The quick-quote frontend stashes the id in
+  // sessionStorage; we read + fetch + populate fields, then clear it so a
+  // subsequent fresh "Submit New Deal" click doesn't re-pre-fill.
+  try {
+    const qqId = sessionStorage.getItem('qq_pending_id');
+    if (qqId) {
+      sessionStorage.removeItem('qq_pending_id');
+      fetchWithAuth(`${API_BASE}/api/broker/quick-quote/${qqId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (!d || !d.ok || !d.quote) return;
+          const q = d.quote;
+          const setVal = (id, v) => {
+            const el = document.getElementById(id);
+            if (el && v != null && v !== '') el.value = v;
+          };
+          // Loan + purpose
+          if (q.loan_amount_pence) setVal('deal-loan-amount', Math.round(Number(q.loan_amount_pence) / 100));
+          if (q.purpose) setVal('deal-purpose', q.purpose);
+          // Address
+          if (q.postcode) setVal('deal-postcode', q.postcode);
+          if (q.address_text) setVal('deal-address', q.address_text);
+          // Borrower (corporate by default since QQ captures company)
+          if (q.company_name || q.company_number) {
+            const typeEl = document.getElementById('deal-borrower-type');
+            if (typeEl) {
+              typeEl.value = 'limited';
+              typeEl.dispatchEvent(new Event('change'));
+            }
+            setVal('deal-company-name', q.company_name);
+            setVal('deal-company-number', q.company_number);
+          }
+          if (typeof window.showToast === 'function') {
+            window.showToast('Form pre-filled from your Quick Quote', 'success');
+          }
+        })
+        .catch((err) => console.warn('[deals] QQ pre-fill failed:', err.message));
+    }
+  } catch (_) { /* sessionStorage may be unavailable in private mode */ }
 }
 
 /**

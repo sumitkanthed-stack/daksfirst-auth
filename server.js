@@ -27,6 +27,7 @@ const pricingRoutes = require('./routes/pricing');
 const propertyRoutes = require('./routes/property');
 const hmlrRoutes = require('./routes/hmlr');
 const consentRoutes = require('./routes/consent');
+const quickQuoteRoutes = require('./routes/quick-quote');
 const { adminRouter: kycAdminRoutes, webhookRouter: smartsearchWebhookRoutes } = require('./routes/kyc');
 const { adminRouter: creditAdminRoutes } = require('./routes/credit');
 const panelsRoutes = require('./routes/panels');
@@ -117,6 +118,7 @@ app.use('/api', riskRoutes);          // Mounts /admin/risk-runs/start (token+in
 app.use('/api', pricingRoutes);       // Mounts /admin/pricing/preview/:dealId + /admin/pricing/active-config (PRICE-3)
 app.use('/api', propertyRoutes);      // PAF lookup — postcode-lookup, autocomplete, select-address (PROP-2)
 app.use('/api', consentRoutes);       // Borrower consent — admin attest, send-link, public landing (CONS bundle)
+app.use('/api', quickQuoteRoutes);    // Broker Quick Quote — top-of-funnel conversion tool (QQ bundle)
 app.use('/api/admin/hmlr', hmlrRoutes); // HM Land Registry — admin-only (status, search, pull, property)
 app.use('/api/admin/kyc', kycAdminRoutes); // SmartSearch KYC/AML — admin-only (status, individual, business, sanctions, sweep, monitor, checks, check)
 app.use('/api/webhooks/smartsearch', smartsearchWebhookRoutes); // SmartSearch ongoing-monitoring webhook (HMAC-verified, public)

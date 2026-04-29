@@ -4068,6 +4068,62 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  QQ-1 (2026-04-29): quick_quotes audit table
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Top-of-funnel conversion tool. Brokers land on the portal, fill a 4-input
+    //  Quick Quote form (address, company, loan amount, drawdown date), backend
+    //  fans out to PAF + Chimnie + PD + Companies House + pricing engine, returns
+    //  an instant eligibility verdict ("65% LTV — within 75% ceiling") and rate.
+    //
+    //  Every quote writes a row here regardless of whether the broker proceeds.
+    //  converted_to_deal_id stamps the link if they later submit a full deal —
+    //  lets us measure conversion %.
+    //
+    //  results_jsonb captures the full vendor responses for audit + analytics.
+    //  ltv_pct + eligible_flag are denormalised for fast filtering.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS quick_quotes (
+          id                       SERIAL PRIMARY KEY,
+          broker_user_id           INTEGER REFERENCES users(id),
+          postcode                 VARCHAR(15),
+          address_text             TEXT,
+          paf_uprn                 VARCHAR(20),
+          company_number           VARCHAR(20),
+          company_name             TEXT,
+          loan_amount_pence        BIGINT,
+          purpose                  VARCHAR(20),                            -- 'acquisition' | 'refinance' | 'equity_release'
+          drawdown_target_date     DATE,
+          chimnie_avm_pence        BIGINT,                                 -- estimated property value
+          pd_rental_pcm_pence      BIGINT,                                 -- estimated rental income
+          pd_yield_gross_pct       NUMERIC(5,2),
+          company_status           VARCHAR(40),                            -- active | dissolved | etc.
+          company_age_years        INTEGER,
+          ltv_pct                  NUMERIC(5,2),                           -- loan / chimnie_avm × 100
+          indicative_rate_bps_pm   INTEGER,                                -- pricing engine output at typical grade
+          eligible_flag            BOOLEAN NOT NULL DEFAULT FALSE,         -- LTV ≤ 75% AND company active
+          eligible_reason          TEXT,                                   -- "Within 75% ceiling" or "82% LTV — needs more security"
+          results_jsonb            JSONB,                                  -- full vendor responses
+          converted_to_deal_id     INTEGER REFERENCES deal_submissions(id), -- stamped if broker proceeds
+          quote_ip                 VARCHAR(45),
+          quote_user_agent         TEXT,
+          total_cost_pence         INTEGER NOT NULL DEFAULT 0,             -- vendor credits burned
+          created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_quick_quotes_broker_user_id ON quick_quotes(broker_user_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_quick_quotes_company_number ON quick_quotes(company_number)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_quick_quotes_postcode       ON quick_quotes(postcode)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_quick_quotes_created_at     ON quick_quotes(created_at DESC)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_quick_quotes_converted      ON quick_quotes(converted_to_deal_id) WHERE converted_to_deal_id IS NOT NULL`);
+
+      console.log('[migrate] ✓ quick_quotes table ready (QQ-1)');
+    } catch (err) {
+      console.log('[migrate] Note on QQ-1 schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  PD-4 (2026-04-29 night): risk_rubric v6 deploy — adds PropertyData
     //  ─────────────────────────────────────────────────────────────────────────
     //  v6 = v5 body + v6_addendum (PropertyData rental signals + PAF address

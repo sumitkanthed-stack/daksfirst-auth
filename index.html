@@ -737,6 +737,72 @@
           </div>
 
           <!-- Deals Section -->
+          <!-- ═══════════════════════════════════════════════════════════════
+               QQ-3 (2026-04-29): Quick Quote panel
+               4-input form + result panel. Calls POST /api/broker/quick-quote.
+               JS handlers in js/quick-quote.js.
+               ═══════════════════════════════════════════════════════════════ -->
+          <div id="qq-section" style="margin-bottom:28px;background:linear-gradient(135deg,rgba(212,168,83,0.08) 0%,rgba(212,168,83,0.02) 100%);border:1px solid rgba(212,168,83,0.25);border-radius:10px;padding:20px 24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+              <div>
+                <h2 style="margin:0;font-family:'Playfair Display',serif;font-size:20px;color:#D4A853;">Quick Quote</h2>
+                <p style="margin:4px 0 0;color:#94A3B8;font-size:12px;">Instant indicative LTV + rate. ~30 seconds. No commitment.</p>
+              </div>
+              <button id="qq-toggle" type="button" style="background:transparent;border:1px solid rgba(212,168,83,0.4);color:#D4A853;padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;">Open quote form</button>
+            </div>
+
+            <div id="qq-form-container" style="display:none;">
+              <form id="qq-form" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Postcode</label>
+                  <input id="qq-postcode" type="text" placeholder="e.g. W6 9RH" required maxlength="8"
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;text-transform:uppercase;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Property address (optional)</label>
+                  <input id="qq-address" type="text" placeholder="House number, street"
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Borrower company number</label>
+                  <input id="qq-company-number" type="text" placeholder="e.g. 12345678" maxlength="10"
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;text-transform:uppercase;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Borrower company name (optional)</label>
+                  <input id="qq-company-name" type="text" placeholder="If number unknown"
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Loan amount (£)</label>
+                  <input id="qq-loan-amount" type="number" min="500000" max="15000000" step="50000" placeholder="500,000 — 15,000,000" required
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Purpose</label>
+                  <select id="qq-purpose" required
+                    style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;">
+                    <option value="">— select —</option>
+                    <option value="acquisition">Acquisition</option>
+                    <option value="refinance">Refinance</option>
+                    <option value="equity_release">Equity release</option>
+                  </select>
+                </div>
+                <div style="grid-column:1/-1;">
+                  <label style="display:block;font-size:11px;color:#94A3B8;font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;">Target drawdown date (optional)</label>
+                  <input id="qq-drawdown-date" type="date"
+                    style="width:240px;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:9px 11px;border-radius:5px;font-size:13px;" />
+                </div>
+                <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+                  <button type="button" id="qq-cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#94A3B8;padding:9px 18px;border-radius:5px;font-size:13px;cursor:pointer;">Cancel</button>
+                  <button type="submit" id="qq-submit" style="background:#D4A853;color:#111;border:none;padding:9px 22px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;">Get instant quote</button>
+                </div>
+              </form>
+            </div>
+
+            <div id="qq-result-container" style="display:none;margin-top:14px;"></div>
+          </div>
+
           <div class="deals-section-header">
             <h2>My Deals</h2>
             <button class="btn btn-primary" onclick="showDealForm()">Submit New Deal</button>
