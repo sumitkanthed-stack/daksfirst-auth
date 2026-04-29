@@ -2923,6 +2923,295 @@ async function runMigrations() {
       console.log('[migrate] Note on pricing v1 schema:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-2 (2026-04-29): v1 canonical seed
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Populates the three config tables with version='v1', is_active=TRUE.
+    //  Every value sourced from the LOCKED defaults section of memory file
+    //  project_pricing_engine_design_2026_04_28.md (Sumit signed off "let's
+    //  commit, change later" 2026-04-29 ~late evening BST).
+    //
+    //  Seed shape:
+    //    pricing_assumptions   — ~28 global keys (cost stack scalars, tiers,
+    //                            anchors, rate ceilings, FCA cap)
+    //    pricing_grid          — 270 cells = 9 PD × 5 LGD × 6 sectors
+    //                            populated for IA=C baseline (median deal).
+    //                            All sectors get identical defaults v1 —
+    //                            sectoral tuning happens via subsequent
+    //                            versions.
+    //    ia_modifiers          — 5 rows of signed deltas vs IA=C baseline.
+    //
+    //  Architectural note on min_term:
+    //    The LOCKED LGD×IA min_term joint table doesn't decompose into a
+    //    row-per-IA delta cleanly. We seed pricing_grid.min_term_months at
+    //    IA=C and store the full LGD×IA table as JSONB on
+    //    pricing_assumptions.min_term_lgd_ia_table. PRICE-3 engine prefers
+    //    that lookup over grid+modifier sum for min_term recommendations.
+    //
+    //  Idempotent: every INSERT uses ON CONFLICT DO NOTHING. Re-running this
+    //  migration is a no-op once v1 is seeded. To tune values, INSERT a new
+    //  version row + new config rows under that version, then flip is_active
+    //  in a 2-step transaction.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      // ── Register v1 versions on all three tables ──────────────────────
+      await pool.query(`
+        INSERT INTO pricing_assumptions_versions (version, description, is_active, activated_at, change_reason)
+        VALUES ('v1', 'Canonical seed v1 — Daksfirst LOCKED defaults 2026-04-29', TRUE, NOW(),
+                'Initial canonical seed from project_pricing_engine_design_2026_04_28.md LOCKED section')
+        ON CONFLICT (version) DO NOTHING
+      `);
+      await pool.query(`
+        INSERT INTO pricing_grid_versions (version, description, is_active, activated_at, change_reason)
+        VALUES ('v1', '9×5×6 sectoral grid v1 — IA=C baseline cells', TRUE, NOW(),
+                'Initial canonical seed; all 6 sectors identical at v1; sectoral tuning under future versions')
+        ON CONFLICT (version) DO NOTHING
+      `);
+      await pool.query(`
+        INSERT INTO ia_modifiers_versions (version, description, is_active, activated_at, change_reason)
+        VALUES ('v1', 'IA-band deltas v1 — signed relative to IA=C baseline', TRUE, NOW(),
+                'Initial canonical seed; min_term carried as JSONB in pricing_assumptions for precision')
+        ON CONFLICT (version) DO NOTHING
+      `);
+
+      // ── pricing_assumptions: 28 rows ──────────────────────────────────
+      // Each row: [key, value_bps, value_pence, value_jsonb, source, citation, change_reason]
+      const assumptions = [
+        // ─── Funding cost stack ───
+        ['sonia_value_bps', 373, null, null, 'live',
+          'BoE 2026-04-27 (placeholder until PRICE-10 cron)',
+          'Seed value — replaced by daily fetch in PRICE-10'],
+        ['sonia_last_pulled_at', null, null, JSON.stringify({ timestamp: '2026-04-27T00:00:00Z', note: 'placeholder until PRICE-10 cron' }), 'live',
+          'BoE',
+          'Seed timestamp'],
+        ['gbb_warehouse_spread_bps', 400, null, null, 'tuned',
+          'GBB termsheet 2026-03',
+          'Daksfirst-specific lender spread — tunable per lender mix'],
+        ['gbb_structuring_fee_bps', 75, null, null, 'canonical',
+          'GBB termsheet 2026-03',
+          'One-off fee at facility setup'],
+        ['gbb_facility_size_pence', null, 15000000000, null, 'canonical',
+          'GBB termsheet 2026-03 (£150m)',
+          'Headline facility size'],
+        ['expected_book_rotation', null, null, JSON.stringify({ value: 2.5, unit: 'turns_per_year' }), 'tuned',
+          'Daksfirst estimate',
+          'Book rotation drives structuring annualisation'],
+        ['gbb_structuring_annualised_bps', 30, null, null, 'derived',
+          '75 bps ÷ 2.5× rotation',
+          'Annualised structuring cost spread across book'],
+
+        // ─── Origination ───
+        ['broker_fee_tiers_bps', null, null, JSON.stringify([
+          { max_pence: 200000000, bps: 100, label: '<£2m' },
+          { max_pence: 500000000, bps: 75,  label: '£2-5m' },
+          { max_pence: 1000000000, bps: 50, label: '£5-10m' },
+          { max_pence: null,       bps: 25, label: '>£10m' }
+        ]), 'canonical',
+          'Knight Frank H1 2025 + Daksfirst tiered',
+          'Broker payaway tiered by deal size'],
+        ['direct_channel_broker_bps', 0, null, null, 'tuned',
+          'Daksfirst direct portal (future)',
+          'No broker payaway on direct deals'],
+
+        // ─── Opex ───
+        ['total_annual_opex_pence', null, 24500000, null, 'tuned',
+          'Daksfirst v1 (analyst £15k/mo + tech £2k/mo + office £3k/mo + per-deal API ~£5k/yr)',
+          'Annual all-in operating cost'],
+        ['expected_avg_book_pence', null, 10000000000, null, 'tuned',
+          'Daksfirst Year-1 mature target (£100m)',
+          'Denominator for blended opex bps'],
+        ['blended_opex_bps', 25, null, null, 'derived',
+          '£245k ÷ £100m ≈ 24.5 bps',
+          'Opex over expected mature book'],
+        ['opex_tiers_bps', null, null, JSON.stringify([
+          { max_pence: 100000000,  bps: 50, hours: 12, label: '<£1m' },
+          { max_pence: 300000000,  bps: 35, hours: 18, label: '£1-3m' },
+          { max_pence: 700000000,  bps: 20, hours: 25, label: '£3-7m' },
+          { max_pence: 1500000000, bps: 15, hours: 35, label: '£7-15m' },
+          { max_pence: null,       bps: 10, hours: 45, label: '>£15m' }
+        ]), 'canonical',
+          'Daksfirst tiered (anchored at £15k/mo analyst rate)',
+          'Per-deal opex anchored on actual analyst hours by size'],
+
+        // ─── Capital & profit ───
+        ['capital_ratio_bps', 1000, null, null, 'tuned',
+          'Shareholder mandate',
+          '10% first-loss buffer Daksfirst funds itself'],
+        ['equity_target_return_bps', 1500, null, null, 'tuned',
+          'Shareholder mandate',
+          '15% pre-tax target on Daksfirst equity'],
+        ['capital_cost_bps', 150, null, null, 'derived',
+          '10% × 15%',
+          'Capital cost on debt portion'],
+        ['min_required_margin_bps', 200, null, null, 'tuned',
+          'Daksfirst v1 mid-tier warehouse',
+          'Floor margin before deal becomes uncommercial'],
+        ['margin_tiers_bps', null, null, JSON.stringify([
+          { max_pence: 100000000,  bps: 250, label: '<£1m' },
+          { max_pence: 300000000,  bps: 225, label: '£1-3m' },
+          { max_pence: 1000000000, bps: 200, label: '£3-10m' },
+          { max_pence: 2500000000, bps: 150, label: '£10-25m' },
+          { max_pence: null,       bps: 125, label: '>£25m' }
+        ]), 'tuned',
+          'Daksfirst tiered',
+          'Required margin shrinks at scale (smaller deals carry fixed-cost penalty)'],
+        ['whole_loan_margin_bps', 150, null, null, 'tuned',
+          'Daksfirst whole-loan mode',
+          'Off-book deals — no CoF, no capital cost, fee-only revenue'],
+        ['whole_loan_threshold_pence', null, 500000000, null, 'tuned',
+          'Daksfirst v1 (£5m)',
+          'Show whole-loan alternative on any deal ≥£5m'],
+
+        // ─── Concentration ───
+        ['concentration_adder_buckets_bps', null, null, JSON.stringify([
+          { max_pct: 5,    adder: 0,   label: '<5%' },
+          { max_pct: 10,   adder: 50,  label: '5-10%' },
+          { max_pct: 15,   adder: 100, label: '10-15%' },
+          { max_pct: null, adder: 200, label: '>15% (often DECLINE — pierces single-borrower limit)' }
+        ]), 'tuned',
+          'Daksfirst single-borrower limit',
+          'EL adder for concentration risk by deal size as % of book'],
+
+        // ─── Rate ceilings ───
+        ['standard_rate_ceiling_bps_pm', 125, null, null, 'canonical',
+          'Bridging Trends Q4 2025',
+          'Market max ~1.25% pm — engine never bumps standard above this'],
+        ['stressed_rate_ceiling_bps_pm', 175, null, null, 'tuned',
+          'Daksfirst stress override',
+          'Stressed cap; requires RM-elected reason flag'],
+        ['regulatory_apr_cap_bps', 2500, null, null, 'canonical',
+          'FCA APR cap (25%)',
+          'Hard ceiling — required APR > this triggers DECLINE'],
+
+        // ─── PD/LGD anchors ───
+        ['pd_anchors_pct', null, null, JSON.stringify([
+          { band: 1, pd: 0.5 }, { band: 2, pd: 1.0 }, { band: 3, pd: 1.8 },
+          { band: 4, pd: 2.8 }, { band: 5, pd: 4.0 }, { band: 6, pd: 6.0 },
+          { band: 7, pd: 9.0 }, { band: 8, pd: 14.0 }, { band: 9, pd: 22.0 }
+        ]), 'canonical',
+          'PRA SS11/13 Foundation IRB stylized rates',
+          'PD bands 1-9 → annual default %'],
+        ['lgd_anchors_pct', null, null, JSON.stringify([
+          { band: 'A', lgd: 10 }, { band: 'B', lgd: 20 }, { band: 'C', lgd: 35 },
+          { band: 'D', lgd: 55 }, { band: 'E', lgd: 75 }
+        ]), 'canonical',
+          'EBA RTS Art 230 (CRR) — UK PRA mirrors',
+          'LGD bands A-E → loss given default %'],
+
+        // ─── Min-term joint table (precision over grid+modifier sum) ───
+        ['min_term_lgd_ia_table', null, null, JSON.stringify([
+          { lgd: 'A', ia: { A: 3, B: 3, C: 4, D: 6,  E: 6  } },
+          { lgd: 'B', ia: { A: 4, B: 4, C: 6, D: 6,  E: 9  } },
+          { lgd: 'C', ia: { A: 6, B: 6, C: 6, D: 9,  E: 9  } },
+          { lgd: 'D', ia: { A: 6, B: 9, C: 9, D: 12, E: 12 } },
+          { lgd: 'E', ia: { A: 9, B: 9, C: 12,D: 12, E: 12 } }
+        ]), 'tuned',
+          'Daksfirst v1 LGD×IA joint table',
+          'Engine prefers this lookup over grid.min_term + ia_modifier delta — joint dependency does not decompose'],
+
+        // ─── Stress trigger reasons (audit metadata) ───
+        ['stress_trigger_reasons', null, null, JSON.stringify([
+          'Borrower in default with another lender (urgent refi)',
+          'Asset under threat of repossession',
+          'LTV > 85%',
+          'Time-critical drawdown (<14 days)',
+          'Failed completion elsewhere (chain-break, no other route)',
+          'IA = E (no corroborated evidence)'
+        ]), 'canonical',
+          'Daksfirst v1',
+          'Allowed reasons for RM to elect stressed-rate override'],
+      ];
+      for (const [key, value_bps, value_pence, value_jsonb, source, citation, change_reason] of assumptions) {
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason)
+           VALUES ('v1', $1, $1, $2, $3, $4::jsonb, $5, $6, $7)
+           ON CONFLICT (version, key) DO NOTHING`,
+          [key, value_bps, value_pence, value_jsonb, source, citation, change_reason]
+        );
+      }
+
+      // ── pricing_grid: 270 cells (9 PD × 5 LGD × 6 sectors), IA=C baseline ──
+      const pdLadder        = [65, 75, 85, 95, 105, 115, 120, 125, 125]; // PD 1..9 → bps/pm
+      const lgdUpfrontBump  = { A: 0,  B: 0,  C: 0,   D: 25,  E: 50  };  // bps on top of IA=C base
+      const lgdRetained     = { A: 0,  B: 1,  C: 2,   D: 4,   E: 6   };  // months, IA=C baseline
+      const lgdExit         = { A: 50, B: 75, C: 100, D: 150, E: 200 };  // bps
+      const lgdMinTermAtIaC = { A: 4,  B: 6,  C: 6,   D: 9,   E: 12  };  // months, IA=C baseline
+      const baseUpfrontIaC  = 200; // bps, IA=C base before LGD bump
+      const baseCommitIaC   = 50;  // bps, IA=C value (all LGDs)
+      const sectors         = ['resi_bridging', 'commercial', 'resi_btl', 'land_planning', 'mixed_use', 'hospitality'];
+      const lgdBands        = ['A', 'B', 'C', 'D', 'E'];
+      const gridCitation    = 'Daksfirst v1 LOCKED 2026-04-29 (PRA SS11/13 + EBA Art 230 + Bridging Trends Q4 2025)';
+      const gridReason      = 'Initial canonical seed — PD ladder × LGD bumps × IA=C baseline; all sectors identical at v1';
+
+      let gridRowCount = 0;
+      for (const sector of sectors) {
+        for (let pd = 1; pd <= 9; pd++) {
+          for (const lgd of lgdBands) {
+            await pool.query(
+              `INSERT INTO pricing_grid
+                 (version, sector, pd_band, lgd_band,
+                  base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                  retained_months, base_exit_fee_bps, min_term_months,
+                  source, citation, change_reason)
+               VALUES ('v1', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'canonical', $10, $11)
+               ON CONFLICT (version, sector, pd_band, lgd_band) DO NOTHING`,
+              [
+                sector, pd, lgd,
+                pdLadder[pd - 1],
+                baseUpfrontIaC + lgdUpfrontBump[lgd],
+                baseCommitIaC,
+                lgdRetained[lgd],
+                lgdExit[lgd],
+                lgdMinTermAtIaC[lgd],
+                gridCitation,
+                gridReason
+              ]
+            );
+            gridRowCount++;
+          }
+        }
+      }
+
+      // ── ia_modifiers: 5 deltas vs IA=C baseline ───────────────────────
+      // Format: [ia_band, rate_Δ, upfront_Δ, commit_Δ, retained_Δ, min_term_Δ]
+      // min_term_Δ kept at 0 — PRICE-3 engine reads min_term_lgd_ia_table from
+      // pricing_assumptions for the joint LGD×IA precision lookup.
+      const iaDeltas = [
+        ['A', 0, -50,  -25, 0, 0, 'Best-evidenced deals: cheaper structure on every lever'],
+        ['B', 0, -25,  -25, 0, 0, 'Strong evidence; modest upfront/commitment relief'],
+        ['C', 0,   0,    0, 0, 0, 'Median baseline — grid cell stands as-is'],
+        ['D', 0,  50,   25, 1, 0, 'Thin evidence: extra upfront + commitment + retained month'],
+        ['E', 0, 100,   25, 1, 0, 'No corroborated evidence: max upfront, all retained, +retained month'],
+      ];
+      for (const [ia_band, rd, ud, cd, rmd, mtd, reason] of iaDeltas) {
+        await pool.query(
+          `INSERT INTO ia_modifiers
+             (version, ia_band,
+              rate_bps_delta, upfront_fee_bps_delta, commitment_fee_bps_delta,
+              retained_months_delta, min_term_months_delta,
+              source, citation, change_reason)
+           VALUES ('v1', $1, $2, $3, $4, $5, $6, 'canonical',
+                   'Daksfirst v1 LOCKED 2026-04-29 (memory: project_pricing_engine_design_2026_04_28.md)',
+                   $7)
+           ON CONFLICT (version, ia_band) DO NOTHING`,
+          [ia_band, rd, ud, cd, rmd, mtd, reason]
+        );
+      }
+
+      // ── Sanity log ────────────────────────────────────────────────────
+      const counts = await pool.query(`
+        SELECT
+          (SELECT COUNT(*)::int FROM pricing_assumptions WHERE version = 'v1') AS assumptions_n,
+          (SELECT COUNT(*)::int FROM pricing_grid        WHERE version = 'v1') AS grid_n,
+          (SELECT COUNT(*)::int FROM ia_modifiers        WHERE version = 'v1') AS ia_n
+      `);
+      const c = counts.rows[0];
+      console.log(`[migrate] ✓ pricing engine v1 SEED applied (assumptions=${c.assumptions_n}, grid=${c.grid_n}, ia_modifiers=${c.ia_n})`);
+    } catch (err) {
+      console.log('[migrate] Note on pricing v1 seed:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
