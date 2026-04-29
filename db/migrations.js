@@ -3949,8 +3949,10 @@ async function runMigrations() {
           await pool.query('BEGIN');
           try {
             await pool.query(
-              `INSERT INTO llm_prompts (prompt_key, version, body, is_active, created_at)
-               VALUES ('risk_rubric', 6, $1, FALSE, NOW())`,
+              `INSERT INTO llm_prompts (prompt_key, version, body, is_active, edited_by, edited_at, description, changelog)
+               VALUES ('risk_rubric', 6, $1, FALSE, 'system:migrate', NOW(),
+                       'v5 body + v6 PD-1 addendum (PropertyData rental + PAF address verification)',
+                       'PD-1: PropertyData rental signals + Royal Mail PAF UPRN guidance for borrower_alm, exit_pathway, valuation, property_physical, compliance_kyc')`,
               [v6Body]
             );
             await pool.query(
