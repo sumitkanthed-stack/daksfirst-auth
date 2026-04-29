@@ -163,10 +163,65 @@
   function fmtBps(v) { return v === null || v === undefined ? '—' : `${v} bps (${(v/100).toFixed(2)}%)`; }
   function fmtPence(v) { return v === null || v === undefined ? '—' : `£${(Number(v)/100).toLocaleString('en-GB',{maximumFractionDigits:0})} (${v} p)`; }
   function fmtJsonb(v) { if (v === null || v === undefined) return '—'; const s = JSON.stringify(v); return s.length > 90 ? s.substring(0,87) + '…' : s; }
+
+  // Pretty read-only renderer for JSONB values — uses the same shape detection
+  // as the editor so the display matches the form. Tier-arrays render as a
+  // small inline summary list; objects render key:value pairs; complex shapes
+  // fall back to truncated JSON.
+  function fmtJsonbPretty(v) {
+    if (v === null || v === undefined) return '—';
+    if (Array.isArray(v) && v.length > 0) {
+      const first = v[0];
+      if (typeof first === 'string') {
+        // String array — show first 2 items + count
+        const preview = v.slice(0, 2).map(s => `&ldquo;${String(s).substring(0, 30)}${s.length > 30 ? '…' : ''}&rdquo;`).join(' · ');
+        return `${preview}${v.length > 2 ? ` <span style="opacity:0.6;">(+${v.length - 2} more)</span>` : ''}`;
+      }
+      if (typeof first === 'object' && first !== null) {
+        if ('bps' in first) {
+          // Tier-bps array — inline summary "<£2m: 100bps · £2-5m: 75bps · ..."
+          return v.map(t => `<span style="white-space:nowrap;"><span style="opacity:0.7;">${t.label || '?'}:</span> <strong>${t.bps}bps</strong></span>`).join(' &nbsp;·&nbsp; ');
+        }
+        if ('adder' in first) {
+          // Tier-adder buckets
+          return v.map(b => `<span style="white-space:nowrap;"><span style="opacity:0.7;">${b.label || '?'}:</span> <strong>${b.adder}bps</strong></span>`).join(' &nbsp;·&nbsp; ');
+        }
+        if ('pd' in first && 'band' in first) {
+          // PD anchors
+          return v.map(a => `<span style="white-space:nowrap;"><span style="opacity:0.7;">PD${a.band}:</span> <strong>${a.pd}%</strong></span>`).join(' &nbsp;·&nbsp; ');
+        }
+        if ('lgd' in first && 'band' in first && typeof first.lgd === 'number') {
+          // LGD anchors
+          return v.map(a => `<span style="white-space:nowrap;"><span style="opacity:0.7;">LGD-${a.band}:</span> <strong>${a.lgd}%</strong></span>`).join(' &nbsp;·&nbsp; ');
+        }
+        if ('lgd' in first && 'ia' in first && typeof first.ia === 'object') {
+          // Joint LGD×IA min-term table — show as "5×5 grid"
+          return `<span style="opacity:0.8;">${v.length}×${Object.keys(first.ia).length} joint table</span> &nbsp; <span style="opacity:0.5;font-size:11px;">(edit to view full)</span>`;
+        }
+      }
+    }
+    if (!Array.isArray(v) && typeof v === 'object' && v !== null) {
+      const keys = Object.keys(v);
+      // Common scalar-bearing object: { value, unit } for expected_book_rotation
+      if ('value' in v && 'unit' in v) {
+        return `<strong>${v.value}</strong> <span style="opacity:0.7;">${v.unit}</span>`;
+      }
+      // Generic object: show first 2 key:value pairs
+      const preview = keys.slice(0, 2).map(k => {
+        const val = v[k];
+        const valStr = typeof val === 'string' ? `&ldquo;${val.substring(0, 18)}${val.length > 18 ? '…' : ''}&rdquo;` : String(val);
+        return `<span style="white-space:nowrap;"><span style="opacity:0.7;">${k}:</span> ${valStr}</span>`;
+      }).join(' · ');
+      return `${preview}${keys.length > 2 ? ` <span style="opacity:0.6;">(+${keys.length - 2} more)</span>` : ''}`;
+    }
+    // Fallback: truncated JSON
+    return fmtJsonb(v);
+  }
+
   function rowValueDisplay(r) {
     if (r.value_bps !== null && r.value_bps !== undefined) return fmtBps(r.value_bps);
     if (r.value_pence !== null && r.value_pence !== undefined) return fmtPence(r.value_pence);
-    if (r.value_jsonb !== null && r.value_jsonb !== undefined) return fmtJsonb(r.value_jsonb);
+    if (r.value_jsonb !== null && r.value_jsonb !== undefined) return fmtJsonbPretty(r.value_jsonb);
     return '—';
   }
   function rowFieldType(r) {
@@ -207,7 +262,7 @@
         if (isEdited) {
           if ('value_bps' in isEdited) displayValue = fmtBps(isEdited.value_bps);
           else if ('value_pence' in isEdited) displayValue = fmtPence(isEdited.value_pence);
-          else if ('value_jsonb' in isEdited) displayValue = fmtJsonb(isEdited.value_jsonb);
+          else if ('value_jsonb' in isEdited) displayValue = fmtJsonbPretty(isEdited.value_jsonb);
           else displayValue = rowValueDisplay(r);
           displayValue = `<span style="text-decoration:line-through;color:var(--muted);font-size:11px;">${rowValueDisplay(r)}</span><br>${displayValue} <span style="color:var(--warn);font-size:10px;">→ staged</span>`;
         } else {
