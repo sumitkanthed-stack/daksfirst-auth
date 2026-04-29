@@ -112,7 +112,8 @@ async function handleQqSubmit(e) {
   const address  = (document.getElementById('qq-address')?.value  || '').trim();
   const cn       = (document.getElementById('qq-company-number')?.value || '').trim().toUpperCase();
   const cname    = (document.getElementById('qq-company-name')?.value   || '').trim();
-  const amt      = (document.getElementById('qq-loan-amount')?.value    || '').trim();
+  // Strip commas before sending — input shows "1,750,000" but backend expects raw integer
+  const amt      = (document.getElementById('qq-loan-amount')?.value    || '').replace(/,/g, '').trim();
   const purpose  = document.getElementById('qq-purpose')?.value;
   const date     = document.getElementById('qq-drawdown-date')?.value;
 
@@ -203,9 +204,11 @@ function attachPostcodeAutocomplete() {
         if (!r.ok || !json.ok) { hide(); return; }
         const addresses = json.addresses || [];
         if (!addresses.length) { hide(); return; }
-        dropdown.innerHTML = addresses.slice(0, 12).map((a, i) =>
+        // Show all addresses on this postcode (some have 100+ flats). The
+        // dropdown is scrollable, so even a long list stays usable.
+        dropdown.innerHTML = addresses.map((a, i) =>
           `<div data-pc-idx="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #2a3340;color:#E5E7EB;">${(a.line_1 || '') + (a.line_2 ? ', ' + a.line_2 : '') + (a.post_town ? ', ' + a.post_town : '')}</div>`
-        ).join('');
+        ).join('') + (addresses.length > 20 ? `<div style="padding:6px 12px;font-size:11px;color:#64748B;background:#0e131a;text-align:center;">${addresses.length} addresses on ${q} · scroll for more</div>` : '');
         dropdown.style.display = 'block';
         dropdown.querySelectorAll('[data-pc-idx]').forEach((el) => {
           el.addEventListener('mouseover', () => el.style.background = '#1e2531');
@@ -322,6 +325,31 @@ function attachCompanyAutocomplete() {
   });
 }
 
+// Comma-format any text input as the user types. Locale en-GB,
+// strips non-digits, restores cursor to a sensible position.
+function attachCommaFormatter(input) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const raw = input.value.replace(/[^\d]/g, '');
+    if (!raw) { input.value = ''; return; }
+    const formatted = Number(raw).toLocaleString('en-GB');
+    // Cursor preservation — count digits before the cursor in the old value,
+    // then walk to the same digit count in the new value.
+    const cursorPos = input.selectionStart;
+    let digitsBeforeCursor = 0;
+    for (let i = 0; i < cursorPos; i++) {
+      if (/\d/.test(input.value[i])) digitsBeforeCursor++;
+    }
+    input.value = formatted;
+    let newCursor = 0, seen = 0;
+    for (let i = 0; i < formatted.length && seen < digitsBeforeCursor; i++) {
+      if (/\d/.test(formatted[i])) seen++;
+      newCursor = i + 1;
+    }
+    try { input.setSelectionRange(newCursor, newCursor); } catch (_) {}
+  });
+}
+
 export function initQuickQuote() {
   const toggle = document.getElementById('qq-toggle');
   const formContainer = document.getElementById('qq-form-container');
@@ -329,9 +357,10 @@ export function initQuickQuote() {
   const form = document.getElementById('qq-form');
   if (!toggle || !formContainer || !form) return;  // Section not in DOM (older page or different role)
 
-  // Wire autocompletes once — they don't need re-mounting on form open/close
+  // Wire autocompletes + comma formatter once — they don't need re-mounting
   attachPostcodeAutocomplete();
   attachCompanyAutocomplete();
+  attachCommaFormatter(document.getElementById('qq-loan-amount'));
 
   toggle.addEventListener('click', () => {
     const isOpen = formContainer.style.display !== 'none';
