@@ -667,6 +667,55 @@ function renderTelemetryTab(run) {
     ['Parsed grades',    run.parsed_grades ? 'present' : 'null'],
     ['Error',            run.error_message || '—'],
   ];
+
+  // ─── Provenance: data sources that fed into this run ─────────────────
+  // Pulled from input_payload.source_provenance (set by risk-packager).
+  // Includes per-block attached counts so RM can audit which signals
+  // Opus had visibility on. Counts of 0 mean the relevant block was
+  // empty at packaging time (no data pulled yet, or genuinely absent).
+  let provenance = null;
+  try {
+    const ip = run.input_payload;
+    const parsed = (typeof ip === 'string') ? JSON.parse(ip) : ip;
+    provenance = parsed?.source_provenance || null;
+  } catch (_) { /* ignore parse errors */ }
+
+  const provenanceRows = provenance ? [
+    ['Properties',           `${provenance.properties_count ?? '—'}`],
+    ['Borrowers',            `${provenance.borrowers_count ?? '—'}`],
+    ['Companies House',      `${provenance.companies_house_count ?? '—'}`],
+    ['Chimnie attached',     `${provenance.chimnie_attached_count ?? 0} of ${provenance.properties_count ?? '?'}`],
+    ['Area intel attached',  `${provenance.area_intel_attached_count ?? 0} of ${provenance.properties_count ?? '?'}`],
+    ['PTAL attached',        `${provenance.ptal_attached_count ?? 0} of ${provenance.properties_count ?? '?'}`],
+    ['PAF verified',         `${provenance.paf_attached_count ?? 0} of ${provenance.properties_count ?? '?'}`],
+    ['PropertyData attached', `${provenance.propertydata_attached_count ?? 0} of ${provenance.properties_count ?? '?'}`],
+    ['Credit checks',        `${provenance.credit_checks_count ?? '—'}`],
+    ['KYC checks',           `${provenance.kyc_checks_count ?? '—'}`],
+    ['Valuations',           `${provenance.valuations_count ?? '—'}`],
+    ['Directorships',        `${provenance.directorships_count ?? '—'}`],
+  ] : null;
+
+  const provenanceBlock = provenanceRows ? `
+    <div style="margin-top:18px;">
+      <div style="font-size:11px;color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding:0 4px;">Source provenance — data feeds Opus saw</div>
+      <div style="border:1px solid rgba(255,255,255,0.06);border-radius:10px;overflow:hidden;background:#0F172A;">
+        ${provenanceRows.map((r, i) => {
+          // Highlight zero-attached counts to flag missing-data IA risks
+          const valStr = String(r[1]);
+          const isZero = /^0(\s|$|\sof)/.test(valStr);
+          const valColour = isZero ? '#F87171' : '#CBD5E1';
+          return `
+            <div style="display:grid;grid-template-columns:200px 1fr;gap:0;padding:9px 16px;background:${i % 2 ? '#0F172A' : '#111827'};border-top:${i === 0 ? 'none' : '1px solid rgba(255,255,255,0.04)'};font-size:12px;">
+              <div style="color:#94A3B8;font-weight:600;">${sanitizeHtml(r[0])}</div>
+              <div style="color:${valColour};font-family:monospace;">${sanitizeHtml(valStr)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div style="font-size:10px;color:#64748B;margin-top:6px;padding:0 4px;font-style:italic;">Zero-counts in red flag a missing data feed — Opus was graded with this gap. RM should pull the missing source for the next run.</div>
+    </div>
+  ` : '';
+
   return `
     <div style="padding:20px 24px;">
       <div style="border:1px solid rgba(255,255,255,0.06);border-radius:10px;overflow:hidden;background:#0F172A;">
@@ -677,6 +726,7 @@ function renderTelemetryTab(run) {
           </div>
         `).join('')}
       </div>
+      ${provenanceBlock}
     </div>
   `;
 }
