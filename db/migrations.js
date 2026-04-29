@@ -3806,6 +3806,61 @@ async function runMigrations() {
       console.log('[migrate] Note on commercial-viable ceiling:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PROP-2 (2026-04-29 night): Royal Mail PAF / Ideal Postcodes integration
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Adds PAF address-lookup columns to deal_properties so verified addresses
+    //  (UPRN/UDPRN) can be stored alongside the property record.
+    //
+    //  Columns:
+    //    paf_uprn              VARCHAR(20)   — Unique Property Reference Number
+    //    paf_udprn             INTEGER       — Royal Mail's UDPRN
+    //    paf_address_jsonb     JSONB         — full normalised PAF response
+    //    paf_pulled_at         TIMESTAMPTZ   — last lookup timestamp
+    //    paf_pull_mode         VARCHAR(10)   — mock|test|live at time of pull
+    //
+    //  Plus a paf_lookups history table for audit (every API call logged).
+    //
+    //  Vendor: Ideal Postcodes (PAF licensee). getAddress.io shut down Feb 2026
+    //  due to PAF licensing dispute — Ideal Postcodes is the clean replacement.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS paf_uprn          VARCHAR(20)`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS paf_udprn         BIGINT`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS paf_address_jsonb JSONB`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS paf_pulled_at     TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_properties ADD COLUMN IF NOT EXISTS paf_pull_mode     VARCHAR(10)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_paf_uprn  ON deal_properties(paf_uprn)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_deal_props_paf_udprn ON deal_properties(paf_udprn)`);
+
+      // Append-only audit history of all PAF lookups (mirrors kyc_checks pattern)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS paf_lookups (
+          id              SERIAL PRIMARY KEY,
+          deal_id         INTEGER REFERENCES deal_submissions(id),
+          property_id     INTEGER,
+          lookup_type     VARCHAR(20) NOT NULL,
+          query_value     TEXT,
+          udprn           BIGINT,
+          uprn            VARCHAR(20),
+          result_count    INTEGER,
+          result_jsonb    JSONB,
+          mode            VARCHAR(10) NOT NULL DEFAULT 'mock',
+          cost_pence      INTEGER NOT NULL DEFAULT 0,
+          requested_by    INTEGER REFERENCES users(id),
+          requested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          pull_error      TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_paf_lookups_deal_id     ON paf_lookups(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_paf_lookups_property_id ON paf_lookups(property_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_paf_lookups_at          ON paf_lookups(requested_at DESC)`);
+
+      console.log('[migrate] ✓ PAF integration columns + paf_lookups table ready (Ideal Postcodes)');
+    } catch (err) {
+      console.log('[migrate] Note on PAF schema:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
