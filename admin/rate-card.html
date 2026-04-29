@@ -39,8 +39,11 @@
   table.grid th.row-head { text-align:left; padding-left:10px; }
   table.grid td.cell { font-family:var(--mono); }
   table.grid td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
+  table.grid td.cell.uncompetitive { background:rgba(239,91,91,0.06); }
   table.grid td.cell .rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   table.grid td.cell .rate.below { color:var(--err); }
+  table.grid td.cell .rate.uncompetitive { color:var(--err); }
+  table.grid td.cell .uncompetitive-tag { display:block; font-size:8px; color:var(--err); font-weight:600; text-transform:uppercase; letter-spacing:0.4px; margin-top:2px; }
   table.grid td.cell .market { display:block; font-size:9px; color:var(--muted); margin-top:2px; font-style:italic; }
   table.grid td.cell .market.over-mkt { color:var(--warn); }
   table.grid td.cell .market.over-max { color:var(--err); }
@@ -93,6 +96,7 @@
     <div class="floor-row">
       <span>Warehouse bridging floor: <strong id="floor-warehouse">&hellip;</strong> &nbsp;<span style="font-size:10px;">(CoF + CapCost + Struct + Opex + min margin)</span></span>
       <span>Whole-loan BTL floor: <strong id="floor-whole-loan">&hellip;</strong> &nbsp;<span style="font-size:10px;">(SONIA + 300 spread)</span></span>
+      <span>Commercial-viable ceiling: <strong id="ceiling-cv" style="color:var(--err);">&hellip;</strong> &nbsp;<span style="font-size:10px;">(borrowers walk above this)</span></span>
       <span>Standard rate ceiling: <strong id="ceiling-std">&hellip;</strong></span>
       <span>Stressed rate ceiling: <strong id="ceiling-str">&hellip;</strong></span>
     </div>
@@ -142,6 +146,7 @@
   let marketBenchmarks = {};
   let warehouse_floor = 79;
   let whole_loan_floor = 56;
+  let commercial_viable_ceiling = 125;  // 1.25%pm soft ceiling — above = RM red zone
 
   function renderSection(sector, cells) {
     const benchmarksForSector = (marketBenchmarks?.by_sector?.[sector]?.by_pd) || [];
@@ -170,13 +175,21 @@
         if (!cell) { html += `<td class="cell">—</td>`; continue; }
         const rate = cell.base_rate_bps_pm;
         const belowFloor = rate < floorBpsPm;
-        let mktClass = '';
-        if (bench) {
-          if (rate > bench.max) mktClass = 'over-max';
-          else if (rate > bench.med) mktClass = 'over-mkt';
-        }
-        html += `<td class="cell ${belowFloor ? 'below-floor' : ''}">
-          <span class="rate ${belowFloor ? 'below' : ''}">${bps2pm(rate)}</span>
+        const uncompetitive = !belowFloor && rate > commercial_viable_ceiling;
+        const cellClasses = [
+          'cell',
+          belowFloor ? 'below-floor' : '',
+          uncompetitive ? 'uncompetitive' : '',
+        ].filter(Boolean).join(' ');
+        const rateClasses = [
+          'rate',
+          belowFloor ? 'below' : '',
+          uncompetitive ? 'uncompetitive' : '',
+        ].filter(Boolean).join(' ');
+        html += `<td class="${cellClasses}">
+          <span class="${rateClasses}">${bps2pm(rate)}</span>
+          ${uncompetitive ? '<span class="uncompetitive-tag">borrower walks</span>' : ''}
+          ${belowFloor ? '<span class="uncompetitive-tag">below floor</span>' : ''}
         </td>`;
       }
       // Market column
@@ -219,6 +232,7 @@
       if (mb) marketBenchmarks = mb;
       warehouse_floor = assumptions.floor_rate_warehouse_bps_pm?.value_bps || 79;
       whole_loan_floor = assumptions.floor_rate_whole_loan_bps_pm?.value_bps || 56;
+      commercial_viable_ceiling = assumptions.commercial_viable_ceiling_bps_pm?.value_bps || 125;
 
       // Header info
       document.getElementById('active-version-pill').textContent = `${aj.version.version} · active`;
@@ -227,6 +241,7 @@
       document.getElementById('sources').textContent = (marketBenchmarks?.source) || 'see Pricing Assumptions';
       document.getElementById('floor-warehouse').textContent = bps2pm(warehouse_floor);
       document.getElementById('floor-whole-loan').textContent = bps2pm(whole_loan_floor);
+      document.getElementById('ceiling-cv').textContent = bps2pm(commercial_viable_ceiling);
       document.getElementById('ceiling-std').textContent = bps2pm(assumptions.standard_rate_ceiling_bps_pm?.value_bps || 200);
       document.getElementById('ceiling-str').textContent = bps2pm(assumptions.stressed_rate_ceiling_bps_pm?.value_bps || 250);
 

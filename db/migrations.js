@@ -3728,6 +3728,84 @@ async function runMigrations() {
       console.log('[migrate] Note on lgd-spread reseed:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-2.4 (2026-04-29 night): commercial-viable rate ceiling
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Sumit's commercial reality check: anything above 1.25%pm is too high for
+    //  a "good" borrower — they'll walk. Engine ceiling stays at 200 (technical
+    //  cap), but UI now flags cells above 125 as RED ("uncompetitive zone")
+    //  vs cells at/below 125 as GREEN (commercially viable target zone).
+    //
+    //  Distinct from the floor (loss-making — engine declines) and the
+    //  standard ceiling (rate clamp). This is purely a market-acceptance
+    //  signal for RMs.
+    //
+    //  Idempotent: gated by 'commercial-viable-ceiling-2026-04-29' marker.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const CV_MARKER = 'commercial-viable-ceiling-2026-04-29';
+      const exists = (await pool.query(
+        `SELECT 1 FROM pricing_assumptions_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${CV_MARKER}%`]
+      )).rows.length > 0;
+
+      if (exists) {
+        console.log('[migrate] ✓ commercial-viable ceiling already seeded, skipping');
+      } else {
+        await pool.query('BEGIN');
+
+        const a_active = (await pool.query(
+          `SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!a_active) throw new Error('no active assumptions version');
+        const a_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_assumptions_versions`)).rows[0].n;
+        const aNew = `v${a_count + 1}`;
+
+        await pool.query(
+          `INSERT INTO pricing_assumptions_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [aNew, `Commercial-viable rate ceiling · marker:${CV_MARKER}`,
+           'PRICE-2.4: add commercial_viable_ceiling_bps_pm=125 — cells above are technically pricing-coherent but borrowers walk']
+        );
+
+        // Carry forward all rows from previous active
+        const aOldRows = (await pool.query(
+          `SELECT key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason
+             FROM pricing_assumptions WHERE version = $1`,
+          [a_active.version]
+        )).rows;
+        for (const old of aOldRows) {
+          await pool.query(
+            `INSERT INTO pricing_assumptions
+               (version, key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW())`,
+            [aNew, old.key, old.label, old.value_bps, old.value_pence,
+             old.value_jsonb !== null && old.value_jsonb !== undefined ? JSON.stringify(old.value_jsonb) : null,
+             old.source, old.citation, old.change_reason]
+          );
+        }
+
+        // NEW: commercial-viable ceiling
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'commercial_viable_ceiling_bps_pm', 'commercial_viable_ceiling_bps_pm', 125, 'tuned',
+                   'Daksfirst commercial reality check 2026-04-29',
+                   'Above 1.25% pm: technically pricing-coherent but no good borrower will accept; UI flags as RED for RM targeting', NOW())`,
+          [aNew]
+        );
+
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = FALSE WHERE version = $1`, [a_active.version]);
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = TRUE  WHERE version = $1`, [aNew]);
+
+        await pool.query('COMMIT');
+        console.log(`[migrate] ✓ commercial-viable ceiling added (assumptions ${a_active.version}→${aNew}, key=125 bps/pm)`);
+      }
+    } catch (err) {
+      await pool.query('ROLLBACK').catch(() => {});
+      console.log('[migrate] Note on commercial-viable ceiling:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

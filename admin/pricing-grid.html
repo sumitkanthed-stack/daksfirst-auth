@@ -54,6 +54,8 @@
   .grid-table td.cell.staged::before { content:""; position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--accent); }
   .grid-table td.cell.active-edit { background:rgba(78,161,255,0.18); border-color:var(--accent); outline:2px solid var(--accent); }
   .grid-table td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
+  .grid-table td.cell.uncompetitive { background:rgba(239,91,91,0.06); }
+  .grid-table td.cell.uncompetitive .cell-rate { color:var(--err); }
   .cell-rate.below-floor-rate { color:var(--err); }
   .cell-rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   .cell-rate.capped { color:var(--warn); }
@@ -187,6 +189,7 @@
   let marketBySectorPd = {};            // active: sector -> PD -> { min, med, max }
   let warehouse_floor_bps_pm = 79;
   let whole_loan_floor_bps_pm = 56;
+  let commercial_viable_ceiling_bps_pm = 125;  // soft ceiling — above = RM red zone
   // Sectors that default to whole-loan mode (use the lower floor)
   const WHOLE_LOAN_DEFAULT_SECTORS = new Set(['resi_btl']);
   function floorForSector(sector) {
@@ -277,10 +280,13 @@
         // Floor warning: cell rate below sector's typical-mode floor
         const sectorFloor = floorForSector(activeSector);
         const belowFloor = rate < sectorFloor;
-        const floorClass = belowFloor ? ' below-floor' : '';
+        const uncompetitive = !belowFloor && rate > commercial_viable_ceiling_bps_pm;
+        const floorClass = belowFloor ? ' below-floor' : (uncompetitive ? ' uncompetitive' : '');
         const floorWarning = belowFloor
           ? `<span class="cell-market" style="color:var(--err);">⚠ below floor ${(sectorFloor/100).toFixed(2)}%pm</span>`
-          : '';
+          : (uncompetitive
+              ? `<span class="cell-market" style="color:var(--err);">⚠ borrower walks (>${(commercial_viable_ceiling_bps_pm/100).toFixed(2)}%pm)</span>`
+              : '');
 
         const meta = isEdited ? '<span style="color:var(--warn);">staged</span>' : (cell.source === 'tuned' ? `<span style="color:var(--warn);">tuned</span>` : '');
         html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}${floorClass}" data-key="${k}">
@@ -565,6 +571,8 @@
           if (fw && fw.value_bps) warehouse_floor_bps_pm = fw.value_bps;
           const fwl = aj.rows.find(row => row.key === 'floor_rate_whole_loan_bps_pm');
           if (fwl && fwl.value_bps) whole_loan_floor_bps_pm = fwl.value_bps;
+          const cv = aj.rows.find(row => row.key === 'commercial_viable_ceiling_bps_pm');
+          if (cv && cv.value_bps) commercial_viable_ceiling_bps_pm = cv.value_bps;
         }
       } catch(e) { /* benchmarks optional — page still works without */ }
 
