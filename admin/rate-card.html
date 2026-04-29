@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daksfirst — RM Rate Card</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #151a21; --panel-2: #1c232c;
+    --border: #2a3340; --ink: #e7ecf3; --muted: #8a95a5;
+    --accent: #4ea1ff; --ok: #3ecf8e; --warn: #f4b740; --err: #ef5b5b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+  header { padding:18px 28px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  header .pill { padding:4px 12px; border-radius:14px; font-size:11px; font-weight:600; letter-spacing:0.4px; background:rgba(62,207,142,0.15); color:var(--ok); border:1px solid rgba(62,207,142,0.4); }
+  header a.back { color:var(--muted); text-decoration:none; font-size:12px; margin-left:12px; }
+  header a.back:hover { color:var(--accent); }
+  header .print-btn { background:var(--accent); color:white; border:none; border-radius:6px; padding:8px 16px; font:inherit; font-size:13px; font-weight:500; cursor:pointer; }
+  header .print-btn:hover { background:#6bb3ff; }
+  main { padding:18px 28px; max-width:1700px; }
+
+  .info-bar { padding:12px 16px; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; font-size:12px; color:var(--muted); }
+  .info-bar strong { color:var(--ink); }
+  .floor-row { display:flex; gap:24px; flex-wrap:wrap; margin-top:6px; }
+  .floor-row span { color:var(--muted); }
+  .floor-row strong { color:var(--err); font-family:var(--mono); }
+
+  .sector-section { margin-bottom:24px; padding:16px; background:var(--panel); border:1px solid var(--border); border-radius:8px; page-break-inside:avoid; }
+  .sector-section h2 { margin:0 0 4px; font-size:15px; font-weight:600; color:var(--ink); }
+  .sector-section .meta { color:var(--muted); font-size:11px; margin-bottom:12px; }
+
+  table.grid { width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed; }
+  table.grid th, table.grid td { padding:6px 8px; border:1px solid var(--border); text-align:center; vertical-align:middle; }
+  table.grid th { background:var(--panel-2); color:var(--muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+  table.grid th.row-head { text-align:left; padding-left:10px; }
+  table.grid td.cell { font-family:var(--mono); }
+  table.grid td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
+  table.grid td.cell .rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
+  table.grid td.cell .rate.below { color:var(--err); }
+  table.grid td.cell .market { display:block; font-size:9px; color:var(--muted); margin-top:2px; font-style:italic; }
+  table.grid td.cell .market.over-mkt { color:var(--warn); }
+  table.grid td.cell .market.over-max { color:var(--err); }
+
+  .lever-summary { margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--muted); }
+  .lever-summary span strong { color:var(--ink); font-family:var(--mono); }
+
+  /* Print stylesheet — clean PDF when RM hits Ctrl+P */
+  @media print {
+    body { background:white; color:black; font-size:10px; }
+    header, .info-bar, .print-btn, header a.back { color:black; background:white; }
+    header { border-bottom:1px solid #ccc; padding:8px 0; }
+    main { padding:8px 0; max-width:none; }
+    .sector-section { background:white; border:1px solid #ccc; padding:10px; margin-bottom:12px; box-shadow:none; }
+    .sector-section h2 { color:black; }
+    .sector-section .meta { color:#666; }
+    table.grid th, table.grid td { border-color:#ccc; }
+    table.grid th { background:#eee; color:#333; }
+    table.grid td.cell .rate { color:black; }
+    table.grid td.cell .market { color:#666; }
+    table.grid td.cell.below-floor { background:#fde8e8; }
+    .print-btn, header .pill { display:none; }
+    header h1 { color:black; font-size:16px; }
+    header .sub { color:#666; }
+    .info-bar { background:#f8f8f8; border-color:#ccc; color:#333; }
+    .info-bar strong { color:black; }
+    .floor-row strong { color:#a00; }
+    .lever-summary { color:#666; }
+    .lever-summary span strong { color:black; }
+    .sector-section { page-break-after:auto; page-break-inside:avoid; }
+    @page { size: A4 landscape; margin:8mm; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Daksfirst Rate Card</h1>
+    <div class="sub">Ready reckoner for RMs &middot; standard PD/LGD ladder by asset type &middot; print to PDF for desk reference</div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <span id="active-version-pill" class="pill">loading&hellip;</span>
+    <button class="print-btn" onclick="window.print()">&#128424; Print / Save PDF</button>
+    <a class="back" href="/">&larr; back to portal</a>
+  </div>
+</header>
+<main>
+  <div id="info-bar" class="info-bar">
+    <div><strong>As of</strong>: <span id="as-of">loading&hellip;</span> &nbsp;&middot;&nbsp; <strong>Pricing version</strong>: <span id="ver">&hellip;</span> &nbsp;&middot;&nbsp; <strong>Sources</strong>: <span id="sources">&hellip;</span></div>
+    <div class="floor-row">
+      <span>Warehouse bridging floor: <strong id="floor-warehouse">&hellip;</strong> &nbsp;<span style="font-size:10px;">(CoF + CapCost + Struct + Opex + min margin)</span></span>
+      <span>Whole-loan BTL floor: <strong id="floor-whole-loan">&hellip;</strong> &nbsp;<span style="font-size:10px;">(SONIA + 300 spread)</span></span>
+      <span>Standard rate ceiling: <strong id="ceiling-std">&hellip;</strong></span>
+      <span>Stressed rate ceiling: <strong id="ceiling-str">&hellip;</strong></span>
+    </div>
+  </div>
+
+  <div id="sectors-area">
+    <p style="color:var(--muted);text-align:center;padding:40px 0;">Loading rate card&hellip;</p>
+  </div>
+</main>
+
+<script>
+  const TOKEN = sessionStorage.getItem('daksfirst_token') || '';
+  const API_BASE = window.location.hostname.startsWith('apply-staging')
+    ? 'https://daksfirst-auth-staging.onrender.com'
+    : 'https://daksfirst-auth.onrender.com';
+  if (!TOKEN) {
+    document.body.innerHTML = `<div style="text-align:center;padding:60px 20px;color:#8a95a5;font-family:-apple-system,sans-serif;"><div style="font-size:18px;color:#e7ecf3;margin-bottom:8px;">Login required</div><div style="font-size:13px;">Redirecting to portal&hellip;</div></div>`;
+    setTimeout(() => { window.location.href = '/'; }, 1200);
+    throw new Error('No token');
+  }
+  async function fetchAuth(url) {
+    return fetch(url, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  }
+
+  function bps2pm(bps) { return (bps / 100).toFixed(2) + '%pm'; }
+  function bps2pct(bps) { return (bps / 100).toFixed(2) + '%'; }
+
+  // ─── Sector display order — by typical rate (cheapest → most expensive)
+  const SECTOR_ORDER = ['resi_btl', 'resi_bridging', 'mixed_use', 'commercial', 'land_planning', 'hospitality'];
+  const SECTOR_LABELS = {
+    resi_btl: 'Residential BTL', resi_bridging: 'Residential Bridging',
+    mixed_use: 'Mixed Use', commercial: 'Commercial',
+    land_planning: 'Land with Planning', hospitality: 'Hospitality',
+  };
+  const PD_BANDS = [1,2,3,4,5,6,7,8,9];
+  const LGD_BANDS = ['A','B','C','D','E'];
+
+  let assumptions = {};
+  let marketBenchmarks = {};
+  let warehouse_floor = 79;
+  let whole_loan_floor = 56;
+
+  function renderSection(sector, cells) {
+    const benchmarksForSector = (marketBenchmarks?.by_sector?.[sector]?.by_pd) || [];
+    const benchByPd = {};
+    for (const b of benchmarksForSector) benchByPd[b.pd] = b;
+
+    // Pick which floor applies to this sector — BTL is typically whole-loan
+    const isWholeLoanDefault = sector === 'resi_btl';
+    const floorBpsPm = isWholeLoanDefault ? whole_loan_floor : warehouse_floor;
+    const modeLabel = isWholeLoanDefault ? 'whole-loan' : 'warehouse';
+
+    let html = `<div class="sector-section"><h2>${SECTOR_LABELS[sector] || sector}</h2>`;
+    html += `<div class="meta">Default mode: <strong style="color:var(--ink);">${modeLabel}</strong> &middot; floor: <strong style="color:var(--err);">${bps2pm(floorBpsPm)}</strong> &middot; ceiling: <strong style="color:var(--warn);">${bps2pm(assumptions.standard_rate_ceiling_bps_pm?.value_bps || 200)}</strong> standard / <strong style="color:var(--warn);">${bps2pm(assumptions.stressed_rate_ceiling_bps_pm?.value_bps || 250)}</strong> stressed</div>`;
+
+    html += `<table class="grid"><thead><tr><th style="width:8%;">PD</th>`;
+    for (const lgd of LGD_BANDS) html += `<th>LGD-${lgd}</th>`;
+    html += `<th style="width:18%;">Market median (mkt min-max)</th></tr></thead><tbody>`;
+
+    for (const pd of PD_BANDS) {
+      const bench = benchByPd[pd];
+      html += `<tr><th class="row-head">PD${pd}</th>`;
+      for (const lgd of LGD_BANDS) {
+        const cell = cells[`${pd}-${lgd}`];
+        if (!cell) { html += `<td class="cell">—</td>`; continue; }
+        const rate = cell.base_rate_bps_pm;
+        const belowFloor = rate < floorBpsPm;
+        let mktClass = '';
+        if (bench) {
+          if (rate > bench.max) mktClass = 'over-max';
+          else if (rate > bench.med) mktClass = 'over-mkt';
+        }
+        html += `<td class="cell ${belowFloor ? 'below-floor' : ''}">
+          <span class="rate ${belowFloor ? 'below' : ''}">${bps2pm(rate)}</span>
+        </td>`;
+      }
+      // Market column
+      if (bench) {
+        html += `<td class="cell">
+          <span class="rate">${bps2pm(bench.med)}</span>
+          <span class="market">(${bps2pm(bench.min)}-${bps2pm(bench.max)})</span>
+        </td>`;
+      } else {
+        html += `<td class="cell">—</td>`;
+      }
+      html += `</tr>`;
+    }
+    html += `</tbody></table>`;
+
+    // Lever summary — show typical fees (assumes IA=C baseline + LGD=C representative cell)
+    const sampleCell = cells['5-C'];
+    if (sampleCell) {
+      html += `<div class="lever-summary">
+        <span>Typical upfront fee: <strong>${bps2pct(sampleCell.base_upfront_fee_bps)}</strong></span>
+        <span>Commitment: <strong>${bps2pct(sampleCell.base_commitment_fee_bps)}</strong></span>
+        <span>Retained interest: <strong>${sampleCell.retained_months} mo</strong></span>
+        <span>Exit fee (LGD-C): <strong>${bps2pct(sampleCell.base_exit_fee_bps)}</strong></span>
+        <span>Min term (LGD-C): <strong>${sampleCell.min_term_months} mo</strong></span>
+      </div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  async function load() {
+    try {
+      // Load active assumptions for floor + ceilings + benchmarks + sources
+      const ar = await fetchAuth(`${API_BASE}/api/admin/pricing/assumptions/list`);
+      const aj = await ar.json();
+      if (!ar.ok || !aj.ok) throw new Error('assumptions: ' + (aj.error || ar.status));
+      for (const r of aj.rows) assumptions[r.key] = r;
+      const mb = assumptions.market_rate_benchmarks_by_sector_pm?.value_jsonb || assumptions.market_rate_benchmarks_pm?.value_jsonb;
+      if (mb) marketBenchmarks = mb;
+      warehouse_floor = assumptions.floor_rate_warehouse_bps_pm?.value_bps || 79;
+      whole_loan_floor = assumptions.floor_rate_whole_loan_bps_pm?.value_bps || 56;
+
+      // Header info
+      document.getElementById('active-version-pill').textContent = `${aj.version.version} · active`;
+      document.getElementById('as-of').textContent = (marketBenchmarks?.last_refresh) || new Date().toISOString().substring(0,10);
+      document.getElementById('ver').textContent = aj.version.version;
+      document.getElementById('sources').textContent = (marketBenchmarks?.source) || 'see Pricing Assumptions';
+      document.getElementById('floor-warehouse').textContent = bps2pm(warehouse_floor);
+      document.getElementById('floor-whole-loan').textContent = bps2pm(whole_loan_floor);
+      document.getElementById('ceiling-std').textContent = bps2pm(assumptions.standard_rate_ceiling_bps_pm?.value_bps || 200);
+      document.getElementById('ceiling-str').textContent = bps2pm(assumptions.stressed_rate_ceiling_bps_pm?.value_bps || 250);
+
+      // Load grid for each sector + render
+      let html = '';
+      for (const sector of SECTOR_ORDER) {
+        const gr = await fetchAuth(`${API_BASE}/api/admin/pricing/grid/list?sector=${encodeURIComponent(sector)}`);
+        const gj = await gr.json();
+        if (!gr.ok || !gj.ok) {
+          html += `<div class="sector-section"><h2>${SECTOR_LABELS[sector]}</h2><div style="color:var(--err);">Failed to load: ${gj.error || gr.status}</div></div>`;
+          continue;
+        }
+        const cells = {};
+        for (const c of gj.cells) cells[`${c.pd_band}-${c.lgd_band}`] = c;
+        html += renderSection(sector, cells);
+      }
+      document.getElementById('sectors-area').innerHTML = html;
+    } catch (err) {
+      document.getElementById('sectors-area').innerHTML = `<div style="color:var(--err);padding:20px;">Load error: ${err.message}</div>`;
+    }
+  }
+  load();
+</script>
+</body>
+</html>

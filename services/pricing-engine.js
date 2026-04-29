@@ -224,7 +224,11 @@ function buildCostStack(opts) {
 
   let margin_apr_bps;
   if (mode === 'whole_loan') {
-    margin_apr_bps = assumptions.whole_loan_margin_bps?.value_bps || 0;
+    // Whole-loan BTL: fixed 300 bps spread over SONIA (per GBB termsheet),
+    // not the tier-driven margin used in warehouse mode.
+    margin_apr_bps = assumptions.whole_loan_min_margin_bps?.value_bps
+                  || assumptions.whole_loan_margin_bps?.value_bps
+                  || 300;
   } else {
     const margin_tier = lookupTier(assumptions.margin_tiers_bps?.value_jsonb, loan_pence);
     margin_apr_bps = margin_tier.bps || 0;
@@ -281,6 +285,25 @@ function applyRateCeiling(rate_bps_pm, stress_flagged, assumptions) {
     return { rate_bps_pm: ceiling, capped: true, ceiling, original: rate_bps_pm };
   }
   return { rate_bps_pm, capped: false, ceiling, original: rate_bps_pm };
+}
+
+/**
+ * Cost floor by mode — bridging warehouse cannot price below cost-of-funds +
+ * cost-of-equity + structuring + opex + minimum margin. Whole-loan BTL has a
+ * different (lower) floor since there's no CoF on Daksfirst's balance sheet —
+ * just GBB cost (SONIA + spread).
+ *
+ * Returns { floor_bps_pm, below_floor: bool, floor_source: 'warehouse'|'whole_loan' }
+ */
+function checkRateFloor(rate_bps_pm, mode, assumptions) {
+  const warehouse_floor = assumptions.floor_rate_warehouse_bps_pm?.value_bps || 79;
+  const whole_loan_floor = assumptions.floor_rate_whole_loan_bps_pm?.value_bps || 56;
+  const floor_bps_pm = mode === 'whole_loan' ? whole_loan_floor : warehouse_floor;
+  return {
+    floor_bps_pm,
+    below_floor: rate_bps_pm < floor_bps_pm,
+    floor_source: mode === 'whole_loan' ? 'whole_loan (SONIA + 300)' : 'warehouse (CoF + CapCost + Opex + min margin)',
+  };
 }
 
 function lookupMinTermJoint(assumptions, lgd, ia) {
@@ -423,6 +446,7 @@ function evaluateDecline(opts) {
   const {
     required_yield_apr_bps, net_yield_after_broker_apr_bps,
     rate_capped, assumptions, concentration_adder_bps,
+    rate_bps_pm, mode,
   } = opts;
 
   const reasons = [];
@@ -432,6 +456,18 @@ function evaluateDecline(opts) {
   if (required_yield_apr_bps > apr_cap) {
     decline = true;
     reasons.push(`Required APR ${(required_yield_apr_bps/100).toFixed(2)}% > FCA cap ${(apr_cap/100).toFixed(0)}%`);
+  }
+
+  // Cost floor: rate cannot drop below CoF + CapCost + Opex + min margin (warehouse)
+  // OR SONIA + 300 spread (whole-loan). Below floor = decline regardless of fees.
+  if (rate_bps_pm !== undefined && mode !== undefined) {
+    const floorCheck = checkRateFloor(rate_bps_pm, mode, assumptions);
+    if (floorCheck.below_floor) {
+      decline = true;
+      reasons.push(
+        `Rate ${(rate_bps_pm/100).toFixed(2)}% pm below ${floorCheck.floor_source} floor ${(floorCheck.floor_bps_pm/100).toFixed(2)}% pm — loss-making at any fee structure`
+      );
+    }
   }
 
   // If rate is at ceiling AND fees can't close gap, decline
@@ -578,6 +614,8 @@ async function priceDeal(input, client, opts = {}) {
     rate_capped: recommended.rate_capped,
     assumptions: config.assumptions,
     concentration_adder_bps: cost_stack.concentration_adder_bps,
+    rate_bps_pm: recommended.rate_bps_pm,
+    mode,
   });
 
   // Stress matrix (7 scenarios at fixed levers, shift PD/LGD only)
@@ -706,6 +744,8 @@ async function previewCellImpact(opts, client) {
     rate_capped: recommended.rate_capped,
     assumptions: config.assumptions,
     concentration_adder_bps: cost_stack.concentration_adder_bps,
+    rate_bps_pm: recommended.rate_bps_pm,
+    mode,
   });
 
   return {
@@ -738,6 +778,7 @@ module.exports = {
   evaluateDecline,
   buildWholeLoanAlternative,
   applyRateCeiling,
+  checkRateFloor,
   lookupTier,
   lookupConcentration,
   lookupMinTermJoint,

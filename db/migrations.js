@@ -3391,6 +3391,224 @@ async function runMigrations() {
       console.log('[migrate] Note on wide-ladder reseed:', err.message.substring(0, 200));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  PRICE-2.2 (2026-04-29 evening): sectoral floors + per-sector market data
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Sumit's three-part reseed:
+    //    (1) Cost floor logic — bridging warehouse cannot price below
+    //        CoF + CapCost + Struct + Opex + min margin = 79 bps/pm.
+    //        Whole-loan BTL floor = SONIA + 300 over base = 56 bps/pm.
+    //    (2) Sectoral skew — research-backed per-sector medians from
+    //        BT Q4 25 + KF H1 25 + C&C/Together/Glenhawk/Octane/Aria
+    //        published rate cards 2026-Q1. Each sector gets its own
+    //        9-PD rate ladder (no longer uniform across sectors).
+    //    (3) Source tag fix — wide-ladder rows tagged 'canonical' (the
+    //        new Daksfirst standard), not 'tuned'. The 'tuned' label
+    //        is reserved for ad-hoc admin edits in the audit trail.
+    //
+    //  Idempotent: gated by description marker 'sectoral-floors-2026-04-29'.
+    //  Re-running migration is a no-op once marker is present.
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      const SECTORAL_MARKER = 'sectoral-floors-2026-04-29';
+
+      const sectoralAssumpExists = (await pool.query(
+        `SELECT 1 FROM pricing_assumptions_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${SECTORAL_MARKER}%`]
+      )).rows.length > 0;
+      const sectoralGridExists = (await pool.query(
+        `SELECT 1 FROM pricing_grid_versions WHERE description LIKE $1 LIMIT 1`,
+        [`%${SECTORAL_MARKER}%`]
+      )).rows.length > 0;
+
+      if (sectoralAssumpExists && sectoralGridExists) {
+        console.log('[migrate] ✓ sectoral-floors reseed already applied, skipping');
+      } else {
+        // Per-sector PD ladders (bps/pm), researched 2026-04-29
+        // Sources: BT Q4 25, KF H1 25, C&C 2026-Q1, Together 2026, Glenhawk
+        // 2026, Octane 2026, Aria UK Bridging Review Q1 2026
+        const SECTORAL_LADDERS = {
+          resi_btl:        { 1: 70,  2: 75,  3: 80,  4: 90,  5: 100, 6: 110, 7: 120, 8: 135, 9: 155 },
+          resi_bridging:   { 1: 75,  2: 80,  3: 85,  4: 95,  5: 105, 6: 115, 7: 125, 8: 140, 9: 160 },
+          mixed_use:       { 1: 80,  2: 90,  3: 100, 4: 110, 5: 120, 6: 130, 7: 145, 8: 165, 9: 180 },
+          commercial:      { 1: 85,  2: 95,  3: 105, 4: 115, 5: 125, 6: 140, 7: 155, 8: 175, 9: 195 },
+          land_planning:   { 1: 95,  2: 105, 3: 115, 4: 125, 5: 140, 6: 155, 7: 170, 8: 185, 9: 200 },
+          hospitality:     { 1: 105, 2: 115, 3: 125, 4: 140, 5: 155, 6: 170, 7: 185, 8: 195, 9: 200 },
+        };
+
+        // Per-sector market benchmarks (min/median/max bps/pm, as of 2026-04-29)
+        // min ≈ med - 10bps, max ≈ med + 25bps (research-derived)
+        const SECTORAL_BENCHMARKS = {
+          source: 'Bridging Trends Q4 2025 (West One/MTF) + Knight Frank UK Specialist Lending H1 2025 + Cambridge & Counties 2026-Q1 + Together 2026 + Glenhawk 2026 + Octane Capital 2026 + Aria UK Bridging Review Q1 2026',
+          last_refresh: '2026-04-29',
+          unit: 'bps_per_month',
+          by_sector: {},
+        };
+        for (const [sector, ladder] of Object.entries(SECTORAL_LADDERS)) {
+          SECTORAL_BENCHMARKS.by_sector[sector] = {
+            by_pd: Object.entries(ladder).map(([pd, med]) => ({
+              pd: Number(pd),
+              min: Math.max(0, med - 10),
+              med,
+              max: med + 25,
+            })),
+          };
+        }
+
+        await pool.query('BEGIN');
+
+        // ── Assumptions: new version with floor keys + sectoral benchmarks ──
+        const a_active = (await pool.query(
+          `SELECT version FROM pricing_assumptions_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!a_active) throw new Error('no active assumptions version');
+        const a_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_assumptions_versions`)).rows[0].n;
+        const aNew = `v${a_count + 1}`;
+
+        await pool.query(
+          `INSERT INTO pricing_assumptions_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [aNew,
+           `Sectoral floors + per-sector market benchmarks · marker:${SECTORAL_MARKER}`,
+           'PRICE-2.2: cost floors (79 warehouse / 56 whole-loan), sectoral market data, source tag canonical']
+        );
+
+        const aOldRows = (await pool.query(
+          `SELECT key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason
+             FROM pricing_assumptions WHERE version = $1`,
+          [a_active.version]
+        )).rows;
+
+        // Carry forward most rows; override 2 ceilings (already done in wide-ladder),
+        // re-tag as 'canonical', and replace the by-PD market benchmark with by-sector.
+        const skipKeys = new Set(['market_rate_benchmarks_pm']);  // dropping the by-PD one
+
+        for (const old of aOldRows) {
+          if (skipKeys.has(old.key)) continue;
+
+          let value_bps = old.value_bps;
+          let value_pence = old.value_pence;
+          let value_jsonb = old.value_jsonb;
+          let source = old.source;
+          let citation = old.citation;
+          let change_reason = old.change_reason;
+
+          // Re-tag wide-ladder rows from 'tuned' to 'canonical' — these are now
+          // the Daksfirst published standard, not ad-hoc overrides.
+          if ((old.key === 'standard_rate_ceiling_bps_pm' || old.key === 'stressed_rate_ceiling_bps_pm') && source === 'tuned') {
+            source = 'canonical';
+            citation = 'Daksfirst wide-ladder 2026-04-29 (BT Q4 25 + KF H1 25)';
+            change_reason = 'Re-tag: rate ceilings are Daksfirst published standard, not ad-hoc tunes';
+          }
+
+          await pool.query(
+            `INSERT INTO pricing_assumptions
+               (version, key, label, value_bps, value_pence, value_jsonb, source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW())`,
+            [aNew, old.key, old.label, value_bps, value_pence,
+             value_jsonb !== null && value_jsonb !== undefined ? JSON.stringify(value_jsonb) : null,
+             source, citation, change_reason]
+          );
+        }
+
+        // NEW: cost floor keys
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'floor_rate_warehouse_bps_pm', 'floor_rate_warehouse_bps_pm', 79, 'derived',
+                   'CoF 6.957% + CapCost 1.500% + Struct 0.270% + Opex 0.350% + min margin 0.40% = 9.48% APR / 12',
+                   'Bridging warehouse rate cannot drop below cost-of-funds + cost-of-equity + opex + minimum margin', NOW())`,
+          [aNew]
+        );
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'floor_rate_whole_loan_bps_pm', 'floor_rate_whole_loan_bps_pm', 56, 'derived',
+                   'SONIA 3.73% + 300 bps spread = 6.73% APR / 12',
+                   'Whole-loan BTL minimum: GBB cost (SONIA + 300) — Daksfirst earns fee revenue on top', NOW())`,
+          [aNew]
+        );
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_bps, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'whole_loan_min_margin_bps', 'whole_loan_min_margin_bps', 300, 'tuned',
+                   'GBB termsheet — whole-loan BTL standard spread',
+                   'Fixed 300 bps margin in whole-loan mode (replaces tier-driven margin)', NOW())`,
+          [aNew]
+        );
+
+        // NEW: per-sector market benchmarks (replaces by-PD-only version)
+        await pool.query(
+          `INSERT INTO pricing_assumptions
+             (version, key, label, value_jsonb, source, citation, change_reason, last_changed_at)
+           VALUES ($1, 'market_rate_benchmarks_by_sector_pm', 'market_rate_benchmarks_by_sector_pm', $2::jsonb, 'canonical',
+                   $3, $4, NOW())`,
+          [aNew, JSON.stringify(SECTORAL_BENCHMARKS),
+           SECTORAL_BENCHMARKS.source,
+           'Per-sector market median/min/max by PD band as of 2026-04-29; refresh quarterly when public reports update']
+        );
+
+        // ── Grid: new version with per-sector ladders + canonical source ──
+        const g_active = (await pool.query(
+          `SELECT version FROM pricing_grid_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+        )).rows[0];
+        if (!g_active) throw new Error('no active grid version');
+        const g_count = (await pool.query(`SELECT COUNT(*)::int AS n FROM pricing_grid_versions`)).rows[0].n;
+        const gNew = `v${g_count + 1}`;
+
+        await pool.query(
+          `INSERT INTO pricing_grid_versions (version, description, is_active, activated_at, change_reason)
+           VALUES ($1, $2, FALSE, NOW(), $3)`,
+          [gNew, `Sectoral PD ladders · marker:${SECTORAL_MARKER}`,
+           'PRICE-2.2: each sector has its own PD ladder; source canonical (research-backed)']
+        );
+
+        const gOldRows = (await pool.query(
+          `SELECT sector, pd_band, lgd_band,
+                  base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                  retained_months, base_exit_fee_bps, min_term_months,
+                  source, citation, change_reason
+             FROM pricing_grid WHERE version = $1`,
+          [g_active.version]
+        )).rows;
+
+        let cellsUpdated = 0;
+        for (const old of gOldRows) {
+          const sectorLadder = SECTORAL_LADDERS[old.sector];
+          const newRate = sectorLadder ? sectorLadder[old.pd_band] : old.base_rate_bps_pm;
+          const isChanged = newRate !== old.base_rate_bps_pm;
+          if (isChanged) cellsUpdated++;
+
+          await pool.query(
+            `INSERT INTO pricing_grid
+               (version, sector, pd_band, lgd_band,
+                base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                retained_months, base_exit_fee_bps, min_term_months,
+                source, citation, change_reason, last_changed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())`,
+            [gNew, old.sector, old.pd_band, old.lgd_band,
+             newRate, old.base_upfront_fee_bps, old.base_commitment_fee_bps,
+             old.retained_months, old.base_exit_fee_bps, old.min_term_months,
+             'canonical',  // re-tag: per-sector ladders are research-backed standards
+             `Daksfirst sectoral ladder 2026-04-29 (research-backed, see assumptions citation)`,
+             isChanged ? `Sector-specific PD ladder for ${old.sector}` : old.change_reason]
+          );
+        }
+
+        // Flip is_active in lockstep
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = FALSE WHERE version = $1`, [a_active.version]);
+        await pool.query(`UPDATE pricing_assumptions_versions SET is_active = TRUE  WHERE version = $1`, [aNew]);
+        await pool.query(`UPDATE pricing_grid_versions        SET is_active = FALSE WHERE version = $1`, [g_active.version]);
+        await pool.query(`UPDATE pricing_grid_versions        SET is_active = TRUE  WHERE version = $1`, [gNew]);
+
+        await pool.query('COMMIT');
+        console.log(`[migrate] ✓ sectoral-floors reseed applied (assumptions ${a_active.version}→${aNew}, grid ${g_active.version}→${gNew}, ${cellsUpdated} cells updated)`);
+      }
+    } catch (err) {
+      await pool.query('ROLLBACK').catch(() => {});
+      console.log('[migrate] Note on sectoral-floors reseed:', err.message.substring(0, 200));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);

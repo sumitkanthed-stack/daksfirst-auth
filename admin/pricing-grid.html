@@ -53,6 +53,8 @@
   .grid-table td.cell.staged { background:rgba(244,183,64,0.18); border-color:var(--warn); }
   .grid-table td.cell.staged::before { content:""; position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--accent); }
   .grid-table td.cell.active-edit { background:rgba(78,161,255,0.18); border-color:var(--accent); outline:2px solid var(--accent); }
+  .grid-table td.cell.below-floor { background:rgba(239,91,91,0.10); border-color:var(--err); }
+  .cell-rate.below-floor-rate { color:var(--err); }
   .cell-rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
   .cell-rate.capped { color:var(--warn); }
   .cell-meta { display:block; font-size:10px; color:var(--muted); margin-top:2px; }
@@ -173,7 +175,18 @@
   let edits = {};               // 'sector|pd|lgd' -> { base_rate_bps_pm?, ..., change_reason }
   let editingKey = null;        // currently expanded cell key
   let previewTimer = null;
-  let marketByPd = {};          // PD -> { min, med, max } from pricing_assumptions.market_rate_benchmarks_pm
+  let marketByPd = {};                  // legacy fallback: PD -> { min, med, max } (single-sector)
+  let marketBySectorPd = {};            // active: sector -> PD -> { min, med, max }
+  let warehouse_floor_bps_pm = 79;
+  let whole_loan_floor_bps_pm = 56;
+  // Sectors that default to whole-loan mode (use the lower floor)
+  const WHOLE_LOAN_DEFAULT_SECTORS = new Set(['resi_btl']);
+  function floorForSector(sector) {
+    return WHOLE_LOAN_DEFAULT_SECTORS.has(sector) ? whole_loan_floor_bps_pm : warehouse_floor_bps_pm;
+  }
+  function marketForSectorPd(sector, pd) {
+    return (marketBySectorPd[sector] && marketBySectorPd[sector][pd]) || marketByPd[pd] || null;
+  }
 
   // ─── Helpers ─────────────────────────────────────────────────────────
   function bps2pm(bps) { return (bps / 100).toFixed(2) + '%pm'; }
@@ -242,22 +255,28 @@
         const rate = displayCell.base_rate_bps_pm;
         const cappedClass = rate >= 200 ? 'capped' : '';
 
-        // Market benchmark for this PD (if loaded)
-        const mkt = marketByPd[pd];
+        // Market benchmark for this (sector, PD)
+        const mkt = marketForSectorPd(activeSector, pd);
         let marketHtml = '';
-        let marketTagClass = '';
         if (mkt) {
-          // Compare rate vs market: green if ≤ med, amber if med < rate ≤ max, red if > max
           let dot = '🟢';
-          if (rate > mkt.max) { dot = '🔴'; marketTagClass = 'over-mkt'; }
-          else if (rate > mkt.med) { dot = '🟡'; marketTagClass = 'premium-mkt'; }
+          if (rate > mkt.max) dot = '🔴';
+          else if (rate > mkt.med) dot = '🟡';
           marketHtml = `<span class="cell-market">${dot} mkt ${(mkt.med/100).toFixed(2)} <span style="opacity:0.6;">(${(mkt.min/100).toFixed(2)}-${(mkt.max/100).toFixed(2)})</span></span>`;
         }
+        // Floor warning: cell rate below sector's typical-mode floor
+        const sectorFloor = floorForSector(activeSector);
+        const belowFloor = rate < sectorFloor;
+        const floorClass = belowFloor ? ' below-floor' : '';
+        const floorWarning = belowFloor
+          ? `<span class="cell-market" style="color:var(--err);">⚠ below floor ${(sectorFloor/100).toFixed(2)}%pm</span>`
+          : '';
 
         const meta = isEdited ? '<span style="color:var(--warn);">staged</span>' : (cell.source === 'tuned' ? `<span style="color:var(--warn);">tuned</span>` : '');
-        html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}" data-key="${k}">
-          <span class="cell-rate ${cappedClass}">${bps2pm(rate)}</span>
+        html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}${floorClass}" data-key="${k}">
+          <span class="cell-rate ${cappedClass}${belowFloor ? ' below-floor-rate' : ''}">${bps2pm(rate)}</span>
           ${marketHtml}
+          ${floorWarning}
           ${meta ? `<span class="cell-meta">${meta}</span>` : ''}
         </td>`;
       }
@@ -513,15 +532,29 @@
       document.getElementById('active-version-pill').textContent = `${activeVersion.version} · active`;
       document.getElementById('next-version-pill').textContent = `→ v${(allVersions.length || 1) + 1}`;
 
-      // Load market benchmarks from active assumptions config
+      // Load market benchmarks + floors from active assumptions config
       try {
         const ar = await fetchAuth(`${API_BASE}/api/admin/pricing/assumptions/list`);
         const aj = await ar.json();
         if (ar.ok && aj.ok) {
-          const bench = aj.rows.find(row => row.key === 'market_rate_benchmarks_pm');
-          if (bench && bench.value_jsonb && Array.isArray(bench.value_jsonb.by_pd)) {
-            for (const row of bench.value_jsonb.by_pd) marketByPd[row.pd] = row;
+          // Active: by-sector benchmarks (post sectoral-floors-2026-04-29 migration)
+          const bs = aj.rows.find(row => row.key === 'market_rate_benchmarks_by_sector_pm');
+          if (bs && bs.value_jsonb && bs.value_jsonb.by_sector) {
+            for (const [sector, data] of Object.entries(bs.value_jsonb.by_sector)) {
+              marketBySectorPd[sector] = {};
+              for (const row of (data.by_pd || [])) marketBySectorPd[sector][row.pd] = row;
+            }
           }
+          // Legacy fallback: by-PD only (pre-migration)
+          const bp = aj.rows.find(row => row.key === 'market_rate_benchmarks_pm');
+          if (bp && bp.value_jsonb && Array.isArray(bp.value_jsonb.by_pd)) {
+            for (const row of bp.value_jsonb.by_pd) marketByPd[row.pd] = row;
+          }
+          // Floors
+          const fw = aj.rows.find(row => row.key === 'floor_rate_warehouse_bps_pm');
+          if (fw && fw.value_bps) warehouse_floor_bps_pm = fw.value_bps;
+          const fwl = aj.rows.find(row => row.key === 'floor_rate_whole_loan_bps_pm');
+          if (fwl && fwl.value_bps) whole_loan_floor_bps_pm = fwl.value_bps;
         }
       } catch(e) { /* benchmarks optional — page still works without */ }
 
