@@ -106,6 +106,20 @@
   import { fetchWithAuth } from '/js/auth.js';
   import { API_BASE } from '/js/config.js';
 
+  // ─── Auth guard: fail closed if no session (redirects to portal home) ──
+  // Without this, an unauthenticated user (e.g. incognito) sees a stuck
+  // "Failed to load: Authentication required" banner with no path forward.
+  // With this guard, they're immediately bounced to the login screen.
+  if (!sessionStorage.getItem('daksfirst_token')) {
+    document.body.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:#8a95a5;font-family:-apple-system,sans-serif;">
+        <div style="font-size:18px;color:#e7ecf3;margin-bottom:8px;">Login required</div>
+        <div style="font-size:13px;margin-bottom:20px;">This page needs an admin session. Redirecting to portal…</div>
+      </div>`;
+    setTimeout(() => { window.location.href = '/'; }, 1200);
+    throw new Error('No daksfirst_token in sessionStorage — redirecting to login.');
+  }
+
   // ─── State ───────────────────────────────────────────────────────────
   let activeVersion = null;
   let rows = [];                  // current active version rows (read-only)
