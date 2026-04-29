@@ -602,6 +602,22 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
 
   const sourcesUsesSummary = buildSourcesUsesSummary(m1.envelope.features.deal);
 
+  // XCOLL-2 (2026-04-29): cross-collateral summary — effective LTV (1st-charge
+  // properties only) + 2nd-charge comfort security + auto-redemption lines for
+  // refinance properties. Ships in payload alongside sources_uses for Opus.
+  const crossCollateral = (() => {
+    try {
+      const xcoll = require('./cross-collateral');
+      const dealRow = m1.envelope.features.deal;
+      const loanApprovedPounds = Number(dealRow.loan_amount_approved || dealRow.loan_amount || 0);
+      const loanApprovedPence = Math.round(loanApprovedPounds * 100);
+      return xcoll.buildCrossCollateralSummary(m1.envelope.features.properties, loanApprovedPence);
+    } catch (err) {
+      console.warn('[risk-packager] cross-collateral summary failed:', err.message);
+      return null;
+    }
+  })();
+
   const propsWithChimnie = m1.envelope.features.properties.filter((p) => p.chimnie_uprn);
   const propsWithPtal    = m1.envelope.features.properties.filter((p) => p.chimnie_ptal);
   const propsWithArea    = m1.envelope.features.properties.filter((p) => p.chimnie_local_authority);
@@ -695,6 +711,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
     balance_sheet:    balanceSheet,         // { consolidated, per_ubo[] }
     borrower_exposure: borrowerExposure,    // null | { aggregates + top_active_deals[3] }
     sources_uses:     sourcesUsesSummary,   // computed totals + ratios + breakdown
+    cross_collateral: crossCollateral,      // XCOLL-2: effective LTV (1st-charge only)
+                                             //          + 2nd-charge comfort + auto-redemptions
     source_provenance: provenance,
     feature_hash:     m1.feature_hash,
   };
