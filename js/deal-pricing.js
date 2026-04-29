@@ -95,7 +95,7 @@ function renderHeader(env, dealId) {
             Mode: ${sanitizeHtml(inputs.mode)}${inputs.channel === 'direct' ? ' · direct' : ''}
           </span>
           <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
-            Pricing v${pricing_versions.assumptions} / grid v${pricing_versions.grid} / IA v${pricing_versions.ia_modifiers}
+            Pricing ${pricing_versions.assumptions} / grid ${pricing_versions.grid} / IA ${pricing_versions.ia_modifiers}
           </span>
           <span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${COLOURS.neutral.bg};color:${COLOURS.neutral.fg};border:1px solid ${COLOURS.neutral.border};">
             ${fmtPence(inputs.loan_amount_pence)} · ${inputs.term_months} mo
