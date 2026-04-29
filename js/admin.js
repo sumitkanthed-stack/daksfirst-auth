@@ -25,10 +25,22 @@ export async function showAdminPanel() {
     return;
   }
 
+  const fullName = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
   const nameEl = document.getElementById('admin-user-name') || document.getElementById('user-name-display');
   const roleEl = document.getElementById('admin-role-badge') || document.getElementById('user-role-display');
-  if (nameEl) nameEl.textContent = `${sanitizeHtml(currentUser.first_name)} ${sanitizeHtml(currentUser.last_name)}`;
+  if (nameEl) nameEl.textContent = fullName;
   if (roleEl) roleEl.textContent = currentRole.toUpperCase();
+
+  // 2026-04-29: Paint the global sidebar user info too — previously only
+  // showDashboard() (the broker/borrower path) did this, so admins landed
+  // on the admin panel with the sidebar stuck at "User · BROKER" defaults.
+  // Mirror the same logic here so role-aware UI works regardless of route.
+  const sidebarName = document.getElementById('sidebar-user-name');
+  const sidebarRole = document.getElementById('sidebar-role-badge');
+  const sidebarAdmin = document.getElementById('sidebar-admin-section');
+  if (sidebarName) sidebarName.textContent = fullName;
+  if (sidebarRole) sidebarRole.textContent = currentRole.toUpperCase();
+  if (sidebarAdmin) sidebarAdmin.style.display = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole) ? 'block' : 'none';
 
   showScreen('screen-admin');
 
