@@ -516,7 +516,7 @@ async function buildWholeLoanAlternative(input, config, gridCell, iaDelta, clien
  *     priced_at: ISO8601
  *   }
  */
-async function priceDeal(input, client) {
+async function priceDeal(input, client, opts = {}) {
   const db = client || pool;
 
   // Normalise input
@@ -531,9 +531,13 @@ async function priceDeal(input, client) {
     throw new Error(`pricing-engine: missing loan_amount_pence or term_months`);
   }
 
-  // Load active config + grid cell
+  // Load active config. Grid cell can be overridden (PRICE-5 cell editor
+  // preview path) — when overrides.gridCell is provided, skip the DB lookup
+  // and use the provided cell. Lets the admin UI preview unsaved edits.
   const config = await loadActivePricingConfig(db);
-  const gridCell = await loadGridCell(config.versions.grid, input.sector, input.pd, input.lgd, db);
+  const gridCell = opts.gridCell
+    ? opts.gridCell
+    : await loadGridCell(config.versions.grid, input.sector, input.pd, input.lgd, db);
   const iaDelta = config.ia_modifiers[input.ia];
   if (!iaDelta) {
     throw new Error(`pricing-engine: no IA modifier for band '${input.ia}' in version ${config.versions.ia_modifiers}`);
@@ -628,8 +632,102 @@ async function priceDeal(input, client) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  previewCellImpact (PRICE-5) — lightweight preview for admin grid editor
+//  ─────────────────────────────────────────────────────────────────────────
+//  Skips stress matrix + whole-loan alt + audit trail. Uses a synthetic
+//  example deal (loan + term + IA admin picks at the page level) and a
+//  synthetic grid cell (the values the admin is currently typing into the
+//  cell editor). Returns just the headline numbers the editor needs:
+//  required APR, net APR, margin buffer, decline flag.
+//
+//  Designed to be called on every keystroke (debounced ~300ms client-side).
+// ═══════════════════════════════════════════════════════════════════════════
+async function previewCellImpact(opts, client) {
+  const db = client || pool;
+  const {
+    sector, pd, lgd, ia,
+    levers,                      // { rate_bps_pm, upfront_fee_bps, commitment_fee_bps, retained_months, exit_fee_bps, min_term_months }
+    example_loan_pence,
+    example_term_months,
+    mode = 'warehouse',
+    channel,
+  } = opts;
+
+  if (!sector || !pd || !lgd || !ia) {
+    throw new Error('previewCellImpact: sector/pd/lgd/ia all required');
+  }
+  if (!example_loan_pence || !example_term_months) {
+    throw new Error('previewCellImpact: example_loan_pence + example_term_months required');
+  }
+
+  // Build a synthetic grid cell from the levers being typed
+  const syntheticCell = {
+    base_rate_bps_pm:        Number(levers.rate_bps_pm)        || 0,
+    base_upfront_fee_bps:    Number(levers.upfront_fee_bps)    || 0,
+    base_commitment_fee_bps: Number(levers.commitment_fee_bps) || 0,
+    retained_months:         Number(levers.retained_months)    || 0,
+    base_exit_fee_bps:       Number(levers.exit_fee_bps)       || 0,
+    min_term_months:         Number(levers.min_term_months)    || 0,
+  };
+
+  const config = await loadActivePricingConfig(db);
+  const iaDelta = config.ia_modifiers[ia];
+  if (!iaDelta) throw new Error(`previewCellImpact: unknown IA band '${ia}'`);
+
+  const recommended = buildRecommendedLevers({
+    gridCell: syntheticCell, iaDelta,
+    assumptions: config.assumptions,
+    lgd, ia, stress_flagged: false,
+  });
+
+  const cost_stack = buildCostStack({
+    assumptions: config.assumptions,
+    mode,
+    loan_pence: example_loan_pence,
+    book_pence: null, // use expected_avg_book_pence from assumptions
+    pd, lgd,
+  });
+
+  const yields = computeYields({
+    recommended,
+    term_months: example_term_months,
+    mode,
+    channel: channel || 'broker',
+    loan_pence: example_loan_pence,
+    assumptions: config.assumptions,
+  });
+
+  const margin_buffer_bps = yields.net_yield_after_broker_apr_bps - cost_stack.required_yield_apr_bps;
+
+  const decline = evaluateDecline({
+    required_yield_apr_bps: cost_stack.required_yield_apr_bps,
+    net_yield_after_broker_apr_bps: yields.net_yield_after_broker_apr_bps,
+    rate_capped: recommended.rate_capped,
+    assumptions: config.assumptions,
+    concentration_adder_bps: cost_stack.concentration_adder_bps,
+  });
+
+  return {
+    pricing_versions: config.versions,
+    inputs: {
+      sector, pd, lgd, ia, mode,
+      example_loan_pence, example_term_months,
+    },
+    recommended,
+    cost_stack,
+    gross_yield_apr_bps: yields.gross_yield_apr_bps,
+    broker_apr_bps: yields.broker_apr_bps,
+    net_yield_after_broker_apr_bps: yields.net_yield_after_broker_apr_bps,
+    margin_buffer_bps,
+    decline_flag: decline.decline_flag,
+    decline_reason: decline.decline_reason,
+  };
+}
+
 module.exports = {
   priceDeal,
+  previewCellImpact,
   loadActivePricingConfig,
   // Internal helpers exported for unit testing:
   loadGridCell,

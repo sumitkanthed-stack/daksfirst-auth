@@ -511,6 +511,235 @@ router.post(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  GET /api/admin/pricing/grid/list   (PRICE-5)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Returns the 45 cells for one (version, sector) combo + active version
+//  metadata + sector list (from risk_taxonomy active version). Defaults to
+//  active version if version not specified, defaults to first sector if
+//  sector not specified.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get(
+  '/admin/pricing/grid/list',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    try {
+      let version = req.query.version;
+      if (!version) {
+        const r = await pool.query(`SELECT version FROM pricing_grid_versions WHERE is_active = TRUE LIMIT 1`);
+        if (!r.rows[0]) return res.status(404).json({ ok: false, error: 'No active grid version' });
+        version = r.rows[0].version;
+      }
+      const versionMeta = (await pool.query(
+        `SELECT version, description, is_active, activated_at, change_reason, created_at
+           FROM pricing_grid_versions WHERE version = $1`, [version]
+      )).rows[0];
+      if (!versionMeta) return res.status(404).json({ ok: false, error: `Version ${version} not found` });
+
+      // Sector list — distinct sectors that exist in the grid for this version
+      const sectorRows = (await pool.query(
+        `SELECT DISTINCT sector FROM pricing_grid WHERE version = $1 ORDER BY sector`, [version]
+      )).rows;
+      const sectors = sectorRows.map(r => r.sector);
+
+      const sectorFilter = req.query.sector || (sectors[0] || 'commercial');
+      const cellRows = (await pool.query(
+        `SELECT id, sector, pd_band, lgd_band,
+                base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                retained_months, base_exit_fee_bps, min_term_months,
+                source, citation, last_changed_by, last_changed_at, change_reason
+           FROM pricing_grid
+          WHERE version = $1 AND sector = $2
+          ORDER BY pd_band ASC, lgd_band ASC`,
+        [version, sectorFilter]
+      )).rows;
+
+      const allVersions = (await pool.query(
+        `SELECT version, is_active, created_at, change_reason
+           FROM pricing_grid_versions ORDER BY created_at DESC LIMIT 20`
+      )).rows;
+
+      return res.json({
+        ok: true,
+        version: versionMeta,
+        sector: sectorFilter,
+        sectors,
+        cells: cellRows,
+        all_versions: allVersions,
+      });
+    } catch (err) {
+      console.error('[pricing/grid/list] error:', err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/admin/pricing/grid/activate-new   (PRICE-5)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Same fork-and-flip pattern as assumptions. Body:
+//    {
+//      activate_reason,
+//      changes: [
+//        { sector, pd_band, lgd_band,
+//          base_rate_bps_pm?, base_upfront_fee_bps?, base_commitment_fee_bps?,
+//          retained_months?, base_exit_fee_bps?, min_term_months?,
+//          change_reason }
+//      ]
+//    }
+//
+//  Txn: compute next version (vN+1), INSERT new pricing_grid_versions row,
+//  copy all cells from active grid version, apply changes by (sector,pd,lgd),
+//  flip is_active.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post(
+  '/admin/pricing/grid/activate-new',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    const body = req.body || {};
+    const changes = Array.isArray(body.changes) ? body.changes : [];
+
+    if (changes.length === 0) {
+      return res.status(400).json({ ok: false, error: 'No changes provided' });
+    }
+    for (const c of changes) {
+      if (!c.sector || !c.pd_band || !c.lgd_band) {
+        return res.status(400).json({ ok: false, error: 'Every change requires sector + pd_band + lgd_band' });
+      }
+      if (!c.change_reason || !String(c.change_reason).trim()) {
+        return res.status(400).json({ ok: false, error: `change for (${c.sector}, PD${c.pd_band}, LGD-${c.lgd_band}) missing required change_reason` });
+      }
+    }
+    // Map by composite key
+    const changesByKey = Object.fromEntries(
+      changes.map(c => [`${c.sector}|${c.pd_band}|${c.lgd_band}`, c])
+    );
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const activeRow = (await client.query(
+        `SELECT version FROM pricing_grid_versions WHERE is_active = TRUE LIMIT 1 FOR UPDATE`
+      )).rows[0];
+      if (!activeRow) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ ok: false, error: 'No active grid version to fork from' });
+      }
+      const oldVersion = activeRow.version;
+
+      const countRow = (await client.query(`SELECT COUNT(*)::int AS n FROM pricing_grid_versions`)).rows[0];
+      const newVersion = `v${countRow.n + 1}`;
+
+      await client.query(
+        `INSERT INTO pricing_grid_versions (version, description, is_active, activated_at, activated_by, change_reason)
+         VALUES ($1, $2, FALSE, NOW(), $3, $4)`,
+        [newVersion, body.description || `Tuned grid from ${oldVersion} on ${new Date().toISOString().substring(0,10)}`,
+         req.user.id, body.activate_reason || `${changes.length} cell(s) changed`]
+      );
+
+      const oldCells = (await client.query(
+        `SELECT sector, pd_band, lgd_band,
+                base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+                retained_months, base_exit_fee_bps, min_term_months,
+                source, citation, change_reason
+           FROM pricing_grid WHERE version = $1`,
+        [oldVersion]
+      )).rows;
+
+      let changedCount = 0;
+      for (const old of oldCells) {
+        const k = `${old.sector}|${old.pd_band}|${old.lgd_band}`;
+        const change = changesByKey[k];
+        let row = { ...old };
+        let last_changed_by = null;
+        if (change) {
+          changedCount++;
+          if (change.base_rate_bps_pm        !== undefined) row.base_rate_bps_pm        = change.base_rate_bps_pm;
+          if (change.base_upfront_fee_bps    !== undefined) row.base_upfront_fee_bps    = change.base_upfront_fee_bps;
+          if (change.base_commitment_fee_bps !== undefined) row.base_commitment_fee_bps = change.base_commitment_fee_bps;
+          if (change.retained_months         !== undefined) row.retained_months         = change.retained_months;
+          if (change.base_exit_fee_bps       !== undefined) row.base_exit_fee_bps       = change.base_exit_fee_bps;
+          if (change.min_term_months         !== undefined) row.min_term_months         = change.min_term_months;
+          row.source = 'tuned';
+          if (change.citation) row.citation = change.citation;
+          row.change_reason = change.change_reason;
+          last_changed_by = req.user.id;
+        }
+        await client.query(
+          `INSERT INTO pricing_grid
+             (version, sector, pd_band, lgd_band,
+              base_rate_bps_pm, base_upfront_fee_bps, base_commitment_fee_bps,
+              retained_months, base_exit_fee_bps, min_term_months,
+              source, citation, last_changed_by, last_changed_at, change_reason)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $14)`,
+          [newVersion, row.sector, row.pd_band, row.lgd_band,
+           row.base_rate_bps_pm, row.base_upfront_fee_bps, row.base_commitment_fee_bps,
+           row.retained_months, row.base_exit_fee_bps, row.min_term_months,
+           row.source, row.citation, last_changed_by, row.change_reason]
+        );
+      }
+
+      // Validate every change key matched
+      const knownKeys = new Set(oldCells.map(r => `${r.sector}|${r.pd_band}|${r.lgd_band}`));
+      const unknownChanges = Object.keys(changesByKey).filter(k => !knownKeys.has(k));
+      if (unknownChanges.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: `Unknown cell coords: ${unknownChanges.join(', ')}` });
+      }
+
+      // Flip is_active
+      await client.query(`UPDATE pricing_grid_versions SET is_active = FALSE WHERE version = $1`, [oldVersion]);
+      await client.query(`UPDATE pricing_grid_versions SET is_active = TRUE  WHERE version = $1`, [newVersion]);
+
+      await client.query('COMMIT');
+      console.log(`[pricing/grid/activate-new] User ${req.user.id} activated grid ${newVersion} from ${oldVersion} (${changedCount} cells changed)`);
+      return res.json({
+        ok: true,
+        new_version: newVersion,
+        old_version: oldVersion,
+        changed_count: changedCount,
+        total_count: oldCells.length,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('[pricing/grid/activate-new] error:', err);
+      return res.status(500).json({ ok: false, error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/admin/pricing/preview-cell   (PRICE-5)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Body: { sector, pd, lgd, ia,
+//          levers: {rate_bps_pm, upfront_fee_bps, commitment_fee_bps,
+//                   retained_months, exit_fee_bps, min_term_months},
+//          example_loan_pence, example_term_months, mode? }
+//
+//  Returns the engine envelope's headline numbers (required, net, buffer,
+//  decline) for the synthetic cell. Used by the grid editor's live impact
+//  preview as admin types — debounced 300ms client-side.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post(
+  '/admin/pricing/preview-cell',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    try {
+      const result = await pricingEngine.previewCellImpact(req.body || {});
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('[pricing/preview-cell] error:', err.message);
+      return res.status(400).json({ ok: false, error: err.message });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  POST /api/admin/pricing/sonia-pull   (PRICE-10)
 //  ─────────────────────────────────────────────────────────────────────────
 //  Triggers a fresh SONIA pull from BoE IADB (CSV endpoint, series IUDSOIA)

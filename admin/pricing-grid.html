@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daksfirst — Pricing Grid</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #151a21; --panel-2: #1c232c;
+    --border: #2a3340; --ink: #e7ecf3; --muted: #8a95a5;
+    --accent: #4ea1ff; --ok: #3ecf8e; --warn: #f4b740; --err: #ef5b5b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+  header { padding:18px 28px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  header a.back { color:var(--muted); text-decoration:none; font-size:12px; }
+  header a.back:hover { color:var(--accent); }
+  .pill { padding:4px 12px; border-radius:14px; font-size:11px; font-weight:600; letter-spacing:0.4px; }
+  .pill.active { background:rgba(62,207,142,0.15); color:var(--ok); border:1px solid rgba(62,207,142,0.4); }
+  .pill.draft { background:rgba(244,183,64,0.15); color:var(--warn); border:1px solid rgba(244,183,64,0.4); }
+  main { padding:18px 28px; max-width:1700px; }
+  .banner { padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px; }
+  .banner.err { background:rgba(239,91,91,0.1); border:1px solid var(--err); color:var(--err); }
+  .banner.ok  { background:rgba(62,207,142,0.1); border:1px solid var(--ok); color:var(--ok); }
+  .banner.warn { background:rgba(244,183,64,0.1); border:1px solid var(--warn); color:var(--warn); }
+
+  /* Page-level example deal selector */
+  .selector-bar { display:flex; gap:14px; flex-wrap:wrap; align-items:center; padding:10px 14px; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; margin-bottom:14px; font-size:12px; }
+  .selector-bar label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-right:6px; }
+  .selector-bar input, .selector-bar select { background:#0b0e13; color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font:inherit; font-family:var(--mono); font-size:12px; }
+  .selector-bar input[type="number"] { width:120px; text-align:right; }
+
+  /* Sector tabs */
+  .sector-tabs { display:flex; flex-wrap:wrap; gap:4px; border-bottom:2px solid var(--border); margin-bottom:14px; }
+  .sector-tab { background:transparent; border:1px solid transparent; border-bottom:none; padding:8px 16px; font:inherit; font-size:13px; font-weight:500; color:var(--muted); cursor:pointer; border-radius:6px 6px 0 0; position:relative; }
+  .sector-tab:hover { color:var(--accent); }
+  .sector-tab.active { background:var(--panel); color:var(--ink); border-color:var(--border); border-bottom:2px solid var(--panel); margin-bottom:-2px; }
+  .sector-tab .badge { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:8px; background:rgba(244,183,64,0.2); color:var(--warn); font-size:10px; font-weight:700; }
+
+  /* 9x5 grid */
+  .grid-card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .grid-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .grid-table th, .grid-table td { padding:8px; border:1px solid var(--border); text-align:center; vertical-align:middle; }
+  .grid-table th { background:var(--panel-2); color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+  .grid-table th.row-head { text-align:left; padding-left:14px; }
+  .grid-table td.cell { cursor:pointer; transition:background .12s; font-family:var(--mono); position:relative; min-width:90px; }
+  .grid-table td.cell:hover { background:rgba(78,161,255,0.08); }
+  .grid-table td.cell.tuned { background:rgba(244,183,64,0.06); }
+  .grid-table td.cell.tuned::before { content:""; position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  .grid-table td.cell.staged { background:rgba(244,183,64,0.18); border-color:var(--warn); }
+  .grid-table td.cell.staged::before { content:""; position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--accent); }
+  .grid-table td.cell.active-edit { background:rgba(78,161,255,0.18); border-color:var(--accent); outline:2px solid var(--accent); }
+  .cell-rate { display:block; font-weight:600; color:var(--ink); font-size:13px; }
+  .cell-rate.capped { color:var(--warn); }
+  .cell-meta { display:block; font-size:10px; color:var(--muted); margin-top:2px; }
+
+  /* Cell editor (inline panel below grid) */
+  .editor-panel { margin-top:14px; padding:16px; background:var(--panel-2); border:1px solid var(--accent); border-radius:8px; display:none; }
+  .editor-panel.open { display:block; }
+  .editor-panel h3 { margin:0 0 12px; font-size:14px; font-weight:600; color:var(--ink); }
+  .editor-panel h3 .coords { color:var(--accent); font-family:var(--mono); }
+  .editor-grid { display:grid; grid-template-columns:200px 1fr; gap:8px 16px; align-items:center; margin-bottom:10px; }
+  .editor-grid label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
+  .editor-grid input { background:#0b0e13; color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font:inherit; font-family:var(--mono); font-size:12px; width:140px; text-align:right; }
+  .editor-grid input:focus { outline:2px solid var(--accent); border-color:var(--accent); }
+  .editor-grid .unit { color:var(--muted); font-size:11px; margin-left:8px; }
+  .editor-reason { width:100%; min-height:50px; background:#0b0e13; color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font:inherit; font-size:12px; }
+  .editor-reason:focus { outline:2px solid var(--accent); border-color:var(--accent); }
+
+  /* Impact preview */
+  .impact-card { margin-top:12px; padding:12px 14px; background:rgba(78,161,255,0.06); border:1px solid rgba(78,161,255,0.3); border-radius:6px; font-size:12px; }
+  .impact-card .impact-head { font-size:10px; color:var(--accent); font-weight:600; letter-spacing:0.6px; text-transform:uppercase; margin-bottom:8px; }
+  .impact-row { display:flex; justify-content:space-between; padding:3px 0; }
+  .impact-row .lbl { color:var(--muted); }
+  .impact-row .val { font-family:var(--mono); color:var(--ink); }
+  .impact-row.buffer { padding-top:8px; margin-top:6px; border-top:1px solid rgba(78,161,255,0.2); font-weight:700; }
+  .impact-row.buffer .val.ok { color:var(--ok); }
+  .impact-row.buffer .val.warn { color:var(--warn); }
+  .impact-row.buffer .val.err { color:var(--err); }
+
+  /* Action buttons */
+  .editor-actions { display:flex; gap:10px; margin-top:12px; }
+  button { background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:6px 14px; font:inherit; font-size:12px; cursor:pointer; }
+  button:hover { color:var(--accent); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:white; border-color:var(--accent); font-weight:500; }
+  button.primary:hover { background:#6bb3ff; border-color:#6bb3ff; color:white; }
+  button.danger { color:var(--err); border-color:var(--err); }
+
+  /* Sticky activation bar */
+  .activation-bar { position:sticky; bottom:0; background:var(--panel-2); border-top:2px solid var(--accent); padding:14px 28px; margin-top:24px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  .activation-bar input[type="text"] { background:#0b0e13; color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font:inherit; font-size:12px; width:340px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Pricing Grid</h1>
+    <div class="sub">9 PD &times; 5 LGD &times; 6 sectors = 270 cells &middot; click a cell to tune &middot; live impact preview</div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <span id="active-version-pill" class="pill active">loading&hellip;</span>
+    <a class="back" href="/">&larr; back to portal</a>
+  </div>
+</header>
+<main>
+  <div id="banner-area"></div>
+
+  <!-- Page-level example deal selector for live preview -->
+  <div class="selector-bar">
+    <label>EXAMPLE DEAL FOR LIVE PREVIEW</label>
+    <span><label>Loan</label><input type="number" id="ex-loan-m" value="2.25" step="0.25" style="width:80px;"> <span class="unit">£m</span></span>
+    <span><label>Term</label><input type="number" id="ex-term" value="12" step="1" style="width:60px;"> <span class="unit">mo</span></span>
+    <span><label>IA</label>
+      <select id="ex-ia">
+        <option value="A">A</option><option value="B">B</option><option value="C">C</option>
+        <option value="D" selected>D</option><option value="E">E</option>
+      </select>
+    </span>
+    <span style="margin-left:auto;color:var(--muted);font-size:11px;">Impact preview recomputes every keystroke (debounced 300ms)</span>
+  </div>
+
+  <!-- Sector tabs -->
+  <div id="sector-tabs" class="sector-tabs"></div>
+
+  <!-- Grid + cell editor -->
+  <div class="grid-card">
+    <div id="grid-area">
+      <p style="color:var(--muted);text-align:center;padding:40px 0;">Loading grid&hellip;</p>
+    </div>
+    <div id="editor-panel" class="editor-panel"></div>
+  </div>
+</main>
+
+<div class="activation-bar" id="activation-bar" style="display:none;">
+  <div>
+    <span style="color:var(--warn);font-weight:600;font-size:13px;">&#9888; <span id="changed-count">0</span> cell(s) staged across <span id="changed-sectors-count">0</span> sector(s) <span class="pill draft" id="next-version-pill" style="margin-left:10px;">&rarr; v?</span></span>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <input type="text" id="activate-reason" placeholder="Activation reason (audit log)">
+    <button id="reset-edits-btn">&#x21bb; Reset all</button>
+    <button class="primary" id="activate-btn">Activate new version</button>
+  </div>
+</div>
+
+<script>
+  // ─── Standalone admin page — direct sessionStorage token ─────────────
+  const TOKEN = sessionStorage.getItem('daksfirst_token') || '';
+  const API_BASE = window.location.hostname.startsWith('apply-staging')
+    ? 'https://daksfirst-auth-staging.onrender.com'
+    : 'https://daksfirst-auth.onrender.com';
+  if (!TOKEN) {
+    document.body.innerHTML = `<div style="text-align:center;padding:60px 20px;color:#8a95a5;font-family:-apple-system,sans-serif;"><div style="font-size:18px;color:#e7ecf3;margin-bottom:8px;">Login required</div><div style="font-size:13px;">Redirecting to portal&hellip;</div></div>`;
+    setTimeout(() => { window.location.href = '/'; }, 1200);
+    throw new Error('No token');
+  }
+  async function fetchAuth(url, options = {}) {
+    options.headers = Object.assign({}, options.headers || {}, { 'Authorization': 'Bearer ' + TOKEN });
+    return fetch(url, options);
+  }
+
+  // ─── State ───────────────────────────────────────────────────────────
+  const PD_BANDS = [1,2,3,4,5,6,7,8,9];
+  const LGD_BANDS = ['A','B','C','D','E'];
+  let activeVersion = null;
+  let allVersions = [];
+  let sectors = [];
+  let activeSector = null;
+  let cellsBySector = {};       // sector -> { 'PDx-LGDy': cellRow }
+  let edits = {};               // 'sector|pd|lgd' -> { base_rate_bps_pm?, ..., change_reason }
+  let editingKey = null;        // currently expanded cell key
+  let previewTimer = null;
+
+  // ─── Helpers ─────────────────────────────────────────────────────────
+  function bps2pm(bps) { return (bps / 100).toFixed(2) + '%pm'; }
+  function bps2pct(bps) { return (bps / 100).toFixed(2) + '%'; }
+  function fmtBuffer(bps) {
+    if (bps === null || bps === undefined) return '—';
+    return (bps >= 0 ? '+' : '') + (bps / 100).toFixed(2) + '%';
+  }
+  function bufferClass(bps) {
+    if (bps === null || bps === undefined) return '';
+    if (bps < 0) return 'err';
+    if (bps < 100) return 'warn';
+    return 'ok';
+  }
+  function showBanner(msg, kind) {
+    const el = document.getElementById('banner-area');
+    el.innerHTML = `<div class="banner ${kind}">${msg}</div>`;
+    if (kind === 'ok') setTimeout(() => { el.innerHTML = ''; }, 3500);
+  }
+  function key(sector, pd, lgd) { return `${sector}|${pd}|${lgd}`; }
+
+  // ─── Sector tabs ─────────────────────────────────────────────────────
+  function renderSectorTabs() {
+    const el = document.getElementById('sector-tabs');
+    el.innerHTML = sectors.map(s => {
+      const stagedCount = Object.keys(edits).filter(k => k.startsWith(s + '|')).length;
+      const tunedCount = Object.values(cellsBySector[s] || {}).filter(c => c.source === 'tuned').length;
+      const badge = stagedCount > 0
+        ? `<span class="badge">${stagedCount} staged</span>`
+        : (tunedCount > 0 ? `<span class="badge" style="background:rgba(244,183,64,0.15);color:var(--warn);">${tunedCount} tuned</span>` : '');
+      return `<button class="sector-tab ${s === activeSector ? 'active' : ''}" data-sector="${s}">${s.replace(/_/g, ' ')}${badge}</button>`;
+    }).join('');
+    el.querySelectorAll('.sector-tab').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const s = btn.dataset.sector;
+        if (s === activeSector) return;
+        activeSector = s;
+        editingKey = null;
+        if (!cellsBySector[s]) await loadSector(s);
+        renderSectorTabs();
+        renderGrid();
+        closeEditor();
+      });
+    });
+  }
+
+  // ─── 9x5 grid render ────────────────────────────────────────────────
+  function renderGrid() {
+    const el = document.getElementById('grid-area');
+    const cells = cellsBySector[activeSector] || {};
+    let html = `<table class="grid-table"><thead><tr><th>&nbsp;</th>`;
+    for (const lgd of LGD_BANDS) html += `<th>LGD-${lgd}</th>`;
+    html += `</tr></thead><tbody>`;
+    for (const pd of PD_BANDS) {
+      html += `<tr><th class="row-head">PD${pd}</th>`;
+      for (const lgd of LGD_BANDS) {
+        const k = key(activeSector, pd, lgd);
+        const cell = cells[`${pd}-${lgd}`];
+        if (!cell) { html += `<td class="cell">—</td>`; continue; }
+        const isEdited = !!edits[k];
+        const isEditing = (editingKey === k);
+        const tunedClass = cell.source === 'tuned' ? 'tuned' : '';
+        const stagedClass = isEdited ? 'staged' : '';
+        const editingClass = isEditing ? 'active-edit' : '';
+        const displayCell = isEdited ? Object.assign({}, cell, edits[k]) : cell;
+        const rate = displayCell.base_rate_bps_pm;
+        const cappedClass = rate >= 125 ? 'capped' : '';
+        const meta = isEdited ? '<span style="color:var(--warn);">staged</span>' : (cell.source === 'tuned' ? `<span style="color:var(--warn);">tuned</span>` : '');
+        html += `<td class="cell ${tunedClass} ${stagedClass} ${editingClass}" data-key="${k}">
+          <span class="cell-rate ${cappedClass}">${bps2pm(rate)}</span>
+          <span class="cell-meta">${meta}</span>
+        </td>`;
+      }
+      html += `</tr>`;
+    }
+    html += `</tbody></table>`;
+    el.innerHTML = html;
+    el.querySelectorAll('td.cell[data-key]').forEach(td => {
+      td.addEventListener('click', () => openEditor(td.dataset.key));
+    });
+  }
+
+  // ─── Cell editor (inline panel) ──────────────────────────────────────
+  function openEditor(k) {
+    editingKey = k;
+    const [sector, pdStr, lgd] = k.split('|');
+    const pd = Number(pdStr);
+    const cell = cellsBySector[sector][`${pd}-${lgd}`];
+    const staged = edits[k] || {};
+    const cur = Object.assign({}, cell, staged);
+
+    const panel = document.getElementById('editor-panel');
+    panel.innerHTML = `
+      <h3>Cell <span class="coords">${sector} &middot; PD${pd} &middot; LGD-${lgd}</span></h3>
+      <div class="editor-grid">
+        <label>Rate</label>
+        <span><input type="number" id="lvr-rate" value="${cur.base_rate_bps_pm}"> <span class="unit">bps/pm</span></span>
+        <label>Upfront fee</label>
+        <span><input type="number" id="lvr-upfront" value="${cur.base_upfront_fee_bps}"> <span class="unit">bps</span></span>
+        <label>Commitment fee</label>
+        <span><input type="number" id="lvr-commit" value="${cur.base_commitment_fee_bps}"> <span class="unit">bps</span></span>
+        <label>Retained interest</label>
+        <span><input type="number" id="lvr-retained" value="${cur.retained_months}"> <span class="unit">months</span></span>
+        <label>Exit fee</label>
+        <span><input type="number" id="lvr-exit" value="${cur.base_exit_fee_bps}"> <span class="unit">bps</span></span>
+        <label>Min term</label>
+        <span><input type="number" id="lvr-minterm" value="${cur.min_term_months}"> <span class="unit">months</span></span>
+        <label>Change reason <span style="color:var(--err);">*</span></label>
+        <textarea class="editor-reason" id="lvr-reason" placeholder="Why are you changing this cell? (required)">${staged.change_reason || ''}</textarea>
+      </div>
+
+      <div id="impact-card" class="impact-card">
+        <div class="impact-head">Impact preview &mdash; <span id="ex-summary"></span></div>
+        <div id="impact-body"><span style="color:var(--muted);font-style:italic;">Computing&hellip;</span></div>
+      </div>
+
+      <div class="editor-actions">
+        <button class="primary" id="stage-btn">Stage cell edit</button>
+        <button id="cancel-btn">Cancel</button>
+        ${edits[k] ? `<button class="danger" id="discard-btn">Discard staged edit</button>` : ''}
+      </div>
+    `;
+    panel.classList.add('open');
+
+    // Wire up inputs to debounced live preview
+    ['lvr-rate','lvr-upfront','lvr-commit','lvr-retained','lvr-exit','lvr-minterm'].forEach(id => {
+      document.getElementById(id).addEventListener('input', schedulePreview);
+    });
+    document.getElementById('ex-loan-m').addEventListener('input', schedulePreview);
+    document.getElementById('ex-term').addEventListener('input', schedulePreview);
+    document.getElementById('ex-ia').addEventListener('change', schedulePreview);
+    document.getElementById('stage-btn').addEventListener('click', stageCellEdit);
+    document.getElementById('cancel-btn').addEventListener('click', closeEditor);
+    const discardBtn = document.getElementById('discard-btn');
+    if (discardBtn) discardBtn.addEventListener('click', () => discardCellEdit(k));
+
+    renderGrid(); // refresh active-edit highlight
+    runPreview();
+  }
+  function closeEditor() {
+    editingKey = null;
+    document.getElementById('editor-panel').classList.remove('open');
+    renderGrid();
+  }
+
+  function readEditorLevers() {
+    return {
+      rate_bps_pm:        Number(document.getElementById('lvr-rate').value),
+      upfront_fee_bps:    Number(document.getElementById('lvr-upfront').value),
+      commitment_fee_bps: Number(document.getElementById('lvr-commit').value),
+      retained_months:    Number(document.getElementById('lvr-retained').value),
+      exit_fee_bps:       Number(document.getElementById('lvr-exit').value),
+      min_term_months:    Number(document.getElementById('lvr-minterm').value),
+    };
+  }
+
+  function schedulePreview() {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(runPreview, 300);
+  }
+
+  async function runPreview() {
+    if (!editingKey) return;
+    const [sector, pdStr, lgd] = editingKey.split('|');
+    const pd = Number(pdStr);
+    const ia = document.getElementById('ex-ia').value;
+    const loan_m = Number(document.getElementById('ex-loan-m').value || 0);
+    const term = Number(document.getElementById('ex-term').value || 0);
+    const example_loan_pence = Math.round(loan_m * 1_000_000 * 100);
+    const example_term_months = term;
+    const levers = readEditorLevers();
+
+    document.getElementById('ex-summary').textContent = `£${loan_m.toFixed(2)}m · ${term}mo · ${sector.replace(/_/g,' ')} · IA-${ia}`;
+
+    try {
+      const r = await fetchAuth(`${API_BASE}/api/admin/pricing/preview-cell`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sector, pd, lgd, ia, levers, example_loan_pence, example_term_months }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.ok) {
+        document.getElementById('impact-body').innerHTML = `<span style="color:var(--err);">${json.error || 'preview failed'}</span>`;
+        return;
+      }
+      const buf = json.margin_buffer_bps;
+      const bufC = bufferClass(buf);
+      document.getElementById('impact-body').innerHTML = `
+        <div class="impact-row"><span class="lbl">Rec. rate (after IA delta + ceiling)</span><span class="val">${bps2pm(json.recommended.rate_bps_pm)}${json.recommended.rate_capped ? ' <span style="color:var(--warn);font-size:10px;">(capped)</span>' : ''}</span></div>
+        <div class="impact-row"><span class="lbl">Required APR</span><span class="val">${bps2pct(json.cost_stack.required_yield_apr_bps)}</span></div>
+        <div class="impact-row"><span class="lbl">Gross APR</span><span class="val">${bps2pct(json.gross_yield_apr_bps)}</span></div>
+        <div class="impact-row"><span class="lbl">Net APR (after broker)</span><span class="val">${bps2pct(json.net_yield_after_broker_apr_bps)}</span></div>
+        <div class="impact-row buffer"><span class="lbl">Margin buffer</span><span class="val ${bufC}">${fmtBuffer(buf)}${json.decline_flag ? ' &nbsp;DECLINE' : ''}</span></div>
+      `;
+    } catch (err) {
+      document.getElementById('impact-body').innerHTML = `<span style="color:var(--err);">network error: ${err.message}</span>`;
+    }
+  }
+
+  function stageCellEdit() {
+    if (!editingKey) return;
+    const reason = document.getElementById('lvr-reason').value.trim();
+    if (!reason) { showBanner('Change reason is required', 'err'); document.getElementById('lvr-reason').focus(); return; }
+    const levers = readEditorLevers();
+    for (const [k, v] of Object.entries(levers)) {
+      if (!Number.isFinite(v)) { showBanner(`${k} must be a number`, 'err'); return; }
+    }
+    edits[editingKey] = {
+      base_rate_bps_pm:        levers.rate_bps_pm,
+      base_upfront_fee_bps:    levers.upfront_fee_bps,
+      base_commitment_fee_bps: levers.commitment_fee_bps,
+      retained_months:         levers.retained_months,
+      base_exit_fee_bps:       levers.exit_fee_bps,
+      min_term_months:         levers.min_term_months,
+      change_reason: reason,
+    };
+    showBanner(`Staged edit on ${editingKey.replace(/\|/g, ' / ')}`, 'ok');
+    closeEditor();
+    renderSectorTabs();
+    refreshActivationBar();
+  }
+
+  function discardCellEdit(k) {
+    delete edits[k];
+    showBanner(`Discarded edit on ${k.replace(/\|/g, ' / ')}`, 'warn');
+    closeEditor();
+    renderSectorTabs();
+    refreshActivationBar();
+  }
+
+  function refreshActivationBar() {
+    const bar = document.getElementById('activation-bar');
+    const count = Object.keys(edits).length;
+    if (count === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    document.getElementById('changed-count').textContent = String(count);
+    const sectorSet = new Set(Object.keys(edits).map(k => k.split('|')[0]));
+    document.getElementById('changed-sectors-count').textContent = String(sectorSet.size);
+  }
+
+  document.getElementById('reset-edits-btn').addEventListener('click', () => {
+    if (Object.keys(edits).length === 0) return;
+    if (!confirm(`Discard all ${Object.keys(edits).length} staged edits?`)) return;
+    edits = {};
+    closeEditor();
+    renderSectorTabs();
+    renderGrid();
+    refreshActivationBar();
+    showBanner('All staged edits discarded', 'warn');
+  });
+
+  document.getElementById('activate-btn').addEventListener('click', async () => {
+    const reason = document.getElementById('activate-reason').value.trim();
+    if (!reason) { showBanner('Activation reason required', 'err'); document.getElementById('activate-reason').focus(); return; }
+    const changes = Object.entries(edits).map(([k, v]) => {
+      const [sector, pdStr, lgd] = k.split('|');
+      return { sector, pd_band: Number(pdStr), lgd_band: lgd, ...v };
+    });
+    const btn = document.getElementById('activate-btn');
+    btn.disabled = true; btn.textContent = 'Activating…';
+    try {
+      const r = await fetchAuth(`${API_BASE}/api/admin/pricing/grid/activate-new`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activate_reason: reason, changes }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.ok) {
+        showBanner(`Activation failed: ${json.error || `HTTP ${r.status}`}`, 'err');
+        btn.disabled = false; btn.textContent = 'Activate new version';
+        return;
+      }
+      showBanner(`✓ Activated grid ${json.new_version} from ${json.old_version} (${json.changed_count}/${json.total_count} cells changed). Reloading…`, 'ok');
+      edits = {};
+      setTimeout(() => location.reload(), 1500);
+    } catch (err) {
+      showBanner('Activation error: ' + err.message, 'err');
+      btn.disabled = false; btn.textContent = 'Activate new version';
+    }
+  });
+
+  // ─── Loaders ─────────────────────────────────────────────────────────
+  async function loadInitial() {
+    try {
+      const r = await fetchAuth(`${API_BASE}/api/admin/pricing/grid/list`);
+      const json = await r.json();
+      if (!r.ok || !json.ok) { showBanner('Load failed: ' + (json.error || `HTTP ${r.status}`), 'err'); return; }
+      activeVersion = json.version;
+      sectors = json.sectors;
+      activeSector = json.sector;
+      allVersions = json.all_versions || [];
+      const cells = {};
+      for (const c of json.cells) cells[`${c.pd_band}-${c.lgd_band}`] = c;
+      cellsBySector[activeSector] = cells;
+
+      document.getElementById('active-version-pill').textContent = `${activeVersion.version} · active`;
+      document.getElementById('next-version-pill').textContent = `→ v${(allVersions.length || 1) + 1}`;
+      renderSectorTabs();
+      renderGrid();
+    } catch (err) {
+      showBanner('Load error: ' + err.message, 'err');
+    }
+  }
+  async function loadSector(s) {
+    const r = await fetchAuth(`${API_BASE}/api/admin/pricing/grid/list?sector=${encodeURIComponent(s)}`);
+    const json = await r.json();
+    if (!r.ok || !json.ok) { showBanner('Sector load failed: ' + (json.error || `HTTP ${r.status}`), 'err'); return; }
+    const cells = {};
+    for (const c of json.cells) cells[`${c.pd_band}-${c.lgd_band}`] = c;
+    cellsBySector[s] = cells;
+  }
+  loadInitial();
+</script>
+</body>
+</html>
