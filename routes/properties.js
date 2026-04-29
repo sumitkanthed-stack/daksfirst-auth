@@ -725,12 +725,22 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
       console.warn('[ptal] Lookup failed (non-fatal):', ptalErr.message);
     }
 
-    // Build UPDATE statement
+    // Build UPDATE statement.
+    // ⚠ JSONB encoding fix (2026-04-29): some flat fields are arrays
+    // (chimnie_listing_image_urls, chimnie_floorplan_image_urls) targeting
+    // JSONB columns. node-postgres serialises JS arrays as Postgres text
+    // array literals ({a,b,c}) by default — that's not valid JSON, so
+    // Postgres rejects with "invalid input syntax for type json". Force
+    // stringification for any array/object value before binding. Scalars
+    // (string/number/bool/null/undefined) pass through unchanged.
     const sets = [];
     const vals = [];
     let i = 1;
     for (const [col, val] of Object.entries(flat)) {
-      sets.push(`${col} = $${i}`); vals.push(val); i++;
+      sets.push(`${col} = $${i}`);
+      const isArrayOrObject = (val !== null && typeof val === 'object');
+      vals.push(isArrayOrObject ? JSON.stringify(val) : val);
+      i++;
     }
     // Raw payload + audit columns
     sets.push(`chimnie_data = $${i}`); vals.push(JSON.stringify(result.data)); i++;
