@@ -34,6 +34,7 @@ const pool = require('../db/pool');
 const config = require('../config');
 const { authenticateToken } = require('../middleware/auth');
 const pricingEngine = require('../services/pricing-engine');
+const soniaFetcher = require('../services/sonia-fetcher');
 
 // ─── Auth gate: internal staff only ──────────────────────────────────────
 function authenticateInternal(req, res, next) {
@@ -306,6 +307,36 @@ router.get(
     } catch (err) {
       console.error(`[pricing/history ${dealId}] error:`, err);
       return res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/admin/pricing/sonia-pull   (PRICE-10)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Triggers a fresh SONIA pull from BoE IADB (CSV endpoint, series IUDSOIA)
+//  and UPDATEs pricing_assumptions.sonia_value_bps + sonia_last_pulled_at
+//  in place.
+//
+//  ⚠ Update-in-place is the documented exception to append-only — see
+//  services/sonia-fetcher.js header for the rationale (live market data,
+//  output reproducibility lives in deal_pricings).
+//
+//  Manual today; cron-config later (Render Cron Job hits this endpoint
+//  daily 06:00 UTC after BoE publishes ~09:00 BST).
+// ═══════════════════════════════════════════════════════════════════════════
+router.post(
+  '/admin/pricing/sonia-pull',
+  authenticateToken,
+  authenticateInternal,
+  async (req, res) => {
+    try {
+      const result = await soniaFetcher.fetchAndStore();
+      console.log(`[sonia-pull] Updated SONIA to ${result.sonia_bps} bps (${result.sonia_pct}%) from ${result.source_date}, triggered by user ${req.user.id}`);
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('[sonia-pull] error:', err);
+      return res.status(500).json({ ok: false, error: err.message || 'SONIA pull failed' });
     }
   }
 );
