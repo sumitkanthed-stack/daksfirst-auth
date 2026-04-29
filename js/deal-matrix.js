@@ -3338,77 +3338,7 @@ export async function renderDealMatrix(deal) {
           `}
 
           <!-- XCOLL-2 (2026-04-29): Effective LTV + cross-collateral summary -->
-          ${(() => {
-            if (!sgProperties || sgProperties.length === 0) return '';
-            const fmtMoney = (pence) => '£' + Math.round((pence || 0) / 100).toLocaleString();
-            const fmtPct = (pct) => pct == null ? '—' : pct.toFixed(1) + '%';
-            // Inline math — same logic as services/cross-collateral.js
-            const poundsToPence = (v) => v == null || v === '' || isNaN(Number(v)) ? 0 : Math.round(Number(v) * 100);
-            const pencePlain = (v) => v == null || v === '' || isNaN(Number(v)) ? 0 : Math.round(Number(v));
-            let firstChargeSecPence = 0, comfortSecPence = 0, redemptionsTotalPence = 0;
-            const firstChargeProps = [], secondChargeProps = [], refinanceProps = [];
-            sgProperties.forEach((p) => {
-              const charge = p.security_charge_type || 'first_charge';
-              const mvPence = poundsToPence(p.market_value);
-              const priorPence = pencePlain(p.existing_charge_balance_pence);
-              if (charge === 'first_charge') {
-                firstChargeSecPence += mvPence;
-                firstChargeProps.push(p);
-              } else if (charge === 'second_charge' || charge === 'third_charge') {
-                comfortSecPence += Math.max(0, mvPence - priorPence);
-                if (charge === 'second_charge') secondChargeProps.push(p);
-              }
-              if (p.loan_purpose === 'refinance') {
-                redemptionsTotalPence += priorPence;
-                refinanceProps.push(p);
-              }
-            });
-            const loanApprovedPence = poundsToPence(deal.loan_amount_approved || deal.loan_amount);
-            const effectiveLtv = firstChargeSecPence > 0 ? (loanApprovedPence / firstChargeSecPence) * 100 : null;
-            // Colour the LTV against the 75% policy ceiling
-            const ltvColour = effectiveLtv == null ? '#94A3B8'
-                            : effectiveLtv > 75 ? '#F87171'
-                            : effectiveLtv > 65 ? '#FBBF24' : '#34D399';
-            const isCrossCollat = firstChargeProps.length > 1 || secondChargeProps.length > 0;
-            return `
-              <div style="margin-top:18px;padding:14px 16px;background:rgba(212,168,83,0.05);border:1px solid rgba(212,168,83,0.2);border-radius:6px;">
-                <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">Cross-collateral summary ${isCrossCollat ? '<span style="background:rgba(212,168,83,0.18);color:#D4A853;padding:2px 8px;border-radius:3px;font-size:9px;margin-left:6px;">CROSS-COLLATERALISED</span>' : ''}</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
-                  <div>
-                    <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">Effective LTV</div>
-                    <div style="font-size:18px;font-weight:700;color:${ltvColour};margin-top:2px;">${fmtPct(effectiveLtv)}</div>
-                    <div style="font-size:10px;color:#94A3B8;margin-top:2px;">${fmtMoney(loanApprovedPence)} / ${fmtMoney(firstChargeSecPence)} <span style="color:#64748B;">(1st charge only)</span></div>
-                  </div>
-                  <div>
-                    <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">2nd-charge comfort</div>
-                    <div style="font-size:18px;font-weight:700;color:#94A3B8;margin-top:2px;">${comfortSecPence > 0 ? fmtMoney(comfortSecPence) : '—'}</div>
-                    <div style="font-size:10px;color:#64748B;margin-top:2px;">${secondChargeProps.length} property${secondChargeProps.length === 1 ? '' : 'ies'} · not in LTV</div>
-                  </div>
-                  <div>
-                    <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">Refi redemptions</div>
-                    <div style="font-size:18px;font-weight:700;color:#94A3B8;margin-top:2px;">${refinanceProps.length > 0 ? fmtMoney(redemptionsTotalPence) : '—'}</div>
-                    <div style="font-size:10px;color:#64748B;margin-top:2px;">${refinanceProps.length} property${refinanceProps.length === 1 ? '' : 'ies'} · auto in S&U</div>
-                  </div>
-                </div>
-                ${refinanceProps.length > 0 ? `
-                  <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(212,168,83,0.15);">
-                    <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Auto-derived redemption lines (S&U Use)</div>
-                    ${refinanceProps.map(p => `
-                      <div style="font-size:11px;color:#E5E7EB;padding:3px 0;">
-                        <span style="color:#94A3B8;">·</span> Redeem existing on <strong>${sanitizeHtml(p.address || 'address pending')}</strong> — ${fmtMoney(pencePlain(p.existing_charge_balance_pence))}
-                        ${p.existing_charges_note ? `<span style="color:#64748B;font-size:10px;">(${sanitizeHtml(p.existing_charges_note)})</span>` : ''}
-                      </div>
-                    `).join('')}
-                  </div>
-                ` : ''}
-                ${effectiveLtv != null && effectiveLtv > 75 ? `
-                  <div style="margin-top:10px;padding:8px 10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:4px;font-size:11px;color:#F87171;">
-                    ⚠ Effective LTV exceeds 75% policy ceiling. 2nd-charge security gives no LTV credit — deal needs additional 1st-charge security or equity contribution.
-                  </div>
-                ` : ''}
-              </div>
-            `;
-          })()}
+          <div id="xcoll-summary-host">${(window._renderXcollSummary || (() => ''))(deal, sgProperties)}</div>
 
           <!-- Corporate Borrower Security -->
           <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;border-bottom:1px solid #2d3748;padding-bottom:4px;">Corporate Borrower Security</div>
@@ -4761,10 +4691,19 @@ export async function renderDealMatrix(deal) {
     }
   }
 
+  // XCOLL-2: helper called after each save to keep the cross-collateral
+  // summary panel in sync with the in-memory deal.properties state.
+  function _refreshXcollAfterSave() {
+    if (window._refreshXcollSummary) {
+      window._refreshXcollSummary(deal, deal.properties || []);
+    }
+  }
+
   window.sgSavePropertyCharge = async function(submissionId, propertyId, value) {
     const ok = await _sgFlashSave(`sg-charge-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { security_charge_type: value });
     if (ok && Array.isArray(deal.properties)) {
       const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.security_charge_type = value;
+      _refreshXcollAfterSave();
     }
   };
 
@@ -4772,6 +4711,7 @@ export async function renderDealMatrix(deal) {
     const ok = await _sgFlashSave(`sg-encum-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { existing_charges_note: value || null });
     if (ok && Array.isArray(deal.properties)) {
       const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.existing_charges_note = value;
+      _refreshXcollAfterSave();
     }
   };
 
@@ -4780,6 +4720,7 @@ export async function renderDealMatrix(deal) {
     const ok = await _sgFlashSave(`sg-purpose-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { loan_purpose: value || null });
     if (ok && Array.isArray(deal.properties)) {
       const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.loan_purpose = value || null;
+      _refreshXcollAfterSave();
     }
   };
 
@@ -4790,6 +4731,7 @@ export async function renderDealMatrix(deal) {
     const ok = await _sgFlashSave(`sg-balance-${propertyId}`, `${API_BASE}/api/deals/${submissionId}/properties/${propertyId}`, { existing_charge_balance_pence: pence });
     if (ok && Array.isArray(deal.properties)) {
       const p = deal.properties.find(pp => pp.id === propertyId); if (p) p.existing_charge_balance_pence = pence;
+      _refreshXcollAfterSave();
     }
   };
 
@@ -10063,6 +10005,117 @@ window._toggleHmlrPanel = function(propertyId) {
     body.style.display = 'none';
     if (summary) summary.style.display = 'inline';
     if (chevron) chevron.style.transform = '';
+  }
+};
+
+// ── XCOLL-2 (2026-04-29): Cross-collateral summary panel renderer ──────────
+// Pure function — takes deal + the security-eligible properties array and
+// returns the panel's HTML. Called once during initial render and again
+// from each save handler to keep the live computation in sync without
+// triggering a full deal refetch.
+window._renderXcollSummary = function(deal, sgProperties) {
+  if (!sgProperties || sgProperties.length === 0) return '';
+  const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmtMoney = (pence) => '£' + Math.round((pence || 0) / 100).toLocaleString();
+  const fmtPct = (pct) => pct == null ? '—' : pct.toFixed(1) + '%';
+  const poundsToPence = (v) => v == null || v === '' || isNaN(Number(v)) ? 0 : Math.round(Number(v) * 100);
+  const pencePlain = (v) => v == null || v === '' || isNaN(Number(v)) ? 0 : Math.round(Number(v));
+
+  let firstChargeSecPence = 0, comfortSecPence = 0, redemptionsTotalPence = 0;
+  const firstChargeProps = [], secondChargeProps = [], refinanceProps = [];
+  const inconsistentProps = [];
+
+  sgProperties.forEach((p) => {
+    const charge = p.security_charge_type || 'first_charge';
+    const purpose = p.loan_purpose;
+    const mvPence = poundsToPence(p.market_value);
+    const priorPence = pencePlain(p.existing_charge_balance_pence);
+
+    // Logical sanity checks — refinance can only land on a 1st charge
+    // (we redeem the existing senior and become senior); equity_release
+    // implies we sit behind an existing 1st (i.e. 2nd or 3rd charge).
+    if (purpose === 'refinance' && charge !== 'first_charge') {
+      inconsistentProps.push({ p, msg: 'Refinance requires 1st charge — we redeem the existing lender and step into senior position.' });
+    }
+    if (purpose === 'equity_release' && charge === 'first_charge') {
+      inconsistentProps.push({ p, msg: 'Equity release pairs with 2nd charge (existing 1st remains, cash flows to borrower).' });
+    }
+
+    if (charge === 'first_charge') {
+      firstChargeSecPence += mvPence;
+      firstChargeProps.push(p);
+    } else if (charge === 'second_charge' || charge === 'third_charge') {
+      comfortSecPence += Math.max(0, mvPence - priorPence);
+      if (charge === 'second_charge') secondChargeProps.push(p);
+    }
+    if (purpose === 'refinance') {
+      redemptionsTotalPence += priorPence;
+      refinanceProps.push(p);
+    }
+  });
+
+  const loanApprovedPence = poundsToPence(deal.loan_amount_approved || deal.loan_amount);
+  const effectiveLtv = firstChargeSecPence > 0 ? (loanApprovedPence / firstChargeSecPence) * 100 : null;
+  const ltvColour = effectiveLtv == null ? '#F87171'
+                  : effectiveLtv > 75 ? '#F87171'
+                  : effectiveLtv > 65 ? '#FBBF24' : '#34D399';
+  const isCrossCollat = firstChargeProps.length > 1 || secondChargeProps.length > 0;
+
+  return `
+    <div style="margin-top:18px;padding:14px 16px;background:rgba(212,168,83,0.05);border:1px solid rgba(212,168,83,0.2);border-radius:6px;">
+      <div style="color:#D4A853;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">Cross-collateral summary ${isCrossCollat ? '<span style="background:rgba(212,168,83,0.18);color:#D4A853;padding:2px 8px;border-radius:3px;font-size:9px;margin-left:6px;">CROSS-COLLATERALISED</span>' : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+        <div>
+          <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">Effective LTV</div>
+          <div style="font-size:18px;font-weight:700;color:${ltvColour};margin-top:2px;">${fmtPct(effectiveLtv)}</div>
+          <div style="font-size:10px;color:#94A3B8;margin-top:2px;">${fmtMoney(loanApprovedPence)} / ${fmtMoney(firstChargeSecPence)} <span style="color:#64748B;">(1st charge only)</span></div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">2nd-charge comfort</div>
+          <div style="font-size:18px;font-weight:700;color:#94A3B8;margin-top:2px;">${comfortSecPence > 0 ? fmtMoney(comfortSecPence) : '—'}</div>
+          <div style="font-size:10px;color:#64748B;margin-top:2px;">${secondChargeProps.length} property${secondChargeProps.length === 1 ? '' : 'ies'} · not in LTV</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;">Refi redemptions</div>
+          <div style="font-size:18px;font-weight:700;color:#94A3B8;margin-top:2px;">${refinanceProps.length > 0 ? fmtMoney(redemptionsTotalPence) : '—'}</div>
+          <div style="font-size:10px;color:#64748B;margin-top:2px;">${refinanceProps.length} property${refinanceProps.length === 1 ? '' : 'ies'} · auto in S&U</div>
+        </div>
+      </div>
+      ${refinanceProps.length > 0 ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(212,168,83,0.15);">
+          <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Auto-derived redemption lines (S&U Use)</div>
+          ${refinanceProps.map(p => `
+            <div style="font-size:11px;color:#E5E7EB;padding:3px 0;">
+              <span style="color:#94A3B8;">·</span> Redeem existing on <strong>${_esc(p.address || 'address pending')}</strong> — ${fmtMoney(pencePlain(p.existing_charge_balance_pence))}
+              ${p.existing_charges_note ? `<span style="color:#64748B;font-size:10px;">(${_esc(p.existing_charges_note)})</span>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${inconsistentProps.length > 0 ? `
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:4px;font-size:11px;color:#FBBF24;">
+          ${inconsistentProps.map(({ p, msg }) => `<div>⚠ ${_esc(p.address || 'Property')}: ${_esc(msg)}</div>`).join('')}
+        </div>
+      ` : ''}
+      ${effectiveLtv != null && effectiveLtv > 75 ? `
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:4px;font-size:11px;color:#F87171;">
+          ⚠ Effective LTV exceeds 75% policy ceiling. 2nd-charge security gives no LTV credit — deal needs additional 1st-charge security or equity contribution.
+        </div>
+      ` : ''}
+      ${effectiveLtv == null && firstChargeSecPence === 0 ? `
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:4px;font-size:11px;color:#F87171;">
+          ⚠ No 1st-charge security on this deal — Daksfirst LTV is undefined and policy requires at least one 1st-charge property.
+        </div>
+      ` : ''}
+    </div>
+  `;
+};
+
+// Helper to refresh the summary panel after a save handler updates state.
+window._refreshXcollSummary = function(deal, sgProperties) {
+  const host = document.getElementById('xcoll-summary-host');
+  if (host && window._renderXcollSummary) {
+    host.innerHTML = window._renderXcollSummary(deal, sgProperties);
   }
 };
 
