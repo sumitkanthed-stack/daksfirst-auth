@@ -22,6 +22,7 @@ const pool = require('../db/pool');
 const config = require('../config');
 const { authenticateToken } = require('../middleware/auth');
 const addressLookup = require('../services/address-lookup');
+const freshness = require('../services/freshness');
 const propertyData = require('../services/property-data');
 
 function authenticateInternal(req, res, next) {
@@ -199,7 +200,8 @@ router.post(
 
     try {
       const propRow = (await pool.query(
-        `SELECT id, deal_id, postcode, paf_address_jsonb, chimnie_bedrooms, market_value
+        `SELECT id, deal_id, postcode, paf_address_jsonb, chimnie_bedrooms, market_value,
+                pd_pulled_at, pd_rental_pcm_achieved_avg
            FROM deal_properties WHERE id = $1`,
         [propertyId]
       )).rows[0];
@@ -210,6 +212,22 @@ router.post(
         return res.status(422).json({ ok: false, error: 'property has no postcode — add address first' });
       }
       const beds = propRow.chimnie_bedrooms || req.body?.beds || null;
+
+      // FRESH-GATE — skip live API call if last pull was within 30 days, unless
+      // force=true in body. Saves a PropertyData credit (~£0.14) per skipped call.
+      const force = req.body && req.body.force === true;
+      if (freshness.isFresh(propRow.pd_pulled_at, 'pd') && !force) {
+        return res.json({
+          ok: true,
+          skipped: true,
+          reason: 'fresh',
+          message: `PropertyData rental is fresh — last pulled ${freshness.ageLabel(propRow.pd_pulled_at)} ago. Pass force:true to override.`,
+          property_id: propRow.id,
+          deal_id: propRow.deal_id,
+          cached_at: propRow.pd_pulled_at,
+          cached_pcm_achieved_avg: propRow.pd_rental_pcm_achieved_avg,
+        });
+      }
 
       const result = await propertyData.getRentalsByPostcode(postcode, beds);
       if (!result.ok) {

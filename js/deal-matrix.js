@@ -2002,7 +2002,7 @@ export async function renderDealMatrix(deal) {
                       '<span id="chimnie-summary-' + p.id + '" style="display:' + chimnieSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">__SUMMARY__</span>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
-                      (fetched ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(fetched).toLocaleDateString('en-GB') + '</span>' : '') +
+                      (fetched ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(fetched).toLocaleDateString('en-GB') + ' · ' + (window._freshAge ? window._freshAge(fetched, 30) : '') + '</span>' : '') +
                       '<button onclick="event.stopPropagation();window._chimnieLookup(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (fetched ? 'rgba(96,165,250,0.12)' : '#60A5FA') + ';color:' + (fetched ? '#60A5FA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (fetched ? 'Refresh' : 'Fetch') + '</button>' +
                     '</div>' +
                   '</div>';
@@ -2767,7 +2767,7 @@ export async function renderDealMatrix(deal) {
                       '<span id="hmlr-summary-' + p.id + '" style="display:' + hmlrSummaryDisplay + ';font-size:11px;color:#F1F5F9;margin-left:8px;font-weight:400;">' + summaryInline + '</span>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
-                      (pulled ? '<span style="font-size:9px;color:#64748B;">Pulled ' + new Date(pulled).toLocaleDateString('en-GB') + '</span>' : '') +
+                      (pulled ? '<span style="font-size:9px;color:#64748B;">Pulled ' + new Date(pulled).toLocaleDateString('en-GB') + ' · ' + (window._freshAge ? window._freshAge(pulled, null) : '') + '</span>' : '') +
                       (titleNum
                         ? '<button onclick="event.stopPropagation();window._hmlrPull(' + p.id + ', \'' + subId + '\', \'' + sanitizeHtml(titleNum).replace(/\'/g, '') + '\')" style="padding:3px 10px;background:' + (pulled ? 'rgba(167,139,250,0.12)' : '#A78BFA') + ';color:' + (pulled ? '#A78BFA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (pulled ? 'Re-pull' : 'Pull OC1') + '</button>'
                         : '<button onclick="event.stopPropagation();window._hmlrSearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:#A78BFA;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Search title</button>') +
@@ -2916,7 +2916,7 @@ export async function renderDealMatrix(deal) {
                       (sample ? '<span style="font-size:9px;color:#94A3B8;">' + sample + ' lettings</span>' : '') +
                     '</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;">' +
-                      (p.pd_pulled_at ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(p.pd_pulled_at).toLocaleDateString('en-GB') + '</span>' : '') +
+                      (p.pd_pulled_at ? '<span style="font-size:9px;color:#64748B;">Fetched ' + new Date(p.pd_pulled_at).toLocaleDateString('en-GB') + ' · ' + (window._freshAge ? window._freshAge(p.pd_pulled_at, 30) : '') + '</span>' : '') +
                       '<button onclick="window._propertyDataPull(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:' + (p.pd_pulled_at ? 'rgba(251,113,133,0.12)' : '#FB7185') + ';color:' + (p.pd_pulled_at ? '#FB7185' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (p.pd_pulled_at ? 'Refresh' : 'Pull rental data') + '</button>' +
                     '</div>' +
                   '</div>';
@@ -9958,29 +9958,95 @@ window._hmlrSearch = async function(propertyId, submissionId) {
   }
 };
 
-// ── HMLR OC1 pull — chargeable in live mode (2026-04-27) ───────────────────
+// ── _freshAge: human-readable age label for a "*_pulled_at" timestamp ──────
+// Returns colourized HTML: e.g. "3d" (green if fresh), "47d" (amber if stale).
+// If freshDays is null, age is shown plain (no colour) — useful for HMLR
+// where there's no "fresh" concept (any prior pull is enough).
+window._freshAge = function(pulledAt, freshDays) {
+  if (!pulledAt) return '';
+  const ageMs = Date.now() - new Date(pulledAt).getTime();
+  const days = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+  let label;
+  if (days === 0) label = 'today';
+  else if (days === 1) label = '1d ago';
+  else if (days < 30) label = days + 'd ago';
+  else if (days < 365) label = Math.round(days / 30) + 'mo ago';
+  else label = Math.round(days / 365) + 'y ago';
+  if (freshDays === null || freshDays === undefined) return label;
+  const isStale = days >= freshDays;
+  const color = isStale ? '#FBBF24' : '#34D399';  // amber / green
+  return '<span style="color:' + color + ';font-weight:600;">' + label + '</span>';
+};
+
+// ── HMLR OC1 pull — chargeable in live mode (2026-04-27, FRESH-GATE 2026-04-29)
 // Calls POST /api/admin/hmlr/pull/:propertyId with title number; backend
 // persists hmlr_* columns and refreshes the deal in-place.
+//
+// FRESH-GATE: HMLR is paid (~£3/title) and the title only changes on a legal
+// event. We show a confirm dialog with the £-charge and only fire if RM
+// explicitly confirms. The backend has a parallel gate that requires
+// force:true if a prior pull exists — defence in depth against accidental
+// re-fires (rogue scripts, double-clicks, etc).
 window._hmlrPull = async function(propertyId, submissionId, titleNumber) {
+  // Look up the property's prior-pull state from the cached deal payload so
+  // we can show the RM how recently this title was last pulled (if at all).
+  let lastPulledLabel = 'never';
+  try {
+    const deal = (window._dealCache && window._dealCache[submissionId]) || null;
+    const prop = deal && (deal.properties || []).find((x) => x.id === propertyId);
+    if (prop && prop.hmlr_pulled_at) {
+      const ageMs = Date.now() - new Date(prop.hmlr_pulled_at).getTime();
+      const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+      lastPulledLabel = ageDays === 0 ? 'today'
+        : ageDays === 1 ? '1 day ago'
+        : ageDays < 30 ? ageDays + ' days ago'
+        : ageDays < 365 ? Math.round(ageDays / 30) + ' months ago'
+        : Math.round(ageDays / 365) + ' years ago';
+    }
+  } catch (_) { /* fall through with 'never' */ }
+
+  const isRePull = lastPulledLabel !== 'never';
+  const confirmMsg =
+    'HMLR Official Copy — £3.00 charge\n' +
+    '\n' +
+    'Title number: ' + titleNumber + '\n' +
+    'Property:     #' + propertyId + '\n' +
+    'Last pulled:  ' + lastPulledLabel + '\n' +
+    '\n' +
+    (isRePull
+      ? 'A previous OC1 already exists for this property.\n' +
+        'Re-pull is rarely necessary unless title changed (sale, charge, restriction).\n\n' +
+        'Confirm £3 re-pull?'
+      : 'This will charge £3 to the deal.\n\nConfirm pull?');
+
+  if (!window.confirm(confirmMsg)) return;
+
   const btn = event && event.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; btn.style.opacity = '0.6'; }
   try {
     const res = await fetchWithAuth(`${API_BASE}/api/admin/hmlr/pull/${propertyId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titleNumber })
+      body: JSON.stringify({ titleNumber, force: true })  // RM confirmed → force backend
     });
     const data = await res.json();
     if (!res.ok) {
       alert('HMLR pull failed (' + res.status + '): ' + (data.error || 'Unknown error'));
-      if (btn) { btn.disabled = false; btn.textContent = 'Pull OC1'; btn.style.opacity = '1'; }
+      if (btn) { btn.disabled = false; btn.textContent = isRePull ? 'Re-pull' : 'Pull OC1'; btn.style.opacity = '1'; }
+      return;
+    }
+    if (data.skipped) {
+      // Shouldn't happen since we sent force:true, but defensive: backend may
+      // have additional gates we don't know about.
+      alert('Skipped: ' + (data.message || 'No change'));
+      if (btn) { btn.disabled = false; btn.textContent = isRePull ? 'Re-pull' : 'Pull OC1'; btn.style.opacity = '1'; }
       return;
     }
     setTimeout(() => _refreshDealInPlace(submissionId), 400);
   } catch (err) {
     console.error('[hmlr-pull] Error:', err);
     alert('HMLR pull error: ' + err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Pull OC1'; btn.style.opacity = '1'; }
+    if (btn) { btn.disabled = false; btn.textContent = isRePull ? 'Re-pull' : 'Pull OC1'; btn.style.opacity = '1'; }
   }
 };
 

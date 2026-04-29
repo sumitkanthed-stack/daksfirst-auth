@@ -638,7 +638,8 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
     const dealId = dealResult.rows[0].id;
 
     const propResult = await pool.query(
-      `SELECT id, address, postcode, chimnie_uprn FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      `SELECT id, address, postcode, chimnie_uprn, chimnie_fetched_at
+         FROM deal_properties WHERE id = $1 AND deal_id = $2`,
       [propertyId, dealId]
     );
     if (propResult.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
@@ -646,6 +647,23 @@ router.post('/:submissionId/properties/:propertyId/chimnie-lookup', authenticate
 
     if (!prop.address && !prop.postcode && !prop.chimnie_uprn) {
       return res.status(400).json({ error: 'Property has no address, postcode, or UPRN to look up' });
+    }
+
+    // FRESH-GATE — skip live API call if last pull was within 30 days, unless
+    // force=true in body. Saves a Chimnie credit and a couple seconds of latency.
+    // RM clicks "Force refresh" in the UI to override (rare — markets shift slowly).
+    const freshness = require('../services/freshness');
+    const force = req.body && req.body.force === true;
+    if (freshness.isFresh(prop.chimnie_fetched_at, 'chimnie') && !force) {
+      return res.json({
+        success: true,
+        skipped: true,
+        reason: 'fresh',
+        message: `Chimnie data is fresh — last pulled ${freshness.ageLabel(prop.chimnie_fetched_at)} ago. Pass force:true to override.`,
+        property_id: prop.id,
+        deal_id: dealId,
+        cached_at: prop.chimnie_fetched_at,
+      });
     }
 
     // Monthly spend cap — sum credits used this calendar month across all deals.

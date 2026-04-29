@@ -19,6 +19,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const hmlr = require('../services/hmlr');
+const freshness = require('../services/freshness');
 const pool = require('../db/pool');
 
 // All routes require auth + admin role
@@ -57,7 +58,7 @@ router.post('/search', async (req, res) => {
 // ─── Pull OC1 and persist (the chargeable one) ────────────────────────────────
 router.post('/pull/:propertyId', async (req, res) => {
   const { propertyId } = req.params;
-  const { titleNumber, address } = req.body || {};
+  const { titleNumber, address, force } = req.body || {};
 
   if (!propertyId || !/^\d+$/.test(propertyId)) {
     return res.status(400).json({ error: 'valid numeric propertyId required in URL' });
@@ -69,7 +70,9 @@ router.post('/pull/:propertyId', async (req, res) => {
   try {
     // 1. Verify the property exists before charging
     const propLookup = await pool.query(
-      'SELECT id, deal_id, address FROM deal_properties WHERE id = $1',
+      `SELECT id, deal_id, address,
+              hmlr_pulled_at, hmlr_title_number, hmlr_pulled_cost_pence
+         FROM deal_properties WHERE id = $1`,
       [parseInt(propertyId, 10)]
     );
     if (propLookup.rowCount === 0) {
@@ -77,11 +80,54 @@ router.post('/pull/:propertyId', async (req, res) => {
     }
     const property = propLookup.rows[0];
 
-    // 2. Call HMLR (mock/test/live based on HMLR_MODE)
+    // 2. FRESH-GATE — HMLR rule: any prior pull blocks re-pull unless force=true.
+    // The frontend's confirm dialog passes { force: true } after RM acknowledges
+    // the £3 charge. Without force, skip silently and return cached metadata.
+    if (freshness.isFresh(property.hmlr_pulled_at, 'hmlr') && !force) {
+      return res.json({
+        success: true,
+        skipped: true,
+        reason: 'fresh',
+        message: `HMLR title already pulled — last fired ${freshness.ageLabel(property.hmlr_pulled_at)} ago. Re-pull requires explicit confirm (£3).`,
+        property_id: property.id,
+        deal_id: property.deal_id,
+        cached: {
+          title_number:    property.hmlr_title_number,
+          last_pulled_at:  property.hmlr_pulled_at,
+          last_cost_pence: property.hmlr_pulled_cost_pence,
+        },
+      });
+    }
+
+    // 3. Call HMLR (mock/test/live based on HMLR_MODE)
     const result = await hmlr.getOfficialCopy({
       titleNumber,
       address: address || property.address,
     });
+
+    // 3a. Audit row — every fired call lands in hmlr_lookups for £-spend
+    // reconciliation. Append-only, regardless of success/failure.
+    try {
+      await pool.query(
+        `INSERT INTO hmlr_lookups
+           (deal_id, property_id, lookup_type, title_number,
+            result_jsonb, mode, cost_pence, requested_by, pull_error)
+         VALUES ($1, $2, 'official_copy', $3, $4::jsonb, $5, $6, $7, $8)`,
+        [
+          property.deal_id,
+          property.id,
+          titleNumber,
+          result.success ? JSON.stringify(result.data || {}) : null,
+          result.mode,
+          result.cost_pence || 0,
+          req.user.id || null,
+          result.success ? null : (result.error || 'unknown'),
+        ]
+      );
+    } catch (auditErr) {
+      // Don't fail the user-facing call if audit write fails — log it.
+      console.error('[hmlr/pull] audit write failed:', auditErr.message);
+    }
 
     // 3. Always persist the outcome — success OR failure — for audit trail
     if (result.success) {

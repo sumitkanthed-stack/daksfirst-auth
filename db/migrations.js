@@ -3917,6 +3917,46 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  FRESH-GATE-1 (2026-04-29): hmlr_lookups audit table
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  HMLR title pulls cost ~£3 each. We already have hmlr_pulled_at on
+    //  deal_properties (timestamp gate) but no audit history — so a paid
+    //  pull is invisible after the fact for £-spend reconciliation.
+    //
+    //  This table mirrors pd_lookups / paf_lookups: append-only log, one row
+    //  per HMLR API call (live or test), records title number, cost, mode,
+    //  who triggered, when, and any error. Powers a future £-spend audit page
+    //  and prevents accidental re-pulls (services/hmlr.js will check this
+    //  table + hmlr_pulled_at before firing).
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS hmlr_lookups (
+          id              SERIAL PRIMARY KEY,
+          deal_id         INTEGER REFERENCES deal_submissions(id),
+          property_id     INTEGER,
+          lookup_type     VARCHAR(30) NOT NULL,
+          title_number    VARCHAR(30),
+          postcode        VARCHAR(15),
+          result_jsonb    JSONB,
+          mode            VARCHAR(10) NOT NULL DEFAULT 'mock',
+          cost_pence      INTEGER NOT NULL DEFAULT 0,
+          requested_by    INTEGER REFERENCES users(id),
+          requested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          pull_error      TEXT
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hmlr_lookups_deal_id     ON hmlr_lookups(deal_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hmlr_lookups_property_id ON hmlr_lookups(property_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hmlr_lookups_title       ON hmlr_lookups(title_number)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_hmlr_lookups_at          ON hmlr_lookups(requested_at DESC)`);
+
+      console.log('[migrate] ✓ hmlr_lookups audit table ready');
+    } catch (err) {
+      console.log('[migrate] Note on hmlr_lookups schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  PD-4 (2026-04-29 night): risk_rubric v6 deploy — adds PropertyData
     //  ─────────────────────────────────────────────────────────────────────────
     //  v6 = v5 body + v6_addendum (PropertyData rental signals + PAF address
