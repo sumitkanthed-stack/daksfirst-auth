@@ -166,9 +166,10 @@ async function quoteOneProperty(input) {
     purpose, charge_type,
     existing_charge_balance_pence: poundsToPence(existing_charge_balance),
     avm_pence: chimnieAvmPence,
-    avm_source: manualAvmUsed ? 'broker_estimate' : (chimnieAvmPence ? 'chimnie' : 'none'),
+    // Generic source label for broker view — internal RM/credit get the full
+    // vendor name elsewhere. "auto" = system-estimated valuation.
+    avm_source: manualAvmUsed ? 'broker_estimate' : (chimnieAvmPence ? 'auto' : 'none'),
     property_type: propertyType,
-    chimnie_mode: chimnieMode,
     rental_pcm_pence: pdRentalPcmPence,
     yield_gross_pct: pdYieldGrossPct,
     market_value: chimnieAvmPence ? Math.round(chimnieAvmPence / 100) : null,  // pounds for cross-collateral helper
@@ -328,7 +329,7 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20,$21,$22)
        RETURNING id`,
       [
-        req.user.id || null,
+        req.user.userId || null,
         lead?.postcode || null,
         lead?.address_text || null,
         lead?.paf_uprn || null,
@@ -401,7 +402,7 @@ router.get('/broker/quick-quote/:id', authenticateToken, async (req, res) => {
     const r = await pool.query(`SELECT * FROM quick_quotes WHERE id = $1`, [id]);
     if (r.rowCount === 0) return res.status(404).json({ error: 'quote not found' });
     const row = r.rows[0];
-    if (req.user.role === 'broker' && row.broker_user_id !== req.user.id) {
+    if (req.user.role === 'broker' && row.broker_user_id !== req.user.userId) {
       return res.status(403).json({ error: 'not your quote' });
     }
     res.json({ ok: true, quote: row });
@@ -430,7 +431,7 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
   try {
     const qq = (await client.query(`SELECT * FROM quick_quotes WHERE id = $1`, [id])).rows[0];
     if (!qq) return res.status(404).json({ ok: false, error: 'quote not found' });
-    if (req.user.role === 'broker' && qq.broker_user_id !== req.user.id) {
+    if (req.user.role === 'broker' && qq.broker_user_id !== req.user.userId) {
       return res.status(403).json({ ok: false, error: 'not your quote' });
     }
     if (qq.converted_to_deal_id) {
@@ -461,7 +462,7 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'quick_quote', 'new', 'received')
       RETURNING id, submission_id, status, created_at
     `, [
-      req.user.id || null,
+      req.user.userId || null,
       qq.company_name || null,
       lead.address_text || lead.postcode || 'Address pending',
       lead.postcode || null,

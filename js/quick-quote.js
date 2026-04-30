@@ -29,6 +29,15 @@ function fmtRate(bps) {
   if (bps == null || isNaN(bps)) return '—';
   return (Number(bps) / 100).toFixed(3) + '% pm';
 }
+
+// Broker-facing rate display — 20bps band ending at the engine output.
+// Hides exact pricing IP while still giving brokers a usable indicative.
+function fmtRateRange(bps) {
+  if (bps == null || isNaN(bps)) return '—';
+  const upper = Number(bps);
+  const lower = Math.max(50, upper - 20);  // floor at 0.50%pm to avoid daft numbers
+  return (lower / 100).toFixed(2) + '–' + (upper / 100).toFixed(2) + '% pm';
+}
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
@@ -114,7 +123,7 @@ function renderPropertyRow(idx) {
         </div>
         <div>
           <label style="display:block;font-size:10px;color:#94A3B8;font-weight:600;margin-bottom:4px;">Manual AVM override (£, optional)</label>
-          <input data-prop-manual-avm="${idx}" type="text" inputmode="numeric" placeholder="Use if Chimnie has no AVM"
+          <input data-prop-manual-avm="${idx}" type="text" inputmode="numeric" placeholder="Use if no AVM available"
             style="width:100%;background:#111827;color:#E5E7EB;border:1px solid #4b5563;padding:8px 10px;border-radius:4px;font-size:12px;" />
         </div>
       </div>
@@ -309,7 +318,7 @@ function buildResultHtml(data) {
       ? '<span style="background:rgba(212,168,83,0.15);color:#D4A853;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;">1ST</span>'
       : '<span style="background:rgba(167,139,250,0.15);color:#A78BFA;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;">2ND · COMFORT</span>';
     const avmLabel = p.avm_source === 'broker_estimate' ? 'broker estimate'
-                  : (p.avm_source === 'chimnie' ? 'Chimnie AVM' : 'no AVM');
+                  : (p.avm_pence ? 'estimated valuation' : 'no AVM');
     return `
       <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:8px 12px;border-bottom:1px solid #2d3748;font-size:12px;align-items:center;">
         <div>
@@ -346,7 +355,7 @@ function buildResultHtml(data) {
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:14px;">
       ${kpiCard('Effective LTV', fmtPct(v.ltv_pct), cc ? `${fmtMoneyPence(cc.daksfirst_exposure_pence)} / ${fmtMoneyPence(cc.effective_security_value_pence)} (1st charges only)` : 'Needs valuation')}
-      ${kpiCard('Indicative rate', pr ? fmtRate(pr.rate_bps_pm) : '—', pr ? (v.ltv_pct > 75 ? `Stretch pricing at PD5/LGDC/IAC · subject to additional security` : `at typical PD5/LGDC/IAC · min term ${pr.min_term_months || '?'}m`) : 'Pricing not run')}
+      ${kpiCard('Indicative rate', pr ? fmtRateRange(pr.rate_bps_pm) : '—', pr ? (v.ltv_pct > 75 ? `Stretch profile · subject to additional security` : `Subject to full underwriting`) : 'Pricing not run')}
       ${cc && cc.comfort_security_value_pence > 0 ? kpiCard('2nd-charge comfort', fmtMoneyPence(cc.comfort_security_value_pence), `${cc.second_charge_count} property — not in LTV`) : ''}
       ${cc && cc.refinance_count > 0 ? kpiCard('Refi redemptions', fmtMoneyPence(cc.total_existing_redemptions_pence), `${cc.refinance_count} ${cc.refinance_count === 1 ? 'property' : 'properties'} · auto in S&U`) : ''}
     </div>
@@ -384,7 +393,7 @@ function buildResultHtml(data) {
     ` : ''}
 
     <div style="padding:8px 12px;background:rgba(96,165,250,0.04);border-left:3px solid #60A5FA;border-radius:3px;font-size:10.5px;color:#94A3B8;">
-      ℹ Quick Quote uses default mid-grade (PD5/LGDC/IAC). Final rate depends on full underwriting (RICS valuation, full credit + KYC, IC review).
+      ℹ Indicative only. Final rate confirmed in your Indicative Term Sheet after full underwriting (RICS valuation, credit + KYC, IC review).
     </div>
   `;
 }

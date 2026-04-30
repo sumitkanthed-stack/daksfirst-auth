@@ -61,7 +61,7 @@ router.post('/admin/consent/broker-attest/:dealId', authenticateToken, async (re
               broker_consent_text_version = $3
         WHERE id = $4
         RETURNING id, submission_id`,
-      [req.user.id || null, clientIp(req), consent.CONSENT_TEXT_VERSION, dealId]
+      [req.user.userId || null, clientIp(req), consent.CONSENT_TEXT_VERSION, dealId]
     );
     if (upd.rowCount === 0) return res.status(404).json({ error: 'deal not found' });
 
@@ -75,7 +75,7 @@ router.post('/admin/consent/broker-attest/:dealId', authenticateToken, async (re
       [dealId]
     );
 
-    const evidence_id = `broker_attest:deal:${dealId}:by:${req.user.id || 'unknown'}:at:${Date.now()}`;
+    const evidence_id = `broker_attest:deal:${dealId}:by:${req.user.userId || 'unknown'}:at:${Date.now()}`;
     const writtenRows = [];
     for (const b of borrowers.rows) {
       const rows = await consent.recordBlanketConsent({
@@ -86,7 +86,7 @@ router.post('/admin/consent/broker-attest/:dealId', authenticateToken, async (re
         evidence_url: null,
         consent_ip: clientIp(req),
         consent_user_agent: clientUa(req),
-        recorded_by: req.user.id || null,
+        recorded_by: req.user.userId || null,
       });
       writtenRows.push({ borrower_id: b.id, full_name: b.full_name, consents: rows });
     }
