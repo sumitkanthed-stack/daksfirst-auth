@@ -593,6 +593,81 @@ export async function renderDealMatrix(deal) {
   const fmtPct = (v) => num(v) ? num(v).toFixed(1) : '0.0';
   const fmtM = (v) => num(v) ? (num(v) / 1000000).toFixed(1) : '0';
 
+  // ══ 2026-04-30 — SHARED corporate-borrower children-block renderer ══
+  // ONE function used by primary corporate, joint corporate, and guarantor cards.
+  // Sumit's architectural rule: Borrower (individual or UK corporate) renders the
+  // SAME card from any entry point. Three previously-duplicated kidsTable + header
+  // blocks now collapse to this single helper. Future improvements propagate
+  // automatically to all three call sites.
+  //
+  // opts: { parentId, parentCompanyName, kids, submissionId, canEdit,
+  //         accentColor (hex for + Add Person btn), sameNameSet (optional Set
+  //         of normalized names — kids matching get a "Same as Borrower" tag) }
+  function _buildSharedCorpChildren(opts) {
+    const { parentId, parentCompanyName, kids, submissionId, canEdit, accentColor, sameNameSet } = opts;
+    const colspan = canEdit ? 6 : 5;
+    const _sameSet = sameNameSet || new Set();
+
+    let kidsHtml;
+    if (!kids || kids.length === 0) {
+      kidsHtml = '<p style="font-size:11px;color:#FBBF24;margin:6px 0 0 0;">No directors/PSCs captured yet. Click Verify at Companies House to auto-populate.</p>';
+    } else {
+      let rows = '';
+      kids.forEach((k) => {
+        const isCorpKid = (k.borrower_type === 'corporate') ||
+          (k.full_name && /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group)\b/i.test(k.full_name));
+        const rBg = k.role === 'director' ? 'rgba(129,140,248,0.1)'
+                  : k.role === 'psc' ? 'rgba(56,189,248,0.1)'
+                  : k.role === 'ubo' ? 'rgba(167,139,250,0.1)'
+                  : 'rgba(255,255,255,0.04)';
+        const rCol = k.role === 'director' ? '#818CF8'
+                   : k.role === 'psc' ? '#38BDF8'
+                   : k.role === 'ubo' ? '#A78BFA'
+                   : '#94A3B8';
+        const kycCol = k.kyc_status === 'verified' ? '#34D399'
+                     : k.kyc_status === 'submitted' ? '#D4A853'
+                     : '#F87171';
+        const sameTag = _sameSet.has((k.full_name || '').toLowerCase().trim())
+          ? ' <span style="font-size:9px;color:#D4A853;background:rgba(212,168,83,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">Same as Borrower</span>'
+          : '';
+        rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + k.id + '" onclick="window._toggleBorrowerDetail(' + k.id + ')">' +
+          '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' +
+            sanitizeHtml(k.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span>' + sameTag +
+          '</td>' +
+          '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + rBg + ';color:' + rCol + ';text-transform:capitalize;">' + (k.role || 'director') + '</span></td>' +
+          '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(k.nationality || '—') + '</td>' +
+          '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycCol + ';text-transform:capitalize;">' + (k.kyc_status || 'pending') + '</span></td>' +
+          '<td style="padding:6px 8px;text-align:center;">' + (k.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
+          (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
+            ((isCorpKid && k.company_number)
+              ? '<button onclick="window._chVerifyCorporateParty(' + k.id + ', \'' + submissionId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(52,211,153,0.1);color:#34D399;margin-right:4px;" title="' + (k.ch_verified_at ? 'Re-verify corporate PSC at Companies House' : 'Verify this corporate PSC at Companies House') + '">' + (k.ch_verified_at ? '&#8635;' : '✓') + ' CH</button>'
+              : '') +
+            '<button onclick="window.editBorrowerRow(' + k.id + ', \'' + submissionId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
+            '<button onclick="window.deleteBorrowerRow(' + k.id + ', \'' + submissionId + '\')" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
+          '</td>' : '') +
+        '</tr>';
+      });
+      kidsHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">' +
+        '<thead><tr style="background:rgba(255,255,255,0.04);">' +
+          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>' +
+          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>' +
+          '<th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Nationality</th>' +
+          '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>' +
+          '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">CH</th>' +
+          (canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : '') +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    return '<div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;">' +
+        '<span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(parentCompanyName || 'this borrower') + ' — ' + (kids ? kids.length : 0) + '</span>' +
+        (canEdit ? '<button onclick="window.addChildToParent(\'' + submissionId + '\', ' + parentId + ')" style="padding:3px 10px;background:' + (accentColor || '#818CF8') + ';color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : '') +
+      '</div>' +
+      kidsHtml +
+    '</div>';
+  }
+
+
   // ══ M3 Matrix-SSOT 2026-04-20 ══════════════════════════════════════
   // Client-side mirror of services/fee-formulae.js. Keep in sync with the
   // backend helper — both encode the same policy (confirmed with Sumit).
@@ -935,51 +1010,17 @@ export async function renderDealMatrix(deal) {
                     </div>
                     ` : ''}
 
-                    <!-- ── C. Connected Individuals (Directors, PSCs, UBOs) — auto-populated from Companies House ── -->
-                    <!-- 2026-04-30 — header now mirrors guarantor card (renderCorpCard line 1428): -->
-                    <!--   names the company in the title, includes "+ Add Person" button so brokers -->
-                    <!--   can manually add UBOs / directors that CH didn't return (offshore beneficial owners, etc.) -->
-                    <div style="margin-bottom:4px;">
-                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                        <span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ${sanitizeHtml(deal.company_name || 'this borrower')} — ${chOfficers.length}</span>
-                        ${(canEdit && primaryRow) ? `<button onclick="window.addChildToParent('${(deal.submission_id || '').replace(/'/g, '')}', ${primaryRow.id})" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>` : ''}
-                      </div>
-                      <div style="font-size:9px;color:#64748B;font-style:italic;margin-bottom:6px;">Auto-populated from Companies House · individual KYC only</div>
-                      ${chOfficers.length > 0 ? `
-                      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                        <thead>
-                          <tr style="background:rgba(255,255,255,0.04);">
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Name</th>
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Role</th>
-                            <th style="text-align:left;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Nationality</th>
-                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">KYC</th>
-                            <th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">CH</th>
-                            ${canEdit ? '<th style="text-align:center;padding:6px 8px;color:#94A3B8;font-weight:600;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.08);">Actions</th>' : ''}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${chOfficers.map(b => {
-                            const roleColors = { primary:'#34D399', joint:'#34D399', director:'#818CF8', ubo:'#A78BFA', psc:'#38BDF8', shareholder:'#D4A853' };
-                            const roleBgs = { primary:'rgba(52,211,153,0.1)', joint:'rgba(52,211,153,0.1)', director:'rgba(129,140,248,0.1)', ubo:'rgba(167,139,250,0.1)', psc:'rgba(56,189,248,0.1)', shareholder:'rgba(212,168,83,0.1)' };
-                            const roleColor = roleColors[b.role] || '#94A3B8';
-                            const roleBg = roleBgs[b.role] || 'rgba(255,255,255,0.04)';
-                            const kycColor = b.kyc_status === 'verified' ? '#34D399' : b.kyc_status === 'submitted' ? '#D4A853' : '#F87171';
-                            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + b.id + '" onclick="window._toggleBorrowerDetail(' + b.id + ')">' +
-                              '<td style="padding:6px 8px;color:#60A5FA;font-weight:600;text-decoration:underline;text-decoration-color:rgba(96,165,250,0.3);">' + sanitizeHtml(b.full_name || '-') + ' <span style="font-size:9px;color:#64748B;text-decoration:none;">&#9660;</span></td>' +
-                              '<td style="padding:6px 8px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + roleBg + ';color:' + roleColor + ';text-transform:capitalize;">' + (b.role || 'primary') + '</span></td>' +
-                              '<td style="padding:6px 8px;color:#94A3B8;font-size:11px;">' + sanitizeHtml(b.nationality || '—') + '</td>' +
-                              '<td style="padding:6px 8px;text-align:center;"><span style="font-size:10px;font-weight:600;color:' + kycColor + ';text-transform:capitalize;">' + (b.kyc_status || 'pending') + '</span></td>' +
-                              '<td style="padding:6px 8px;text-align:center;">' + (b.ch_verified_at ? '<span style="font-size:10px;color:#34D399;font-weight:600;">&#10003;</span>' : '<span style="font-size:10px;color:#64748B;">—</span>') + '</td>' +
-                              (canEdit ? '<td style="padding:6px 8px;text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">' +
-                                '<button onclick="window.editBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(212,168,83,0.15);color:#D4A853;margin-right:4px;" title="Edit">&#9998;</button>' +
-                                '<button onclick="window.deleteBorrowerRow(' + b.id + ', &#39;' + deal.submission_id + '&#39;)" style="padding:2px 8px;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;background:rgba(248,113,113,0.1);color:#F87171;" title="Delete">&#10005;</button>' +
-                              '</td>' : '') +
-                            '</tr>';
-                          }).join('')}
-                        </tbody>
-                      </table>
-                      ` : '<p style="font-size:12px;color:#FBBF24;margin:4px 0;">No individuals identified yet. Run Companies House verification to populate automatically.</p>'}
-                    </div>
+                    <!-- ── C. Connected Individuals (Directors, PSCs, UBOs) — uses shared _buildSharedCorpChildren helper ── -->
+                    <!-- 2026-04-30 — Single source of truth: same children block as guarantor (renderCorpCard) and joint (_jointCorpCard). -->
+                    ${_buildSharedCorpChildren({
+                      parentId: primaryRow ? primaryRow.id : null,
+                      parentCompanyName: deal.company_name,
+                      kids: chOfficers,
+                      submissionId: deal.submission_id,
+                      canEdit: canEdit,
+                      accentColor: '#D4A853',
+                    })}
+                    <div style="font-size:9px;color:#64748B;font-style:italic;margin-top:4px;">Auto-populated from Companies House · individual KYC only</div>
                     </div> <!-- close gold-bordered primary-borrower block; D. Joint Borrowers below is outside this block -->
 
                     <!-- ── D. Joint Borrowers — other top-level parties on this deal, rendered as cards ── -->
@@ -1087,15 +1128,15 @@ export async function renderDealMatrix(deal) {
                           ssPanelJ +
                           expPanelJ +
                           chDetailBlock +
-                          // 2026-04-30 — mirror renderCorpCard structure exactly: title + "+ Add Person"
-                          // button in a flex header so joint corporate borrowers behave identically to guarantors.
-                          '<div>' +
-                            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
-                              '<span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this joint borrower') + ' — ' + kids.length + '</span>' +
-                              (canEdit ? '<button onclick="window.addChildToParent(\'' + subId + '\', ' + g.id + ')" style="padding:3px 10px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : '') +
-                            '</div>' +
-                            kidsTable +
-                          '</div>' +
+                          // 2026-04-30 — uses shared _buildSharedCorpChildren helper (same as guarantor + primary)
+                          _buildSharedCorpChildren({
+                            parentId: g.id,
+                            parentCompanyName: g.company_name || 'this joint borrower',
+                            kids: kids,
+                            submissionId: subId,
+                            canEdit: canEdit,
+                            accentColor: '#34D399',
+                          }) +
                         '</div>';
                       };
 
@@ -1430,14 +1471,17 @@ export async function renderDealMatrix(deal) {
                     ssPanelG +
                     expPanelG +
                     chDetailBlock +
-                    // Children block
-                    '<div>' +
-                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
-                        '<span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this guarantor') + ' — ' + kids.length + '</span>' +
-                        (canEdit ? '<button onclick="window.addChildToParent(\'' + deal.submission_id + '\', ' + g.id + ')" style="padding:3px 10px;background:#818CF8;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : '') +
-                      '</div>' +
-                      kidsTable +
-                    '</div>' +
+                    // 2026-04-30 — children block now via shared _buildSharedCorpChildren helper.
+                    // Same call pattern in primary, joint, and guarantor — single source of truth.
+                    _buildSharedCorpChildren({
+                      parentId: g.id,
+                      parentCompanyName: g.company_name || 'this guarantor',
+                      kids: kids,
+                      submissionId: deal.submission_id,
+                      canEdit: canEdit,
+                      accentColor: '#818CF8',
+                      sameNameSet: sameNameIds,
+                    }) +
                   '</div>';
                 };
 
