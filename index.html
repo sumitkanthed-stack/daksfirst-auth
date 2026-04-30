@@ -551,6 +551,68 @@
           </div>
     </aside>
 
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!--  COMPLETE-DEAL SCREEN — landing after Quick Quote → "Submit anyway"  -->
+    <!--  Sticky QQ summary + primary dropzone + manual-fallback link.        -->
+    <!--  Wired in js/complete-deal.js (showCompleteDeal entry point).        -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div id="screen-complete-deal" class="screen">
+      <div style="margin-left:240px;min-height:100vh;padding:32px 40px;">
+        <!-- Header strip -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <div>
+            <h1 style="margin:0;font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:600;color:#F1F5F9;">Complete Your Deal</h1>
+            <div style="font-size:13px;color:#94A3B8;margin-top:4px;">Logged in as <span id="cd-user-info">broker</span></div>
+          </div>
+          <button onclick="window.showDashboard && window.showDashboard()" style="padding:8px 16px;background:none;color:#94A3B8;border:1px solid rgba(255,255,255,0.08);border-radius:6px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">← Back to dashboard</button>
+        </div>
+
+        <!-- Sticky QQ summary card -->
+        <div id="cd-summary" style="position:sticky;top:0;z-index:10;background:#0B1120;border:1px solid rgba(212,168,83,0.25);border-radius:10px;padding:16px 20px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+          <div style="font-size:10px;color:#D4A853;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Captured from your Quick Quote</div>
+          <div id="cd-summary-body">
+            <div style="color:#94A3B8;font-size:13px;">Loading your quote…</div>
+          </div>
+        </div>
+
+        <!-- Primary dropzone -->
+        <div style="background:#111927;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:24px;margin-bottom:20px;">
+          <div style="font-size:18px;font-weight:600;color:#F1F5F9;margin-bottom:6px;font-family:'Cormorant Garamond',serif;">Drop your deal pack</div>
+          <div style="font-size:13px;color:#94A3B8;margin-bottom:18px;">Our parser will fill in loan term, exit, interest servicing, charges, borrower individuals, and use of funds — anything the Quick Quote couldn't capture. You'll review every field before submitting.</div>
+
+          <div id="cd-upload-zone"
+               ondrop="window.cdHandleDrop && window.cdHandleDrop(event)"
+               ondragover="window.cdHandleDragOver && window.cdHandleDragOver(event)"
+               ondragleave="window.cdHandleDragLeave && window.cdHandleDragLeave(event)"
+               onclick="document.getElementById('cd-file-input').click()"
+               style="background:#0F172A;border:2px dashed #D4A853;border-radius:10px;padding:48px 24px;text-align:center;cursor:pointer;transition:background .15s;">
+            <div style="font-size:48px;margin-bottom:12px;">📁</div>
+            <div style="font-size:16px;font-weight:600;color:#F1F5F9;margin-bottom:6px;">Drop PDFs, Word, Excel, images — or paste WhatsApp text</div>
+            <div style="font-size:12px;color:#94A3B8;">PDF · DOCX · XLSX · JPG · PNG · EML · max 25MB each</div>
+            <div style="display:flex;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap;">
+              <span style="padding:4px 12px;background:rgba(212,168,83,0.10);border:1px solid rgba(212,168,83,0.25);border-radius:999px;font-size:11px;color:#D4A853;">PDF</span>
+              <span style="padding:4px 12px;background:rgba(212,168,83,0.10);border:1px solid rgba(212,168,83,0.25);border-radius:999px;font-size:11px;color:#D4A853;">Word</span>
+              <span style="padding:4px 12px;background:rgba(212,168,83,0.10);border:1px solid rgba(212,168,83,0.25);border-radius:999px;font-size:11px;color:#D4A853;">Excel</span>
+              <span style="padding:4px 12px;background:rgba(212,168,83,0.10);border:1px solid rgba(212,168,83,0.25);border-radius:999px;font-size:11px;color:#D4A853;">Images</span>
+              <span style="padding:4px 12px;background:rgba(212,168,83,0.10);border:1px solid rgba(212,168,83,0.25);border-radius:999px;font-size:11px;color:#D4A853;">Email</span>
+            </div>
+            <input type="file" id="cd-file-input" multiple style="display:none;" onchange="window.cdHandleFileSelect && window.cdHandleFileSelect(event)">
+          </div>
+
+          <div style="margin-top:14px;font-size:11px;color:#64748B;">Forwarded broker emails work too — send to <strong style="color:#94A3B8;">deals@daksfirst.com</strong> with the deal pack attached.</div>
+        </div>
+
+        <!-- Manual fallback -->
+        <div style="background:#0F172A;border:1px solid rgba(255,255,255,0.04);border-radius:10px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:#F1F5F9;margin-bottom:2px;">Don't have a deal pack yet?</div>
+            <div style="font-size:12px;color:#94A3B8;">Skip the upload and fill the remaining fields directly in the deal matrix.</div>
+          </div>
+          <button onclick="window.cdFillManually && window.cdFillManually()" style="padding:10px 18px;background:none;color:#D4A853;border:1px solid rgba(212,168,83,0.4);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">Fill matrix manually →</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Dashboard Screen (Post-Login) -->
     <div id="screen-dashboard" class="screen">
       <div class="dashboard-container" style="margin-left:240px;min-height:100vh;">

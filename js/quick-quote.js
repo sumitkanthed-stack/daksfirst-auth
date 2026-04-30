@@ -462,19 +462,63 @@ async function handleQqSubmit(e) {
     showQqResult(buildResultHtml(data));
     const ctaBtn = document.getElementById('qq-submit-deal');
     if (ctaBtn) {
-      ctaBtn.addEventListener('click', () => {
+      ctaBtn.addEventListener('click', async () => {
         const qqid = ctaBtn.getAttribute('data-quick-quote-id');
         if (!qqid) return;
-        // Stash the QQ id in sessionStorage so the deal-form pre-fill picks
-        // it up. This routes through the proven /api/deals/submit path that
-        // creates deals correctly (matrix renders, Chimnie button works,
-        // borrower_type set right). Broker confirms pre-filled fields and
-        // clicks Submit — no re-typing.
-        try { sessionStorage.setItem('qq_pending_id', qqid); } catch (_) {}
-        if (typeof window.showDealForm === 'function') {
-          window.showDealForm();
-        } else {
-          alert('Submission form unavailable. Please refresh the page.');
+        // 2026-04-30: Replaced sessionStorage→wizard handoff with server-side
+        // promotion. The /convert-to-deal endpoint creates the deal_submission
+        // with all properties + borrower wired up, then the new screen-complete-deal
+        // (dropzone-primary) takes over. Manual fallback routes to the matrix.
+        const origLabel = ctaBtn.textContent;
+        ctaBtn.disabled = true;
+        ctaBtn.textContent = 'Starting your deal…';
+        try {
+          const cvt = await fetchWithAuth(`${API_BASE}/api/broker/quick-quote/${qqid}/convert-to-deal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          const cvtData = await cvt.json();
+          if (!cvt.ok || !cvtData.ok) {
+            const errMsg = (cvtData && cvtData.error) || `HTTP ${cvt.status}`;
+            if (typeof window.showToast === 'function') {
+              window.showToast(`Could not start your deal: ${errMsg}`, true);
+            } else {
+              alert(`Could not start your deal: ${errMsg}`);
+            }
+            return;
+          }
+          // Sanity-check we got the ids the new screen needs
+          if (!cvtData.deal_id || !cvtData.submission_id) {
+            console.warn('[quick-quote] convert-to-deal returned without expected ids:', cvtData);
+            if (typeof window.showToast === 'function') {
+              window.showToast('Deal started but routing failed — please refresh', true);
+            }
+            return;
+          }
+          if (typeof window.showCompleteDeal === 'function') {
+            window.showCompleteDeal({
+              qqId: qqid,
+              dealId: cvtData.deal_id,
+              submissionId: cvtData.submission_id,
+            });
+          } else {
+            // Defensive fallback: if the new module isn't loaded for any
+            // reason, fall back to the old wizard pre-fill path so the
+            // broker isn't dead-ended.
+            try { sessionStorage.setItem('qq_pending_id', qqid); } catch (_) {}
+            if (typeof window.showDealForm === 'function') window.showDealForm();
+          }
+        } catch (err) {
+          console.error('[quick-quote] convert-to-deal failed:', err);
+          if (typeof window.showToast === 'function') {
+            window.showToast(`Connection error: ${err.message}`, true);
+          } else {
+            alert(`Connection error: ${err.message}`);
+          }
+        } finally {
+          ctaBtn.disabled = false;
+          ctaBtn.textContent = origLabel;
         }
       });
     }

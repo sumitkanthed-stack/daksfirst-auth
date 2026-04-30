@@ -11,6 +11,7 @@ import { handleSmartDrop, handleSmartFileSelect, toggleWhatsappPaste, handleWhat
 import { handleDocumentDragOver, handleDocumentDragLeave, handleDocumentDrop, handleFileSelect, downloadDocumentById, viewDocumentInline } from './documents.js';
 import { showToast } from './utils.js';
 import { initQuickQuote } from './quick-quote.js';
+import { showCompleteDeal, cdHandleDrop, cdHandleDragOver, cdHandleDragLeave, cdHandleFileSelect, cdFillManually } from './complete-deal.js';
 
 // Expose global functions to window for inline onclick handlers
 window.showScreen = showScreen;
@@ -50,6 +51,14 @@ window.handleFileSelect = handleFileSelect;
 window.downloadDocumentById = downloadDocumentById;
 window.viewDocumentInline = viewDocumentInline;
 window.handleEmailVerification = handleEmailVerification;
+
+// Complete-deal screen (post Quick-Quote landing) — exposes drop handlers + fill-manually
+window.showCompleteDeal = showCompleteDeal;
+window.cdHandleDrop = cdHandleDrop;
+window.cdHandleDragOver = cdHandleDragOver;
+window.cdHandleDragLeave = cdHandleDragLeave;
+window.cdHandleFileSelect = cdHandleFileSelect;
+window.cdFillManually = cdFillManually;
 
 // Lazy-load workflow and DIP functions when needed
 window.assignRM = () => import('./workflow-actions.js').then(m => m.assignRM());
