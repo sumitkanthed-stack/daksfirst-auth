@@ -557,7 +557,23 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
 
     // Insert deal_properties rows for every property (incl. primary).
     // deal_properties.address is NOT NULL — always supply a value.
+    // 2026-04-30 — dedup on (normalized address, postcode) so brokers entering
+    // the same property twice in QQ don't get duplicate rows.
+    const _propKey = (addr, pc) => {
+      const a = String(addr || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const p = String(pc || '').trim().toUpperCase().replace(/\s+/g, '');
+      return `${a}||${p}`;
+    };
+    const _seenPropKeys = new Set();
+    let _propsInserted = 0;
     for (const p of props) {
+      const addr = p.address_text || p.postcode || 'Address pending';
+      const key = _propKey(addr, p.postcode);
+      if (_seenPropKeys.has(key)) {
+        console.log(`[quick-quote/convert] dedup — skipping duplicate property: ${addr} (${p.postcode || 'no postcode'})`);
+        continue;
+      }
+      _seenPropKeys.add(key);
       await client.query(`
         INSERT INTO deal_properties (
           deal_id, address, postcode, market_value,
@@ -566,7 +582,7 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `, [
         deal.id,
-        p.address_text || p.postcode || 'Address pending',
+        addr,
         p.postcode || null,
         p.avm_pence ? Math.round(p.avm_pence / 100) : null,
         p.purpose || null,
@@ -575,7 +591,9 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
         p.paf_uprn || null,
         p.avm_pence ? Math.round(p.avm_pence / 100) : null,
       ]);
+      _propsInserted++;
     }
+    console.log(`[quick-quote/convert] inserted ${_propsInserted}/${props.length} properties (${props.length - _propsInserted} duped)`);
 
     // 2026-04-30 — Eager auto-backfill + auto-CH-verify so the broker doesn't
     // have to click anything. Mirrors the GET-handler auto-backfill at deals.js:403
@@ -646,58 +664,24 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       }
     }
 
-    // 2026-04-30 — Auto property search for QQ-converted properties.
-    // Mirrors claude-parser.js:804+ pattern. Calls services/property-search.js
-    // searchProperty() which orchestrates THREE FREE government APIs:
-    //   - Postcodes.io   (region, country, ward, lat/long)
-    //   - EPC database   (rating, floor area, habitable rooms, MEES)
-    //   - Land Registry Price Paid (last sale price, transactions)
-    // The PAID HMLR Business Gateway register pull stays RM-only — separate
-    // service (services/hmlr.js), separate trigger.
-    // Wrapped: convert succeeds even if any property search fails.
+    // 2026-04-30 — Auto-enrich every property: FREE APIs (Postcodes.io + EPC) +
+    // Chimnie (low-cost, freshness-gated). Land Registry Price Paid (£3) is
+    // RM-only and NOT auto-fired here. Uses shared services/property-enrich.js
+    // helpers so the code path matches POST /properties + claude-parser.
+    // Wrapped: convert succeeds even if individual property enrichment fails.
+    // Note: enrichment uses pool (not client) because helpers are pool-bound.
+    // The convert transaction commits the property rows first, then enrichment
+    // runs on committed rows — fine because helpers are best-effort + idempotent.
     try {
-      const { searchProperty } = require('../services/property-search');
-      const unsearched = await client.query(
-        `SELECT id, address, postcode FROM deal_properties
-         WHERE deal_id = $1 AND property_searched_at IS NULL`,
+      const { autoEnrichProperty, autoEnrichChimnie } = require('../services/property-enrich');
+      const propsList = await client.query(
+        `SELECT id FROM deal_properties WHERE deal_id = $1 AND property_searched_at IS NULL`,
         [deal.id]
       );
-      for (const prop of unsearched.rows) {
-        if (!prop.postcode && !prop.address) continue;
-        try {
-          const results = await searchProperty(prop.postcode, prop.address);
-          const sets = [];
-          const vals = [];
-          let i = 1;
-          if (results.postcode_lookup.success) {
-            const pc = results.postcode_lookup.data;
-            for (const [c, v] of [['region',pc.region],['country',pc.country],['local_authority',pc.admin_district],['admin_ward',pc.admin_ward],['latitude',pc.latitude],['longitude',pc.longitude],['in_england_or_wales',pc.in_england_or_wales]]) {
-              if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
-            }
-          }
-          if (results.epc.success) {
-            const e = results.epc.data;
-            for (const [c, v] of [['epc_rating',e.epc_rating],['epc_score',e.epc_score],['epc_potential_rating',e.potential_rating],['epc_floor_area',e.floor_area],['epc_property_type',e.property_type],['epc_built_form',e.built_form],['epc_construction_age',e.construction_age],['epc_habitable_rooms',e.number_habitable_rooms],['epc_inspection_date',e.inspection_date],['epc_certificate_id',e.lmk_key]]) {
-              if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
-            }
-          }
-          if (results.price_paid.success) {
-            const pp = results.price_paid.data;
-            if (pp.latest_price) { sets.push(`last_sale_price=$${i}`); vals.push(pp.latest_price); i++; sets.push(`last_sale_date=$${i}`); vals.push(pp.latest_date); i++; }
-            sets.push(`price_paid_data=$${i}`); vals.push(JSON.stringify(pp.transactions || [])); i++;
-          }
-          sets.push(`property_search_data=$${i}`); vals.push(JSON.stringify(results)); i++;
-          sets.push(`property_searched_at=NOW()`);
-          sets.push(`updated_at=NOW()`);
-          vals.push(prop.id);
-          await client.query(`UPDATE deal_properties SET ${sets.join(',')} WHERE id=$${i}`, vals);
-          console.log(`[quick-quote/convert] auto-searched property ${prop.id}: ${prop.postcode}`);
-        } catch (psErr) {
-          console.warn(`[quick-quote/convert] property search failed for ${prop.id}:`, psErr.message);
-        }
-      }
+      // Defer enrichment until after transaction commits (post-COMMIT). Stash IDs.
+      deal._enrich_property_ids = propsList.rows.map(r => r.id);
     } catch (psBlockErr) {
-      console.warn('[quick-quote/convert] property auto-search block skipped:', psBlockErr.message);
+      console.warn('[quick-quote/convert] property enrichment block skipped:', psBlockErr.message);
     }
 
     // Stamp conversion on the quote for analytics
@@ -705,6 +689,23 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       `UPDATE quick_quotes SET converted_to_deal_id = $1 WHERE id = $2`,
       [deal.id, id]
     );
+
+    // 2026-04-30 — fire auto-enrich AFTER transaction commits so enrichment writes
+    // land on the committed property rows. Best-effort: convert response still goes
+    // out even if enrichment fails. Each helper is itself try/catch-wrapped.
+    if (Array.isArray(deal._enrich_property_ids) && deal._enrich_property_ids.length > 0) {
+      try {
+        const { autoEnrichProperty, autoEnrichChimnie } = require('../services/property-enrich');
+        // Run sequentially so we don't slam Postcodes.io / EPC / Chimnie in parallel
+        for (const pid of deal._enrich_property_ids) {
+          await autoEnrichProperty(deal.id, pid, req.user.userId);
+          await autoEnrichChimnie(deal.id, pid, req.user.userId);
+        }
+        console.log(`[quick-quote/convert] auto-enriched ${deal._enrich_property_ids.length} properties (postcode+EPC+Chimnie+PTAL)`);
+      } catch (enrichErr) {
+        console.warn('[quick-quote/convert] post-commit enrichment failed (non-fatal):', enrichErr.message);
+      }
+    }
 
     // Audit trail (mirrors wizard /submit handler)
     try {

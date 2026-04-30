@@ -534,9 +534,10 @@ async function getOfficerAppointments(officerId) {
     return {
       ch_officer_id: officerId,
       company_number: company.company_number || null,
-      company_name: it.name_elements
-        ? null  // some responses have name_elements instead
-        : (company.company_name || null),
+      // 2026-04-30 fix: name_elements is the OFFICER's name, NOT a flag for missing
+      // company name. Always read appointed_to.company_name. Previous logic
+      // erroneously nulled company_name for any officer whose own name was structured.
+      company_name: company.company_name || null,
       company_status: companyStatus,
       officer_role: (it.officer_role || '').toLowerCase(),
       appointment_date: apptDate,
