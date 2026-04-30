@@ -9192,21 +9192,37 @@ export async function renderDealMatrix(deal) {
     }
 
     // ── CH Role Verification gate for corporate borrowers ──
+    // 2026-04-30 — Role-gated: brokers don't get blocked on this. Per Sumit's
+    // design (memory: feedback_los_vs_lms), broker INFORMS, RM VERIFIES roles
+    // against Companies House. So the broker view passes through this gate;
+    // internal users (RM/admin/credit/compliance) see it as a real DIP gate.
     const bType = (deal.borrower_type || 'individual').toLowerCase();
-    const isCorporateDeal = ['corporate', 'spv', 'ltd', 'llp'].includes(bType);
+    const isCorporateDeal = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(bType);
+    const _roleForGate = (typeof getCurrentRole === 'function') ? getCurrentRole() : null;
+    const _isInternalForGate = ['admin', 'rm', 'credit', 'compliance'].includes(_roleForGate);
     if (isCorporateDeal && deal.borrowers && deal.borrowers.length > 0) {
-      const unverified = deal.borrowers.filter(b => !b.ch_verified_at);
-      if (unverified.length > 0) {
+      // Only consider TOP-LEVEL borrowers — children (directors/PSCs/UBOs) are CH
+      // verified as a side-effect of the parent's CH verify, but their individual
+      // ch_verified_at can lag if they were inserted by a different code path.
+      // The DIP gate should fire on top-level corporate parties, not their kids.
+      const topLevelCorps = deal.borrowers.filter(b =>
+        !b.parent_borrower_id &&
+        ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes((b.borrower_type || '').toLowerCase())
+      );
+      const unverified = topLevelCorps.filter(b => !b.ch_verified_at);
+      if (unverified.length > 0 && _isInternalForGate) {
+        // Internal-only block: brokers don't see this as a missing field.
         result.ready = false;
         result.chGateBlocked = true;
         result.chUnverifiedCount = unverified.length;
-        // Add to Borrower / KYC section missing
         if (result.sections['Borrower / KYC']) {
           result.sections['Borrower / KYC'].status = 'partial';
           result.sections['Borrower / KYC'].missing.push('ch_role_verification');
           result.totalRequired++;
         }
       } else {
+        // Either CH verify passed OR user is broker (gate doesn't apply).
+        // Still count it as a filled requirement so totalRequired stays consistent.
         result.totalRequired++;
         result.totalFilled++;
       }
