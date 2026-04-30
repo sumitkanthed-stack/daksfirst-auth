@@ -6,6 +6,7 @@ const { authenticateToken, authenticateInternal } = require('../middleware/auth'
 const config = require('../config');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
+const { normalizeBorrowerPayload } = require('../services/matrix-normalizer');
 
 // Helper: check if user owns the deal or is internal staff
 async function canEditDeal(req, submissionId) {
@@ -45,7 +46,11 @@ router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You do not have permission to add borrowers to this deal' });
     }
 
-    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, parent_borrower_id } = req.body;
+    // 2026-04-30 — normalize the payload BEFORE touching the DB.
+    // Single canonical-form layer per matrix-normalizer rule: phone → E.164,
+    // postcode → 'W1J 5RL', borrower_type → enum, date → ISO, email → lowercase, etc.
+    const _normalized = normalizeBorrowerPayload(req.body);
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, parent_borrower_id } = _normalized;
     if (!full_name) return res.status(400).json({ error: 'Full name is required' });
 
     const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
