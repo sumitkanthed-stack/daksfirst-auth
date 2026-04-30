@@ -627,6 +627,60 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       }
     }
 
+    // 2026-04-30 — Auto property search for QQ-converted properties.
+    // Mirrors claude-parser.js:804+ pattern. Calls services/property-search.js
+    // searchProperty() which orchestrates THREE FREE government APIs:
+    //   - Postcodes.io   (region, country, ward, lat/long)
+    //   - EPC database   (rating, floor area, habitable rooms, MEES)
+    //   - Land Registry Price Paid (last sale price, transactions)
+    // The PAID HMLR Business Gateway register pull stays RM-only — separate
+    // service (services/hmlr.js), separate trigger.
+    // Wrapped: convert succeeds even if any property search fails.
+    try {
+      const { searchProperty } = require('../services/property-search');
+      const unsearched = await client.query(
+        `SELECT id, address, postcode FROM deal_properties
+         WHERE deal_id = $1 AND property_searched_at IS NULL`,
+        [deal.id]
+      );
+      for (const prop of unsearched.rows) {
+        if (!prop.postcode && !prop.address) continue;
+        try {
+          const results = await searchProperty(prop.postcode, prop.address);
+          const sets = [];
+          const vals = [];
+          let i = 1;
+          if (results.postcode_lookup.success) {
+            const pc = results.postcode_lookup.data;
+            for (const [c, v] of [['region',pc.region],['country',pc.country],['local_authority',pc.admin_district],['admin_ward',pc.admin_ward],['latitude',pc.latitude],['longitude',pc.longitude],['in_england_or_wales',pc.in_england_or_wales]]) {
+              if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
+            }
+          }
+          if (results.epc.success) {
+            const e = results.epc.data;
+            for (const [c, v] of [['epc_rating',e.epc_rating],['epc_score',e.epc_score],['epc_potential_rating',e.potential_rating],['epc_floor_area',e.floor_area],['epc_property_type',e.property_type],['epc_built_form',e.built_form],['epc_construction_age',e.construction_age],['epc_habitable_rooms',e.number_habitable_rooms],['epc_inspection_date',e.inspection_date],['epc_certificate_id',e.lmk_key]]) {
+              if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
+            }
+          }
+          if (results.price_paid.success) {
+            const pp = results.price_paid.data;
+            if (pp.latest_price) { sets.push(`last_sale_price=$${i}`); vals.push(pp.latest_price); i++; sets.push(`last_sale_date=$${i}`); vals.push(pp.latest_date); i++; }
+            sets.push(`price_paid_data=$${i}`); vals.push(JSON.stringify(pp.transactions || [])); i++;
+          }
+          sets.push(`property_search_data=$${i}`); vals.push(JSON.stringify(results)); i++;
+          sets.push(`property_searched_at=NOW()`);
+          sets.push(`updated_at=NOW()`);
+          vals.push(prop.id);
+          await client.query(`UPDATE deal_properties SET ${sets.join(',')} WHERE id=$${i}`, vals);
+          console.log(`[quick-quote/convert] auto-searched property ${prop.id}: ${prop.postcode}`);
+        } catch (psErr) {
+          console.warn(`[quick-quote/convert] property search failed for ${prop.id}:`, psErr.message);
+        }
+      }
+    } catch (psBlockErr) {
+      console.warn('[quick-quote/convert] property auto-search block skipped:', psBlockErr.message);
+    }
+
     // Stamp conversion on the quote for analytics
     await client.query(
       `UPDATE quick_quotes SET converted_to_deal_id = $1 WHERE id = $2`,
