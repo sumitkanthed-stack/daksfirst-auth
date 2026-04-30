@@ -346,7 +346,7 @@ function buildResultHtml(data) {
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:14px;">
       ${kpiCard('Effective LTV', fmtPct(v.ltv_pct), cc ? `${fmtMoneyPence(cc.daksfirst_exposure_pence)} / ${fmtMoneyPence(cc.effective_security_value_pence)} (1st charges only)` : 'Needs valuation')}
-      ${kpiCard('Indicative rate', pr ? fmtRate(pr.rate_bps_pm) : '—', pr ? `at typical PD5/LGDC/IAC · min term ${pr.min_term_months || '?'}m` : 'Pricing not run')}
+      ${kpiCard('Indicative rate', pr ? fmtRate(pr.rate_bps_pm) : '—', pr ? (v.ltv_pct > 75 ? `Stretch pricing at PD5/LGDC/IAC · subject to additional security` : `at typical PD5/LGDC/IAC · min term ${pr.min_term_months || '?'}m`) : 'Pricing not run')}
       ${cc && cc.comfort_security_value_pence > 0 ? kpiCard('2nd-charge comfort', fmtMoneyPence(cc.comfort_security_value_pence), `${cc.second_charge_count} property — not in LTV`) : ''}
       ${cc && cc.refinance_count > 0 ? kpiCard('Refi redemptions', fmtMoneyPence(cc.total_existing_redemptions_pence), `${cc.refinance_count} ${cc.refinance_count === 1 ? 'property' : 'properties'} · auto in S&U`) : ''}
     </div>

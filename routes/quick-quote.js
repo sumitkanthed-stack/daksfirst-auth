@@ -277,10 +277,13 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       }
     }
 
-    // ── Pricing engine — indicative rate at typical grade ────────────
+    // ── Pricing engine — always run when we have an LTV, even on stretch
+    // deals. Brokers need the rate to have a meaningful conversation about
+    // alternatives (more security, smaller loan, etc.). When LTV > 75% we
+    // pass stress_flagged so the engine bakes in the ceiling treatment.
     let indicativeRateBpsPm = null;
     let pricingDetail = null;
-    if (eligibleFlag && ltvPct != null) {
+    if (ltvPct != null && crossCollateral.first_charge_count > 0) {
       try {
         const sector = inferSectorFromPortfolio();
         const pricing = await pricingEngine.priceDeal({
@@ -288,11 +291,11 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
           channel: 'broker',
           sector,
           pd: 5, lgd: 'C', ia: 'C',
-          loan_amount_pence: totalFacilityPence,  // total exposure, not just acquisition
+          loan_amount_pence: totalFacilityPence,
           term_months: 12,
           ltv_pct: ltvPct,
+          stress_flagged: ltvPct > 75,  // marks stretch deals for ceiling treatment
         });
-        // priceDeal returns { recommended: { rate_bps_pm, upfront_fee_bps, min_term_months }, decline_flag, ... }
         indicativeRateBpsPm = pricing.recommended?.rate_bps_pm || null;
         pricingDetail = {
           recommended_upfront_fee_bps: pricing.recommended?.upfront_fee_bps || null,
