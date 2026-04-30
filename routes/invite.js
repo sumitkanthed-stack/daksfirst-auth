@@ -8,8 +8,7 @@
 
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const config = require('../config');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
