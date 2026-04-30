@@ -909,18 +909,17 @@ export async function renderDealMatrix(deal) {
                     <!-- ── B. Companies House Verification ── -->
                     ${deal.company_number ? `
                     <div style="margin-bottom:12px;">
-                      ${allChVerified ? `
-                      <div id="ch-verified-summary" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:8px;cursor:pointer;" onclick="window._toggleChVerifiedDetail('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')">
+                      ${allChVerified && primaryRow ? `
+                      <div id="ch-cg-summary-${primaryRow.id}" onclick="window._toggleCorpGuarChDetail('${(deal.company_number || '').replace(/'/g, '')}', ${primaryRow.id})" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;cursor:pointer;margin-bottom:10px;">
                         <div style="display:flex;align-items:center;gap:8px;">
                           <span style="color:#34D399;font-size:14px;">&#10003;</span>
-                          <span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified</span>
-                          <span style="font-size:11px;color:#94A3B8;">— All roles confirmed · Click to review</span>
+                          <span style="font-size:12px;font-weight:700;color:#34D399;">Companies House Verified — ${sanitizeHtml(deal.company_name || '')}</span>
+                          <span style="font-size:11px;color:#94A3B8;">— click to view full details</span>
                         </div>
-                        <span id="ch-verified-arrow" style="color:#64748B;font-size:10px;transition:transform .2s;">&#9660;</span>
+                        <span id="ch-cg-arrow-${primaryRow.id}" style="color:#64748B;font-size:10px;transition:transform .2s;">&#9660;</span>
                       </div>
-                      <div id="ch-verified-detail" style="max-height:0;overflow:hidden;transition:max-height .35s ease;">
-                        <div id="ch-matrix-panel" style="margin-top:8px;"></div>
-                        <div id="ch-reconciliation-panel" style="margin-top:8px;"></div>
+                      <div id="ch-cg-detail-${primaryRow.id}" style="max-height:0;overflow:hidden;transition:max-height .35s ease;margin-bottom:10px;">
+                        <div id="ch-cg-panel-${primaryRow.id}" style="margin-top:4px;"></div>
                       </div>
                       ` : `
                       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -936,12 +935,16 @@ export async function renderDealMatrix(deal) {
                     </div>
                     ` : ''}
 
-                    <!-- ── C. Connected Individuals (Directors, UBOs, PSCs) — auto-populated from Companies House ── -->
+                    <!-- ── C. Connected Individuals (Directors, PSCs, UBOs) — auto-populated from Companies House ── -->
+                    <!-- 2026-04-30 — header now mirrors guarantor card (renderCorpCard line 1428): -->
+                    <!--   names the company in the title, includes "+ Add Person" button so brokers -->
+                    <!--   can manually add UBOs / directors that CH didn't return (offshore beneficial owners, etc.) -->
                     <div style="margin-bottom:4px;">
                       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                        <span style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Directors, UBOs & PSCs — ${chOfficers.length} ${chOfficers.length === 1 ? 'Person' : 'People'}</span>
-                        <span style="font-size:9px;color:#64748B;font-style:italic;">Auto-populated from Companies House · individual KYC only</span>
+                        <span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ${sanitizeHtml(deal.company_name || 'this borrower')} — ${chOfficers.length}</span>
+                        ${(canEdit && primaryRow) ? `<button onclick="window.addChildToParent('${(deal.submission_id || '').replace(/'/g, '')}', ${primaryRow.id})" style="padding:3px 10px;background:#D4A853;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>` : ''}
                       </div>
+                      <div style="font-size:9px;color:#64748B;font-style:italic;margin-bottom:6px;">Auto-populated from Companies House · individual KYC only</div>
                       ${chOfficers.length > 0 ? `
                       <table style="width:100%;border-collapse:collapse;font-size:12px;">
                         <thead>
