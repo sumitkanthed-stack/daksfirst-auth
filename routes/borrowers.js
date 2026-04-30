@@ -70,7 +70,17 @@ router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
     res.status(201).json({ success: true, borrower: result.rows[0] });
   } catch (error) {
     console.error('[borrower] Error:', error);
-    res.status(500).json({ error: 'Failed to add borrower' });
+    // 2026-04-30: surface real Postgres error (constraint + detail) so we
+    // stop debugging blind. Common: unique-name index violation when broker
+    // tries to add a borrower with the same full_name as an existing one.
+    const isUniqueViolation = error.code === '23505';
+    res.status(isUniqueViolation ? 409 : 500).json({
+      error: isUniqueViolation
+        ? 'A borrower with this name already exists on the deal. Use a different name or edit the existing record.'
+        : (error.detail || error.message || 'Failed to add borrower'),
+      code: error.code || null,
+      constraint: error.constraint || null,
+    });
   }
 });
 

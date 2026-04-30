@@ -449,34 +449,95 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       return res.status(400).json({ ok: false, error: 'quote has no properties to convert' });
     }
     const lead = props[0];
+    const isCorporate = !!(qq.company_number || qq.company_name);
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 2026-04-30 — matrix-canonical write pattern.
+    //
+    // Sumit's principle (memory: feedback_matrix_is_canonical): the matrix
+    // (deal_submissions flat columns) is the SSOT for deal-level + primary
+    // borrower / primary property fields. Child tables are DERIVED:
+    //  - deal_properties: written here for every property (no flat→child
+    //    auto-backfill exists for properties).
+    //  - deal_borrowers: NOT written here. The GET handler at
+    //    routes/deals.js:403 auto-backfills the primary borrower row from
+    //    the flat fields (borrower_name, borrower_type, company_name,
+    //    company_number) on first read. The wizard's /submit handler also
+    //    relies on this — by following the same pattern, QQ-converted deals
+    //    produce the IDENTICAL deal_borrowers shape that downstream
+    //    consumers (CH verify, KYC, Add Borrower modal, audit) expect.
+    //
+    // Earlier convert-to-deal wrote a 6-column deal_borrowers INSERT
+    // directly; that broke CH verify ('.id' undefined) and Add Borrower
+    // (unique-name violation when broker tried to add a second borrower
+    // with same name as existing primary). Both fixed by this refactor.
+    // ──────────────────────────────────────────────────────────────────────
 
     await client.query('BEGIN');
 
-    // Insert the deal — minimal fields, broker fills the rest in matrix later
+    // Resolve broker's default RM (mirrors wizard's /submit handler at deals.js:480)
+    let assignedRm = null;
+    if (req.user.role === 'broker') {
+      const brokerOnb = await client.query(
+        `SELECT default_rm FROM broker_onboarding WHERE user_id = $1`,
+        [req.user.userId]
+      );
+      if (brokerOnb.rows.length > 0 && brokerOnb.rows[0].default_rm) {
+        assignedRm = brokerOnb.rows[0].default_rm;
+      }
+    }
+
+    // Insert deal — flat-field shape that matches what wizard's /submit produces.
+    // Anything QQ doesn't capture stays NULL; broker fills in the matrix.
     const dealResult = await client.query(`
       INSERT INTO deal_submissions (
-        user_id, borrower_company, security_address, security_postcode,
+        user_id,
+        borrower_name, borrower_company, borrower_type,
+        company_name, company_number,
+        security_address, security_postcode, current_value,
         loan_amount, loan_purpose,
-        company_number, company_name, borrower_type,
-        existing_charges, source, internal_status, deal_stage
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'quick_quote', 'new', 'received')
+        existing_charges, additional_notes,
+        documents, source, internal_status, deal_stage,
+        assigned_rm
+      ) VALUES (
+        $1,
+        $2, $3, $4,
+        $5, $6,
+        $7, $8, $9,
+        $10, $11,
+        $12, $13,
+        $14, 'quick_quote', 'new', 'received',
+        $15
+      )
       RETURNING id, submission_id, status, created_at
     `, [
       req.user.userId || null,
+      // Primary borrower flat fields → auto-backfill creates deal_borrowers row from these
+      isCorporate ? (qq.company_name || qq.company_number) : null,
       qq.company_name || null,
+      isCorporate ? 'limited' : null,
+      qq.company_name || null,
+      qq.company_number || null,
+      // Primary property flat fields
       lead.address_text || lead.postcode || 'Address pending',
       lead.postcode || null,
+      lead.avm_pence ? Math.round(lead.avm_pence / 100) : null,
+      // Loan
       Math.round((qq.loan_amount_pence || 0) / 100),
       lead.purpose || qq.purpose || null,
-      qq.company_number || null,
-      qq.company_name || null,
-      qq.company_number ? 'limited' : null,
+      // Notes
+      props.some(p => p.existing_charge_balance_pence)
+        ? `Existing charges captured per property — see deal_properties schedule`
+        : null,
       `Quick Quote: ${props.length} ${props.length === 1 ? 'property' : 'properties'}, see schedule below`,
+      JSON.stringify([]),
+      assignedRm,
     ]);
 
     const deal = dealResult.rows[0];
 
-    // Insert one deal_properties row per property
+    // Insert deal_properties rows for every property (incl. primary).
+    // deal_properties.address is NOT NULL — always supply a value.
     for (const p of props) {
       await client.query(`
         INSERT INTO deal_properties (
@@ -486,7 +547,7 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `, [
         deal.id,
-        p.address_text || null,
+        p.address_text || p.postcode || 'Address pending',
         p.postcode || null,
         p.avm_pence ? Math.round(p.avm_pence / 100) : null,
         p.purpose || null,
@@ -497,24 +558,25 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       ]);
     }
 
-    // Insert the corporate borrower if one is on the quote
-    if (qq.company_number || qq.company_name) {
-      await client.query(`
-        INSERT INTO deal_borrowers (deal_id, full_name, role, borrower_type, company_name, company_number)
-        VALUES ($1, $2, 'primary', 'corporate', $3, $4)
-      `, [
-        deal.id,
-        qq.company_name || qq.company_number,
-        qq.company_name || null,
-        qq.company_number || null,
-      ]);
-    }
+    // NO deal_borrowers INSERT — GET handler's auto-backfill (deals.js:403)
+    // creates the primary row from flat fields on first read, identical to
+    // the wizard path's behaviour.
 
     // Stamp conversion on the quote for analytics
     await client.query(
       `UPDATE quick_quotes SET converted_to_deal_id = $1 WHERE id = $2`,
       [deal.id, id]
     );
+
+    // Audit trail (mirrors wizard /submit handler)
+    try {
+      const { logAudit } = require('../services/audit');
+      await logAudit(deal.id, 'deal_submitted_from_quick_quote', null, 'received',
+        { qq_id: id, properties: props.length, loan_amount: Math.round((qq.loan_amount_pence || 0) / 100) },
+        req.user.userId);
+    } catch (auditErr) {
+      console.warn('[quick-quote/convert] audit log skipped:', auditErr.message);
+    }
 
     await client.query('COMMIT');
 
@@ -527,7 +589,13 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('[quick-quote/convert] error:', err);
-    res.status(500).json({ ok: false, error: err.message });
+    // 2026-04-30: surface real Postgres error so debugging isn't blind
+    res.status(500).json({
+      ok: false,
+      error: err.detail || err.message,
+      code: err.code || null,
+      constraint: err.constraint || null,
+    });
   } finally {
     client.release();
   }
