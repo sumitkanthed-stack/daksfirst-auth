@@ -162,8 +162,12 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
       return res.status(403).json({ error: 'You do not have permission to edit this borrower' });
     }
 
-    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number, kyc_status, kyc_data,
-            pg_status, pg_limit_amount, pg_notes } = req.body;
+    // 2026-04-30 — normalize the payload BEFORE the SQL UPDATE.
+    // PUT /borrowers is the matrix-inline-edit path — broker/RM editing existing
+    // borrower row. Same canonical-form treatment as POST.
+    const _normalized = normalizeBorrowerPayload(req.body);
+    const { kyc_status, kyc_data, pg_status, pg_limit_amount, pg_notes } = req.body;
+    const { role, full_name, date_of_birth, nationality, jurisdiction, email, phone, address, borrower_type, company_name, company_number } = _normalized;
 
     // Parent hierarchy — handle separately so user can explicitly detach (null) vs "no change" (undefined)
     const parentKeyPresent = Object.prototype.hasOwnProperty.call(req.body, 'parent_borrower_id');

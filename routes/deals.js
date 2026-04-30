@@ -13,6 +13,7 @@ const { generateDipPdf, buildDipHtml } = require('../services/dip-pdf');
 const { getGraphToken, uploadFileToOneDrive } = require('../services/graph');
 const { syncDealProperties } = require('../services/property-parser');
 const { getExposureForDeal } = require('../services/borrower-exposure');
+const { normalizeDealPayload } = require('../services/matrix-normalizer');
 // Delegated Authority (2026-04-20, DA Session 2c)
 const { evaluateAutoRoute, compactReason, enrichPropertiesForEvaluator } = require('../services/delegated-authority');
 
@@ -458,17 +459,27 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
 router.post('/submit', authenticateToken, validate('dealSubmit'), async (req, res) => {
   try {
     console.log('[deal] Submission from user:', req.user.userId);
+    // 2026-04-30 — normalize wizard payload through canonical-form layer.
+    const _norm = normalizeDealPayload(req.validated);
     const {
-      borrower_name, borrower_company, borrower_email, borrower_phone,
-      broker_name, broker_company, broker_fca,
-      security_address, security_postcode, asset_type, current_value,
-      loan_amount, ltv_requested, loan_purpose, exit_strategy,
-      term_months, rate_requested, additional_notes, documents,
-      borrower_dob, borrower_nationality, borrower_jurisdiction, borrower_type,
-      company_name, company_number, drawdown_date, interest_servicing,
-      existing_charges, property_tenure, occupancy_status, current_use,
-      purchase_price, use_of_funds, refurb_scope, refurb_cost,
-      deposit_source, concurrent_transactions, borrower_invite_email
+      borrower_name = _norm.borrower_name, borrower_company = _norm.borrower_company,
+      borrower_email = _norm.borrower_email, borrower_phone = _norm.borrower_phone,
+      broker_name = _norm.broker_name, broker_company = _norm.broker_company, broker_fca = _norm.broker_fca,
+      security_address = _norm.security_address, security_postcode = _norm.security_postcode,
+      asset_type = _norm.asset_type, current_value = _norm.current_value,
+      loan_amount = _norm.loan_amount, ltv_requested = _norm.ltv_requested,
+      loan_purpose = _norm.loan_purpose, exit_strategy = _norm.exit_strategy,
+      term_months = _norm.term_months, rate_requested = _norm.rate_requested,
+      additional_notes = _norm.additional_notes, documents,
+      borrower_dob = _norm.borrower_dob, borrower_nationality = _norm.borrower_nationality,
+      borrower_jurisdiction = _norm.borrower_jurisdiction, borrower_type = _norm.borrower_type,
+      company_name = _norm.company_name, company_number = _norm.company_number,
+      drawdown_date = _norm.drawdown_date, interest_servicing = _norm.interest_servicing,
+      existing_charges = _norm.existing_charges, property_tenure = _norm.property_tenure,
+      occupancy_status = _norm.occupancy_status, current_use = _norm.current_use,
+      purchase_price = _norm.purchase_price, use_of_funds = _norm.use_of_funds,
+      refurb_scope = _norm.refurb_scope, refurb_cost = _norm.refurb_cost,
+      deposit_source = _norm.deposit_source, concurrent_transactions, borrower_invite_email
     } = req.validated;
 
     // Validation
@@ -2333,7 +2344,9 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
 // ═══════════════════════════════════════════════════════════════════════════
 router.put('/:submissionId/matrix-fields', authenticateToken, async (req, res) => {
   try {
-    const updates = req.body;
+    // 2026-04-30 — normalize matrix-field updates BEFORE applying.
+    const _norm = normalizeDealPayload(req.body);
+    const updates = { ...req.body, ..._norm };
     if (!updates || Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No fields provided to update' });
     }

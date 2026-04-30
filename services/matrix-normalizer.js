@@ -342,6 +342,24 @@ function normalizeDealPayload(input) {
   return Object.fromEntries(Object.entries(out).filter(([_k, v]) => v !== null && v !== undefined));
 }
 
+/**
+ * Normalize a financial entry payload (asset, liability, income, expense rows
+ * in deal_financials). Each row has: category, label, amount, frequency, notes.
+ */
+function normalizeFinancialPayload(input) {
+  if (!input || typeof input !== 'object') return {};
+  const out = {};
+  out.category = normalizeString(input.category, { lowercase: true });
+  out.subcategory = normalizeString(input.subcategory, { lowercase: true });
+  out.label = normalizeString(input.label);
+  out.amount = normalizeMoney(input.amount);
+  out.frequency = normalizeString(input.frequency, { lowercase: true });
+  out.notes = normalizeString(input.notes);
+  if (input.date != null) out.date = normalizeDate(input.date);
+  if (input.borrower_id != null && input.borrower_id !== '') out.borrower_id = parseInt(input.borrower_id);
+  return Object.fromEntries(Object.entries(out).filter(([_k, v]) => v !== null && v !== undefined));
+}
+
 module.exports = {
   // Field-level
   normalizePhone,
@@ -359,4 +377,5 @@ module.exports = {
   normalizeBorrowerPayload,
   normalizePropertyPayload,
   normalizeDealPayload,
+  normalizeFinancialPayload,
 };
