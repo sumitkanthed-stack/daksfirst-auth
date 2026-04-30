@@ -501,7 +501,7 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
     if (qq.company_number || qq.company_name) {
       await client.query(`
         INSERT INTO deal_borrowers (deal_id, full_name, role, borrower_type, company_name, company_number)
-        VALUES ($1, $2, 'borrower', 'corporate', $3, $4)
+        VALUES ($1, $2, 'primary', 'corporate', $3, $4)
       `, [
         deal.id,
         qq.company_name || qq.company_number,
