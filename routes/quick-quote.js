@@ -276,11 +276,12 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
           term_months: 12,
           ltv_pct: ltvPct,
         });
-        indicativeRateBpsPm = pricing.recommended_rate_bps_pm || null;
+        // priceDeal returns { recommended: { rate_bps_pm, upfront_fee_bps, min_term_months }, decline_flag, ... }
+        indicativeRateBpsPm = pricing.recommended?.rate_bps_pm || null;
         pricingDetail = {
-          recommended_upfront_fee_bps: pricing.recommended_upfront_fee_bps,
-          recommended_min_term_months: pricing.recommended_min_term_months,
-          decline_flag: pricing.decline_flag,
+          recommended_upfront_fee_bps: pricing.recommended?.upfront_fee_bps || null,
+          recommended_min_term_months: pricing.recommended?.min_term_months || null,
+          decline_flag: pricing.decline_flag || false,
         };
       } catch (err) {
         console.warn('[quick-quote] pricing engine error:', err.message);
