@@ -25,10 +25,30 @@
 
 const pool = require('../db/pool');
 
-// Stages we consider "active" for concentration purposes — exclude these:
+// Stages we consider "active" for legacy / pipeline tracking — excludes these:
 const TERMINAL_STAGES = new Set([
   'rejected', 'withdrawn', 'cancelled', 'declined',
   'completed', 'redeemed', 'closed', 'archived'
+]);
+
+// Stages where money is actually OUT (real exposure for concentration math).
+// Per Sumit 2026-04-29: in-flight deals (DIP, ITS, BTS pre-execution) carry
+// zero exposure because no funds drawn. Only post-execution stages count.
+//
+// Mapping vs matrix Phase 3 (deal-matrix.js stageIndex): borrower_accepted +
+// legal_instructed + completed all live in Phase 3 = post-execution.
+//
+// Includes likely future labels (drawn, funded, live_loan, in_term) so the set
+// stays correct if Daksfirst adopts more granular post-funding tracking.
+const EXECUTED_STAGES = new Set([
+  'borrower_accepted',     // BTS signed, about to fund
+  'legal_instructed',      // lawyers actively executing
+  'completed',             // money out, loan live
+  'drawn',
+  'drawn_down',
+  'funded',
+  'live_loan',
+  'in_term',
 ]);
 
 function _normEmail(e) {
@@ -143,30 +163,40 @@ async function getExposureForDeal(dealId) {
   const totalLoan = list.reduce((s, d) => s + Number(d.loan_amount_approved || d.loan_amount || 0), 0);
   const activeList = list.filter(d => !TERMINAL_STAGES.has(String(d.deal_stage || '').toLowerCase()));
   const totalLoanActive = activeList.reduce((s, d) => s + Number(d.loan_amount_approved || d.loan_amount || 0), 0);
+  // Real exposure — only post-execution stages where money is actually out
+  const executedList = list.filter(d => EXECUTED_STAGES.has(String(d.deal_stage || '').toLowerCase()));
+  const totalLoanExecuted = executedList.reduce((s, d) => s + Number(d.loan_amount_approved || d.loan_amount || 0), 0);
 
   return {
     other_deals_count: list.length,
     active_other_deals: activeList.length,
+    executed_other_deals: executedList.length,
     total_loan_other: totalLoan,
     total_loan_active_other: totalLoanActive,
+    // Headline number — what risk packager + UI should use as canonical exposure.
+    total_loan_executed_other: totalLoanExecuted,
     match_keys: {
       company_numbers: cnArr,
       emails: emArr,
       name_dob_pairs: ndArr
     },
-    deals: list.map(d => ({
-      id: d.id,
-      submission_id: d.submission_id,
-      deal_stage: d.deal_stage,
-      status: d.status,
-      is_active: !TERMINAL_STAGES.has(String(d.deal_stage || '').toLowerCase()),
-      borrower_name: d.borrower_name,
-      borrower_company: d.borrower_company,
-      company_number: d.company_number,
-      loan_amount: Number(d.loan_amount_approved || d.loan_amount || 0),
-      created_at: d.created_at,
-      updated_at: d.updated_at
-    }))
+    deals: list.map(d => {
+      const stage = String(d.deal_stage || '').toLowerCase();
+      return {
+        id: d.id,
+        submission_id: d.submission_id,
+        deal_stage: d.deal_stage,
+        status: d.status,
+        is_active: !TERMINAL_STAGES.has(stage),
+        is_executed: EXECUTED_STAGES.has(stage),  // money out
+        borrower_name: d.borrower_name,
+        borrower_company: d.borrower_company,
+        company_number: d.company_number,
+        loan_amount: Number(d.loan_amount_approved || d.loan_amount || 0),
+        created_at: d.created_at,
+        updated_at: d.updated_at
+      };
+    })
   };
 }
 
@@ -174,8 +204,10 @@ function _emptyExposure(extra) {
   return Object.assign({
     other_deals_count: 0,
     active_other_deals: 0,
+    executed_other_deals: 0,
     total_loan_other: 0,
     total_loan_active_other: 0,
+    total_loan_executed_other: 0,
     match_keys: { company_numbers: [], emails: [], name_dob_pairs: [] },
     deals: []
   }, extra || {});

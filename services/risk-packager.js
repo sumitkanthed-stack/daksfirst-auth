@@ -396,8 +396,10 @@ async function loadBorrowerExposure(dealId) {
     const exp = await exposureService.getExposureForDeal(dealId);
     if (!exp) return null;
     // Truncate deals[] — Opus only needs the loudest signals
+    // Top 3 EXECUTED deals (real exposure) — what actually matters for
+    // concentration grading. Pre-funding deals (DIP/ITS/BTS) are ignored.
     const topDeals = (exp.deals || [])
-      .filter(d => d.is_active)
+      .filter(d => d.is_executed)
       .sort((a, b) => Number(b.loan_amount || 0) - Number(a.loan_amount || 0))
       .slice(0, 3)
       .map(d => ({
@@ -408,15 +410,18 @@ async function loadBorrowerExposure(dealId) {
       }));
     return {
       other_deals_count: exp.other_deals_count,
-      active_other_deals: exp.active_other_deals,
+      active_other_deals: exp.active_other_deals,        // legacy — non-terminal pipeline
+      executed_other_deals: exp.executed_other_deals,    // real exposure (post-execution)
       total_loan_other: exp.total_loan_other,
-      total_loan_active_other: exp.total_loan_active_other,
+      total_loan_active_other: exp.total_loan_active_other,         // legacy
+      total_loan_executed_other: exp.total_loan_executed_other,     // canonical exposure £
       match_keys_used: {
         company_numbers: (exp.match_keys && exp.match_keys.company_numbers) || [],
         emails_count: ((exp.match_keys && exp.match_keys.emails) || []).length,
         name_dob_pairs_count: ((exp.match_keys && exp.match_keys.name_dob_pairs) || []).length
       },
-      top_active_deals: topDeals
+      top_executed_deals: topDeals,
+      top_active_deals: topDeals,  // alias kept for backward compat with v7 rubric refs
     };
   } catch (err) {
     console.warn('[risk-packager] loadBorrowerExposure failed:', err.message);
@@ -680,6 +685,8 @@ async function buildRiskPayload(dealId, dataStage, options = {}) {
       : null,
     borrower_exposure_other_deals: borrowerExposure ? borrowerExposure.other_deals_count : 0,
     borrower_exposure_total_loan_other: borrowerExposure ? borrowerExposure.total_loan_other : 0,
+    borrower_exposure_executed_deals: borrowerExposure ? borrowerExposure.executed_other_deals : 0,
+    borrower_exposure_total_loan_executed: borrowerExposure ? borrowerExposure.total_loan_executed_other : 0,
     sources_uses_balanced: sourcesUsesSummary.totals.is_balanced,
     sources_uses_short_by: sourcesUsesSummary.totals.short_by,
     matrix_data_jsonb_present:
