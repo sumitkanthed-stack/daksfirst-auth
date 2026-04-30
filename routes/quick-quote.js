@@ -231,9 +231,25 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       companyNameResolved = chResult.company_name || companyNameResolved;
     }
 
-    // ── Cross-collateral aggregate (uses existing services/cross-collateral.js)
-    const crossCollateral = xcoll.buildCrossCollateralSummary(propertyResults, loanAmountPence);
+    // ── Total Daksfirst exposure ─────────────────────────────────────────
+    // The user-entered loan_amount is "new money for acquisition". Refinance
+    // redemptions are ADDITIONAL Daksfirst exposure — we have to fund the
+    // payoff of the existing 1st charge to take its place.
+    //
+    //   Total facility = acquisition_loan + Σ (refinance existing balances)
+    //
+    // LTV math uses total facility against 1st-charge security values.
+    const refiRedemptionsPence = propertyResults
+      .filter((p) => p.purpose === 'refinance')
+      .reduce((sum, p) => sum + (p.existing_charge_balance_pence || 0), 0);
+    const totalFacilityPence = loanAmountPence + refiRedemptionsPence;
+
+    // ── Cross-collateral aggregate using TOTAL facility (not net advance)
+    const crossCollateral = xcoll.buildCrossCollateralSummary(propertyResults, totalFacilityPence);
     const ltvPct = crossCollateral.effective_ltv_pct;
+    crossCollateral.acquisition_loan_pence = loanAmountPence;
+    crossCollateral.refi_redemptions_added_pence = refiRedemptionsPence;
+    crossCollateral.total_facility_pence = totalFacilityPence;
 
     // ── Eligibility verdict ────────────────────────────────────────────
     let eligibleFlag = false;
@@ -272,7 +288,7 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
           channel: 'broker',
           sector,
           pd: 5, lgd: 'C', ia: 'C',
-          loan_amount_pence: loanAmountPence,
+          loan_amount_pence: totalFacilityPence,  // total exposure, not just acquisition
           term_months: 12,
           ltv_pct: ltvPct,
         });

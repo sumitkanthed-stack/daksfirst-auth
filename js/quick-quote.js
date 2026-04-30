@@ -347,6 +347,24 @@ function buildResultHtml(data) {
       ${cc && cc.refinance_count > 0 ? kpiCard('Refi redemptions', fmtMoneyPence(cc.total_existing_redemptions_pence), `${cc.refinance_count} ${cc.refinance_count === 1 ? 'property' : 'properties'} · auto in S&U`) : ''}
     </div>
 
+    ${cc && cc.refi_redemptions_added_pence > 0 ? `
+      <div style="background:rgba(167,139,250,0.05);border:1px solid rgba(167,139,250,0.25);border-radius:6px;padding:10px 14px;margin-bottom:14px;">
+        <div style="font-size:10px;color:#A78BFA;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:6px;">Total Daksfirst facility breakdown</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#E5E7EB;padding:3px 0;">
+          <span>Acquisition / new money</span>
+          <span style="font-weight:600;">${fmtMoneyPence(cc.acquisition_loan_pence)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#E5E7EB;padding:3px 0;">
+          <span>+ Refi redemption${cc.refinance_count === 1 ? '' : 's'}</span>
+          <span style="font-weight:600;color:#A78BFA;">${fmtMoneyPence(cc.refi_redemptions_added_pence)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:#F1F5F9;padding:6px 0 0;border-top:1px solid rgba(167,139,250,0.2);margin-top:4px;">
+          <span style="font-weight:700;">= Total Daksfirst facility</span>
+          <span style="font-weight:700;font-family:'Playfair Display',serif;">${fmtMoneyPence(cc.total_facility_pence)}</span>
+        </div>
+      </div>
+    ` : ''}
+
     <div style="background:rgba(255,255,255,0.02);border:1px solid #2d3748;border-radius:6px;margin-bottom:14px;">
       <div style="padding:8px 12px;font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;border-bottom:1px solid #2d3748;background:rgba(255,255,255,0.02);">Portfolio (${properties.length} ${properties.length === 1 ? 'property' : 'properties'})</div>
       ${propertyRows}
