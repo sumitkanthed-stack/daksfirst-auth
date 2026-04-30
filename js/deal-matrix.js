@@ -7354,6 +7354,12 @@ export async function renderDealMatrix(deal) {
     const nestedKidsHtml = (function() {
       if (nestedKids.length === 0) return '';
 
+      // 2026-04-30 — Role gate: nested-PSC drill-down is RM responsibility only.
+      // Brokers see the directors/PSCs of THEIR direct borrower (level 0 rows),
+      // but cannot expand into nested corporate-PSC chains beyond that.
+      const _role = (typeof getCurrentRole === 'function') ? getCurrentRole() : null;
+      const _isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(_role);
+
       // 2026-04-30 — Level-gated rendering:
       //   nestLevel 0..2 (top + 2 levels of nested corporate PSCs) → rich 6-col table
       //     with KYC, Actions, "+ Add Person", "Same as Borrower" tag.
@@ -7362,6 +7368,8 @@ export async function renderDealMatrix(deal) {
       // Restored after Sumit flagged that the original design fell back to 4-col
       // at the deepest level; my first unify pass made it rich at every depth.
       if (nestLevel >= 3) {
+        // Brokers never see this depth — drill-down is RM-only.
+        if (!_isInternalUser) return '';
         // ── Compact 4-col grid for deep recursion (preserves the original look) ──
         let html = '<div style="margin-top:12px;">' +
           '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Directors &amp; PSCs of ' + sanitizeHtml(bor.full_name || 'this corporate') + ' — ' + nestedKids.length + '</div>';
@@ -7375,7 +7383,7 @@ export async function renderDealMatrix(deal) {
           const rowStyle = isCorpKid
             ? 'border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;background:rgba(255,255,255,0.01);'
             : 'border-bottom:1px solid rgba(255,255,255,0.04);';
-          const rowOnClick = isCorpKid ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"' : '';
+          const rowOnClick = (isCorpKid && _isInternalUser) ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"' : '';
           const arrowCell = isCorpKid
             ? '<span id="' + subPanelId + '-arrow" style="display:inline-block;width:12px;color:#64748B;font-size:9px;margin-right:4px;">▶</span>'
             : '<span style="display:inline-block;width:12px;"></span>';
@@ -7435,9 +7443,10 @@ export async function renderDealMatrix(deal) {
           ? ' <span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(251,191,36,0.15);color:#FBBF24;" title="' + sanitizeHtml(kidChd.broker_trace_reason || '') + '">⚠ Broker</span>'
           : '';
 
-        // Corporate kids -> toggle inline sub-panel; individuals -> toggle borrower detail
+        // Corporate kids -> toggle inline sub-panel; individuals -> toggle borrower detail.
+        // Brokers: corporate kids are NOT clickable (no nested PSC drill-down).
         const rowOnClick = isCorpKid
-          ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"'
+          ? (_isInternalUser ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"' : '')
           : ' onclick="window._toggleBorrowerDetail(' + nk.id + ')"';
 
         html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="borrower-row-' + nk.id + '"' + rowOnClick + '>' +
@@ -7458,8 +7467,9 @@ export async function renderDealMatrix(deal) {
           '</td>' : '') +
         '</tr>';
 
-        // Recursion sub-panel for corporate kids — preserves the deep-CH-PSC tree
-        if (isCorpKid) {
+        // Recursion sub-panel for corporate kids — RM-only (deep PSC drill-down).
+        // Brokers see the row but no expand affordance; they stop at first borrower level.
+        if (isCorpKid && _isInternalUser) {
           html += '<tr><td colspan="' + _colspan + '" style="padding:0;border:none;">' +
             '<div id="' + subPanelId + '" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;margin:4px 0 4px 18px;border-left:2px dashed rgba(56,189,248,0.25);padding-left:10px;">' +
               '<div style="background:rgba(15,23,41,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:10px 12px;">' +
