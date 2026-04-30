@@ -7354,7 +7354,50 @@ export async function renderDealMatrix(deal) {
     const nestedKidsHtml = (function() {
       if (nestedKids.length === 0) return '';
 
-      // 2026-04-30 unify: "Same as Borrower" set + matrix-canonical 6-col header
+      // 2026-04-30 — Level-gated rendering:
+      //   nestLevel 0..2 (top + 2 levels of nested corporate PSCs) → rich 6-col table
+      //     with KYC, Actions, "+ Add Person", "Same as Borrower" tag.
+      //   nestLevel >= 3 → compact 4-col grid (Name/Role/Type/CH) — keeps deep PSC
+      //     trees readable without flooding the UI with edit buttons at every depth.
+      // Restored after Sumit flagged that the original design fell back to 4-col
+      // at the deepest level; my first unify pass made it rich at every depth.
+      if (nestLevel >= 3) {
+        // ── Compact 4-col grid for deep recursion (preserves the original look) ──
+        let html = '<div style="margin-top:12px;">' +
+          '<div style="font-size:9px;color:#38BDF8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Directors &amp; PSCs of ' + sanitizeHtml(bor.full_name || 'this corporate') + ' — ' + nestedKids.length + '</div>';
+        nestedKids.forEach(nk => {
+          const isCorpKid = (nk.borrower_type === 'corporate') ||
+            (nk.full_name && /\b(Ltd|Limited|LLP|PLC|Holdings|Inc|Corp|Corporation|Group)\b/i.test(nk.full_name));
+          const nRoleCol = nk.role === 'director' ? '#818CF8' : nk.role === 'psc' ? '#38BDF8' : nk.role === 'ubo' ? '#A78BFA' : '#94A3B8';
+          const nRoleBg = nk.role === 'director' ? 'rgba(129,140,248,0.12)' : nk.role === 'psc' ? 'rgba(56,189,248,0.12)' : nk.role === 'ubo' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)';
+          const nType = isCorpKid ? 'Corporate' : 'Individual';
+          const subPanelId = 'ncorp-' + nk.id + '-' + nestLevel;
+          const rowStyle = isCorpKid
+            ? 'border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;background:rgba(255,255,255,0.01);'
+            : 'border-bottom:1px solid rgba(255,255,255,0.04);';
+          const rowOnClick = isCorpKid ? ' onclick="window._toggleNestedCorporate(\'' + subPanelId + '\')"' : '';
+          const arrowCell = isCorpKid
+            ? '<span id="' + subPanelId + '-arrow" style="display:inline-block;width:12px;color:#64748B;font-size:9px;margin-right:4px;">▶</span>'
+            : '<span style="display:inline-block;width:12px;"></span>';
+          html += '<div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr;padding:6px 8px;font-size:11px;' + rowStyle + '"' + rowOnClick + '>' +
+            '<div style="color:#E2E8F0;">' + arrowCell + sanitizeHtml(nk.full_name || '—') + '</div>' +
+            '<div><span style="padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + nRoleBg + ';color:' + nRoleCol + ';text-transform:capitalize;">' + sanitizeHtml(nk.role || '—') + '</span></div>' +
+            '<div style="color:#94A3B8;">' + nType + '</div>' +
+            '<div style="text-align:center;">' + (nk.ch_verified_at ? '<span style="color:#34D399;">✓</span>' : '<span style="color:#64748B;">—</span>') + '</div>' +
+          '</div>';
+          if (isCorpKid) {
+            html += '<div id="' + subPanelId + '" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease, opacity .25s ease;margin:4px 0 4px 18px;border-left:2px dashed rgba(56,189,248,0.25);padding-left:10px;">' +
+              '<div style="background:rgba(15,23,41,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:10px 12px;">' +
+                window._renderCorporatePanelHtml(nk, deal, canEdit, nestLevel + 1) +
+              '</div>' +
+            '</div>';
+          }
+        });
+        html += '</div>';
+        return html;
+      }
+
+      // ── Rich 6-col table for nestLevel 0..2 ──
       const _topLevelBorrowers = (deal.borrowers || []).filter(b => !b.parent_borrower_id);
       const _sameNameSet = new Set(_topLevelBorrowers
         .map(p => (p.full_name || '').toLowerCase().trim())
