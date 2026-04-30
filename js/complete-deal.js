@@ -37,8 +37,11 @@ export async function showCompleteDeal({ qqId, dealId, submissionId }) {
     return;
   }
   _qqContext = { qqId, dealId, submissionId };
-  // Critical: set currentDealId so uploadDealFiles knows where the bytes go
-  setCurrentDealId(dealId);
+  // Critical: set currentDealId so uploadDealFiles knows where the bytes go.
+  // The codebase's "currentDealId" is the UUID submission_id throughout
+  // (the upload + detail endpoints both query `WHERE submission_id = $1`),
+  // NOT the integer primary key — use submissionId here, not dealId.
+  setCurrentDealId(submissionId);
 
   // User strip
   const u = getCurrentUser();
@@ -159,14 +162,15 @@ export function cdHandleFileSelect(e) {
  * conversion, so the matrix is the right edit surface (not the wizard).
  */
 export function cdFillManually() {
-  if (!_qqContext || !_qqContext.dealId) {
+  if (!_qqContext || !_qqContext.submissionId) {
     showToast('No deal context — please re-open from your dashboard', true);
     return;
   }
-  // Lazy-load the matrix entry point so we don't pay its cost up front
+  // showDealDetail expects the UUID submission_id (the route is /api/deals/:submissionId
+  // and matches deal_submissions.submission_id, not the integer id).
   import('./deal-detail.js').then((m) => {
     if (m && typeof m.showDealDetail === 'function') {
-      m.showDealDetail(_qqContext.dealId);
+      m.showDealDetail(_qqContext.submissionId);
     } else {
       showToast('Matrix view unavailable — please refresh', true);
     }
