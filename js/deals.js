@@ -422,9 +422,12 @@ export async function loadUserDeals() {
         const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
         const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
         const updatedStr = formatDate(deal.updated_at || deal.created_at);
-        const isDraft = stage === 'draft';
+        // Pre-fee stages — broker can delete to clean up mistakes.
+        // Mirror of DELETABLE_STAGES on backend (routes/deals.js).
+        const DELETABLE = new Set(['draft', 'received', 'assigned', 'dip_issued', 'info_gathering']);
+        const isDraft = DELETABLE.has(stage);
 
-        // Action buttons — draft gets Submit + Delete, others get View
+        // Action buttons — pre-fee stages get View + Delete, others get View only
         let actionBtns = '';
         if (isDraft) {
           actionBtns = `

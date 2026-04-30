@@ -462,43 +462,19 @@ async function handleQqSubmit(e) {
     showQqResult(buildResultHtml(data));
     const ctaBtn = document.getElementById('qq-submit-deal');
     if (ctaBtn) {
-      ctaBtn.addEventListener('click', async () => {
+      ctaBtn.addEventListener('click', () => {
         const qqid = ctaBtn.getAttribute('data-quick-quote-id');
         if (!qqid) return;
-        ctaBtn.disabled = true;
-        ctaBtn.textContent = 'Creating deal…';
-        ctaBtn.style.opacity = '0.6';
-        try {
-          // Convert the quote into a real deal record (skips the multi-tab
-          // submission form — broker already gave us everything we need)
-          const r = await fetchWithAuth(`${API_BASE}/api/broker/quick-quote/${qqid}/convert-to-deal`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
-          });
-          const d = await r.json();
-          if (!r.ok || !d.ok) {
-            alert('Couldn\'t convert quote to deal: ' + (d.error || r.status));
-            ctaBtn.disabled = false;
-            ctaBtn.textContent = 'Submit full deal pack →';
-            ctaBtn.style.opacity = '1';
-            return;
-          }
-          if (typeof window.showToast === 'function') {
-            window.showToast(d.message || `Deal ${d.submission_id} created — drop documents below`, 'success');
-          }
-          // Navigate to the dashboard so the broker sees their new deal in the
-          // "My Deals" list and can click into it for documents. Refresh deals
-          // first so the new row appears immediately.
-          if (typeof window.showDashboard === 'function') {
-            await window.showDashboard();
-          }
-        } catch (err) {
-          console.error('[qq/convert] error:', err);
-          alert('Connection error: ' + err.message);
-          ctaBtn.disabled = false;
-          ctaBtn.textContent = 'Submit full deal pack →';
-          ctaBtn.style.opacity = '1';
+        // Stash the QQ id in sessionStorage so the deal-form pre-fill picks
+        // it up. This routes through the proven /api/deals/submit path that
+        // creates deals correctly (matrix renders, Chimnie button works,
+        // borrower_type set right). Broker confirms pre-filled fields and
+        // clicks Submit — no re-typing.
+        try { sessionStorage.setItem('qq_pending_id', qqid); } catch (_) {}
+        if (typeof window.showDealForm === 'function') {
+          window.showDealForm();
+        } else {
+          alert('Submission form unavailable. Please refresh the page.');
         }
       });
     }

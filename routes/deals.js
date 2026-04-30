@@ -3766,10 +3766,14 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
     const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
     if (!isOwner) return res.status(403).json({ error: 'Access denied — only the deal creator can delete it' });
 
-    // CRITICAL: Only draft deals can be deleted
-    if (deal.deal_stage !== 'draft') {
+    // Broker can delete any deal that hasn't progressed past info-gathering.
+    // Once underwriting / fee-paid stages start, deletion requires admin
+    // intervention (withdrawal, not deletion). Pre-fee stages let brokers
+    // clean up mistaken Quick Quote submissions or obsolete drafts.
+    const DELETABLE_STAGES = new Set(['draft', 'received', 'assigned', 'dip_issued', 'info_gathering']);
+    if (!DELETABLE_STAGES.has(deal.deal_stage)) {
       return res.status(400).json({
-        error: 'Only draft deals can be deleted. This deal has been submitted and is now in stage: ' + deal.deal_stage
+        error: `Cannot delete — deal is in stage "${deal.deal_stage}". Only pre-fee stages (draft / received / assigned / dip_issued / info_gathering) are deletable. Contact Daksfirst to withdraw this deal.`
       });
     }
 
