@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daksfirst — Broker Activity</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background: #0a0e16; color: #E5E7EB; margin: 0; padding: 24px; }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    h1 { font-family: 'Playfair Display', Georgia, serif; color: #D4A853; margin: 0 0 4px; font-size: 28px; }
+    .sub { color: #94A3B8; font-size: 13px; margin-bottom: 24px; }
+    .nav { margin-bottom: 24px; }
+    .nav a { color: #D4A853; text-decoration: none; font-size: 13px; margin-right: 16px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .kpi { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 16px 18px; }
+    .kpi-label { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    .kpi-value { font-family: 'Playfair Display', Georgia, serif; font-size: 26px; color: #F1F5F9; margin-top: 6px; font-weight: 600; }
+    .kpi-sub { font-size: 11px; color: #64748B; margin-top: 4px; }
+    section { margin-bottom: 32px; }
+    h2 { font-size: 14px; color: #D4A853; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; border-bottom: 1px solid #1f2937; padding-bottom: 8px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #111827; border: 1px solid #1f2937; border-radius: 8px; overflow: hidden; }
+    th { background: #0f1620; padding: 10px 12px; text-align: left; color: #94A3B8; font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #1f2937; }
+    td { padding: 9px 12px; border-bottom: 1px solid #1a2230; }
+    tr:last-child td { border-bottom: none; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+    .controls select { background: #111827; color: #E5E7EB; border: 1px solid #4b5563; padding: 6px 10px; border-radius: 5px; font-size: 12px; }
+    button { background: #D4A853; color: #111; border: none; padding: 7px 14px; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .empty { padding: 28px; text-align: center; color: #64748B; font-size: 13px; }
+    .invite-box { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 18px 20px; }
+    .invite-box input, .invite-box select { background: #0f1620; color: #E5E7EB; border: 1px solid #4b5563; padding: 8px 10px; border-radius: 5px; font-size: 12px; width: 100%; }
+    .invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .label { display: block; font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; margin-bottom: 4px; }
+    .invite-result { background: #0f1620; border-left: 3px solid #34D399; padding: 10px 14px; border-radius: 4px; font-size: 11.5px; color: #94A3B8; margin-top: 12px; word-break: break-all; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Broker Activity</h1>
+  <div class="sub">Pilot rollout dashboard · Quick Quote volume + conversion + vendor spend</div>
+  <div class="nav">
+    <a href="/admin/pricing.html">← Pricing</a>
+    <a href="/admin/pricing-grid.html">Pricing Grid</a>
+    <a href="/admin/panels.html">Panels</a>
+    <a href="/admin/models.html">LLM Models</a>
+  </div>
+
+  <div class="controls">
+    <label class="label" style="margin: 0;">Window:</label>
+    <select id="window-days">
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <button id="refresh-btn">Refresh</button>
+  </div>
+
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <section>
+    <h2>Invite a broker</h2>
+    <div class="invite-box">
+      <div class="invite-grid">
+        <div><label class="label">First name</label><input id="inv-first" type="text" required /></div>
+        <div><label class="label">Last name</label><input id="inv-last" type="text" required /></div>
+        <div><label class="label">Email</label><input id="inv-email" type="email" required /></div>
+        <div><label class="label">Company (optional)</label><input id="inv-company" type="text" /></div>
+        <div><label class="label">FCA number (optional)</label><input id="inv-fca" type="text" /></div>
+      </div>
+      <button id="inv-send">Send invite</button>
+      <div id="inv-result" class="invite-result" style="display:none;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Per-broker leaderboard</h2>
+    <table id="brokers-table"><thead><tr>
+      <th>Broker</th>
+      <th>Email</th>
+      <th>Company</th>
+      <th class="num">Quotes</th>
+      <th class="num">Eligible</th>
+      <th class="num">Converted</th>
+      <th class="num">Spend (£)</th>
+      <th>Last quote</th>
+    </tr></thead><tbody id="brokers-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table>
+  </section>
+
+  <section>
+    <h2>Daily volume</h2>
+    <table id="daily-table"><thead><tr>
+      <th>Day</th>
+      <th class="num">Quotes</th>
+      <th class="num">Brokers</th>
+      <th class="num">Eligible</th>
+      <th class="num">Converted</th>
+      <th class="num">Conv %</th>
+      <th class="num">Spend (£)</th>
+    </tr></thead><tbody id="daily-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table>
+  </section>
+</div>
+
+<script>
+const API = '';  // same-origin
+const token = sessionStorage.getItem('daksfirst_token') || localStorage.getItem('daksfirst_token');
+
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+function fmtN(n) { return n == null ? '—' : Number(n).toLocaleString('en-GB'); }
+function fmtPct(n) { return n == null ? '—' : Number(n).toFixed(1) + '%'; }
+function fmtMoney(n) { return n == null ? '—' : '£' + Number(n).toFixed(2); }
+function fmtDate(s) { if (!s) return '—'; return new Date(s).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }); }
+
+async function loadActivity() {
+  const days = document.getElementById('window-days').value;
+  const r = await fetchJSON(`/api/admin/broker-activity?days=${days}`);
+  if (!r.ok) {
+    document.getElementById('kpi-row').innerHTML = `<div class="kpi" style="grid-column:1/-1;color:#F87171;">Failed to load: ${r.body.error || r.status}</div>`;
+    return;
+  }
+  const d = r.body;
+  // KPIs
+  const t = d.totals || {};
+  const ds = d.deals_summary || {};
+  const convPct = t.total_quotes > 0 ? (t.total_converted / t.total_quotes * 100).toFixed(1) : '—';
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Quotes</div><div class="kpi-value">${fmtN(t.total_quotes)}</div><div class="kpi-sub">${fmtN(t.total_brokers)} brokers</div></div>
+    <div class="kpi"><div class="kpi-label">Eligible</div><div class="kpi-value">${fmtN(t.total_eligible)}</div><div class="kpi-sub">${t.total_quotes ? ((t.total_eligible/t.total_quotes)*100).toFixed(1) + '%' : '—'} of quotes</div></div>
+    <div class="kpi"><div class="kpi-label">Converted</div><div class="kpi-value">${fmtN(t.total_converted)}</div><div class="kpi-sub">${convPct}% conversion</div></div>
+    <div class="kpi"><div class="kpi-label">Vendor spend</div><div class="kpi-value">${fmtMoney(t.total_spend_gbp)}</div><div class="kpi-sub">avg ${t.total_quotes ? fmtMoney(t.total_spend_gbp / t.total_quotes) : '£0'}/quote</div></div>
+    <div class="kpi"><div class="kpi-label">Avg LTV</div><div class="kpi-value">${fmtPct(t.avg_ltv_pct)}</div><div class="kpi-sub">across all quotes</div></div>
+    <div class="kpi"><div class="kpi-label">Deals submitted</div><div class="kpi-value">${fmtN(ds.total_deals)}</div><div class="kpi-sub">${fmtN(ds.from_quick_quote)} via Quick Quote · ${fmtN(ds.completed)} completed</div></div>
+  `;
+  // Brokers table
+  const brows = (d.by_broker || []).map(b => `
+    <tr>
+      <td>${(b.broker_first_name || '') + ' ' + (b.broker_last_name || '')}</td>
+      <td>${b.broker_email || '—'}</td>
+      <td>${b.broker_company || '—'}</td>
+      <td class="num">${fmtN(b.quotes)}</td>
+      <td class="num">${fmtN(b.eligible)}</td>
+      <td class="num">${fmtN(b.converted)}</td>
+      <td class="num">${fmtMoney(b.vendor_spend_gbp)}</td>
+      <td>${fmtDate(b.last_quote_at)}</td>
+    </tr>`).join('');
+  document.getElementById('brokers-tbody').innerHTML = brows || '<tr><td colspan="8" class="empty">No broker activity in this window.</td></tr>';
+  // Daily table
+  const drows = (d.by_day || []).map(r => {
+    const conv = r.quotes > 0 ? (r.converted / r.quotes * 100).toFixed(1) + '%' : '—';
+    return `<tr>
+      <td>${fmtDate(r.day)}</td>
+      <td class="num">${fmtN(r.quotes)}</td>
+      <td class="num">${fmtN(r.unique_brokers)}</td>
+      <td class="num">${fmtN(r.eligible)}</td>
+      <td class="num">${fmtN(r.converted)}</td>
+      <td class="num">${conv}</td>
+      <td class="num">${fmtMoney(r.vendor_spend_gbp)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('daily-tbody').innerHTML = drows || '<tr><td colspan="7" class="empty">No quotes in this window.</td></tr>';
+}
+
+document.getElementById('refresh-btn').addEventListener('click', loadActivity);
+document.getElementById('window-days').addEventListener('change', loadActivity);
+document.getElementById('inv-send').addEventListener('click', async () => {
+  const body = {
+    first_name: document.getElementById('inv-first').value.trim(),
+    last_name:  document.getElementById('inv-last').value.trim(),
+    email:      document.getElementById('inv-email').value.trim(),
+    company:    document.getElementById('inv-company').value.trim() || null,
+    fca_number: document.getElementById('inv-fca').value.trim() || null,
+  };
+  if (!body.email || !body.first_name || !body.last_name) {
+    alert('First name, last name, email all required');
+    return;
+  }
+  const btn = document.getElementById('inv-send');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const r = await fetchJSON('/api/admin/invite-broker', { method: 'POST', body: JSON.stringify(body) });
+  btn.disabled = false; btn.textContent = 'Send invite';
+  const out = document.getElementById('inv-result');
+  out.style.display = 'block';
+  if (!r.ok) {
+    out.style.borderLeftColor = '#F87171';
+    out.style.color = '#F87171';
+    out.innerHTML = `<strong>Send failed:</strong> ${r.body.error || r.status}${r.body.invite_url ? '<br>Manual URL (copy + send by your own email): <code>' + r.body.invite_url + '</code>' : ''}`;
+  } else {
+    out.style.borderLeftColor = '#34D399';
+    out.style.color = '#94A3B8';
+    out.innerHTML = `✓ ${r.body.message}<br>Manual URL (backup): <code style="color:#D4A853;">${r.body.invite_url}</code>`;
+    document.getElementById('inv-first').value = '';
+    document.getElementById('inv-last').value = '';
+    document.getElementById('inv-email').value = '';
+    document.getElementById('inv-company').value = '';
+    document.getElementById('inv-fca').value = '';
+  }
+});
+
+loadActivity();
+</script>
+</body>
+</html>

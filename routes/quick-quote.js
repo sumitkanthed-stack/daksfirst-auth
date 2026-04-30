@@ -530,6 +530,94 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  GET /api/admin/broker-activity  (admin) — pilot rollout dashboard data
+//  ─────────────────────────────────────────────────────────────────────────
+//  Returns aggregated quick-quote and deal stats for monitoring broker pilot.
+//  Last 30 days by default, can override with ?days=N.
+// ═══════════════════════════════════════════════════════════════════════════
+router.get('/admin/broker-activity', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin', 'rm', 'credit', 'compliance'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Internal users only' });
+    }
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+
+    const [byDay, byBroker, totals, deals] = await Promise.all([
+      // Per-day quote volume + conversion + spend
+      pool.query(`
+        SELECT
+          DATE(created_at)            AS day,
+          COUNT(*)::int               AS quotes,
+          COUNT(DISTINCT broker_user_id)::int AS unique_brokers,
+          COUNT(*) FILTER (WHERE eligible_flag)::int AS eligible,
+          COUNT(*) FILTER (WHERE converted_to_deal_id IS NOT NULL)::int AS converted,
+          ROUND(SUM(total_cost_pence) / 100.0, 2)::float AS vendor_spend_gbp
+        FROM quick_quotes
+        WHERE created_at > NOW() - ($1::int || ' days')::interval
+        GROUP BY 1
+        ORDER BY 1 DESC
+      `, [days]),
+      // Per-broker leaderboard
+      pool.query(`
+        SELECT
+          q.broker_user_id,
+          u.email                AS broker_email,
+          u.first_name           AS broker_first_name,
+          u.last_name            AS broker_last_name,
+          u.company              AS broker_company,
+          COUNT(*)::int          AS quotes,
+          COUNT(*) FILTER (WHERE q.eligible_flag)::int AS eligible,
+          COUNT(*) FILTER (WHERE q.converted_to_deal_id IS NOT NULL)::int AS converted,
+          ROUND(SUM(q.total_cost_pence) / 100.0, 2)::float AS vendor_spend_gbp,
+          MAX(q.created_at)      AS last_quote_at
+        FROM quick_quotes q
+        LEFT JOIN users u ON u.id = q.broker_user_id
+        WHERE q.created_at > NOW() - ($1::int || ' days')::interval
+        GROUP BY q.broker_user_id, u.email, u.first_name, u.last_name, u.company
+        ORDER BY quotes DESC
+        LIMIT 50
+      `, [days]),
+      // Aggregate totals
+      pool.query(`
+        SELECT
+          COUNT(*)::int AS total_quotes,
+          COUNT(DISTINCT broker_user_id)::int AS total_brokers,
+          COUNT(*) FILTER (WHERE eligible_flag)::int AS total_eligible,
+          COUNT(*) FILTER (WHERE converted_to_deal_id IS NOT NULL)::int AS total_converted,
+          ROUND(SUM(total_cost_pence) / 100.0, 2)::float AS total_spend_gbp,
+          ROUND(AVG(ltv_pct), 1)::float AS avg_ltv_pct
+        FROM quick_quotes
+        WHERE created_at > NOW() - ($1::int || ' days')::interval
+      `, [days]),
+      // Deals submitted in window (broker channel only)
+      pool.query(`
+        SELECT
+          COUNT(*)::int AS total_deals,
+          COUNT(DISTINCT user_id)::int AS active_brokers,
+          COUNT(*) FILTER (WHERE source = 'quick_quote')::int AS from_quick_quote,
+          COUNT(*) FILTER (WHERE deal_stage = 'completed')::int AS completed
+        FROM deal_submissions ds
+        JOIN users u ON u.id = ds.user_id
+        WHERE u.role = 'broker'
+          AND ds.created_at > NOW() - ($1::int || ' days')::interval
+      `, [days]),
+    ]);
+
+    res.json({
+      success: true,
+      window_days: days,
+      totals: totals.rows[0],
+      deals_summary: deals.rows[0],
+      by_day: byDay.rows,
+      by_broker: byBroker.rows,
+    });
+  } catch (err) {
+    console.error('[broker-activity] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  Broker-accessible PAF lookups (auth-only, no internal gate)
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/broker/postcode-lookup', authenticateToken, async (req, res) => {
