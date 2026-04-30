@@ -1793,7 +1793,7 @@ export async function renderDealMatrix(deal) {
                                        : _occ.includes('owner') ? '#94A3B8'
                                        : '#64748B';
                       const _occDisplay = p.occupancy ? sanitizeHtml(p.occupancy) : '—';
-                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="prop-row-${p.id}" onclick="window._togglePropertyExpand(${p.id})">
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="prop-row-${p.id}" onclick="window._togglePropPanel(${p.id})">
                       <td style="padding:6px 4px;text-align:center;color:#64748B;font-size:12px;width:24px;" id="prop-chev-${p.id}">▶</td>
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
