@@ -22,6 +22,213 @@ async function canEditDeal(req, submissionId) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CREATE PROPERTY (with day1_ltv calculation)
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  AUTO-ENRICH HELPER (Postcodes.io + EPC + Land Registry — all FREE)
+// ═══════════════════════════════════════════════════════════════════════════
+// Fires after every property write (POST/PUT) when address/postcode is present.
+// Best-effort: failures are logged + swallowed so they don't block the write.
+// Mirrors the column-write logic in /search but skips stale-data clearing
+// (only relevant for re-searches).
+async function _autoEnrichProperty(dealId, propertyId, userId) {
+  try {
+    const propResult = await pool.query(
+      `SELECT id, address, postcode FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      [propertyId, dealId]
+    );
+    if (propResult.rows.length === 0) return;
+    const prop = propResult.rows[0];
+    if (!prop.postcode && !prop.address) return;
+
+    const { searchProperty } = require('../services/property-search');
+    const results = await searchProperty(prop.postcode, prop.address);
+
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    if (results.postcode_lookup && results.postcode_lookup.success) {
+      const pc = results.postcode_lookup.data;
+      for (const [col, val] of [
+        ['region', pc.region], ['country', pc.country], ['local_authority', pc.admin_district],
+        ['admin_ward', pc.admin_ward], ['latitude', pc.latitude], ['longitude', pc.longitude],
+        ['in_england_or_wales', pc.in_england_or_wales]
+      ]) {
+        if (val !== null && val !== undefined) {
+          updates.push(`${col} = $${idx}`); values.push(val); idx++;
+        }
+      }
+    }
+
+    const epcExact = results.epc && results.epc.success && results.epc.match_confidence === 'exact' && results.epc.data;
+    if (epcExact) {
+      const e = results.epc.data;
+      for (const [col, val] of [
+        ['epc_rating', e.epc_rating], ['epc_score', e.epc_score],
+        ['epc_potential_rating', e.potential_rating], ['epc_floor_area', e.floor_area],
+        ['epc_property_type', e.property_type], ['epc_built_form', e.built_form],
+        ['epc_construction_age', e.construction_age], ['epc_habitable_rooms', e.number_habitable_rooms],
+        ['epc_inspection_date', e.inspection_date], ['epc_certificate_id', e.lmk_key]
+      ]) {
+        if (val !== null && val !== undefined) {
+          updates.push(`${col} = $${idx}`); values.push(val); idx++;
+        }
+      }
+    }
+
+    if (results.price_paid && results.price_paid.success) {
+      const pp = results.price_paid.data;
+      if (pp.latest_price) {
+        updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++;
+        updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++;
+      }
+      updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
+    }
+
+    updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
+    updates.push(`property_searched_at = NOW()`);
+    if (userId != null) {
+      updates.push(`property_searched_by = $${idx}`); values.push(userId); idx++;
+    }
+    updates.push(`updated_at = NOW()`);
+    values.push(propertyId);
+
+    if (updates.length > 0) {
+      await pool.query(
+        `UPDATE deal_properties SET ${updates.join(', ')} WHERE id = $${idx}`,
+        values
+      );
+    }
+    console.log(`[properties] Auto-enriched property ${propertyId}: postcode=${!!(results.postcode_lookup && results.postcode_lookup.success)}, epc=${results.epc && results.epc.success ? results.epc.match_confidence : 'failed'}, price_paid=${!!(results.price_paid && results.price_paid.success)}`);
+  } catch (err) {
+    console.warn(`[properties] Auto-enrich failed for property ${propertyId}:`, err.message);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  AUTO-ENRICH CHIMNIE (low-cost paid touchpoint with freshness + monthly cap)
+// ═══════════════════════════════════════════════════════════════════════════
+// Fires on every property write (POST/PUT). Cheap enough to auto-fire because:
+//   - 30-day freshness gate skips redundant calls
+//   - Monthly credit cap (CHIMNIE_MONTHLY_CAP_CREDITS) hard-stops runaway cost
+//   - 1 credit per property × cap = bounded budget
+// Best-effort: failures don't block the property write.
+async function _autoEnrichChimnie(dealId, propertyId, userId) {
+  try {
+    const propResult = await pool.query(
+      `SELECT id, address, postcode, chimnie_uprn, chimnie_fetched_at
+         FROM deal_properties WHERE id = $1 AND deal_id = $2`,
+      [propertyId, dealId]
+    );
+    if (propResult.rows.length === 0) return;
+    const prop = propResult.rows[0];
+    if (!prop.address && !prop.postcode && !prop.chimnie_uprn) return;
+
+    // Freshness gate — skip if last pull was within 30 days
+    const freshness = require('../services/freshness');
+    if (freshness.isFresh(prop.chimnie_fetched_at, 'chimnie')) {
+      console.log(`[chimnie auto] property ${propertyId} fresh — skipping (last ${freshness.ageLabel(prop.chimnie_fetched_at)} ago)`);
+      return;
+    }
+
+    // Monthly cap — protect the account balance
+    const capResult = await pool.query(
+      `SELECT COALESCE(SUM(chimnie_credits_used), 0)::int AS total_this_month
+         FROM deal_properties
+         WHERE chimnie_fetched_at >= DATE_TRUNC('month', NOW())`
+    );
+    const usedThisMonth = capResult.rows[0].total_this_month || 0;
+    if (usedThisMonth >= config.CHIMNIE_MONTHLY_CAP_CREDITS) {
+      console.warn(`[chimnie auto] monthly cap reached (${usedThisMonth}/${config.CHIMNIE_MONTHLY_CAP_CREDITS}) — skipping property ${propertyId}`);
+      return;
+    }
+
+    // Call Chimnie — UPRN-first if we have one, else address-based
+    const chimnie = require('../services/chimnie');
+    let result, lookupMethod;
+    if (prop.chimnie_uprn) {
+      result = await chimnie.lookupByUprn(prop.chimnie_uprn);
+      lookupMethod = 'uprn';
+    } else {
+      const addressQuery = prop.postcode
+        ? `${prop.address || ''}, ${prop.postcode}`.trim().replace(/^,\s*/, '')
+        : (prop.address || '');
+      result = await chimnie.lookupByAddress(addressQuery);
+      lookupMethod = 'address';
+    }
+
+    if (!result.success) {
+      await logAudit(dealId, 'chimnie_lookup_failed', null, prop.address || prop.postcode,
+        { propertyId, method: lookupMethod, error: result.error, status: result.status, source: 'auto' },
+        userId);
+      console.warn(`[chimnie auto] property ${propertyId} lookup failed: ${result.error}`);
+      return;
+    }
+
+    // Extract flat columns
+    const flat = chimnie.extractFlatFields(result.data);
+
+    // PTAL (free local lookup — London grid only)
+    try {
+      const ptalService = require('../services/ptal');
+      const chimnieGet = chimnie._get;
+      const lat = chimnieGet(result.data, 'property.attributes.status.latitude')
+               ?? chimnieGet(result.data, 'property.attributes.latitude');
+      const lng = chimnieGet(result.data, 'property.attributes.status.longitude')
+               ?? chimnieGet(result.data, 'property.attributes.longitude');
+      if (lat != null && lng != null) {
+        const ptalResult = ptalService.getPtalForLatLng(Number(lat), Number(lng));
+        if (ptalResult && ptalResult.in_london && ptalResult.ptal) {
+          flat.chimnie_ptal = ptalResult.ptal;
+        } else {
+          flat.chimnie_ptal = null;
+        }
+      }
+    } catch (ptalErr) {
+      console.warn('[chimnie auto] PTAL lookup failed (non-fatal):', ptalErr.message);
+    }
+
+    // Write flat fields + audit columns
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    for (const [col, val] of Object.entries(flat)) {
+      sets.push(`${col} = $${i}`);
+      const isArrayOrObject = (val !== null && typeof val === 'object');
+      vals.push(isArrayOrObject ? JSON.stringify(val) : val);
+      i++;
+    }
+    sets.push(`chimnie_data = $${i}`); vals.push(JSON.stringify(result.data)); i++;
+    sets.push(`chimnie_fetched_at = NOW()`);
+    if (userId != null) {
+      sets.push(`chimnie_fetched_by = $${i}`); vals.push(userId); i++;
+    }
+    sets.push(`chimnie_lookup_method = $${i}`); vals.push(lookupMethod); i++;
+    sets.push(`chimnie_credits_used = COALESCE(chimnie_credits_used, 0) + 1`);
+    sets.push(`updated_at = NOW()`);
+    vals.push(propertyId);
+
+    await pool.query(
+      `UPDATE deal_properties SET ${sets.join(', ')} WHERE id = $${i}`,
+      vals
+    );
+
+    await logAudit(dealId, 'chimnie_lookup', null, prop.address || prop.postcode,
+      {
+        propertyId, method: lookupMethod, source: 'auto',
+        exact_match: flat.chimnie_exact_match,
+        avm_mid: flat.chimnie_avm_mid,
+        avm_confidence: flat.chimnie_avm_confidence
+      },
+      userId);
+
+    console.log(`[chimnie auto] property ${propertyId} enriched — method=${lookupMethod}, exact=${flat.chimnie_exact_match}, avm_mid=${flat.chimnie_avm_mid}`);
+  } catch (err) {
+    console.warn(`[chimnie auto] property ${propertyId} unexpected error:`, err.message);
+  }
+}
+
 router.post('/:submissionId/properties', authenticateToken, async (req, res) => {
   try {
     // H2 (2026-04-20): add canEditDeal check — was missing, any authenticated
@@ -59,7 +266,14 @@ router.post('/:submissionId/properties', authenticateToken, async (req, res) => 
     );
 
     await logAudit(dealResult.rows[0].id, 'property_added', null, address, { property_type, market_value }, req.user.userId);
-    res.status(201).json({ success: true, property: result.rows[0] });
+
+    // 2026-04-30 — auto-enrich via free APIs (Postcodes.io + EPC + Land Registry)
+    // Mirrors claude-parser file-drop pipeline. Best-effort, never blocks the create.
+    await _autoEnrichProperty(dealResult.rows[0].id, result.rows[0].id, req.user.userId);
+    await _autoEnrichChimnie(dealResult.rows[0].id, result.rows[0].id, req.user.userId);
+    // Re-read property so the response reflects enriched columns
+    const enriched = await pool.query(`SELECT * FROM deal_properties WHERE id = $1`, [result.rows[0].id]);
+    res.status(201).json({ success: true, property: enriched.rows[0] || result.rows[0] });
   } catch (error) {
     console.error('[property] Error:', error);
     res.status(500).json({ error: 'Failed to add property' });
@@ -131,6 +345,21 @@ router.put('/:submissionId/properties/:propertyId', authenticateToken, async (re
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+
+    // 2026-04-30 — auto-enrich on inline matrix edits when address/postcode changed
+    const addressOrPostcodeTouched = (
+      Object.prototype.hasOwnProperty.call(req.body, 'address') ||
+      Object.prototype.hasOwnProperty.call(req.body, 'postcode')
+    );
+    if (addressOrPostcodeTouched) {
+      const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+      if (dealRow.rows.length > 0) {
+        await _autoEnrichProperty(dealRow.rows[0].id, req.params.propertyId, req.user.userId);
+        await _autoEnrichChimnie(dealRow.rows[0].id, req.params.propertyId, req.user.userId);
+        const enriched = await pool.query(`SELECT * FROM deal_properties WHERE id = $1`, [req.params.propertyId]);
+        return res.json({ success: true, property: enriched.rows[0] || result.rows[0] });
+      }
+    }
     res.json({ success: true, property: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update property' });

@@ -219,7 +219,36 @@ router.put('/:submissionId/borrowers/:borrowerId', authenticateToken, async (req
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Borrower not found' });
-    res.json({ success: true, borrower: result.rows[0] });
+
+    // 2026-04-30 — auto-fire CH-verify when company_number is set/changed on a corporate borrower
+    // Mirrors POST /borrowers behaviour. ch_verified_at gate prevents duplicate verifies.
+    const updatedRow = result.rows[0];
+    const justGotCorpNumber = (
+      Object.prototype.hasOwnProperty.call(req.body, 'company_number') &&
+      updatedRow.company_number &&
+      !updatedRow.ch_verified_at
+    );
+    if (justGotCorpNumber) {
+      try {
+        const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
+        if (dealRow.rows.length > 0) {
+          await _populateChChildrenRecursive(
+            dealRow.rows[0].id,
+            updatedRow.id,
+            updatedRow.company_number,
+            req.user.userId,
+            0
+          );
+          // Re-fetch borrower with verify flags
+          const verified = await pool.query(`SELECT * FROM deal_borrowers WHERE id = $1`, [updatedRow.id]);
+          return res.json({ success: true, borrower: verified.rows[0] || updatedRow });
+        }
+      } catch (chErr) {
+        console.warn(`[borrower PUT] auto-CH-verify failed for borrower ${updatedRow.id}:`, chErr.message);
+        // Fall through and return the un-verified row — verify can be retried manually
+      }
+    }
+    res.json({ success: true, borrower: updatedRow });
   } catch (error) {
     console.error('[borrower PUT] Error:', error);
     res.status(500).json({ error: 'Failed to update borrower' });
