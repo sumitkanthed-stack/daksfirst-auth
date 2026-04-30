@@ -3985,6 +3985,33 @@ async function runMigrations() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    //  WITHDRAW (2026-04-29 night): withdrawal reason cols on deal_submissions
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Once a DIP is issued we can't just delete the deal — the work is
+    //  captured. Brokers can WITHDRAW a deal with a reason so we keep the
+    //  audit trail of why it didn't progress. Sets deal_stage='withdrawn'.
+    //
+    //  Reason enum:
+    //    'borrower_withdrew'   — borrower pulled out of their own accord
+    //    'traded_away'         — borrower took alternative finance
+    //    'no_response'         — borrower stopped responding
+    //    'pricing_unworkable'  — borrower couldn't accept Daksfirst pricing
+    //    'lender_declined'     — Daksfirst declined credit
+    //    'restructured'        — moved to a different deal structure
+    //    'duplicate'           — duplicate of another deal
+    //    'other'               — see withdrawn_note for detail
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS withdrawn_at      TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS withdrawn_by      INTEGER REFERENCES users(id)`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS withdrawn_reason  VARCHAR(40)`);
+      await pool.query(`ALTER TABLE deal_submissions ADD COLUMN IF NOT EXISTS withdrawn_note    TEXT`);
+      console.log('[migrate] ✓ Withdrawal cols ready');
+    } catch (err) {
+      console.log('[migrate] Note on withdrawal schema:', err.message.substring(0, 200));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     //  CONS-1 (2026-04-29): borrower_consents append-only table
     //  ─────────────────────────────────────────────────────────────────────────
     //  Records every explicit consent the borrower has given for paid /

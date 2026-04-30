@@ -3766,14 +3766,13 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
     const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
     if (!isOwner) return res.status(403).json({ error: 'Access denied — only the deal creator can delete it' });
 
-    // Broker can delete any deal that hasn't progressed past info-gathering.
-    // Once underwriting / fee-paid stages start, deletion requires admin
-    // intervention (withdrawal, not deletion). Pre-fee stages let brokers
-    // clean up mistaken Quick Quote submissions or obsolete drafts.
-    const DELETABLE_STAGES = new Set(['draft', 'received', 'assigned', 'dip_issued', 'info_gathering']);
+    // Hard delete only allowed for PRE-DIP stages — no real work invested.
+    // Once a DIP has been issued, deals must be WITHDRAWN with a reason
+    // (POST /api/deals/:id/withdraw) so the audit trail is preserved.
+    const DELETABLE_STAGES = new Set(['draft', 'received', 'assigned', 'info_gathering']);
     if (!DELETABLE_STAGES.has(deal.deal_stage)) {
       return res.status(400).json({
-        error: `Cannot delete — deal is in stage "${deal.deal_stage}". Only pre-fee stages (draft / received / assigned / dip_issued / info_gathering) are deletable. Contact Daksfirst to withdraw this deal.`
+        error: `Cannot delete — deal is in stage "${deal.deal_stage}" (DIP work captured). Use Withdraw instead so we can record the reason.`
       });
     }
 
@@ -3830,6 +3829,76 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
     // Surface the actual PG error to the frontend — much faster debug if a
     // new FK constraint blocks deletion (just add the table to the list).
     res.status(500).json({ error: error.message || 'Failed to delete deal' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/deals/:submissionId/withdraw  (broker / borrower / internal)
+//  ─────────────────────────────────────────────────────────────────────────
+//  Soft-archive a deal that's already had real work done (DIP issued or
+//  later, but pre-fee). Captures reason for audit. Sets deal_stage='withdrawn'.
+//  Reasons: borrower_withdrew, traded_away, no_response, pricing_unworkable,
+//  lender_declined, restructured, duplicate, other.
+// ═══════════════════════════════════════════════════════════════════════════
+const VALID_WITHDRAW_REASONS = new Set([
+  'borrower_withdrew', 'traded_away', 'no_response', 'pricing_unworkable',
+  'lender_declined', 'restructured', 'duplicate', 'other',
+]);
+
+router.post('/:submissionId/withdraw', authenticateToken, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { reason, note } = req.body || {};
+
+    if (!reason || !VALID_WITHDRAW_REASONS.has(reason)) {
+      return res.status(400).json({
+        error: `reason required, must be one of: ${[...VALID_WITHDRAW_REASONS].join(', ')}`,
+      });
+    }
+
+    const dealResult = await pool.query(
+      `SELECT id, user_id, borrower_user_id, deal_stage FROM deal_submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+    if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const deal = dealResult.rows[0];
+
+    // Owner OR internal can withdraw
+    const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
+    const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(req.user.role);
+    if (!isOwner && !isInternal) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Can't withdraw if already terminal (already declined / completed / etc.)
+    const ALREADY_TERMINAL = new Set(['withdrawn', 'declined', 'rejected', 'completed', 'redeemed', 'closed', 'archived']);
+    if (ALREADY_TERMINAL.has(deal.deal_stage)) {
+      return res.status(400).json({ error: `Deal is already in terminal stage "${deal.deal_stage}"` });
+    }
+
+    await pool.query(
+      `UPDATE deal_submissions
+          SET deal_stage = 'withdrawn',
+              withdrawn_at = NOW(),
+              withdrawn_by = $1,
+              withdrawn_reason = $2,
+              withdrawn_note = $3,
+              updated_at = NOW()
+        WHERE id = $4`,
+      [req.user.userId, reason, note || null, deal.id]
+    );
+
+    try {
+      await logAudit(deal.id, 'deal_withdrawn', deal.deal_stage, 'withdrawn',
+        { reason, note, withdrawn_by: req.user.userId }, req.user.userId);
+    } catch (auditErr) {
+      console.warn('[withdraw] audit log failed:', auditErr.message);
+    }
+
+    res.json({ success: true, message: `Deal withdrawn (reason: ${reason})` });
+  } catch (err) {
+    console.error('[withdraw] Error:', err);
+    res.status(500).json({ error: err.message || 'Failed to withdraw deal' });
   }
 });
 

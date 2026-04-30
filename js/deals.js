@@ -422,20 +422,21 @@ export async function loadUserDeals() {
         const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
         const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
         const updatedStr = formatDate(deal.updated_at || deal.created_at);
-        // Pre-fee stages — broker can delete to clean up mistakes.
-        // Mirror of DELETABLE_STAGES on backend (routes/deals.js).
-        const DELETABLE = new Set(['draft', 'received', 'assigned', 'dip_issued', 'info_gathering']);
-        const isDraft = DELETABLE.has(stage);
+        // Pre-DIP stages — hard-deletable. Mirror of DELETABLE_STAGES backend.
+        const DELETABLE = new Set(['draft', 'received', 'assigned', 'info_gathering']);
+        // DIP+ stages where work was invested — withdraw with reason instead.
+        // Pre-fee but non-deletable: dip_issued, ai_termsheet, fee_pending,
+        // fee_paid, underwriting, bank_submitted, bank_approved, borrower_accepted.
+        const TERMINAL = new Set(['withdrawn', 'declined', 'rejected', 'completed', 'redeemed', 'closed', 'archived']);
+        const isDeletable = DELETABLE.has(stage);
+        const isWithdrawable = !isDeletable && !TERMINAL.has(stage);
 
-        // Action buttons — pre-fee stages get View + Delete, others get View only
-        let actionBtns = '';
-        if (isDraft) {
-          actionBtns = `
-            <button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;margin-right:4px;" onclick="event.stopPropagation();">View →</button>
-            <button class="btn btn-small" style="padding:4px 8px;font-size:11px;font-weight:600;background:rgba(248,113,113,0.15);color:#F87171;border:1px solid rgba(248,113,113,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation(); window._deleteDraftDeal('${deal.submission_id}', this);" title="Delete draft">✕</button>
-          `;
-        } else {
-          actionBtns = `<button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();">View →</button>`;
+        // Action buttons
+        let actionBtns = `<button class="btn btn-small" style="padding:4px 12px;font-size:11px;font-weight:600;background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);border-radius:6px;cursor:pointer;margin-right:4px;" onclick="event.stopPropagation();">View →</button>`;
+        if (isDeletable) {
+          actionBtns += `<button class="btn btn-small" style="padding:4px 8px;font-size:11px;font-weight:600;background:rgba(248,113,113,0.15);color:#F87171;border:1px solid rgba(248,113,113,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation(); window._deleteDraftDeal('${deal.submission_id}', this);" title="Delete">✕</button>`;
+        } else if (isWithdrawable) {
+          actionBtns += `<button class="btn btn-small" style="padding:4px 10px;font-size:11px;font-weight:600;background:rgba(167,139,250,0.15);color:#A78BFA;border:1px solid rgba(167,139,250,0.3);border-radius:6px;cursor:pointer;" onclick="event.stopPropagation(); window._withdrawDeal('${deal.submission_id}');" title="Withdraw with reason">Withdraw</button>`;
         }
 
         row.innerHTML = `
@@ -499,6 +500,100 @@ window._deleteDraftDeal = async function(submissionId, btn) {
     btn.disabled = false;
     btn.textContent = origText;
   }
+};
+
+/**
+ * Withdraw a DIP-or-later deal (captures reason, NOT a delete)
+ * Stage moves to 'withdrawn' and reason/note are recorded for analytics.
+ */
+window._withdrawDeal = async function(submissionId) {
+  // Build modal lazily
+  let modal = document.getElementById('withdraw-deal-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'withdraw-deal-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+    modal.innerHTML = `
+      <div style="background:#1a1f2e;border:1px solid rgba(167,139,250,0.3);border-radius:12px;padding:28px;max-width:480px;width:90%;color:#e5e7eb;">
+        <h3 style="margin:0 0 8px 0;color:#A78BFA;font-size:18px;">Withdraw deal</h3>
+        <p style="margin:0 0 20px 0;color:#9ca3af;font-size:13px;line-height:1.5;">
+          DIP-issued or later deals can't be deleted. Tell us why this deal isn't proceeding so we can track outcomes.
+        </p>
+
+        <label style="display:block;margin:0 0 6px 0;font-size:12px;font-weight:600;color:#d1d5db;">Reason</label>
+        <select id="withdraw-reason-select" style="width:100%;padding:10px;background:#0f1420;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#e5e7eb;font-size:14px;margin-bottom:16px;">
+          <option value="">— Select reason —</option>
+          <option value="borrower_withdrew">Borrower withdrew</option>
+          <option value="traded_away">Traded away (went with another lender)</option>
+          <option value="no_response">No response from broker/borrower</option>
+          <option value="pricing_unworkable">Pricing unworkable</option>
+          <option value="lender_declined">Daksfirst declined</option>
+          <option value="restructured">Restructured into a new deal</option>
+          <option value="duplicate">Duplicate submission</option>
+          <option value="other">Other</option>
+        </select>
+
+        <label style="display:block;margin:0 0 6px 0;font-size:12px;font-weight:600;color:#d1d5db;">Note <span style="color:#6b7280;font-weight:400;">(optional)</span></label>
+        <textarea id="withdraw-note-input" rows="3" placeholder="Any context worth recording…"
+          style="width:100%;padding:10px;background:#0f1420;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#e5e7eb;font-size:13px;resize:vertical;font-family:inherit;"></textarea>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+          <button id="withdraw-cancel-btn" style="padding:9px 16px;background:rgba(255,255,255,0.06);color:#d1d5db;border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>
+          <button id="withdraw-confirm-btn" style="padding:9px 18px;background:rgba(167,139,250,0.2);color:#A78BFA;border:1px solid rgba(167,139,250,0.4);border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Withdraw deal</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  // Reset fields
+  modal.querySelector('#withdraw-reason-select').value = '';
+  modal.querySelector('#withdraw-note-input').value = '';
+  modal.style.display = 'flex';
+
+  const cancelBtn  = modal.querySelector('#withdraw-cancel-btn');
+  const confirmBtn = modal.querySelector('#withdraw-confirm-btn');
+
+  const close = () => { modal.style.display = 'none'; };
+  cancelBtn.onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+
+  confirmBtn.onclick = async () => {
+    const reason = modal.querySelector('#withdraw-reason-select').value;
+    const note   = modal.querySelector('#withdraw-note-input').value.trim();
+    if (!reason) {
+      showToast('Pick a reason first', true);
+      return;
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Withdrawing…';
+
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/withdraw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason, note: note || null })
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        showToast(data.error || 'Failed to withdraw deal', true);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Withdraw deal';
+        return;
+      }
+
+      showToast('Deal withdrawn');
+      close();
+      await loadUserDeals();
+    } catch (err) {
+      console.error('[withdraw-deal] Error:', err);
+      showToast('Network error. Please try again.', true);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Withdraw deal';
+    }
+  };
 };
 
 /**
