@@ -3777,32 +3777,59 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
       });
     }
 
-    console.log(`[delete-deal] Deleting draft deal ${submissionId} (internal id: ${deal.id})`);
+    console.log(`[delete-deal] Deleting deal ${submissionId} (internal id: ${deal.id}, stage: ${deal.deal_stage})`);
 
-    // Delete all related records in dependency order (most will be empty for drafts)
+    // Tables WITHOUT ON DELETE CASCADE — explicit cleanup required.
+    // Tables WITH cascade (deal_pricings, risk_view, deal_stage_analyses,
+    // companies_house) auto-delete and aren't listed here.
     const relatedTables = [
+      // Original list
       'deal_documents', 'deal_properties', 'deal_borrowers',
       'deal_field_status', 'deal_info_requests', 'deal_documents_issued',
       'deal_document_repo', 'deal_fee_payments', 'deal_approvals',
-      'analysis_results', 'client_notes', 'deal_audit_log'
+      'analysis_results', 'client_notes', 'deal_audit_log',
+      // Sprints 2-4 additions
+      'deal_valuations',
+      'borrower_portfolio_properties',
+      'borrower_other_assets_liabilities',
+      'borrower_other_directorships',
+      'borrower_income_expenses',
+      // Vendor data tables
+      'paf_lookups',
+      'pd_lookups',
+      'hmlr_lookups',
+      // Compliance + checks
+      'borrower_consents',
+      'credit_checks',
+      'kyc_checks',
     ];
     for (const table of relatedTables) {
       try {
         await pool.query(`DELETE FROM ${table} WHERE deal_id = $1`, [deal.id]);
       } catch (tableErr) {
-        // Table might not exist yet — that's fine
-        console.log(`[delete-deal] Note cleaning ${table}:`, tableErr.message.substring(0, 40));
+        // Table might not exist yet (forward compat) — log + continue
+        console.log(`[delete-deal] Note cleaning ${table}:`, tableErr.message.substring(0, 80));
       }
+    }
+
+    // quick_quotes references deal_submissions via converted_to_deal_id —
+    // we don't want to delete the quote (analytics history), just NULL the FK.
+    try {
+      await pool.query(`UPDATE quick_quotes SET converted_to_deal_id = NULL WHERE converted_to_deal_id = $1`, [deal.id]);
+    } catch (qqErr) {
+      console.log(`[delete-deal] Note unlinking quick_quotes:`, qqErr.message.substring(0, 80));
     }
 
     // Delete the deal itself
     await pool.query('DELETE FROM deal_submissions WHERE id = $1', [deal.id]);
 
-    console.log(`[delete-deal] Draft deal ${submissionId} permanently deleted`);
-    res.json({ success: true, message: 'Draft deal deleted' });
+    console.log(`[delete-deal] Deal ${submissionId} permanently deleted`);
+    res.json({ success: true, message: 'Deal deleted' });
   } catch (error) {
     console.error('[delete-deal] Error:', error);
-    res.status(500).json({ error: 'Failed to delete deal' });
+    // Surface the actual PG error to the frontend — much faster debug if a
+    // new FK constraint blocks deletion (just add the table to the list).
+    res.status(500).json({ error: error.message || 'Failed to delete deal' });
   }
 });
 
