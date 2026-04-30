@@ -3766,10 +3766,12 @@ router.delete('/:submissionId', authenticateToken, async (req, res) => {
     const isOwner = deal.user_id === req.user.userId || deal.borrower_user_id === req.user.userId;
     if (!isOwner) return res.status(403).json({ error: 'Access denied — only the deal creator can delete it' });
 
-    // Hard delete only allowed for PRE-DIP stages — no real work invested.
-    // Once a DIP has been issued, deals must be WITHDRAWN with a reason
-    // (POST /api/deals/:id/withdraw) so the audit trail is preserved.
-    const DELETABLE_STAGES = new Set(['draft', 'received', 'assigned', 'info_gathering']);
+    // Hard delete only allowed for unsubmitted drafts — broker is still typing.
+    // Once a deal has been SUBMITTED (received / assigned / info_gathering / DIP+),
+    // it must be WITHDRAWN with a reason (POST /api/deals/:id/withdraw) so the
+    // audit trail and any third-party lookups (CH, HMLR, EPC, credit, KYC) tied
+    // to the submission_id are preserved.
+    const DELETABLE_STAGES = new Set(['draft']);
     if (!DELETABLE_STAGES.has(deal.deal_stage)) {
       return res.status(400).json({
         error: `Cannot delete — deal is in stage "${deal.deal_stage}" (DIP work captured). Use Withdraw instead so we can record the reason.`

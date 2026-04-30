@@ -422,11 +422,10 @@ export async function loadUserDeals() {
         const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
         const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
         const updatedStr = formatDate(deal.updated_at || deal.created_at);
-        // Pre-DIP stages — hard-deletable. Mirror of DELETABLE_STAGES backend.
-        const DELETABLE = new Set(['draft', 'received', 'assigned', 'info_gathering']);
-        // DIP+ stages where work was invested — withdraw with reason instead.
-        // Pre-fee but non-deletable: dip_issued, ai_termsheet, fee_pending,
-        // fee_paid, underwriting, bank_submitted, bank_approved, borrower_accepted.
+        // Only unsubmitted drafts are hard-deletable. Mirror of DELETABLE_STAGES backend.
+        const DELETABLE = new Set(['draft']);
+        // Anything submitted (received → DIP+) → withdraw with reason instead.
+        // Preserves audit trail and any third-party lookups already burned.
         const TERMINAL = new Set(['withdrawn', 'declined', 'rejected', 'completed', 'redeemed', 'closed', 'archived']);
         const isDeletable = DELETABLE.has(stage);
         const isWithdrawable = !isDeletable && !TERMINAL.has(stage);
