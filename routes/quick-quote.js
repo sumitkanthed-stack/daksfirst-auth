@@ -558,9 +558,74 @@ router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async 
       ]);
     }
 
-    // NO deal_borrowers INSERT — GET handler's auto-backfill (deals.js:403)
-    // creates the primary row from flat fields on first read, identical to
-    // the wizard path's behaviour.
+    // 2026-04-30 — Eager auto-backfill + auto-CH-verify so the broker doesn't
+    // have to click anything. Mirrors the GET-handler auto-backfill at deals.js:403
+    // (same column set) — the GET-side backfill becomes a fallback when this path
+    // didn't run. Then for corporate borrowers with a company number, we kick off
+    // _populateChChildrenRecursive synchronously to populate directors/PSCs/UBOs
+    // and stamp ch_verified_at. Wrapped in try/catch — convert succeeds even if
+    // CH verify fails (broker can re-verify manually from the matrix).
+    let primaryBorrowerId = null;
+    if (isCorporate || qq.company_name) {
+      try {
+        const backfillRes = await client.query(
+          `INSERT INTO deal_borrowers
+             (deal_id, role, full_name, borrower_type, email, phone, date_of_birth,
+              nationality, jurisdiction, company_name, company_number)
+           VALUES ($1, 'primary', $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id`,
+          [
+            deal.id,
+            qq.company_name || qq.company_number,
+            isCorporate ? 'limited' : null,
+            null, null, null, null, null,
+            qq.company_name || null,
+            qq.company_number || null,
+          ]
+        );
+        primaryBorrowerId = backfillRes.rows[0].id;
+        console.log(`[quick-quote/convert] eager-backfilled primary borrower id=${primaryBorrowerId} for deal ${deal.submission_id}`);
+      } catch (bfErr) {
+        // Non-fatal — GET handler's backfill will create it on first read instead.
+        console.warn(`[quick-quote/convert] eager backfill skipped: ${bfErr.message}`);
+      }
+    }
+
+    // Auto-CH-verify for corporate borrowers — fires the same recursive populator
+    // the manual "Verify at Companies House" button calls. Wrapped: convert
+    // succeeds even if CH API is down or company not found.
+    if (primaryBorrowerId && isCorporate && qq.company_number) {
+      try {
+        const borrowersModule = require('./borrowers');
+        const populateChChildrenRecursive = borrowersModule.populateChChildrenRecursive;
+        if (typeof populateChChildrenRecursive === 'function') {
+          const chResult = await populateChChildrenRecursive(
+            deal.id, primaryBorrowerId, qq.company_number, req.user.userId, 0
+          );
+          if (chResult && chResult.verification) {
+            // Stamp ch_verified_at + ch_match_data on the primary corporate row
+            await client.query(
+              `UPDATE deal_borrowers
+                 SET ch_verified_at = NOW(),
+                     ch_verified_by = $1,
+                     ch_match_data = $2::jsonb,
+                     ch_match_confidence = 'auto-populated',
+                     updated_at = NOW()
+               WHERE id = $3`,
+              [req.user.userId, JSON.stringify(chResult.verification), primaryBorrowerId]
+            );
+            console.log(`[quick-quote/convert] auto-CH-verified primary borrower id=${primaryBorrowerId} (${qq.company_number}): ${chResult.inserted.officers} officers, ${chResult.inserted.pscs} PSCs`);
+          } else {
+            console.warn(`[quick-quote/convert] CH verify returned no verification for ${qq.company_number}`);
+          }
+        } else {
+          console.warn('[quick-quote/convert] populateChChildrenRecursive not exported from routes/borrowers.js — skipping auto-verify');
+        }
+      } catch (chErr) {
+        // Non-fatal — broker can manually verify from the matrix
+        console.warn(`[quick-quote/convert] auto-CH-verify failed (non-fatal): ${chErr.message}`);
+      }
+    }
 
     // Stamp conversion on the quote for analytics
     await client.query(

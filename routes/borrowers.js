@@ -67,7 +67,53 @@ router.post('/:submissionId/borrowers', authenticateToken, async (req, res) => {
     await logAudit(dealId, 'borrower_added', null, full_name,
       { role: role || 'primary', borrower_type: borrower_type || 'individual', parent_borrower_id: parentCheck.value }, req.user.userId);
 
-    res.status(201).json({ success: true, borrower: result.rows[0] });
+    // 2026-04-30 — Auto-CH-verify on corporate borrower add. Mirrors the guarantor-
+    // election flow (this file ~lines 760-776) so guarantors AND borrowers get the
+    // same UBO/Director/PSC auto-population. Brokers don't need to click Verify.
+    // Wrapped: row creation succeeds even if CH lookup fails.
+    let autoChResult = { skipped: true };
+    const newBorrowerRow = result.rows[0];
+    const isCorporateAdd = ['corporate', 'spv', 'ltd', 'llp', 'limited'].includes(
+      String(newBorrowerRow.borrower_type || '').toLowerCase()
+    );
+    if (isCorporateAdd && newBorrowerRow.company_number && !newBorrowerRow.parent_borrower_id) {
+      try {
+        console.log(`[borrower-add] Auto-CH-verifying new corporate borrower #${newBorrowerRow.id} (${newBorrowerRow.company_number})`);
+        const chResult = await _populateChChildrenRecursive(
+          dealId, newBorrowerRow.id, newBorrowerRow.company_number, req.user.userId, 0
+        );
+        if (chResult && chResult.verification) {
+          // Stamp ch_verified_at + ch_match_data on the new corporate row
+          await pool.query(
+            `UPDATE deal_borrowers
+               SET ch_verified_at = NOW(),
+                   ch_verified_by = $1,
+                   ch_match_data = $2::jsonb,
+                   ch_match_confidence = 'auto-populated',
+                   updated_at = NOW()
+             WHERE id = $3`,
+            [req.user.userId, JSON.stringify(chResult.verification), newBorrowerRow.id]
+          );
+          autoChResult = {
+            skipped: false,
+            officers_inserted: chResult.inserted.officers,
+            pscs_inserted: chResult.inserted.pscs,
+            recursed: chResult.recursed,
+          };
+          // Reflect the verified state on the response row so frontend renders ✓ immediately
+          newBorrowerRow.ch_verified_at = new Date().toISOString();
+          newBorrowerRow.ch_match_data = chResult.verification;
+          newBorrowerRow.ch_match_confidence = 'auto-populated';
+        } else {
+          autoChResult = { skipped: false, reason: 'company_not_found_at_ch' };
+        }
+      } catch (chErr) {
+        console.warn(`[borrower-add] Auto-CH-verify failed (non-fatal): ${chErr.message}`);
+        autoChResult = { skipped: false, error: chErr.message };
+      }
+    }
+
+    res.status(201).json({ success: true, borrower: newBorrowerRow, auto_ch: autoChResult });
   } catch (error) {
     console.error('[borrower] Error:', error);
     // 2026-04-30: surface real Postgres error (constraint + detail) so we
@@ -827,4 +873,7 @@ router.post('/:submissionId/borrowers/:borrowerId/elect-as-corporate-guarantor',
   }
 });
 
+// 2026-04-30 — expose the recursive CH populator so other routes (e.g.,
+// quick-quote convert-to-deal) can fire auto-CH-verify without re-implementing.
 module.exports = router;
+module.exports.populateChChildrenRecursive = _populateChChildrenRecursive;
