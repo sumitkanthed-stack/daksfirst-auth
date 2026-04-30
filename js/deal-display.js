@@ -49,11 +49,15 @@ export const LOAN_PURPOSE_OPTIONS = [
 const LOAN_PURPOSE_MAP = Object.fromEntries(LOAN_PURPOSE_OPTIONS.map(o => [o.value, o.label]));
 
 // Sprint 2 — Exit strategy enums (deal_submissions structured cols)
+// 2026-04-30: added sale_auction + refinance_dev_finance per Sumit's DIP-stage
+// dropdown design. Broker picks one; named lender/agent provided post-DIP as CPs.
 export const EXIT_ROUTE_OPTIONS = [
-  { value: 'sale',                  label: 'Sale — exit via property disposal' },
-  { value: 'refinance_btl',         label: 'Refinance to BTL (specialist or high-street BTL lender)' },
-  { value: 'refinance_owner_occ',   label: 'Refinance to owner-occupier mortgage' },
+  { value: 'sale',                  label: 'Sale — open market disposal' },
+  { value: 'sale_auction',          label: 'Sale — auction' },
+  { value: 'refinance_btl',         label: 'Refinance to BTL term (specialist or high-street BTL)' },
   { value: 'refinance_commercial',  label: 'Refinance to commercial mortgage' },
+  { value: 'refinance_owner_occ',   label: 'Refinance to owner-occupier mortgage' },
+  { value: 'refinance_dev_finance', label: 'Refinance to development finance (post-planning)' },
   { value: 'combination',           label: 'Combination — partial sale + partial refi' }
 ];
 

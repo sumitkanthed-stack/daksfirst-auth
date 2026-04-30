@@ -2269,13 +2269,15 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
     }
 
     // Whitelist of editable intake fields — only these can be changed
+    // 2026-04-30: exit_route_primary lifted to broker-write so DIP form dropdown
+    // works at matrix entry. Validates against EXIT_ROUTE_VALUES below.
     const allowedFields = [
       'borrower_name', 'borrower_company', 'borrower_email', 'borrower_phone',
       'borrower_dob', 'borrower_nationality', 'borrower_jurisdiction', 'borrower_type',
       'company_name', 'company_number',
       'broker_name', 'broker_company', 'broker_fca',
       'security_address', 'security_postcode', 'asset_type', 'current_value',
-      'loan_amount', 'ltv_requested', 'loan_purpose', 'exit_strategy',
+      'loan_amount', 'ltv_requested', 'loan_purpose', 'exit_strategy', 'exit_route_primary',
       'term_months', 'rate_requested', 'additional_notes',
       'drawdown_date', 'interest_servicing', 'existing_charges',
       'property_tenure', 'occupancy_status', 'current_use',
@@ -2283,6 +2285,19 @@ router.put('/:submissionId/intake', authenticateToken, authenticateInternal, asy
       'deposit_source', 'concurrent_transactions',
       'estimated_net_worth', 'source_of_wealth'
     ];
+
+    // Enum validation for exit_route_primary — reject any value that isn't one
+    // of these. Matches js/deal-display.js EXIT_ROUTE_OPTIONS.
+    const EXIT_ROUTE_VALUES = new Set([
+      'sale', 'sale_auction', 'refinance_btl', 'refinance_commercial',
+      'refinance_owner_occ', 'refinance_dev_finance', 'combination'
+    ]);
+    if (Object.prototype.hasOwnProperty.call(updates, 'exit_route_primary')) {
+      const v = updates.exit_route_primary;
+      if (v != null && v !== '' && !EXIT_ROUTE_VALUES.has(v)) {
+        return res.status(400).json({ error: `Invalid exit_route_primary: ${v}` });
+      }
+    }
 
     // Numeric fields that need parsing
     const numericFields = [
