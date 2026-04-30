@@ -409,6 +409,127 @@ router.get('/broker/quick-quote/:id', authenticateToken, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  POST /api/broker/quick-quote/:id/convert-to-deal
+//  ─────────────────────────────────────────────────────────────────────────
+//  One-shot promotion of a Quick Quote into a real deal_submissions record.
+//  Avoids broker re-typing what they already gave us:
+//   - Creates deal_submissions with loan_amount + purpose from quote
+//   - Creates deal_properties for each property in the quote
+//   - Creates deal_borrowers for the corporate borrower
+//   - Stamps quick_quotes.converted_to_deal_id for conversion tracking
+//   - Returns submission_id so frontend can route to documents upload
+// ═══════════════════════════════════════════════════════════════════════════
+router.post('/broker/quick-quote/:id/convert-to-deal', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'invalid id' });
+
+  const client = await pool.connect();
+  try {
+    const qq = (await client.query(`SELECT * FROM quick_quotes WHERE id = $1`, [id])).rows[0];
+    if (!qq) return res.status(404).json({ ok: false, error: 'quote not found' });
+    if (req.user.role === 'broker' && qq.broker_user_id !== req.user.id) {
+      return res.status(403).json({ ok: false, error: 'not your quote' });
+    }
+    if (qq.converted_to_deal_id) {
+      return res.json({
+        ok: true,
+        already_converted: true,
+        deal_id: qq.converted_to_deal_id,
+        message: 'Quote already converted to a deal',
+      });
+    }
+
+    const props = (qq.results_jsonb && Array.isArray(qq.results_jsonb.properties))
+      ? qq.results_jsonb.properties : [];
+    if (props.length === 0) {
+      return res.status(400).json({ ok: false, error: 'quote has no properties to convert' });
+    }
+    const lead = props[0];
+
+    await client.query('BEGIN');
+
+    // Insert the deal — minimal fields, broker fills the rest in matrix later
+    const dealResult = await client.query(`
+      INSERT INTO deal_submissions (
+        user_id, borrower_company, security_address, security_postcode,
+        loan_amount, loan_purpose,
+        company_number, company_name, borrower_type,
+        existing_charges, source, internal_status, deal_stage
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'quick_quote', 'new', 'received')
+      RETURNING id, submission_id, status, created_at
+    `, [
+      req.user.id || null,
+      qq.company_name || null,
+      lead.address_text || lead.postcode || 'Address pending',
+      lead.postcode || null,
+      Math.round((qq.loan_amount_pence || 0) / 100),
+      lead.purpose || qq.purpose || null,
+      qq.company_number || null,
+      qq.company_name || null,
+      qq.company_number ? 'limited' : null,
+      `Quick Quote: ${props.length} ${props.length === 1 ? 'property' : 'properties'}, see schedule below`,
+    ]);
+
+    const deal = dealResult.rows[0];
+
+    // Insert one deal_properties row per property
+    for (const p of props) {
+      await client.query(`
+        INSERT INTO deal_properties (
+          deal_id, address, postcode, market_value,
+          loan_purpose, security_charge_type, existing_charge_balance_pence,
+          paf_uprn, chimnie_avm_mid
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
+        deal.id,
+        p.address_text || null,
+        p.postcode || null,
+        p.avm_pence ? Math.round(p.avm_pence / 100) : null,
+        p.purpose || null,
+        p.charge_type || p.security_charge_type || 'first_charge',
+        p.existing_charge_balance_pence || null,
+        p.paf_uprn || null,
+        p.avm_pence ? Math.round(p.avm_pence / 100) : null,
+      ]);
+    }
+
+    // Insert the corporate borrower if one is on the quote
+    if (qq.company_number || qq.company_name) {
+      await client.query(`
+        INSERT INTO deal_borrowers (deal_id, full_name, role, borrower_type, company_name, company_number)
+        VALUES ($1, $2, 'borrower', 'corporate', $3, $4)
+      `, [
+        deal.id,
+        qq.company_name || qq.company_number,
+        qq.company_name || null,
+        qq.company_number || null,
+      ]);
+    }
+
+    // Stamp conversion on the quote for analytics
+    await client.query(
+      `UPDATE quick_quotes SET converted_to_deal_id = $1 WHERE id = $2`,
+      [deal.id, id]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      ok: true,
+      deal_id: deal.id,
+      submission_id: deal.submission_id,
+      message: `Deal ${deal.submission_id} created from Quick Quote — ${props.length} ${props.length === 1 ? 'property' : 'properties'}, ${qq.company_name || 'borrower'} loaded.`,
+    });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[quick-quote/convert] error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  Broker-accessible PAF lookups (auth-only, no internal gate)
 // ═══════════════════════════════════════════════════════════════════════════
 router.get('/broker/postcode-lookup', authenticateToken, async (req, res) => {
