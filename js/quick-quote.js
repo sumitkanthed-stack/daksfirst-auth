@@ -337,7 +337,11 @@ function buildResultHtml(data) {
         </div>
         <div style="font-size:13px;color:#E5E7EB;line-height:1.5;">${escapeHtml(v.reason || '')}</div>
       </div>
-      ${v.eligible ? `<button id="qq-submit-deal" type="button" style="background:#D4A853;color:#111;border:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;" data-quick-quote-id="${data.quick_quote_id}">Submit full deal pack →</button>` : ''}
+      <button id="qq-submit-deal" type="button"
+        style="background:${v.eligible ? '#D4A853' : 'rgba(251,191,36,0.18)'};color:${v.eligible ? '#111' : '#FBBF24'};border:${v.eligible ? 'none' : '1px solid rgba(251,191,36,0.45)'};padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;"
+        data-quick-quote-id="${data.quick_quote_id}">
+        ${v.eligible ? 'Submit full deal pack →' : 'Submit anyway — discuss with RM →'}
+      </button>
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:14px;">
