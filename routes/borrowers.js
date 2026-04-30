@@ -340,6 +340,21 @@ const MAX_RECURSION_DEPTH = 4;
 async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, userId, depth = 0) {
   if (!companyNumber) return { verification: null, inserted: { officers: 0, pscs: 0 }, recursed: 0 };
 
+  // 2026-04-30 — auto-PG gate. PSCs/UBOs of a corporate BORROWER (role primary/joint)
+  // auto-default to pg_status='required'. PSCs of a corporate GUARANTOR do NOT auto-PG
+  // because the corporate guarantee deed handles them — PG would double-count.
+  // Third-party guarantor flow stays separate (smart-parse role='third_party_guarantor').
+  let _parentIsBorrower = false;
+  try {
+    const _pr = await pool.query(`SELECT role FROM deal_borrowers WHERE id = $1`, [parentRowId]);
+    if (_pr.rows.length > 0) {
+      const _parentRole = String(_pr.rows[0].role || '').toLowerCase();
+      _parentIsBorrower = (_parentRole === 'primary' || _parentRole === 'joint');
+    }
+  } catch (e) {
+    console.warn(`[ch-recurse depth=${depth}] parent-role lookup failed for parentRowId=${parentRowId}:`, e.message);
+  }
+
   const companiesHouse = require('../services/companies-house');
   let verification;
   try {
@@ -515,7 +530,16 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
     if (existingNames.has(nameKey)) {
       const existingChild = existingByName.get(nameKey);
 
-      // Always merge PSC facets under `ch_psc_*` namespace
+      // 2026-04-30 — derive PSC % band from natures_of_control
+      const _pscPct = (() => {
+        const noc = Array.isArray(p.natures_of_control) ? p.natures_of_control.join(' ') : '';
+        if (/75-to-100/i.test(noc)) return 87;
+        if (/50-to-75/i.test(noc)) return 62;
+        if (/25-to-50/i.test(noc)) return 37;
+        return null;
+      })();
+      // Always merge PSC facets under `ch_psc_*` namespace + top-level fields
+      // for matrix PG panel (is_psc, officer_role, psc_percentage).
       const pscFacets = {
         ch_psc_source: 'ch_psc_endpoint',
         ch_psc_kind: p.kind || null,
@@ -529,8 +553,14 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
         ch_psc_own_company_number: pscOwnCompanyNumber,
         ch_psc_identification: p.identification || null,
         ch_psc_recursion_depth: depth,
-        ch_psc_merged_at: new Date().toISOString()
+        ch_psc_merged_at: new Date().toISOString(),
+        is_psc: true,
+        officer_role: isCorporatePsc ? 'Corporate PSC' : 'Ultimate Beneficial Owner',
+        psc_percentage: _pscPct
       };
+      // Auto-PG only when parent is a corporate BORROWER (not guarantor) and the PSC
+      // is a natural person (not corporate-PSC), not ceased, and not broker-trace-flagged.
+      const _autoPgMerge = _parentIsBorrower && !isCorporatePsc && !p.ceased_on && !_brokerTraceRequired;
       try {
         // 2026-04-21 Step 3.5: also stamp CH verification on the existing row
         // so allChVerified flips true and rich rendering fires. ch_matched_role
@@ -546,10 +576,17 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
                    ELSE ch_matched_role || ', psc'
                  END,
                  ch_match_confidence = COALESCE(NULLIF(ch_match_confidence, ''), 'ch_direct'),
+                 pg_status = CASE
+                   WHEN pg_status IS NULL AND $4::boolean = TRUE THEN 'required'
+                   ELSE pg_status
+                 END,
                  updated_at = NOW()
            WHERE id = $2`,
-          [JSON.stringify(pscFacets), existingChild.id, userId]
+          [JSON.stringify(pscFacets), existingChild.id, userId, _autoPgMerge]
         );
+        if (_autoPgMerge) {
+          console.log(`[ch-recurse depth=${depth}] auto-set pg_status='required' on existing row ${existingChild.id} (${p.name}) — individual PSC of corporate borrower`);
+        }
         console.log(`[ch-recurse depth=${depth}] merged PSC facets + CH-verified existing row id=${existingChild.id} (${p.name})`);
       } catch (e) {
         console.warn(`[ch-recurse depth=${depth}] PSC merge failed on id=${existingChild.id}:`, e.message);
@@ -581,6 +618,14 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
       }
       continue;  // skip the insert — facets merged above
     }
+    // 2026-04-30 — derive PSC % band for fresh insert
+    const _pscPctFresh = (() => {
+      const noc = Array.isArray(p.natures_of_control) ? p.natures_of_control.join(' ') : '';
+      if (/75-to-100/i.test(noc)) return 87;
+      if (/50-to-75/i.test(noc)) return 62;
+      if (/25-to-50/i.test(noc)) return 37;
+      return null;
+    })();
     const chData = {
       source: 'ch_psc_endpoint',
       company_number: companyNumber,
@@ -593,24 +638,34 @@ async function _populateChChildrenRecursive(dealId, parentRowId, companyNumber, 
       natures_of_control: p.natures_of_control || [],
       date_of_birth: p.date_of_birth || null,
       recursion_depth: depth,
+      // Top-level fields for matrix PG panel filter + UI rendering
+      is_psc: true,
+      officer_role: isCorporatePsc ? 'Corporate PSC' : 'Ultimate Beneficial Owner',
+      psc_percentage: _pscPctFresh,
       ...(_brokerTraceRequired ? { broker_trace_required: true, broker_trace_reason: _brokerTraceReason } : {})
     };
     if (_brokerTraceRequired) {
       console.log(`[ch-recurse depth=${depth}] New "${p.name}" flagged for broker trace: ${_brokerTraceReason}`);
     }
+    // Auto-PG default only when parent is a corporate BORROWER (not guarantor) and
+    // PSC is a natural person not ceased and not broker-trace-flagged.
+    const _autoPgFresh = (_parentIsBorrower && !isCorporatePsc && !p.ceased_on && !_brokerTraceRequired) ? 'required' : null;
     try {
       const ins = await pool.query(
         `INSERT INTO deal_borrowers
           (deal_id, role, full_name, nationality, borrower_type, company_number, parent_borrower_id, kyc_status,
-           ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data)
+           ch_verified_at, ch_verified_by, ch_matched_role, ch_match_confidence, ch_match_data, pg_status)
          VALUES ($1, 'psc', $2, $3, $4, $5, $6, 'pending',
-           NOW(), $7, 'psc', 'ch_direct', $8::jsonb)
+           NOW(), $7, 'psc', 'ch_direct', $8::jsonb, $9)
          RETURNING id`,
-        [dealId, p.name, p.nationality || null, pscBorrowerType, pscOwnCompanyNumber, parentRowId, userId, JSON.stringify(chData)]
+        [dealId, p.name, p.nationality || null, pscBorrowerType, pscOwnCompanyNumber, parentRowId, userId, JSON.stringify(chData), _autoPgFresh]
       );
       if (ins.rows.length > 0) {
         pscsInserted++;
         existingNames.add(nameKey);
+        if (_autoPgFresh) {
+          console.log(`[ch-recurse depth=${depth}] auto-set pg_status='required' on new PSC row ${ins.rows[0].id} (${p.name}) — individual PSC of corporate borrower`);
+        }
         if (isCorporatePsc && pscOwnCompanyNumber && depth < MAX_RECURSION_DEPTH) {
           corporatePscsToRecurse.push({ rowId: ins.rows[0].id, companyNumber: pscOwnCompanyNumber });
         }
