@@ -3844,6 +3844,72 @@ export async function renderDealMatrix(deal) {
                   </div>
                 </div>` : ''}
 
+                ${(() => {
+                  // Conditions Precedent panel — broker sees, RM can edit
+                  // (piece 3c, 2026-04-30 — auto-seeded from exit-conditions library)
+                  const cps = Array.isArray(deal.conditions_precedent) ? deal.conditions_precedent : [];
+                  const sum = deal.conditions_precedent_summary || { total: 0 };
+                  if (cps.length === 0) {
+                    return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.1);">
+                      <div style="font-size:10px;color:#10B981;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">📋 Conditions Precedent</div>
+                      <p style="font-size:11px;color:#94A3B8;margin:0;font-style:italic;">No conditions yet — auto-seeded when DIP is issued based on chosen exit strategy.</p>
+                    </div>`;
+                  }
+                  const pillFor = (status) => ({
+                    open:              { bg: 'rgba(251,191,36,0.15)', fg: '#FBBF24', label: 'OPEN' },
+                    evidence_received: { bg: 'rgba(59,130,246,0.15)', fg: '#3B82F6', label: 'EVIDENCE' },
+                    satisfied:         { bg: 'rgba(16,185,129,0.15)', fg: '#10B981', label: 'SATISFIED' },
+                    waived:            { bg: 'rgba(148,163,184,0.15)', fg: '#94A3B8', label: 'WAIVED' },
+                    overridden:        { bg: 'rgba(168,85,247,0.15)', fg: '#A855F7', label: 'OVERRIDDEN' }
+                  })[status] || { bg: '#374151', fg: '#94A3B8', label: status };
+                  const stageLabel = { dd: 'Due Diligence', pre_completion: 'Pre-Completion', post_completion: 'Post-Completion' };
+                  const byStage = {};
+                  for (const cp of cps) { (byStage[cp.stage] = byStage[cp.stage] || []).push(cp); }
+                  const sid = deal.submission_id;
+                  const renderCp = (cp) => {
+                    const pill = pillFor(cp.status);
+                    const evidenceHint = cp.evidence_doc_type ? `<div style="font-size:10px;color:#94A3B8;margin-top:3px;">📎 ${sanitizeHtml(cp.evidence_doc_type.replace(/_/g, ' '))}</div>` : '';
+                    const noteHint = cp.satisfaction_note ? `<div style="font-size:10px;color:#10B981;margin-top:3px;font-style:italic;">✓ ${sanitizeHtml(cp.satisfaction_note)}</div>` : '';
+                    const waivedHint = cp.waived_reason ? `<div style="font-size:10px;color:#94A3B8;margin-top:3px;font-style:italic;">⊘ ${sanitizeHtml(cp.waived_reason)}</div>` : '';
+                    const overrideHint = cp.override_reason ? `<div style="font-size:10px;color:#A855F7;margin-top:3px;font-style:italic;">⚡ ${sanitizeHtml(cp.override_reason)}</div>` : '';
+                    const actions = isInternalUser && cp.status !== 'satisfied' && cp.status !== 'waived' && cp.status !== 'overridden'
+                      ? `<div style="display:flex;flex-direction:column;gap:3px;">
+                          <button onclick="window.sgUpdateCp && window.sgUpdateCp('${sid}', ${cp.id}, 'satisfied')" style="background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3);padding:3px 6px;border-radius:3px;font-size:9.5px;cursor:pointer;font-weight:600;">Satisfy</button>
+                          <button onclick="window.sgUpdateCp && window.sgUpdateCp('${sid}', ${cp.id}, 'waived')"    style="background:rgba(148,163,184,0.15);color:#94A3B8;border:1px solid rgba(148,163,184,0.3);padding:3px 6px;border-radius:3px;font-size:9.5px;cursor:pointer;font-weight:600;">Waive</button>
+                          <button onclick="window.sgUpdateCp && window.sgUpdateCp('${sid}', ${cp.id}, 'overridden')" style="background:rgba(168,85,247,0.15);color:#A855F7;border:1px solid rgba(168,85,247,0.3);padding:3px 6px;border-radius:3px;font-size:9.5px;cursor:pointer;font-weight:600;">Override</button>
+                        </div>`
+                      : (isInternalUser && cp.source === 'manual_rm'
+                          ? `<button onclick="window.sgDeleteCp && window.sgDeleteCp('${sid}', ${cp.id})" style="background:rgba(239,68,68,0.1);color:#EF4444;border:1px solid rgba(239,68,68,0.3);padding:3px 6px;border-radius:3px;font-size:9.5px;cursor:pointer;font-weight:600;">Delete</button>`
+                          : '<div></div>');
+                    return `<div style="display:grid;grid-template-columns:110px 1fr 90px;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748;align-items:start;">
+                      <div><span style="display:inline-block;padding:3px 8px;border-radius:3px;background:${pill.bg};color:${pill.fg};font-size:9.5px;font-weight:700;">${pill.label}</span>${cp.source === 'manual_rm' ? '<div style="font-size:9px;color:#94A3B8;margin-top:3px;">Manual</div>' : ''}</div>
+                      <div>
+                        <div style="font-size:12px;color:#E5E7EB;line-height:1.45;">${sanitizeHtml(cp.text)}</div>
+                        ${evidenceHint}${noteHint}${waivedHint}${overrideHint}
+                      </div>
+                      ${actions}
+                    </div>`;
+                  };
+                  const stageOrder = ['dd', 'pre_completion', 'post_completion'];
+                  const sectionHtml = stageOrder.filter(s => byStage[s]).map(s => `
+                    <div style="margin-top:10px;">
+                      <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;font-weight:600;">${stageLabel[s] || s}</div>
+                      ${byStage[s].map(renderCp).join('')}
+                    </div>`).join('');
+                  const addBtn = isInternalUser
+                    ? `<button onclick="window.sgAddCpManual && window.sgAddCpManual('${sid}')" style="background:rgba(212,168,83,0.15);color:#D4A853;border:1px solid rgba(212,168,83,0.3);padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:600;">+ Add CP</button>`
+                    : '';
+                  const summaryPill = `<span style="font-size:9.5px;color:#94A3B8;font-weight:600;">${sum.satisfied || 0}/${sum.total || 0} satisfied${sum.waived ? ` · ${sum.waived} waived` : ''}${sum.overridden ? ` · ${sum.overridden} overridden` : ''}</span>`;
+                  return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.1);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                      <div style="font-size:10px;color:#10B981;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">📋 Conditions Precedent ${summaryPill}</div>
+                      ${addBtn}
+                    </div>
+                    <p style="font-size:10.5px;color:#94A3B8;margin:0 0 6px;font-style:italic;">${isInternalUser ? 'Auto-seeded from exit-strategy library at DIP issuance. Mark Satisfied / Waive / Override as evidence comes in.' : 'Conditions to satisfy before completion. Upload evidence via the Documents tab; RM will mark satisfied.'}</p>
+                    ${sectionHtml}
+                  </div>`;
+                })()}
+
                 ${isInternalUser ? `<div style="margin-top:6px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.1);">
                   <div style="font-size:10px;color:#C9A227;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚖ DIP Conditions (RM-only)</div>
                   <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;font-style:italic;">Text written here appears on the DIP document sent to the broker. Keep internal chatter in Additional Notes above.</div>
@@ -5035,6 +5101,84 @@ export async function renderDealMatrix(deal) {
   window.sgSaveAdditionalSecurity = async function(submissionId, value) {
     const ok = await _sgFlashSave('sg-additional-security', `${API_BASE}/api/deals/${submissionId}/matrix-fields`, { additional_security_text: value || '' });
     if (ok) deal.additional_security_text = value;
+  };
+
+  // ─── Conditions Precedent handlers (piece 3c, 2026-04-30) ───
+  window.sgUpdateCp = async function(submissionId, cpId, newStatus) {
+    const body = { status: newStatus };
+    if (newStatus === 'waived') {
+      const reason = prompt('Reason for waiving this condition:');
+      if (!reason || !reason.trim()) return;
+      body.waived_reason = reason.trim();
+    } else if (newStatus === 'overridden') {
+      const reason = prompt('Reason for overriding this condition (audit-grade explanation required):');
+      if (!reason || !reason.trim()) return;
+      body.override_reason = reason.trim();
+    } else if (newStatus === 'satisfied') {
+      const note = prompt('Optional note (e.g. evidence reference / doc title):');
+      if (note && note.trim()) body.satisfaction_note = note.trim();
+    }
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/conditions-precedent/${cpId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (resp.ok) {
+        showToast(`Condition ${newStatus}`);
+        await _refreshDealInPlace(submissionId);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Failed to update condition', 'error');
+      }
+    } catch (e) {
+      showToast('Network error: ' + e.message, 'error');
+    }
+  };
+
+  window.sgAddCpManual = async function(submissionId) {
+    const stage = prompt('Stage — type "dd" (Due Diligence), "pre_completion", or "post_completion":');
+    if (!stage || !['dd', 'pre_completion', 'post_completion'].includes(stage.trim())) {
+      showToast('Invalid stage — must be dd / pre_completion / post_completion', 'error');
+      return;
+    }
+    const text = prompt('Condition text (full description as it should appear to the broker):');
+    if (!text || !text.trim()) return;
+    const evType = prompt('Evidence document type hint (optional — e.g. "marketing_instruction"):') || null;
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/conditions-precedent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: stage.trim(), text: text.trim(), evidence_doc_type: evType ? evType.trim() : null })
+      });
+      if (resp.ok) {
+        showToast('Manual condition added');
+        await _refreshDealInPlace(submissionId);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Failed to add condition', 'error');
+      }
+    } catch (e) {
+      showToast('Network error: ' + e.message, 'error');
+    }
+  };
+
+  window.sgDeleteCp = async function(submissionId, cpId) {
+    if (!confirm('Delete this manual condition? Auto-seeded conditions cannot be deleted (use Waive or Override instead).')) return;
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/conditions-precedent/${cpId}`, {
+        method: 'DELETE'
+      });
+      if (resp.ok) {
+        showToast('Manual condition deleted');
+        await _refreshDealInPlace(submissionId);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast(err.error || 'Failed to delete condition', 'error');
+      }
+    } catch (e) {
+      showToast('Network error: ' + e.message, 'error');
+    }
   };
 
   // ── G5.3.3 — Lazy-load CH existing charges per corporate in Security section ──

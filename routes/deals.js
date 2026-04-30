@@ -446,6 +446,31 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     );
     deal.doc_summary = docSummary.rows[0] || { total: 0, parsed: 0, unparsed: 0 };
 
+    // 2026-04-30 — attach conditions_precedent (auto-seeded at DIP issuance from
+    // exit-conditions library, plus any RM-added manual CPs). Matrix renders these.
+    try {
+      const cpsResult = await pool.query(
+        `SELECT id, source, exit_type, stage, text, evidence_doc_type, status,
+                evidence_doc_id, satisfied_at, satisfied_by, satisfaction_note,
+                waived_reason, override_reason, created_at, updated_at
+         FROM deal_conditions_precedent WHERE deal_id = $1
+         ORDER BY stage, created_at`,
+        [deal.id]
+      );
+      deal.conditions_precedent = cpsResult.rows;
+      // Summary counts for matrix header pill
+      const summary = { open: 0, evidence_received: 0, satisfied: 0, waived: 0, overridden: 0, total: cpsResult.rows.length };
+      for (const cp of cpsResult.rows) {
+        if (summary[cp.status] !== undefined) summary[cp.status]++;
+      }
+      deal.conditions_precedent_summary = summary;
+    } catch (cpErr) {
+      // Non-fatal — table may not exist yet on first deploy before migration runs
+      console.warn('[deals] CP fetch skipped:', cpErr.message.substring(0, 80));
+      deal.conditions_precedent = [];
+      deal.conditions_precedent_summary = { open: 0, evidence_received: 0, satisfied: 0, waived: 0, overridden: 0, total: 0 };
+    }
+
     res.json({ deal });
   } catch (err) {
     console.error('[deals] Get single deal error:', err);
@@ -3972,6 +3997,119 @@ router.get('/:submissionId/borrower-exposure', authenticateToken, authenticateIn
   } catch (err) {
     console.error('[borrower-exposure] error:', err);
     res.status(500).json({ error: 'Failed to compute borrower exposure' });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONDITIONS PRECEDENT — RM management endpoints (piece 3b, 2026-04-30)
+//  Auto-seeded CPs land at DIP issuance via services/exit-conditions.js.
+//  RM uses these endpoints to mark satisfied / waive / override / add manual.
+//  Broker reads via the GET /:submissionId endpoint (deal.conditions_precedent).
+// ═══════════════════════════════════════════════════════════════════════════
+const CP_VALID_STATUSES = new Set(['open', 'evidence_received', 'satisfied', 'waived', 'overridden']);
+const CP_VALID_STAGES   = new Set(['dd', 'pre_completion', 'post_completion']);
+
+router.put('/:submissionId/conditions-precedent/:cpId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { submissionId, cpId } = req.params;
+    const { status, satisfaction_note, evidence_doc_id, waived_reason, override_reason } = req.body || {};
+
+    if (!CP_VALID_STATUSES.has(status)) {
+      return res.status(400).json({ error: `Invalid status — must be one of: ${[...CP_VALID_STATUSES].join(', ')}` });
+    }
+    if (status === 'waived' && !waived_reason) {
+      return res.status(400).json({ error: 'waived_reason required when status=waived' });
+    }
+    if (status === 'overridden' && !override_reason) {
+      return res.status(400).json({ error: 'override_reason required when status=overridden' });
+    }
+
+    // Confirm CP belongs to this submission
+    const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealRow.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealRow.rows[0].id;
+    const cpRow = await pool.query(
+      `SELECT id, status FROM deal_conditions_precedent WHERE id = $1 AND deal_id = $2`,
+      [cpId, dealId]
+    );
+    if (cpRow.rows.length === 0) return res.status(404).json({ error: 'CP not found on this deal' });
+    const fromStatus = cpRow.rows[0].status;
+
+    // Build dynamic SET — stamp satisfied_at/by on terminal-state transitions
+    const sets = ['status = $1', 'updated_at = NOW()'];
+    const vals = [status];
+    let i = 2;
+    if (status === 'satisfied' || status === 'waived' || status === 'overridden') {
+      sets.push(`satisfied_at = NOW()`);
+      sets.push(`satisfied_by = $${i++}`);
+      vals.push(req.user.userId);
+    }
+    if (satisfaction_note !== undefined) { sets.push(`satisfaction_note = $${i++}`); vals.push(satisfaction_note || null); }
+    if (evidence_doc_id !== undefined)   { sets.push(`evidence_doc_id = $${i++}`);   vals.push(evidence_doc_id || null); }
+    if (waived_reason !== undefined)     { sets.push(`waived_reason = $${i++}`);     vals.push(waived_reason || null); }
+    if (override_reason !== undefined)   { sets.push(`override_reason = $${i++}`);   vals.push(override_reason || null); }
+    vals.push(cpId);
+
+    const result = await pool.query(
+      `UPDATE deal_conditions_precedent SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+      vals
+    );
+    await logAudit(dealId, 'cp_status_change', fromStatus, status, { cp_id: parseInt(cpId), waived_reason, override_reason }, req.user.userId);
+    res.json({ success: true, cp: result.rows[0] });
+  } catch (err) {
+    console.error('[cp-update] Error:', err);
+    res.status(500).json({ error: 'Failed to update CP: ' + err.message });
+  }
+});
+
+router.post('/:submissionId/conditions-precedent', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { stage, text, evidence_doc_type, exit_type } = req.body || {};
+    if (!stage || !CP_VALID_STAGES.has(stage)) {
+      return res.status(400).json({ error: `stage required — must be one of: ${[...CP_VALID_STAGES].join(', ')}` });
+    }
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'text required (CP description)' });
+    }
+    const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealRow.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealRow.rows[0].id;
+    const result = await pool.query(
+      `INSERT INTO deal_conditions_precedent
+        (deal_id, source, exit_type, stage, text, evidence_doc_type, status, created_at, updated_at)
+       VALUES ($1, 'manual_rm', $2, $3, $4, $5, 'open', NOW(), NOW()) RETURNING *`,
+      [dealId, exit_type || null, stage, text.trim(), evidence_doc_type || null]
+    );
+    await logAudit(dealId, 'cp_added_manual', null, text.trim().substring(0, 80), { cp_id: result.rows[0].id, stage }, req.user.userId);
+    res.json({ success: true, cp: result.rows[0] });
+  } catch (err) {
+    console.error('[cp-add] Error:', err);
+    res.status(500).json({ error: 'Failed to add CP: ' + err.message });
+  }
+});
+
+router.delete('/:submissionId/conditions-precedent/:cpId', authenticateToken, authenticateInternal, async (req, res) => {
+  try {
+    const { submissionId, cpId } = req.params;
+    const dealRow = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [submissionId]);
+    if (dealRow.rows.length === 0) return res.status(404).json({ error: 'Deal not found' });
+    const dealId = dealRow.rows[0].id;
+    // Only manual_rm CPs can be deleted — auto-seeded must be waived/overridden instead
+    const result = await pool.query(
+      `DELETE FROM deal_conditions_precedent
+       WHERE id = $1 AND deal_id = $2 AND source = 'manual_rm' RETURNING id`,
+      [cpId, dealId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'CP not found, or it is auto-seeded (use status=waived/overridden instead of delete)' });
+    }
+    await logAudit(dealId, 'cp_deleted_manual', null, null, { cp_id: parseInt(cpId) }, req.user.userId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[cp-delete] Error:', err);
+    res.status(500).json({ error: 'Failed to delete CP: ' + err.message });
   }
 });
 
