@@ -1309,6 +1309,24 @@ router.post('/:submissionId/issue-dip', authenticateToken, authenticateInternal,
       updateValues
     );
 
+    // 5b. Auto-seed Conditions Precedent from exit-conditions library based on
+    // the deal's exit_route_primary. Idempotent: skips if any auto CPs already
+    // exist on this deal. Failure here is non-fatal — DIP still issues.
+    // (2026-04-30 — piece 3a of exit-strategy bundle)
+    try {
+      const { seedConditionsPrecedentIfNeeded } = require('../services/exit-conditions');
+      // Re-fetch the deal's exit_route_primary post-UPDATE so dip_data overrides land
+      const exitRow = await pool.query(
+        `SELECT exit_route_primary FROM deal_submissions WHERE id = $1`,
+        [dealId]
+      );
+      const exitType = exitRow.rows[0] && exitRow.rows[0].exit_route_primary;
+      const seedResult = await seedConditionsPrecedentIfNeeded(pool, dealId, exitType);
+      console.log(`[issue-dip] CP auto-seed: ${seedResult.seeded} CPs (${seedResult.reason}) — exit=${exitType || 'n/a'}`);
+    } catch (cpErr) {
+      console.warn('[issue-dip] CP auto-seed failed (non-fatal):', cpErr.message);
+    }
+
     // 6. Store DIP PDF in deal_documents as 'issued' category (appears in doc repo)
     try {
       const issuerName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email;

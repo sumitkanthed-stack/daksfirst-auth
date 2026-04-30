@@ -4277,6 +4277,43 @@ async function runMigrations() {
       console.log('[migrate] Note on rubric v7 deploy:', err.message.substring(0, 200));
     }
 
+
+    // ============================================================
+    // 2026-04-30: deal_conditions_precedent — auto-seeded from
+    // services/exit-conditions.js library at DIP issuance based on
+    // exit_route_primary. RM/credit team can add/edit/satisfy CPs
+    // through the lifecycle. status flips: open → evidence_received
+    // → satisfied (or → waived / overridden).
+    // ============================================================
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS deal_conditions_precedent (
+          id                  SERIAL       PRIMARY KEY,
+          deal_id             INTEGER      NOT NULL REFERENCES deal_submissions(id) ON DELETE CASCADE,
+          source              VARCHAR(40)  NOT NULL,
+          exit_type           VARCHAR(40),
+          stage               VARCHAR(20)  NOT NULL,
+          text                TEXT         NOT NULL,
+          evidence_doc_type   VARCHAR(60),
+          status              VARCHAR(20)  NOT NULL DEFAULT 'open',
+          evidence_doc_id     INTEGER,
+          satisfied_at        TIMESTAMPTZ,
+          satisfied_by        INTEGER      REFERENCES users(id),
+          satisfaction_note   TEXT,
+          waived_reason       TEXT,
+          override_reason     TEXT,
+          created_at          TIMESTAMPTZ  DEFAULT NOW(),
+          updated_at          TIMESTAMPTZ  DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cps_deal_status ON deal_conditions_precedent(deal_id, status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cps_deal_stage  ON deal_conditions_precedent(deal_id, stage)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_cps_deal_source ON deal_conditions_precedent(deal_id, source)`);
+      console.log('[migrate] ✓ deal_conditions_precedent table + indexes ready');
+    } catch (err) {
+      console.log('[migrate] Note on deal_conditions_precedent:', err.message.substring(0, 160));
+    }
+
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
