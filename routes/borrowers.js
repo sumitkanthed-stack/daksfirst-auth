@@ -637,8 +637,19 @@ router.post('/:submissionId/borrowers/:borrowerId/ch-verify-populate', authentic
       message: `Verified ${verification.company_name} — added ${totalInserted} officer(s)/PSC(s)${result.recursed > 0 ? ` and auto-verified ${result.recursed} corporate PSC chain(s)` : ''}`
     });
   } catch (error) {
+    // 2026-04-30: full diagnostic so we stop hunting blind. Returns the stack
+    // trace (top 8 frames) so the frontend alert / network tab shows exactly
+    // which file + line raised. Stack trace is safe to expose internally for
+    // debugging — strip later once root cause is found.
     console.error('[ch-verify-populate] Error:', error);
-    res.status(500).json({ error: 'CH verify & populate failed: ' + error.message });
+    console.error('[ch-verify-populate] Stack:', error.stack);
+    const stackLines = (error.stack || '').split('\n').slice(0, 8).join('\n');
+    res.status(500).json({
+      error: 'CH verify & populate failed: ' + error.message,
+      message: error.message,
+      code: error.code || null,
+      stack_top: stackLines,
+    });
   }
 });
 
