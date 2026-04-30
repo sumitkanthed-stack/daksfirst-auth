@@ -820,8 +820,19 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         for (const prop of unsearched.rows) {
           if (!prop.postcode && !prop.address) continue;
           try {
-            const results = await searchProperty(prop.postcode, prop.address);
-            // Write key fields to columns
+            // FREE-only: Postcodes.io + EPC. Land Registry Price Paid (£3/property) is RM-only.
+            const { lookupPostcode, lookupEPC } = require('./property-search');
+            const [postcodeResult, epcResult] = await Promise.all([
+              lookupPostcode(prop.postcode),
+              lookupEPC(prop.postcode, prop.address),
+            ]);
+            const results = {
+              searched_at: new Date().toISOString(),
+              postcode_lookup: postcodeResult,
+              epc: epcResult,
+              price_paid: { success: false, skipped: true, reason: 'rm_only_paid' },
+              auto_enrich: true,
+            };
             const sets = [];
             const vals = [];
             let i = 1;
@@ -837,17 +848,13 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
                 if (v !== null && v !== undefined) { sets.push(`${c}=$${i}`); vals.push(v); i++; }
               }
             }
-            if (results.price_paid.success) {
-              const pp = results.price_paid.data;
-              if (pp.latest_price) { sets.push(`last_sale_price=$${i}`); vals.push(pp.latest_price); i++; sets.push(`last_sale_date=$${i}`); vals.push(pp.latest_date); i++; }
-              sets.push(`price_paid_data=$${i}`); vals.push(JSON.stringify(pp.transactions||[])); i++;
-            }
+            // Land Registry Price Paid: NOT auto-fired (£3/property — RM-only)
             sets.push(`property_search_data=$${i}`); vals.push(JSON.stringify(results)); i++;
             sets.push(`property_searched_at=NOW()`);
             sets.push(`updated_at=NOW()`);
             vals.push(prop.id);
             await pool.query(`UPDATE deal_properties SET ${sets.join(',')} WHERE id=$${i}`, vals);
-            console.log(`[claude-parser] ✓ Auto-searched property ${prop.id}: ${prop.postcode}`);
+            console.log(`[claude-parser] ✓ Auto-searched property ${prop.id}: ${prop.postcode} (postcode+EPC only — LR is RM-only)`);
           } catch (psErr) {
             console.warn(`[claude-parser] Property search failed for ${prop.id}:`, psErr.message);
           }

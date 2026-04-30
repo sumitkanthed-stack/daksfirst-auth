@@ -40,8 +40,19 @@ async function _autoEnrichProperty(dealId, propertyId, userId) {
     const prop = propResult.rows[0];
     if (!prop.postcode && !prop.address) return;
 
-    const { searchProperty } = require('../services/property-search');
-    const results = await searchProperty(prop.postcode, prop.address);
+    // FREE-only: Postcodes.io + EPC. Land Registry Price Paid (£3/property) is RM-only.
+    const { lookupPostcode, lookupEPC } = require('../services/property-search');
+    const [postcodeResult, epcResult] = await Promise.all([
+      lookupPostcode(prop.postcode),
+      lookupEPC(prop.postcode, prop.address),
+    ]);
+    const results = {
+      searched_at: new Date().toISOString(),
+      postcode_lookup: postcodeResult,
+      epc: epcResult,
+      price_paid: { success: false, skipped: true, reason: 'rm_only_paid' },
+      auto_enrich: true,
+    };
 
     const updates = [];
     const values = [];
@@ -76,14 +87,7 @@ async function _autoEnrichProperty(dealId, propertyId, userId) {
       }
     }
 
-    if (results.price_paid && results.price_paid.success) {
-      const pp = results.price_paid.data;
-      if (pp.latest_price) {
-        updates.push(`last_sale_price = $${idx}`); values.push(pp.latest_price); idx++;
-        updates.push(`last_sale_date = $${idx}`); values.push(pp.latest_date); idx++;
-      }
-      updates.push(`price_paid_data = $${idx}`); values.push(JSON.stringify(pp.transactions || [])); idx++;
-    }
+    // Land Registry Price Paid: NOT auto-fired (£3/property — RM-only via /search endpoint)
 
     updates.push(`property_search_data = $${idx}`); values.push(JSON.stringify(results)); idx++;
     updates.push(`property_searched_at = NOW()`);
@@ -99,7 +103,7 @@ async function _autoEnrichProperty(dealId, propertyId, userId) {
         values
       );
     }
-    console.log(`[properties] Auto-enriched property ${propertyId}: postcode=${!!(results.postcode_lookup && results.postcode_lookup.success)}, epc=${results.epc && results.epc.success ? results.epc.match_confidence : 'failed'}, price_paid=${!!(results.price_paid && results.price_paid.success)}`);
+    console.log(`[properties] Auto-enriched property ${propertyId}: postcode=${!!(results.postcode_lookup && results.postcode_lookup.success)}, epc=${results.epc && results.epc.success ? results.epc.match_confidence : 'failed'} (Land Registry skipped — RM-only)`);
   } catch (err) {
     console.warn(`[properties] Auto-enrich failed for property ${propertyId}:`, err.message);
   }
@@ -497,7 +501,10 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
   try {
     const { submissionId, propertyId } = req.params;
 
-    // Auth check
+    // RM/credit-team only — fires Land Registry Price Paid (£3/property)
+    if (!config.INTERNAL_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Land Registry property search is RM/credit-team only — broker auto-fire covers postcode + EPC at no cost' });
+    }
     if (!await canEditDeal(req, submissionId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -644,6 +651,10 @@ router.post('/:submissionId/properties/:propertyId/search', authenticateToken, a
 router.post('/:submissionId/properties/search-all', authenticateToken, async (req, res) => {
   try {
     const { submissionId } = req.params;
+    // RM/credit-team only — bulk Land Registry pull (£3 × N properties)
+    if (!config.INTERNAL_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Bulk Land Registry search is RM/credit-team only' });
+    }
     if (!await canEditDeal(req, submissionId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
