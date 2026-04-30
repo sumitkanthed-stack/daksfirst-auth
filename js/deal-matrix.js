@@ -10074,4 +10074,6 @@ window._savePrimaryUseAmount = function (input) {
   // Mirror to window.currentDeal so next dropdown switch sees the latest value
   if (window.currentDeal) {
     const num = Number(raw);
-    window.currentDeal[col] = i
+    window.currentDeal[col] = isNaN(num) ? null : num;
+  }
+};
