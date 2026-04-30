@@ -1084,8 +1084,13 @@ export async function renderDealMatrix(deal) {
                           ssPanelJ +
                           expPanelJ +
                           chDetailBlock +
+                          // 2026-04-30 — mirror renderCorpCard structure exactly: title + "+ Add Person"
+                          // button in a flex header so joint corporate borrowers behave identically to guarantors.
                           '<div>' +
-                            '<div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:6px;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this joint borrower') + ' — ' + kids.length + '</div>' +
+                            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
+                              '<span style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Directors, PSCs &amp; UBOs of ' + sanitizeHtml(g.company_name || 'this joint borrower') + ' — ' + kids.length + '</span>' +
+                              (canEdit ? '<button onclick="window.addChildToParent(\'' + subId + '\', ' + g.id + ')" style="padding:3px 10px;background:#34D399;color:#0B1120;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">+ Add Person</button>' : '') +
+                            '</div>' +
                             kidsTable +
                           '</div>' +
                         '</div>';
