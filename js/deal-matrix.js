@@ -924,7 +924,7 @@ export async function renderDealMatrix(deal) {
                       </div>
                       ` : `
                       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                        <button id="ch-matrix-verify-btn" onclick="window._chMatrixVerify('${(deal.company_number || '').replace(/'/g, '')}', '${(deal.submission_id || '').replace(/'/g, '')}')"
+                        <button id="ch-matrix-verify-btn" onclick="window._chVerifyCorporateParty(${primaryRow ? primaryRow.id : 'null'}, '${(deal.submission_id || '').replace(/'/g, '')}')"
                           style="padding:6px 16px;font-size:11px;font-weight:700;background:#D4A853;color:#111;border:none;border-radius:6px;cursor:pointer;">
                           Verify at Companies House
                         </button>
