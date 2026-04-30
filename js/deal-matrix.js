@@ -905,7 +905,12 @@ export async function renderDealMatrix(deal) {
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
 
               ${(() => {
-                const isCorporate = ['corporate','spv','ltd','llp'].includes((deal.borrower_type || '').toLowerCase());
+                // 2026-04-30 — robust corporate detection: borrower_type can be NULL/wrong
+                // on legacy deals or deals from older convert-to-deal versions, but
+                // deal.company_number is unambiguous — if there's a company number,
+                // it IS a corporate borrower regardless of what borrower_type column says.
+                const isCorporate = !!(deal.company_number)
+                  || ['corporate','spv','ltd','llp','limited'].includes((deal.borrower_type || '').toLowerCase());
                 const allBorrowers = deal.borrowers || [];
                 // Non-guarantors = rows that COULD belong to the primary borrower context.
                 // Excludes: guarantors, any row whose parent is a guarantor OR joint borrower
@@ -1025,7 +1030,7 @@ export async function renderDealMatrix(deal) {
 
                     <!-- ── D. Joint Borrowers — other top-level parties on this deal, rendered as cards ── -->
                     ${(() => {
-                      const _isCorpType = (t) => ['corporate','spv','ltd','llp','trust','partnership'].includes((t || '').toLowerCase());
+                      const _isCorpType = (t) => ['corporate','spv','ltd','llp','limited','trust','partnership'].includes((t || '').toLowerCase());
                       const childrenOfJoint = (pid) => allBorrowers.filter(b => b.parent_borrower_id === pid);
                       const corpJoints = coBorrowers.filter(b => _isCorpType(b.borrower_type));
                       const indJoints = coBorrowers.filter(b => !_isCorpType(b.borrower_type));
@@ -1301,7 +1306,7 @@ export async function renderDealMatrix(deal) {
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px">
               ${(() => {
                 const allB = deal.borrowers || [];
-                const _isCorp = (t) => ['corporate','spv','ltd','llp'].includes((t || '').toLowerCase());
+                const _isCorp = (t) => ['corporate','spv','ltd','llp','limited'].includes((t || '').toLowerCase());
 
                 // Top-level guarantors only (parent_borrower_id IS NULL)
                 const corpGuarantors = allB.filter(b => !b.parent_borrower_id && b.role === 'guarantor' && _isCorp(b.borrower_type));
@@ -6281,7 +6286,7 @@ export async function renderDealMatrix(deal) {
     const natOpts = '<option value="">— Select —</option>' +
       _nationalities.map(n => `<option value="${n}" ${v.nationality === n ? 'selected' : ''}>${n}</option>`).join('');
 
-    const isCorporateType = (t) => ['corporate','spv','ltd','llp','trust','partnership'].includes(t || '');
+    const isCorporateType = (t) => ['corporate','spv','ltd','llp','limited','trust','partnership'].includes(t || '');
     const initialIsCorporate = isCorporateType(v.borrower_type);
 
     const modalHtml = `
@@ -6873,7 +6878,7 @@ export async function renderDealMatrix(deal) {
       const placeholder = document.getElementById('party-relationships-panel-placeholder');
       if (!placeholder) return;
 
-      const _corpTypesPR = ['corporate','spv','ltd','llp','trust','partnership'];
+      const _corpTypesPR = ['corporate','spv','ltd','llp','limited','trust','partnership'];
       const _isCorpPR = (t) => _corpTypesPR.includes((t || '').toLowerCase());
 
       const parties = [];
@@ -8961,7 +8966,7 @@ export async function renderDealMatrix(deal) {
   // falling back to flat deal_submissions field + HTML input only when no
   // hierarchical borrowers exist yet.
   const isCorporate = () => {
-    const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+    const _corpTypes = ['corporate','spv','ltd','llp','limited','trust','partnership'];
     // Canonical: deal_borrowers primary row (post-Phase G hierarchical model)
     if (deal.borrowers && deal.borrowers.length > 0) {
       const primary = deal.borrowers.find(b => b.role === 'primary' && !b.parent_borrower_id)
@@ -9127,7 +9132,7 @@ export async function renderDealMatrix(deal) {
       // on any child satisfies the atLeastOne email/phone gate. DOB/nationality
       // follow the same pattern — those are individual attributes that apply
       // to the person behind the corporate, not the corporate itself.
-      const _primaryCorpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+      const _primaryCorpTypes = ['corporate','spv','ltd','llp','limited','trust','partnership'];
       const _primaryIsCorp = _primaryCorpTypes.includes((primary.borrower_type || '').toLowerCase());
       const _firstChildWith = (fieldName) => {
         const child = deal.borrowers.find(b =>
@@ -9702,7 +9707,7 @@ export async function renderDealMatrix(deal) {
               //   - corporate entities (a company is not a person and can't be a director here)
               //   - guarantors and their children (they belong to a separate party)
               //   - joint borrowers and their children (officers of a different company)
-              const _corpTypes = ['corporate','spv','ltd','llp','trust','partnership'];
+              const _corpTypes = ['corporate','spv','ltd','llp','limited','trust','partnership'];
               const _isCorpType = (t) => _corpTypes.includes((t || '').toLowerCase());
               const _primaryOnly = bData.borrowers.filter(b => {
                 if (b.role === 'guarantor' || b.role === 'joint') return false;
