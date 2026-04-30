@@ -33,6 +33,12 @@ const companiesHouse = require('../services/companies-house');
 const pricingEngine = require('../services/pricing-engine');
 const addressLookup = require('../services/address-lookup');
 const xcoll = require('../services/cross-collateral');
+const {
+  normalizePostcode,
+  normalizeString,
+  normalizeMoney,
+  normalizeCompanyNumber,
+} = require('../services/matrix-normalizer');
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function clientIp(req) {
@@ -183,12 +189,24 @@ async function quoteOneProperty(input) {
 // ═══════════════════════════════════════════════════════════════════════════
 router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
   try {
-    const {
-      properties,
-      company_number,
-      company_name_input,
-      loan_amount,
-    } = req.body || {};
+    const rawBody = req.body || {};
+
+    // ── Normalize every broker-typed field through the canonical layer ──
+    // Note: this route uses pounds (not pence) at the input boundary —
+    // poundsToPence() handles the conversion downstream. normalizeMoney
+    // strips £/k/m/commas and returns the underlying number unchanged.
+    const propertiesRaw = Array.isArray(rawBody.properties) ? rawBody.properties : [];
+    const properties = propertiesRaw.map((p) => ({
+      postcode: normalizePostcode(p.postcode),
+      address_text: normalizeString(p.address_text),
+      paf_uprn: normalizeString(p.paf_uprn),
+      purpose: normalizeString(p.purpose, { lowercase: true }),
+      existing_charge_balance: normalizeMoney(p.existing_charge_balance),
+      manual_avm: normalizeMoney(p.manual_avm),
+    }));
+    const company_number = normalizeCompanyNumber(rawBody.company_number);
+    const company_name_input = normalizeString(rawBody.company_name_input);
+    const loan_amount = normalizeMoney(rawBody.loan_amount);
 
     if (!Array.isArray(properties) || properties.length === 0) {
       return res.status(400).json({ ok: false, error: 'properties[] required (at least 1)' });
@@ -213,7 +231,8 @@ router.post('/broker/quick-quote', authenticateToken, async (req, res) => {
       }
     }
 
-    const cleanCompanyNumber = company_number ? String(company_number).trim().toUpperCase() : null;
+    // normalizeCompanyNumber already produces 8-char zero-padded uppercase form
+    const cleanCompanyNumber = company_number || null;
 
     // ── Parallel: per-property + Companies House ──────────────────────
     const [propertyResults, chResult] = await Promise.all([

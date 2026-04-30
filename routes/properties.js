@@ -6,6 +6,7 @@ const { authenticateToken, authenticateInternal } = require('../middleware/auth'
 const config = require('../config');
 const { validate } = require('../middleware/validate');
 const { logAudit } = require('../services/audit');
+const { normalizePropertyPayload } = require('../services/matrix-normalizer');
 
 // Helper: check if user owns the deal or is internal staff
 async function canEditDeal(req, submissionId) {
@@ -29,8 +30,10 @@ router.post('/:submissionId/properties', authenticateToken, async (req, res) => 
       return res.status(403).json({ error: 'You do not have permission to add properties to this deal' });
     }
 
-    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
-            gdv, reinstatement, title_number, solicitor_firm, solicitor_ref, notes } = req.body;
+    // 2026-04-30 — normalize payload before SQL INSERT
+    const _norm = normalizePropertyPayload(req.body);
+    const { reinstatement, solicitor_firm, solicitor_ref, notes } = req.body;
+    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price, gdv, title_number } = _norm;
     if (!address) return res.status(400).json({ error: 'Property address is required' });
 
     const dealResult = await pool.query(`SELECT id FROM deal_submissions WHERE submission_id = $1`, [req.params.submissionId]);
@@ -97,10 +100,12 @@ router.put('/:submissionId/properties/:propertyId', authenticateToken, async (re
       return res.status(403).json({ error: 'You do not have permission to edit this property' });
     }
 
-    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price,
-            gdv, reinstatement, title_number, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes,
+    // 2026-04-30 — normalize payload before SQL UPDATE (matrix inline edit)
+    const _norm = normalizePropertyPayload(req.body);
+    const { reinstatement, valuation_date, insurance_sum, solicitor_firm, solicitor_ref, notes,
             security_charge_type, existing_charges_note,
             loan_purpose, existing_charge_balance_pence } = req.body;
+    const { address, postcode, property_type, tenure, occupancy, current_use, market_value, purchase_price, gdv, title_number } = _norm;
 
     const result = await pool.query(
       `UPDATE deal_properties SET

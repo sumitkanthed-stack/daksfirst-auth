@@ -8,6 +8,12 @@
 const config = require('../config');
 const pool = require('../db/pool');
 const { syncDealProperties } = require('./property-parser');
+const {
+  normalizeBorrowerPayload,
+  normalizePropertyPayload,
+  normalizeString,
+  normalizeCompanyNumber,
+} = require('./matrix-normalizer');
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
@@ -789,15 +795,18 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
 
     // ── 6a. Store parsed properties ──
     if (mergedAnalysis.parsedProperties && Array.isArray(mergedAnalysis.parsedProperties) && mergedAnalysis.parsedProperties.length > 0) {
-      const claudeProperties = mergedAnalysis.parsedProperties.map(p => ({
-        address: p.address || '',
-        postcode: p.postcode || null,
-        market_value: p.market_value ? parseFloat(p.market_value) : null,
-        purchase_price: p.purchase_price ? parseFloat(p.purchase_price) : null,
-        property_type: p.property_type || null,
-        tenure: p.tenure || null,
-        source: 'claude_parsed'
-      }));
+      const claudeProperties = mergedAnalysis.parsedProperties.map(p => {
+        const norm = normalizePropertyPayload(p);
+        return {
+          address: norm.address || p.address || '',
+          postcode: norm.postcode || null,
+          market_value: norm.market_value != null ? norm.market_value : (p.market_value ? parseFloat(p.market_value) : null),
+          purchase_price: norm.purchase_price != null ? norm.purchase_price : (p.purchase_price ? parseFloat(p.purchase_price) : null),
+          property_type: norm.property_type || null,
+          tenure: norm.tenure || null,
+          source: 'claude_parsed'
+        };
+      });
       await syncDealProperties(pool, dealId, claudeProperties, { force: true });
       await updateProgress('wrote_properties', `Saved ${claudeProperties.length} properties to database`);
 
@@ -856,8 +865,23 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
         `DELETE FROM deal_borrowers WHERE deal_id = $1 AND kyc_status = 'pending' AND ch_verified_at IS NULL`,
         [dealId]
       );
-      for (const b of mergedAnalysis.borrowers) {
-        if (!b.full_name) continue;
+      // Normalize company-level fields once (used per-row below)
+      const companyNameNorm = normalizeString(mergedAnalysis.company?.name);
+      const companyNumberNorm = normalizeCompanyNumber(mergedAnalysis.company?.company_number);
+      const borrowerTypeNorm = normalizeString(mergedAnalysis.company?.borrower_type, { lowercase: true }) || 'individual';
+
+      for (const bRaw of mergedAnalysis.borrowers) {
+        if (!bRaw || !bRaw.full_name) continue;
+        // Canonical-form layer: every matrix write goes through normalizer
+        const b = {
+          ...bRaw,
+          ...normalizeBorrowerPayload({
+            ...bRaw,
+            id_type: bRaw.id_type || (bRaw.passport_number ? 'passport' : null),
+            id_number: bRaw.id_number || bRaw.passport_number || null,
+            id_expiry: bRaw.id_expiry || bRaw.passport_expiry || null,
+          }),
+        };
         // UPSERT: if borrower with same name exists on this deal, update missing fields only
         await pool.query(
           `INSERT INTO deal_borrowers (deal_id, full_name, date_of_birth, nationality, email, phone, role, borrower_type, company_name, company_number, gender, id_type, id_number, id_expiry, residential_address, kyc_status)
@@ -879,16 +903,17 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
              updated_at = NOW()`,
           [dealId, b.full_name, b.date_of_birth || null, b.nationality || null,
            b.email || null, b.phone || null, b.role || 'primary',
-           mergedAnalysis.company?.borrower_type || 'individual',
-           mergedAnalysis.company?.name || null, mergedAnalysis.company?.company_number || null,
-           b.gender || null, b.id_type || (b.passport_number ? 'passport' : null),
-           b.passport_number || null, b.passport_expiry || null,
+           borrowerTypeNorm,
+           companyNameNorm || null, companyNumberNorm || null,
+           b.gender || null, b.id_type || null,
+           b.id_number || null, b.id_expiry || null,
            b.residential_address || null]
         );
       }
-      // Update primary borrower on deal_submissions
+      // Update primary borrower on deal_submissions (canonical via normalizer)
       const primary = mergedAnalysis.borrowers.find(b => b.role === 'primary') || mergedAnalysis.borrowers[0];
       if (primary) {
+        const pNorm = normalizeBorrowerPayload(primary);
         await pool.query(
           `UPDATE deal_submissions SET
              borrower_name = COALESCE(NULLIF($2, ''), borrower_name),
@@ -898,15 +923,22 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
              borrower_nationality = COALESCE(NULLIF($6, ''), borrower_nationality),
              updated_at = NOW()
            WHERE id = $1`,
-          [dealId, primary.full_name || '', primary.email || '', primary.phone || '',
-           primary.date_of_birth || null, primary.nationality || '']
+          [dealId,
+           pNorm.full_name || primary.full_name || '',
+           pNorm.email || '',
+           pNorm.phone || '',
+           pNorm.date_of_birth || null,
+           pNorm.nationality || '']
         );
       }
       await updateProgress('wrote_borrowers', `Saved ${mergedAnalysis.borrowers.length} borrowers`, mergedAnalysis.borrowers.map(b => b.full_name));
     }
 
-    // ── 6c. Write company details ──
+    // ── 6c. Write company details (canonical via normalizer) ──
     if (mergedAnalysis.company && mergedAnalysis.company.name) {
+      const coName = normalizeString(mergedAnalysis.company.name) || '';
+      const coNumber = normalizeCompanyNumber(mergedAnalysis.company.company_number) || '';
+      const coType = normalizeString(mergedAnalysis.company.borrower_type, { lowercase: true }) || '';
       await pool.query(
         `UPDATE deal_submissions SET
            company_name = COALESCE(NULLIF($2, ''), company_name),
@@ -915,10 +947,9 @@ async function parseDealDocuments(submissionId, dealId, dealContext, securityCon
            borrower_company = COALESCE(NULLIF($2, ''), borrower_company),
            updated_at = NOW()
          WHERE id = $1`,
-        [dealId, mergedAnalysis.company.name || '', mergedAnalysis.company.company_number || '',
-         mergedAnalysis.company.borrower_type || '']
+        [dealId, coName, coNumber, coType]
       );
-      await updateProgress('wrote_company', `Saved company: ${mergedAnalysis.company.name}`);
+      await updateProgress('wrote_company', `Saved company: ${coName}`);
     }
 
     // ── 6d. Write loan terms ──

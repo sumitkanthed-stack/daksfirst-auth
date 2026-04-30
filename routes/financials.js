@@ -5,6 +5,7 @@ const pool = require('../db/pool');
 const config = require('../config');
 const { authenticateToken } = require('../middleware/auth');
 const { logAudit } = require('../services/audit');
+const { normalizeMoney, normalizeString } = require('../services/matrix-normalizer');
 
 // Helper: check if user owns the deal or is internal staff
 async function canEditDeal(req, submissionId) {
@@ -58,12 +59,18 @@ router.post('/:submissionId/financials', authenticateToken, async (req, res) => 
       return res.status(403).json({ error: 'You do not have permission to edit this deal' });
     }
 
-    const { category, description, amount, frequency, holder, reference, notes, supporting_doc_id, source } = req.body;
+    // 2026-04-30 — normalize at the boundary: amount → number, free-text → trimmed strings
+    const { category, frequency, supporting_doc_id, source } = req.body;
+    const description = normalizeString(req.body.description);
+    const amount = normalizeMoney(req.body.amount);
+    const holder = normalizeString(req.body.holder);
+    const reference = normalizeString(req.body.reference);
+    const notes = normalizeString(req.body.notes);
 
     if (!category || !VALID_CATEGORIES.includes(category)) {
       return res.status(400).json({ error: 'Valid category required (asset, liability, income, expense)' });
     }
-    if (!description || !description.trim()) {
+    if (!description) {
       return res.status(400).json({ error: 'Description is required' });
     }
 
@@ -101,7 +108,13 @@ router.put('/:submissionId/financials/:financialId', authenticateToken, async (r
       return res.status(403).json({ error: 'You do not have permission to edit this deal' });
     }
 
-    const { description, amount, frequency, holder, reference, notes, supporting_doc_id } = req.body;
+    // 2026-04-30 — normalize at the boundary
+    const { frequency, supporting_doc_id } = req.body;
+    const description = normalizeString(req.body.description);
+    const amount = normalizeMoney(req.body.amount);
+    const holder = normalizeString(req.body.holder);
+    const reference = normalizeString(req.body.reference);
+    const notes = normalizeString(req.body.notes);
 
     const result = await pool.query(
       `UPDATE deal_financials SET
