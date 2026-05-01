@@ -1,5 +1,4 @@
-node_modules
-# Playwright artefacts (local only)
+# Playwright local-only artefacts (not committed)
 /test-results/
 /playwright-report/
 /playwright/.cache/
