@@ -51,6 +51,22 @@ test.describe('Matrix UI interactions — orphan handler regression net', () => 
     // Wait for matrix to render — Property / Security Details section should appear
     await expect(page.locator('text=Property / Security Details')).toBeVisible({ timeout: 30000 });
 
+    // ─── 2b. Expand any collapsed deal sections so property row is clickable ──
+    // Deal-detail page lands with sections like "matrix", "doc-repo" collapsed
+    // by default. Property table lives inside the matrix body. Expand programmatically
+    // by invoking the SPA's own toggle function.
+    await page.evaluate(() => {
+      const collapsedBodies = document.querySelectorAll('.deal-section-body.collapsed');
+      collapsedBodies.forEach(body => {
+        const sectionId = body.id.replace(/^body-/, '');
+        if (typeof window.toggleDealSection === 'function') {
+          window.toggleDealSection(sectionId);
+        }
+      });
+    });
+    // Brief settle for the expand animation
+    await page.waitForTimeout(500);
+
     // ─── 3. Property table renders with at least one row ─────────────
     const propRow = page.locator('[id^="prop-row-"]').first();
     await expect(propRow).toBeVisible({ timeout: 10000 });
