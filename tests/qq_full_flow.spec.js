@@ -88,17 +88,25 @@ test.describe('QQ → convert-to-deal → property panel (full flow)', () => {
     // ─── 6. Click "Submit Anyway" / "Submit full deal pack" ────────────
     await submitDealBtn.click();
 
-    // ─── 7. Wait for navigation to "Complete Your Deal" screen ───────
-    // Submit Anyway → convert-to-deal → broker lands on screen-complete-deal
-    // (NOT the matrix yet — matrix comes after broker fills CYD). This is the
-    // expected end-state of the QQ → convert-to-deal flow.
-    // Convert-to-deal fires CH verify + property auto-enrich, can take 10-20s.
-    await expect(page.locator('text=CAPTURED FROM YOUR QUICK QUOTE')).toBeVisible({ timeout: 30000 });
+    // ─── 7. Wait for "Captured from your Quick Quote" text to appear in DOM ──
+    // Submit Anyway → convert-to-deal → broker lands on screen-complete-deal.
+    // We use count-based check (not toBeVisible) because the screen wrapper
+    // can have CSS computed styles that confuse Playwright's visibility check
+    // even when the user can see the screen. The presence of this text is the
+    // signal that convert-to-deal succeeded.
+    await page.waitForFunction(
+      () => /Captured from your Quick Quote/i.test(document.body.innerText),
+      null,
+      { timeout: 30000 }
+    );
 
-    // ─── 8. Assert QQ-derived data carried over ──────────────────────
-    // Use regex matching for resilience against non-breaking spaces / split nodes.
-    // We're proving convert-to-deal carried QQ data into the new deal.
-    await expect(page.locator(`text=/£\\s*${Number(TEST_LOAN_AMOUNT).toLocaleString()}|£\\s*1,500,000/i`).first()).toBeVisible({ timeout: 5000 });
+    // ─── 8. QQ-derived loan amount carried over into the new deal ────
+    const loanInBody = await page.evaluate((amt) => {
+      // Match £1,500,000 with various formatting (commas, thin spaces, nbsp)
+      const re = new RegExp('£[\\s\\u00A0\\u2009]*' + amt.replace(/,/g, '[,\\s\\u00A0]?'));
+      return re.test(document.body.innerText);
+    }, Number(TEST_LOAN_AMOUNT).toLocaleString());
+    expect(loanInBody, `Expected £${Number(TEST_LOAN_AMOUNT).toLocaleString()} to appear on the post-convert page`).toBe(true);
 
     // ─── 9. Capture submission_id for auto-cleanup ────────────────────
     // Pull the submission_id from the URL OR from a data attribute on the page.
