@@ -10129,28 +10129,6 @@ window._deleteDraftDeal = async function(submissionId, btnEl) {
   }
 };
 
-// ─── _withdrawDeal: soft-withdraw a deal with reason (post-DIP only) ───
-window._withdrawDeal = async function(submissionId) {
-  const reason = prompt('Withdrawal reason (will be stored on the deal record):');
-  if (!reason || !reason.trim()) return;
-  try {
-    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/withdraw`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: reason.trim() })
-    });
-    if (resp.ok) {
-      if (typeof showToast === 'function') showToast('Deal withdrawn');
-      window.location.reload();
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      if (typeof showToast === 'function') showToast(err.error || 'Withdraw failed', 'error');
-    }
-  } catch (e) {
-    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
-  }
-};
-
 // ─── _autoCalcSdlt: UK residential SDLT with +3% additional-property surcharge ───
 // Bands as of 2026-04 — verify against HMRC if rates change.
 // Standard rates: 0-£250k=0%, £250k-£925k=5%, £925k-£1.5m=10%, £1.5m+=12%.
@@ -10596,3 +10574,4 @@ window._savePrimaryUseAmount = function (input) {
     window.currentDeal[col] = isNaN(num) ? null : num;
   }
 };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
