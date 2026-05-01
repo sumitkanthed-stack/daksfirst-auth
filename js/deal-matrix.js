@@ -1850,8 +1850,8 @@ export async function renderDealMatrix(deal) {
                                        : _occ.includes('owner') ? '#94A3B8'
                                        : '#64748B';
                       const _occDisplay = p.occupancy ? sanitizeHtml(p.occupancy) : '—';
-                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="prop-row-${p.id}" onclick="window._togglePropPanel(${p.id})">
-                      <td style="padding:6px 4px;text-align:center;color:#64748B;font-size:12px;width:24px;" id="prop-chev-${p.id}">▶</td>
+                      return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" id="prop-row-${p.id}" onclick="window._togglePropertyExpand(${p.id})">
+                      <td style="padding:6px 4px;text-align:center;color:#64748B;font-size:12px;width:24px;transform:rotate(90deg);transition:transform 0.15s;" id="prop-chev-${p.id}">▶</td>
                       <td style="padding:6px 8px;color:#F1F5F9;font-weight:600;">${i + 1}</td>
                       <td style="padding:6px 8px;color:#F1F5F9;">${sanitizeHtml(p.address || '-')}</td>
                       <td style="padding:6px 8px;color:#D4A853;font-weight:600;">${sanitizeHtml(p.postcode || '-')}</td>
@@ -3091,11 +3091,13 @@ export async function renderDealMatrix(deal) {
                     _wrapPane('rics',    _ricsSlimHtml,  false) +
                   '</div>';
               }).map((_html, _i) => {
-                // Sprint 2 #14 Simplified C — wrap each property's panels in a
-                // hidden expand-div. Default display:none. Toggled by the row
-                // chevron via window._togglePropertyExpand.
+                // Sprint 2 #14 Simplified C — wrap each property's panels in an
+                // expand-div. 2026-04-30: defaults to display:block (was display:none
+                // but the toggle function _togglePropertyExpand never existed, so the
+                // panel was permanently hidden — "vaporised" bug). Row chevron click
+                // now calls _togglePropertyExpand to collapse/expand the whole panel.
                 const _pid = deal.properties[_i] && deal.properties[_i].id;
-                return '<div id="prop-expand-' + _pid + '" data-prop-expand="' + _pid + '" style="display:none;">' + _html + '</div>';
+                return '<div id="prop-expand-' + _pid + '" data-prop-expand="' + _pid + '" style="display:block;">' + _html + '</div>';
               }).join('')}
 
               <!-- ── Portfolio Summary (aggregates derived from the security schedule) ── -->
@@ -9941,7 +9943,26 @@ window._propertySearch = async function(propertyId, submissionId) {
   }
 };
 
-// ── Toggle Property Intelligence panel expand/collapse ─────────────────────
+// ── Toggle the WHOLE rich Property Intelligence wrapper (row chevron) ──────
+// 2026-04-30: this is what the table row chevron calls. Toggles the outer
+// prop-expand-${id} div which contains the entire tabbed Property Intel card,
+// Chimnie, Area Intelligence, HMLR, RICS, Rental Data sub-panels.
+// (Was missing — wrapper was display:none with no toggle function = "vaporised" bug.)
+window._togglePropertyExpand = function(propertyId) {
+  const wrapper = document.getElementById('prop-expand-' + propertyId);
+  const chev = document.getElementById('prop-chev-' + propertyId);
+  if (!wrapper) return;
+  const isOpen = wrapper.style.display !== 'none';
+  if (isOpen) {
+    wrapper.style.display = 'none';
+    if (chev) chev.style.transform = '';
+  } else {
+    wrapper.style.display = 'block';
+    if (chev) chev.style.transform = 'rotate(90deg)';
+  }
+};
+
+// ── Toggle Property Intelligence INNER card (kept for tabbed-card internal use) ──
 // Pure DOM, no API call. Flip the body display, rotate the chevron, show/hide inline summary.
 window._togglePropPanel = function(propertyId) {
   const body = document.getElementById('prop-body-' + propertyId);
