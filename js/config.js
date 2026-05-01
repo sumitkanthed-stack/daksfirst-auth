@@ -6,7 +6,7 @@ const isStaging =
 
 export const API_BASE = isStaging
   ? 'https://daksfirst-auth-staging.onrender.com'
-  : 'https://daksfirst-auth.onrender.com';
+  : 'https://auth.daksfirst.com';
 
 // Phase E.2 (2026-04-27) — N8N_WEBHOOK is the DEAL-SUBMISSION webhook
 // (broker submits deal → n8n Deal Intake canvas). Both environments share
