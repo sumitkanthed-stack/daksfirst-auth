@@ -2044,7 +2044,7 @@ export async function renderDealMatrix(deal) {
                   // ── Collapse/expand state — mirrors EPC Property Intelligence panel ──
                   // Default collapsed when: data fetched AND property is verified (EPC accepted).
                   // Default open in every other case so RM sees the data after fetching / refreshing.
-                  const chimnieCollapsed = fetched && verified;
+                  const chimnieCollapsed = !!fetched;  // 2026-04-30: collapse by default when data fetched
                   const chimnieBodyDisplay = chimnieCollapsed ? 'none' : 'block';
                   const chimnieSummaryDisplay = chimnieCollapsed ? 'inline' : 'none';
                   const chimnieChevronRotate = chimnieCollapsed ? '' : 'transform:rotate(90deg);';
@@ -2470,7 +2470,7 @@ export async function renderDealMatrix(deal) {
                   if (!fetched) return ''; // Area data sits inside Chimnie response — no data until Chimnie fetched
 
                   // Collapse behaviour mirrors EPC + Chimnie
-                  const areaCollapsed = fetched && verified;
+                  const areaCollapsed = !!fetched;  // 2026-04-30: collapse by default when data fetched
                   const areaBodyDisplay = areaCollapsed ? 'none' : 'block';
                   const areaSummaryDisplay = areaCollapsed ? 'inline' : 'none';
                   const areaChevronRotate = areaCollapsed ? '' : 'transform:rotate(90deg);';
@@ -2794,7 +2794,7 @@ export async function renderDealMatrix(deal) {
                   }
 
                   // Default open if just pulled or has error; collapsed otherwise (less noise)
-                  const hmlrCollapsed = !pulled || (pulled && !pullErr);
+                  const hmlrCollapsed = !!pulled;  // 2026-04-30: collapse by default when register pulled
                   const hmlrBodyDisplay = hmlrCollapsed ? 'none' : 'block';
                   const hmlrSummaryDisplay = hmlrCollapsed ? 'inline' : 'none';
                   const hmlrChevronRotate = hmlrCollapsed ? '' : 'transform:rotate(90deg);';
@@ -9978,6 +9978,45 @@ window._togglePropPanel = function(propertyId) {
     body.style.display = 'none';
     if (summary) summary.style.display = 'inline';
     if (chevron) chevron.style.transform = '';
+  }
+};
+
+// 2026-04-30 — Property Accept / Undo Accept handlers. RM clicks ✓ Accept on
+// the Property Intelligence panel header to lock in the search-result data.
+// Both routes already exist on backend (/verify + /unverify); these were just
+// the missing window.* handlers — same latent-bug pattern as prop-expand.
+window._propertyVerify = async function(propertyId, submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/verify`, {
+      method: 'POST'
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Property accepted');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Failed to accept property', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+window._propertyUnverify = async function(propertyId, submissionId) {
+  if (!confirm('Undo Accept on this property? Search data will remain but the verified flag is removed.')) return;
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/unverify`, {
+      method: 'POST'
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Accept undone');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Failed to undo accept', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
   }
 };
 
