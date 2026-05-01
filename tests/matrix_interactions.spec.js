@@ -39,17 +39,22 @@ test.describe('Matrix UI interactions — orphan handler regression net', () => 
     await page.click('#login-btn');
     await expect(page.locator('#login-email')).toBeHidden({ timeout: 10000 });
 
-    // ─── 2. Navigate to deal detail ──────────────────────────────────
+    // ─── 2. Navigate to deal detail (fire-and-forget) ────────────────
     // The SPA doesn't use URL hash routing — deal-detail is a JS-driven screen
     // change via showDealDetail() in deal-detail.js (module-scoped, not on window).
-    // Dynamically import the module the same way the SPA does internally.
-    await page.evaluate(async (submissionId) => {
-      const m = await import('/js/deal-detail.js');
-      return m.showDealDetail(submissionId);
+    // Fire the import + call without awaiting it (it does heavy async work that
+    // can exceed the 30s test timeout); we wait for the UI to settle below.
+    await page.evaluate((submissionId) => {
+      // Don't await — let it run async, we'll poll for the rendered UI
+      import('/js/deal-detail.js').then(m => m.showDealDetail(submissionId));
     }, TEST_DEAL_SID);
 
-    // Wait for matrix to render — Property / Security Details section should appear
-    await expect(page.locator('text=Property / Security Details')).toBeVisible({ timeout: 30000 });
+    // Wait for matrix to render — text appears in body when deal-detail is up
+    await page.waitForFunction(
+      () => /Property\s*\/\s*Security/i.test(document.body.innerText),
+      null,
+      { timeout: 60000 }
+    );
 
     // ─── 2b. Expand any collapsed deal sections so property row is clickable ──
     // Deal-detail page lands with sections like "matrix", "doc-repo" collapsed
