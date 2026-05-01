@@ -1347,7 +1347,7 @@ function buildDipHtml(deal, dipData, options) {
   <div class="ref-strip">
     <div class="ref">${esc(dealRef)}</div>
     <div class="issued">Borrower type: <strong>${deal.borrower_type ? deal.borrower_type.toUpperCase() : 'CORPORATE'}</strong> &nbsp;|&nbsp; Portfolio: <strong>${properties.length} ${properties.length === 1 ? 'Property' : 'Properties'}</strong></div>
-    <div class="badge">${deal.borrower_type ? deal.borrower_type.toUpperCase() : 'CORPORATE'}</div>
+    <div class="badge">${(deal.company_name || deal.borrower_name || deal.borrower_type || 'CORPORATE').toUpperCase()}</div>
   </div>
 
   <div class="preamble">
