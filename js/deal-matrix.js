@@ -9981,6 +9981,215 @@ window._togglePropPanel = function(propertyId) {
   }
 };
 
+// 2026-04-30 — ORPHAN HANDLER SWEEP. 11 functions referenced in onclick/onchange
+// across the matrix UI but never defined. Audit run via grep — see memory rule
+// feedback_pre_commit_orphan_handler_audit. All wired to existing backend routes.
+
+// ─── Generic collapse/expand helper for tabbed sub-panels ───
+// Used by Chimnie, Area, HMLR, Rental tabs — all share the {prefix}-body /
+// {prefix}-summary / {prefix}-chevron ID convention.
+function _genericPanelToggle(prefix, propertyId) {
+  const body = document.getElementById(prefix + '-body-' + propertyId);
+  const chev = document.getElementById(prefix + '-chevron-' + propertyId);
+  const summary = document.getElementById(prefix + '-summary-' + propertyId);
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  if (isCollapsed) {
+    body.style.display = 'block';
+    if (chev) chev.style.transform = 'rotate(90deg)';
+    if (summary) summary.style.display = 'none';
+  } else {
+    body.style.display = 'none';
+    if (chev) chev.style.transform = '';
+    if (summary) summary.style.display = 'inline';
+  }
+}
+window._toggleChimniePanel = (id) => _genericPanelToggle('chimnie', id);
+window._toggleAreaPanel    = (id) => _genericPanelToggle('area',    id);
+window._toggleHmlrPanel    = (id) => _genericPanelToggle('hmlr',    id);
+window._toggleRentalPanel  = (id) => _genericPanelToggle('rental',  id);
+
+// ─── _freshAge: relative-date formatter ("3d ago", "2mo ago") ───
+window._freshAge = function(iso, staleDays) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return '';
+  const days = Math.floor(ms / (24*60*60*1000));
+  let label;
+  if (days < 1) label = '<1d ago';
+  else if (days < 30) label = days + 'd ago';
+  else if (days < 365) label = Math.floor(days/30) + 'mo ago';
+  else label = Math.floor(days/365) + 'y ago';
+  // staleDays parameter: if non-null and exceeded, render in amber
+  if (staleDays != null && days > staleDays) {
+    return '<span style="color:#FBBF24;">' + label + ' · stale</span>';
+  }
+  return label;
+};
+
+// ─── _chimnieLookup: Fetch / Refresh Chimnie data for a property ───
+window._chimnieLookup = async function(propertyId, submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/chimnie-lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true })
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Chimnie data refreshed');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Chimnie lookup failed', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _hmlrPull: Pull OC1 register PDF for a property by title number ───
+window._hmlrPull = async function(propertyId, submissionId, titleNum) {
+  if (!confirm('Pull OC1 register from HMLR? This is a paid call (~£18-20).')) return;
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/admin/hmlr/pull/${propertyId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title_number: titleNum })
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('OC1 pulled');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'HMLR pull failed', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _hmlrSearch: Search HMLR for a title number by postcode/address ───
+window._hmlrSearch = async function(propertyId, submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/admin/hmlr/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ property_id: propertyId, submission_id: submissionId })
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('HMLR search complete');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'HMLR search failed', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _propertyDataPull: Pull rental benchmarks (PropertyData API) ───
+window._propertyDataPull = async function(propertyId, submissionId) {
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/admin/property/property-data-pull/${propertyId}`, {
+      method: 'POST'
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Rental data pulled');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'PropertyData pull failed', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _deleteDraftDeal: hard-delete a draft deal (pre-DIP only — gated server-side) ───
+window._deleteDraftDeal = async function(submissionId, btnEl) {
+  if (!confirm('Delete this draft deal? This cannot be undone. Only deals in draft stage can be hard-deleted.')) return;
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}`, { method: 'DELETE' });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Draft deleted');
+      // Remove the row from the deals list if present
+      if (btnEl) {
+        const row = btnEl.closest('tr, .deal-row');
+        if (row) row.remove();
+      } else {
+        window.location.reload();
+      }
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Delete failed (deal may be past DIP — use Withdraw instead)', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _withdrawDeal: soft-withdraw a deal with reason (post-DIP only) ───
+window._withdrawDeal = async function(submissionId) {
+  const reason = prompt('Withdrawal reason (will be stored on the deal record):');
+  if (!reason || !reason.trim()) return;
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/withdraw`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Deal withdrawn');
+      window.location.reload();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Withdraw failed', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
+// ─── _autoCalcSdlt: UK residential SDLT with +3% additional-property surcharge ───
+// Bands as of 2026-04 — verify against HMRC if rates change.
+// Standard rates: 0-£250k=0%, £250k-£925k=5%, £925k-£1.5m=10%, £1.5m+=12%.
+// +3% surcharge on the WHOLE purchase price for additional dwellings / SPVs.
+window._autoCalcSdlt = function(purchasePrice) {
+  const price = Number(purchasePrice) || 0;
+  if (price <= 0) {
+    if (typeof showToast === 'function') showToast('Enter a purchase price first', 'error');
+    return;
+  }
+  // Standard SDLT (residential)
+  const bands = [
+    { from: 0,        to: 250000,  rate: 0    },
+    { from: 250000,   to: 925000,  rate: 0.05 },
+    { from: 925000,   to: 1500000, rate: 0.10 },
+    { from: 1500000,  to: Infinity, rate: 0.12 }
+  ];
+  let standardSdlt = 0;
+  for (const b of bands) {
+    if (price > b.from) {
+      const taxable = Math.min(price, b.to) - b.from;
+      standardSdlt += taxable * b.rate;
+    }
+  }
+  // +3% surcharge on full price (additional dwelling / SPV)
+  const surcharge = price * 0.03;
+  const total = Math.round(standardSdlt + surcharge);
+
+  // Write into the SDLT field — id `uses-sdlt` per matrix S&U convention
+  const sdltField = document.getElementById('uses-sdlt') || document.querySelector('input[data-field="uses_sdlt"]');
+  if (sdltField) {
+    sdltField.value = total.toLocaleString('en-GB');
+    // Trigger change event so matrixValidateAndSave fires
+    sdltField.dispatchEvent(new Event('blur', { bubbles: true }));
+    sdltField.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (typeof showToast === 'function') showToast(`SDLT calculated: £${total.toLocaleString('en-GB')}`);
+};
+
 // 2026-04-30 — Property Accept / Undo Accept handlers. RM clicks ✓ Accept on
 // the Property Intelligence panel header to lock in the search-result data.
 // Both routes already exist on backend (/verify + /unverify); these were just
