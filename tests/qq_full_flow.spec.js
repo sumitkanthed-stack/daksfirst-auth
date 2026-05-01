@@ -100,11 +100,44 @@ test.describe('QQ → convert-to-deal → property panel (full flow)', () => {
     // We're proving convert-to-deal carried QQ data into the new deal.
     await expect(page.locator(`text=/£\\s*${Number(TEST_LOAN_AMOUNT).toLocaleString()}|£\\s*1,500,000/i`).first()).toBeVisible({ timeout: 5000 });
 
-    // ─── 9. Done. Test deal was created on the target env. ────────────
-    // To clean up, run this SQL on the target DB (replace XXX with the value
-    // printed at the start of this test):
-    //   DELETE FROM deal_submissions WHERE borrower_company LIKE 'PLAYWRIGHT_TEST_%';
-    console.log(`[test] Test deal created. Tag: ${TEST_TAG}`);
+    // ─── 9. Capture submission_id for auto-cleanup ────────────────────
+    // Pull the submission_id from the URL OR from a data attribute on the page.
+    // SPA hash-routing typically puts the id in window.location.hash or a body data attr.
+    const submissionId = await page.evaluate(() => {
+      // Try multiple locations the SPA might stash the current submission id
+      const hash = window.location.hash || '';
+      const hashMatch = hash.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+      if (hashMatch) return hashMatch[0];
+      const bodyAttr = document.body.getAttribute('data-current-deal') ||
+                       document.body.getAttribute('data-submission-id');
+      if (bodyAttr) return bodyAttr;
+      // Last-ditch: window globals
+      if (window.currentDealId) return window.currentDealId;
+      if (window.currentSubmissionId) return window.currentSubmissionId;
+      return null;
+    });
+    console.log(`[test] Test deal created. submission_id: ${submissionId || 'unknown — manual cleanup needed'}`);
+
+    // ─── 10. Auto-cleanup — DELETE the test deal via API ──────────────
+    // Broker can hard-delete their own draft deals (per backend rule:
+    // DELETABLE_STAGES = ['draft']). This keeps prod clean of test pollution.
+    if (submissionId) {
+      const token = await page.evaluate(() => sessionStorage.getItem('daksfirst_token'));
+      if (token) {
+        try {
+          const resp = await page.request.delete(`/api/deals/${submissionId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (resp.ok()) {
+            console.log(`[test] ✓ Auto-cleanup: deleted test deal ${submissionId}`);
+          } else {
+            console.warn(`[test] Auto-cleanup failed: ${resp.status()} — manual SQL cleanup needed`);
+          }
+        } catch (e) {
+          console.warn(`[test] Auto-cleanup error: ${e.message}`);
+        }
+      }
+    }
   });
 
 });
