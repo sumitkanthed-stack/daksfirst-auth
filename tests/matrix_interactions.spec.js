@@ -71,20 +71,22 @@ test.describe('Matrix UI interactions — orphan handler regression net', () => 
     const propRow = page.locator('[id^="prop-row-"]').first();
     await expect(propRow).toBeVisible({ timeout: 10000 });
 
-    // ─── 4. Trigger property row toggle → rich panel wrapper expands ──────────
-    // (This caught the "prop-expand wrapper hidden by default" bug.)
-    // Use page.evaluate to call _togglePropertyExpand directly with the row's
-    // property id — sidesteps DOM pointer-event interception from sticky headers,
-    // collapsed-section overlays, etc. Functionally equivalent to clicking.
+    // ─── 4. Rich panel wrapper visible by default (regression test) ──────
+    // The "vaporised" bug was: prop-expand wrapper was display:none with no
+    // toggle function defined → permanently invisible. Fix made it display:block
+    // by default. This test catches a regression: if anyone changes wrapper to
+    // display:none again without wiring a toggle, this assertion fails red.
     const propertyId = await propRow.evaluate(el => {
       const m = (el.id || '').match(/prop-row-(\d+)/);
       return m ? Number(m[1]) : null;
     });
     expect(propertyId).not.toBeNull();
-    await page.evaluate((pid) => window._togglePropertyExpand(pid), propertyId);
-    await page.waitForTimeout(300);
     const propExpand = page.locator(`#prop-expand-${propertyId}`);
     await expect(propExpand).toBeVisible({ timeout: 5000 });
+
+    // Verify the toggle function exists (orphan handler regression net)
+    const toggleExists = await page.evaluate(() => typeof window._togglePropertyExpand === 'function');
+    expect(toggleExists).toBe(true);
 
     // ─── 5. All 6 tabs are present in the strip ──────────────────────
     const tabNames = ['intel', 'chimnie', 'area', 'rental', 'hmlr', 'rics'];
