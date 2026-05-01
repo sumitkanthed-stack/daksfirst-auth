@@ -9981,6 +9981,39 @@ window._togglePropPanel = function(propertyId) {
   }
 };
 
+// 2026-04-30 — EPC Apply button handler. Reads the broker's pick from the
+// epc-picker-${pid} dropdown and POSTs to /select-epc. On success, refreshes
+// the deal in place. Was missing — Apply button onclick referenced a function
+// that didn't exist (same latent-bug pattern as prop-expand wrapper).
+window._propertySelectEpc = async function(propertyId, submissionId) {
+  const sel = document.getElementById('epc-picker-' + propertyId);
+  if (!sel) {
+    if (typeof showToast === 'function') showToast('EPC picker not found', 'error');
+    return;
+  }
+  const lmk_key = sel.value;
+  if (!lmk_key) {
+    if (typeof showToast === 'function') showToast('Pick an EPC certificate first', 'error');
+    return;
+  }
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/api/deals/${submissionId}/properties/${propertyId}/select-epc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lmk_key })
+    });
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('EPC applied');
+      await _refreshDealInPlace(submissionId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (typeof showToast === 'function') showToast(err.error || 'Failed to apply EPC', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error: ' + e.message, 'error');
+  }
+};
+
 // Sprint 2 #14 — Tabbed property card. Switches the active panel between
 // Property Intel / Chimnie / Area / HMLR / RICS by toggling pane visibility
 // and active tab styling. Each tab carries its semantic colour (green/blue/
