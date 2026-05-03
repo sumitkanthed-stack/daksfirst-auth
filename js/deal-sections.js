@@ -295,6 +295,77 @@ export function renderSnapshot(deal, role) {
     });
     pipeline.innerHTML = phtml;
   }
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 1.5b (2026-05-03) — Internal Status Bar (DIP + Docs).
+  // Inserted dynamically below the snapshot grid; visible to internal users only.
+  // Click DIP badge → scrolls to s4. Doc badge currently static.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (isInternal) {
+    let statusBar = document.getElementById('snap-status-bar');
+    if (!statusBar) {
+      const grid = document.getElementById('snapshot-grid');
+      if (grid && grid.parentElement) {
+        statusBar = document.createElement('div');
+        statusBar.id = 'snap-status-bar';
+        statusBar.style.cssText = 'background:#0F172A;padding:10px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+        grid.parentElement.insertBefore(statusBar, grid.nextSibling);
+      }
+    }
+    if (statusBar) {
+      const renderBadge = (label, color, bg, onClickFn) =>
+        '<span style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;background:' + bg + ';color:' + color + ';' + (onClickFn ? 'cursor:pointer;' : '') + '"' + (onClickFn ? ' onclick="' + onClickFn + '"' : '') + '>' + label + '</span>';
+
+      // DIP Readiness — count approved sections
+      const dipFlags = ['dip_borrower_approved', 'dip_security_approved', 'dip_use_of_funds_approved',
+                        'dip_exit_strategy_approved', 'dip_loan_terms_approved', 'dip_fees_approved',
+                        'dip_conditions_approved'];
+      const approvedCount = dipFlags.filter(f => deal[f] === true).length;
+      const dipIssued = !!deal.dip_issued_at;
+      let dipLabel, dipColor, dipBg;
+      if (dipIssued) {
+        dipLabel = '✓ DIP Issued';
+        dipColor = '#34D399'; dipBg = 'rgba(52,211,153,0.15)';
+      } else if (approvedCount === 7) {
+        dipLabel = 'DIP Ready to Issue';
+        dipColor = '#34D399'; dipBg = 'rgba(52,211,153,0.15)';
+      } else if (approvedCount > 0) {
+        dipLabel = 'DIP ' + approvedCount + ' of 7 approved';
+        dipColor = '#FBBF24'; dipBg = 'rgba(251,191,36,0.15)';
+      } else {
+        dipLabel = 'DIP not started';
+        dipColor = '#94A3B8'; dipBg = 'rgba(148,163,184,0.1)';
+      }
+
+      // Document Completion — from doc_summary or documents array
+      const docs = deal.documents || [];
+      const docSummary = deal.doc_summary || {};
+      const totalDocs = docSummary.total || docs.length;
+      const receivedDocs = docSummary.received != null ? docSummary.received :
+        docs.filter(d => ['received', 'verified', 'signed'].includes(d.status)).length;
+      let docLabel, docColor, docBg;
+      if (totalDocs > 0) {
+        docLabel = 'Docs ' + receivedDocs + ' of ' + totalDocs;
+        const pct = receivedDocs / totalDocs;
+        if (pct === 1) { docColor = '#34D399'; docBg = 'rgba(52,211,153,0.15)'; }
+        else if (pct >= 0.5) { docColor = '#FBBF24'; docBg = 'rgba(251,191,36,0.15)'; }
+        else { docColor = '#94A3B8'; docBg = 'rgba(148,163,184,0.1)'; }
+      } else {
+        docLabel = 'Docs none uploaded';
+        docColor = '#94A3B8'; docBg = 'rgba(148,163,184,0.1)';
+      }
+
+      // Click handler for DIP badge — scroll to s4 (Loan Terms) section
+      const dipScroll = "var t=document.querySelector('[data-section-header=\\'s4\\']');if(t)t.scrollIntoView({behavior:'smooth',block:'center'});";
+
+      statusBar.innerHTML =
+        '<span style="font-size:9px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Status</span>' +
+        renderBadge(dipLabel, dipColor, dipBg, dipScroll) +
+        renderBadge(docLabel, docColor, docBg, null);
+    }
+  } else {
+    const sb = document.getElementById('snap-status-bar');
+    if (sb) sb.style.display = 'none';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
