@@ -326,6 +326,21 @@ function normalizeDealPayload(input) {
   out.term_months = (input.term_months != null && input.term_months !== '') ? parseInt(input.term_months) : null;
   out.rate_requested = (input.rate_requested != null && input.rate_requested !== '') ? parseFloat(input.rate_requested) : null;
   out.ltv_requested = (input.ltv_requested != null && input.ltv_requested !== '') ? parseFloat(input.ltv_requested) : null;
+// RM-approved numerics (matrix-fields PUT path, M2a Matrix-SSOT 2026-04-20).
+  // Mirrors the rate_requested / ltv_requested coercion above. Without these,
+  // string values from the matrix UI persisted as text into NUMERIC columns
+  // and bypassed the canonical-form layer. 2026-05-03.
+  out.loan_amount_approved = normalizeMoney(input.loan_amount_approved);
+  out.rate_approved = (input.rate_approved != null && input.rate_approved !== '') ? parseFloat(input.rate_approved) : null;
+  out.ltv_approved = (input.ltv_approved != null && input.ltv_approved !== '') ? parseFloat(input.ltv_approved) : null;
+  out.term_months_approved = (input.term_months_approved != null && input.term_months_approved !== '') ? parseInt(input.term_months_approved) : null;
+  out.arrangement_fee_pct = (input.arrangement_fee_pct != null && input.arrangement_fee_pct !== '') ? parseFloat(input.arrangement_fee_pct) : null;
+  out.broker_fee_pct = (input.broker_fee_pct != null && input.broker_fee_pct !== '') ? parseFloat(input.broker_fee_pct) : null;
+  out.commitment_fee = (input.commitment_fee != null && input.commitment_fee !== '') ? parseFloat(input.commitment_fee) : null;
+  out.dip_fee = (input.dip_fee != null && input.dip_fee !== '') ? parseFloat(input.dip_fee) : null;
+  out.exit_fee_pct = (input.exit_fee_pct != null && input.exit_fee_pct !== '') ? parseFloat(input.exit_fee_pct) : null;
+  out.extension_fee_pct = (input.extension_fee_pct != null && input.extension_fee_pct !== '') ? parseFloat(input.extension_fee_pct) : null;
+  out.retained_interest_months = (input.retained_interest_months != null && input.retained_interest_months !== '') ? parseInt(input.retained_interest_months) : null;
   out.exit_strategy = normalizeString(input.exit_strategy);
   out.drawdown_date = normalizeDate(input.drawdown_date);
   out.interest_servicing = normalizeString(input.interest_servicing, { lowercase: true });
