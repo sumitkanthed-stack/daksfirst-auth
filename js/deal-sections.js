@@ -214,7 +214,12 @@ export function renderSnapshot(deal, role) {
     ltvEl.style.color = dLtv > 75 ? '#dc2626' : dLtv > 70 ? '#f59e0b' : '#059669';
   }
 
-  set('snap-value', dVal ? fmtMoney(dVal) : '-');
+  // Property Value pair (Phase 1.5b 2026-05-03) — broker's submitted value vs portfolio
+  // valuation we're using for LTV. portfolioVal already factors Chimnie/RICS per-property
+  // values via getPortfolioValuation helper. For internal users, show "broker said X" if differs.
+  const valBroker = num(deal.security_value) || num(deal.current_value);
+  const showValDiff = isInternal && valBroker && dVal && valBroker !== dVal;
+  setHTML('snap-value', dVal ? renderPair(fmtMoney(dVal), fmtMoney(valBroker), showValDiff) : '-');
 
   // Term — requested → approved pair
   const termReq = num(deal.term_months);

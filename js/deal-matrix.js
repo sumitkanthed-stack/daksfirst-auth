@@ -10687,6 +10687,11 @@ window.matrixSaveSection = async function (sectionId) {
       btn.textContent = 'Saved ' + hh + ':' + mm;
     }
     if (typeof showToast === 'function') showToast('Section saved', 'success');
+    // Phase 1.5 — trigger full deal re-render so snapshot reflects new approved values.
+    // _refreshDealInPlace is at top of file (module scope, hoisted), preserves expand state.
+    setTimeout(function () {
+      if (typeof _refreshDealInPlace === 'function') _refreshDealInPlace(dealId);
+    }, 250);
   } catch (err) {
     console.error('[matrixSaveSection] failed:', err);
     if (btn) { btn.disabled = false; btn.textContent = 'Save'; btn.style.opacity = '1'; }
