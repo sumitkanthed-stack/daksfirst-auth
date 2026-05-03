@@ -4266,13 +4266,13 @@ export async function renderDealMatrix(deal) {
 
       <div id="content-s8" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- DIP -->
-        ${renderFieldRow('dip-document', 'Data Information Package (DIP)', 'Initial deal summary and requirements',
+        ${renderFieldRow('dip-document', 'Decision in Principle (DIP)', 'Initial deal summary and requirements',
           [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-dip-document">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Data Information Package (DIP)</div>
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Decision in Principle (DIP)</div>
               <div style="font-size:13px;color:#64748B;">${deal.dip_signed ? 'Signed and issued.' : deal.dip_issued_at ? 'Issued — awaiting signature.' : 'Will be generated once all required fields are populated.'}</div>
             </div>
           </div>
@@ -4280,13 +4280,13 @@ export async function renderDealMatrix(deal) {
 
         <!-- Indicative TS -->
         ${renderFieldRow('indicative-ts', 'Indicative Term Sheet', 'Initial lending terms and conditions',
-          ['locked', deal.ts_signed ? 'signed' : 'not-started', 'not-started', 'not-started'])}
+          [(deal.dip_signed && deal.dip_fee_confirmed) ? 'not-started' : 'locked', deal.ts_signed ? 'signed' : 'not-started', 'not-started', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-indicative-ts">
           <div style="padding:8px 26px 14px 50px">
             <div style="background:#111827;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px">
               <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px">Indicative Term Sheet</div>
-              <div style="font-size:13px;color:#64748B;">${deal.ts_signed ? 'Signed and accepted.' : 'Generated after DIP is signed and commitment fee is paid.'}</div>
+              <div style="font-size:13px;color:#64748B;">${deal.ts_signed ? 'Signed and accepted.' : (deal.dip_signed && deal.dip_fee_confirmed) ? 'Unlocked — full data verification in progress (HMLR, TruLayer, valuations, ALM, QS reports, title detail).' : 'Unlocks once DIP is signed and onboarding fee is paid.'}</div>
             </div>
           </div>
         </div>
