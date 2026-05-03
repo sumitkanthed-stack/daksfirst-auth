@@ -4313,7 +4313,56 @@ async function runMigrations() {
     } catch (err) {
       console.log('[migrate] Note on deal_conditions_precedent:', err.message.substring(0, 160));
     }
-
+// ═══════════════════════════════════════════════════════════════════════════
+    //  Policy Defaults — 2026-05-03 (CONTINUITY backlog #1)
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  Removes the render-time-fallback anti-pattern. Five RM-numeric columns
+    //  previously relied on `field || 1.10` etc. in matrix/DIP renderers while
+    //  the DB stayed NULL until RM blurred (CONTINUITY 2026-05-01 §4 #1, §5).
+    //
+    //  Policy defaults applied at column level so PG fills them on INSERT:
+    //    rate_approved             1.10  (% / month — Daksfirst policy default)
+    //    arrangement_fee_pct       2.00  (% of loan)
+    //    broker_fee_pct            1.00  (% of loan)
+    //    commitment_fee            5000  (£ flat)
+    //    retained_interest_months     6  (months)
+    //
+    //  dip_fee (1000), exit_fee_pct (1.00), extension_fee_pct (1.00) already
+    //  have column-level DEFAULTs from the 2026-04-20 Matrix-SSOT block — no
+    //  change needed for those.
+    //
+    //  ltv_approved + term_months_approved deliberately get NO policy default
+    //  — those are deal-specific, not policy-driven, and the Matrix-SSOT
+    //  backfill at line ~1181 already copies them from the requested values.
+    //
+    //  Backfill is COALESCE-only — never overwrites existing non-NULL values.
+    //  RM still has to explicitly confirm via dip_loan_terms_approved /
+    //  dip_fees_approved before DIP issue (existing per-section approval gate
+    //  in routes/deals.js lines 2528-2585 unchanged).
+    // ═══════════════════════════════════════════════════════════════════════════
+    try {
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN rate_approved SET DEFAULT 1.10`);
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN arrangement_fee_pct SET DEFAULT 2.00`);
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN broker_fee_pct SET DEFAULT 1.00`);
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN commitment_fee SET DEFAULT 5000`);
+      await pool.query(`ALTER TABLE deal_submissions ALTER COLUMN retained_interest_months SET DEFAULT 6`);
+      await pool.query(`
+        UPDATE deal_submissions
+        SET rate_approved            = COALESCE(rate_approved,            1.10),
+            arrangement_fee_pct      = COALESCE(arrangement_fee_pct,      2.00),
+            broker_fee_pct           = COALESCE(broker_fee_pct,           1.00),
+            commitment_fee           = COALESCE(commitment_fee,           5000),
+            retained_interest_months = COALESCE(retained_interest_months, 6)
+        WHERE rate_approved            IS NULL
+           OR arrangement_fee_pct      IS NULL
+           OR broker_fee_pct           IS NULL
+           OR commitment_fee           IS NULL
+           OR retained_interest_months IS NULL
+      `);
+      console.log('[migrate] ✓ Policy defaults set on rate/fees/retained_months + NULLs backfilled');
+    } catch (err) {
+      console.log('[migrate] Note on policy defaults:', err.message.substring(0, 200));
+    }
     console.log('[migrate] All tables and indexes created/updated successfully');
   } catch (err) {
     console.error('[migrate] Migration failed:', err.message);
