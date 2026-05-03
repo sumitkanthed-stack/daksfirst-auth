@@ -386,9 +386,17 @@ export function renderSnapshot(deal, role) {
             if (!combined) return;
             const el = document.getElementById('snap-risk-badge');
             if (!el) return;
-            const v = (combined.latest.verdict || (combined.full && combined.full.verdict) || '').toUpperCase();
+            let v = (combined.latest.verdict || (combined.full && combined.full.verdict) || '').toUpperCase();
             const gm = combined.full && (combined.full.grade_matrix || combined.full.parsed_grades);
             const gmFinal = gm && gm.final;
+            // Fallback: derive verdict from PD band if explicit verdict is null
+            if (!v && gmFinal && gmFinal.pd != null) {
+              const _n = Number(gmFinal.pd) || 0;
+              if (_n >= 1 && _n <= 3) v = 'LOW';
+              else if (_n <= 5) v = 'MODERATE';
+              else if (_n <= 7) v = 'ELEVATED';
+              else if (_n <= 9) v = 'HIGH';
+            }
             const grade = (gmFinal && gmFinal.pd != null && gmFinal.lgd && gmFinal.ia)
               ? gmFinal.pd + String(gmFinal.lgd).toUpperCase() + String(gmFinal.ia).toUpperCase()
               : null;
