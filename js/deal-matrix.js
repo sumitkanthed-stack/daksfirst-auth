@@ -15,7 +15,23 @@ import { showDealDetail } from './deal-detail.js';
 import { mountAddressAutocomplete } from './address-autocomplete.js';
 // 2026-04-21: shared display helpers for consistent stage labels across views.
 import { getStageLabel, LOAN_PURPOSE_OPTIONS, EXIT_ROUTE_OPTIONS, EXIT_CONFIDENCE_OPTIONS } from './deal-display.js';
-
+// ── Phase 1 Save Section (2026-05-03) — orange-border CSS for dirty inputs.
+// See memory project_save_buttons_design_2026_05_03.md. Idempotent inject.
+(function _injectMatrixDirtyCss() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('matrix-dirty-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'matrix-dirty-styles';
+  s.textContent = '.matrix-dirty { box-shadow: 0 0 0 1px rgba(251,146,60,0.65) !important; border-color: rgba(251,146,60,0.85) !important; transition: box-shadow .15s, border-color .15s; }';
+  document.head.appendChild(s);
+})();
+// ── Phase 1 Save Section state — per-section dirty tracking + last-saved
+// timestamps + idle-reminder timer + reminder-shown flags. Initialised
+// idempotently so module re-imports don't reset live state.
+window._matrixDirtyFields   = window._matrixDirtyFields   || { s4: new Set(), s7: new Set() };
+window._matrixLastSavedAt   = window._matrixLastSavedAt   || { s4: null,      s7: null };
+window._matrixIdleTimer     = window._matrixIdleTimer     || null;
+window._matrixReminderShown = window._matrixReminderShown || { s4: false,    s7: false };
 // ── Refresh the current deal in-place without kicking back to the dashboard ──
 // Preserves BOTH matrix state (content-s1..s8 main sections + detail-* sub-row expands)
 // AND legacy deal-sections state (body-* + collapsed class). Also restores scroll position.
@@ -406,7 +422,7 @@ function renderFieldRow(fieldKey, fieldName, fieldDesc, statuses, isConditional 
 /**
  * Generate collapsible section header
  */
-function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots, showRequestInfo = false) {
+function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots, showRequestInfo = false, showSave = false) {
   // Map icon initials to styles
   const iconStyles = {
     'DM': { bg: 'rgba(96,165,250,0.1)', color: '#60A5FA' },
@@ -426,6 +442,12 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
     ? `<button onclick="event.stopPropagation(); window.matrixSendInfoRequest('${sectionId}')" style="padding:3px 8px;border-radius:4px;font-size:9px;font-weight:600;border:1px solid rgba(251,191,36,0.3);background:rgba(251,191,36,0.1);color:#FBBF24;cursor:pointer;margin-left:8px;white-space:nowrap;">Request Info</button>`
     : '';
 
+    // Phase 1 Save Section (2026-05-03) — Save button initial render state. Starts disabled
+  // with "Saved" label; matrixMarkDirty / matrixSaveSection mutate label + enabled state live.
+  const saveBtn = showSave
+    ? `<button onclick="event.stopPropagation(); window.matrixSaveSection('${sectionId}')" id="save-btn-${sectionId}" disabled data-section-save="${sectionId}" style="padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;border:1px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.05);color:#34D399;cursor:not-allowed;margin-left:6px;white-space:nowrap;opacity:0.5;">Saved</button>`
+    : '';
+
   return `
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));cursor:pointer;user-select:none;transition:background .12s;border-bottom:1px solid rgba(255,255,255,0.06)" onclick="window.matrixToggleSection && window.matrixToggleSection('${sectionId}')" data-section-header="${sectionId}">
       <div style="padding:11px 12px 11px 26px;display:flex;align-items:center;gap:8px">
@@ -433,7 +455,7 @@ function renderSectionHeader(sectionId, iconInitial, title, subtitle, statusDots
         <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:${style.bg};border-radius:6px;font-size:12px;font-weight:700;color:${style.color};flex-shrink:0">${iconInitial}</div>
         <span style="font-size:12px;font-weight:700;color:#F1F5F9">${sanitizeHtml(title)}</span>
         <span style="font-size:9px;color:#94A3B8;font-weight:400;margin-left:5px">${sanitizeHtml(subtitle)}</span>
-        ${requestInfoBtn}
+        ${requestInfoBtn}${saveBtn}
       </div>
       ${statusDots.map(dot => `<div style="padding:11px 6px;display:flex;align-items:center;justify-content:center">${dot}</div>`).join('')}
     </div>
@@ -3632,7 +3654,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ], isInternalUser)}
+      ], isInternalUser, true)}
 
       <div id="content-s4" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Loan Terms -->
@@ -4207,7 +4229,7 @@ export async function renderDealMatrix(deal) {
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started'),
         renderStatusDot(0, 'not-started')
-      ], isInternalUser)}
+      ], isInternalUser, true)}
 
       <div id="content-s7" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- Credit Approval — NOT at DIP stage, belongs in Formal Offer.
