@@ -363,11 +363,11 @@ export function renderSnapshot(deal, role) {
         renderBadge(docLabel, docColor, docBg, null);
         // Risk Grade badge — async fetch latest risk_view run, format "Risk 5BD · MODERATE"
       // Verdict colors. Click → scroll to Risk View section.
-      if (deal.submission_id) {
+      if (deal.id) {
         statusBar.insertAdjacentHTML('beforeend',
           '<span id="snap-risk-badge" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;background:rgba(148,163,184,0.1);color:#94A3B8;">Risk loading…</span>'
         );
-        fetchWithAuth(API_BASE + '/api/admin/risk-view/' + deal.submission_id + '/runs', { method: 'GET' })
+        fetchWithAuth(API_BASE + '/api/admin/risk-view/' + deal.id + '/runs', { method: 'GET' })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (data) {
             const el = document.getElementById('snap-risk-badge');
