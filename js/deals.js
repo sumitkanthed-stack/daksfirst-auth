@@ -417,7 +417,7 @@ export async function loadUserDeals() {
         row.onclick = () => import('./deal-detail.js').then(m => m.showDealDetail(deal.submission_id));
 
         const stage = deal.deal_stage || 'received';
-        const stageLabel = stageLabels[stage] || stage;
+        const stageLabel = getStageLabel(deal);
         const borrower = deal.borrower_name || deal.security_address?.substring(0, 30) || '-';
         const loanStr = deal.loan_amount ? '£' + formatNumber(deal.loan_amount) : '-';
         const ltvStr = deal.ltv_requested ? deal.ltv_requested + '%' : '-';
@@ -443,7 +443,7 @@ export async function loadUserDeals() {
           <td><strong style="color:#F1F5F9;">${sanitizeHtml(borrower)}</strong></td>
           <td style="white-space:nowrap;">${loanStr}</td>
           <td style="text-align:center;">${ltvStr}</td>
-          <td><span class="stage-badge stage-${stage}">${sanitizeHtml(stageLabel)}</span></td>
+          <td><span class="stage-badge stage-${deriveDisplayStage(deal)}">${sanitizeHtml(stageLabel)}</span></td>
           <td style="font-size:0.85em;">${updatedStr}</td>
           <td style="white-space:nowrap;">${actionBtns}</td>
         `;

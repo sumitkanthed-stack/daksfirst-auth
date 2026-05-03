@@ -14,7 +14,7 @@ import { showDealDetail } from './deal-detail.js';
 // 2026-04-29: Royal Mail PAF address autocomplete (PROP-3 widget)
 import { mountAddressAutocomplete } from './address-autocomplete.js';
 // 2026-04-21: shared display helpers for consistent stage labels across views.
-import { getStageLabel, LOAN_PURPOSE_OPTIONS, EXIT_ROUTE_OPTIONS, EXIT_CONFIDENCE_OPTIONS } from './deal-display.js';
+import { getStageLabel, deriveDisplayStage, LOAN_PURPOSE_OPTIONS, EXIT_ROUTE_OPTIONS, EXIT_CONFIDENCE_OPTIONS } from './deal-display.js';
 // ── Phase 1 Save Section (2026-05-03) — orange-border CSS for dirty inputs.
 // See memory project_save_buttons_design_2026_05_03.md. Idempotent inject.
 (function _injectMatrixDirtyCss() {
@@ -592,7 +592,7 @@ export async function renderDealMatrix(deal) {
 
   const role = getCurrentRole();
   const isInternalUser = ['admin', 'rm', 'credit', 'compliance'].includes(role);
-  const currentStage = deal.deal_stage || 'received';
+  const currentStage = deriveDisplayStage(deal);
 
   // Brokers can edit during draft and received stages (before submission to RM)
   // After submission (info_gathering+), broker Matrix is read-only — RM/admin can still edit
