@@ -10733,3 +10733,59 @@ window.matrixValidateLocal = function (fieldKey, rawValue, dataType) {
     }
   }
 };
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 1 wiring (2026-05-03) — auto-attach markDirty / validateLocal to
+// every editable input inside content-s4 and content-s7. Runs via
+// MutationObserver so it survives matrix re-renders without modifying any
+// existing render code. Inputs in OTHER sections keep their original
+// blur-save behaviour. Idempotent: tagged inputs ([data-phase1-wired]) are
+// skipped on subsequent observer ticks.
+// ════════════════════════════════════════════════════════════════════════════
+
+window.matrixAutoWirePhase1 = function () {
+  if (window._matrixPhase1Observer) return; // already running
+
+  const wireSection = function (sectionId) {
+    const container = document.getElementById('content-' + sectionId);
+    if (!container) return;
+    const inputs = container.querySelectorAll('input[data-field]:not([data-phase1-wired]), select[data-field]:not([data-phase1-wired]), textarea[data-field]:not([data-phase1-wired])');
+    inputs.forEach(function (input) {
+      const fieldKey = input.getAttribute('data-field');
+      const dataType = input.getAttribute('data-type') || 'text';
+      const tag = input.tagName.toLowerCase();
+      input.setAttribute('data-phase1-wired', '1');
+      input.removeAttribute('onblur');
+      input.removeAttribute('onchange');
+
+      if (tag === 'select') {
+        input.addEventListener('change', function () {
+          window.matrixMarkDirty(sectionId, fieldKey);
+        });
+      } else {
+        input.addEventListener('input', function () {
+          window.matrixMarkDirty(sectionId, fieldKey);
+        });
+        input.addEventListener('blur', function () {
+          window.matrixValidateLocal(fieldKey, this.value, dataType);
+        });
+      }
+    });
+  };
+
+  // Initial sweep + observe future re-renders
+  ['s4', 's7'].forEach(wireSection);
+  const observer = new MutationObserver(function () {
+    ['s4', 's7'].forEach(wireSection);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  window._matrixPhase1Observer = observer;
+};
+
+// Auto-start when DOM is ready
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window.matrixAutoWirePhase1);
+  } else {
+    window.matrixAutoWirePhase1();
+  }
+}
