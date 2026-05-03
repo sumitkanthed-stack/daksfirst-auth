@@ -199,12 +199,14 @@ export function renderSnapshot(deal, role) {
   const loanReq = num(deal.loan_amount_requested) || num(deal.loan_amount);
   const loanApr = num(deal.loan_amount_approved);
   const showLoanDiff = isInternal && loanReq && loanApr && loanReq !== loanApr;
-  setHTML('snap-loan', dLoan ? renderPair(fmtMoney(dLoan), fmtMoney(loanReq), showLoanDiff) : '-');
+  const dLoanMain = isInternal ? (loanApr || loanReq) : dLoan;
+  setHTML('snap-loan', dLoanMain ? renderPair(fmtMoney(dLoanMain), fmtMoney(loanReq), showLoanDiff) : '-');
 
   const ltvReq = num(deal.ltv_requested);
   const ltvApr = num(deal.ltv_approved);
   const showLtvDiff = isInternal && ltvReq && ltvApr && ltvReq !== ltvApr;
-  setHTML('snap-ltv', dLtv ? renderPair(fmtPctVal(dLtv), fmtPctVal(ltvReq), showLtvDiff) : '-');
+  const dLtvMain = isInternal ? (ltvApr || ltvReq) : dLtv;
+  setHTML('snap-ltv', dLtvMain ? renderPair(fmtPctVal(dLtvMain), fmtPctVal(ltvReq), showLtvDiff) : '-');
 
   // Color LTV based on threshold (style on outer element survives innerHTML)
   const ltvEl = document.getElementById('snap-ltv');
@@ -219,14 +221,16 @@ export function renderSnapshot(deal, role) {
   const termApr = num(deal.term_months_approved);
   const dTerm = termApr || termReq;
   const showTermDiff = isInternal && termReq && termApr && termReq !== termApr;
-  setHTML('snap-term', dTerm ? renderPair(dTerm + ' months', termReq + ' months', showTermDiff) : '-');
+  const dTermMain = isInternal ? (termApr || termReq) : (termReq || 0);
+  setHTML('snap-term', dTermMain ? renderPair(dTermMain + ' months', termReq + ' months', showTermDiff) : '-');
 
   // Rate — stage-aware (uses rate_approved when set, mirrors loan/ltv); pair for internals
   const rateReq = num(deal.rate_requested);
   const rateApr = num(deal.rate_approved);
   const dRate = isPreDip ? rateReq : (rateApr || rateReq);
   const showRateDiff = isInternal && rateReq && rateApr && rateReq !== rateApr;
-  setHTML('snap-rate', dRate ? renderPair(dRate.toFixed(2) + '% /mo', rateReq.toFixed(2) + '% /mo', showRateDiff) : '-');
+  const dRateMain = isInternal ? (rateApr || rateReq) : dRate;
+  setHTML('snap-rate', dRateMain ? renderPair(dRateMain.toFixed(2) + '% /mo', rateReq.toFixed(2) + '% /mo', showRateDiff) : '-');
 
   // Borrower display via helper (reads canonical deal.borrowers[] with flat fallback)
   const bName = getPrimaryBorrowerName(deal);
