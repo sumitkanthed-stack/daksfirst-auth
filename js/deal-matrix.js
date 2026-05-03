@@ -10596,3 +10596,140 @@ window._savePrimaryUseAmount = function (input) {
     window.currentDeal[col] = isNaN(num) ? null : num;
   }
 };
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 1 Save Section logic (2026-05-03) — backlog #2.
+// Activated for s4 (Loan Terms) + s7 (Credit Approval) only.
+// Globals declared at top of file (_matrixDirtyFields / _matrixLastSavedAt /
+// _matrixIdleTimer / _matrixReminderShown). DIP tab guard + beforeunload
+// land in Paste 3. See memory project_save_buttons_design_2026_05_03.md.
+// ════════════════════════════════════════════════════════════════════════════
+
+window.matrixMarkDirty = function (sectionId, fieldKey) {
+  if (!window._matrixDirtyFields[sectionId]) {
+    window._matrixDirtyFields[sectionId] = new Set();
+  }
+  window._matrixDirtyFields[sectionId].add(fieldKey);
+
+  // Orange dirty border on the input
+  const input = document.querySelector('[data-field="' + fieldKey + '"]');
+  if (input) input.classList.add('matrix-dirty');
+
+  // Save button: enable + change to "Save"
+  const btn = document.getElementById('save-btn-' + sectionId);
+  if (btn) {
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    btn.style.opacity = '1';
+    btn.style.background = 'rgba(52,211,153,0.15)';
+    btn.textContent = 'Save';
+  }
+
+  // Q4: 2-min idle reminder. Reset timer on each markDirty call.
+  if (window._matrixIdleTimer) clearTimeout(window._matrixIdleTimer);
+  window._matrixIdleTimer = setTimeout(function () {
+    if (!window._matrixReminderShown[sectionId] && window._matrixDirtyFields[sectionId] && window._matrixDirtyFields[sectionId].size > 0) {
+      window.matrixIdleReminder(sectionId);
+      window._matrixReminderShown[sectionId] = true;
+    }
+  }, 120000);
+};
+
+window.matrixSaveSection = async function (sectionId) {
+  const dirty = window._matrixDirtyFields[sectionId];
+  if (!dirty || dirty.size === 0) return;
+
+  const btn = document.getElementById('save-btn-' + sectionId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; btn.style.opacity = '0.7'; }
+
+  // Gather current values for all dirty fields
+  const payload = {};
+  dirty.forEach(function (fieldKey) {
+    const input = document.querySelector('[data-field="' + fieldKey + '"]');
+    if (input) payload[fieldKey] = input.value;
+  });
+
+  // Resolve current deal ID — try multiple lookup patterns
+  const dealId = (window.currentDeal && window.currentDeal.submission_id)
+    || (window.currentDealId)
+    || (document.querySelector('[data-submission-id]') && document.querySelector('[data-submission-id]').dataset.submissionId);
+  if (!dealId) {
+    if (typeof showToast === 'function') showToast('Cannot save: deal ID missing', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; btn.style.opacity = '1'; }
+    return;
+  }
+
+  try {
+    const res = await fetchWithAuth(API_BASE + '/api/admin/deals/' + dealId + '/matrix-fields', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    // Success: clear dirty borders, clear set, update label, reset reminder
+    dirty.forEach(function (fieldKey) {
+      const input = document.querySelector('[data-field="' + fieldKey + '"]');
+      if (input) input.classList.remove('matrix-dirty');
+    });
+    window._matrixDirtyFields[sectionId].clear();
+    window._matrixLastSavedAt[sectionId] = new Date();
+    window._matrixReminderShown[sectionId] = false;
+    if (window._matrixIdleTimer) { clearTimeout(window._matrixIdleTimer); window._matrixIdleTimer = null; }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.style.cursor = 'not-allowed';
+      btn.style.opacity = '0.5';
+      btn.style.background = 'rgba(52,211,153,0.05)';
+      const t = window._matrixLastSavedAt[sectionId];
+      const hh = String(t.getHours()).padStart(2, '0');
+      const mm = String(t.getMinutes()).padStart(2, '0');
+      btn.textContent = 'Saved ' + hh + ':' + mm;
+    }
+    if (typeof showToast === 'function') showToast('Section saved', 'success');
+  } catch (err) {
+    console.error('[matrixSaveSection] failed:', err);
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; btn.style.opacity = '1'; }
+    if (typeof showToast === 'function') showToast('Save failed: ' + err.message, 'error');
+  }
+};
+
+window.matrixIdleReminder = function (sectionId) {
+  if (window._matrixReminderShown[sectionId]) return;
+  const sectionLabel = sectionId === 's4' ? 'Loan Terms' : (sectionId === 's7' ? 'Credit Approval' : sectionId);
+
+  const existing = document.getElementById('matrix-reminder-' + sectionId);
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'matrix-reminder-' + sectionId;
+  toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1f2937;border:1px solid rgba(251,146,60,0.6);color:#FBBF24;padding:12px 16px;border-radius:6px;font-size:12px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;max-width:320px;cursor:pointer;';
+  toast.innerHTML = '<div>You have unsaved changes in <span style="color:#FFF">' + sectionLabel + '</span></div><div style="font-size:10px;color:#94A3B8;margin-top:4px;">Click here to scroll · auto-dismiss in 30s</div>';
+  toast.onclick = function () {
+    const target = document.querySelector('[data-section-header="' + sectionId + '"]');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast.remove();
+  };
+  document.body.appendChild(toast);
+  setTimeout(function () { if (toast.parentNode) toast.remove(); }, 30000);
+};
+
+window.matrixValidateLocal = function (fieldKey, rawValue, dataType) {
+  // Validation only — never writes to backend. Used for s4/s7 RM-numeric
+  // fields where the explicit Save button is the persistence path.
+  const input = document.querySelector('[data-field="' + fieldKey + '"]');
+  if (!input) return;
+  input.style.borderColor = '';
+  input.title = '';
+
+  if (rawValue == null || rawValue === '') return;
+
+  if (dataType === 'money' || dataType === 'pct' || dataType === 'percent' || dataType === 'rate' || dataType === 'numeric') {
+    const cleaned = String(rawValue).replace(/[£$€,%\s]/g, '');
+    const n = parseFloat(cleaned);
+    if (isNaN(n)) {
+      input.style.borderColor = '#F87171';
+      input.title = 'Must be a number';
+    }
+  }
+};
