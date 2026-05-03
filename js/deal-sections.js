@@ -361,6 +361,52 @@ export function renderSnapshot(deal, role) {
         '<span style="font-size:9px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Status</span>' +
         renderBadge(dipLabel, dipColor, dipBg, dipScroll) +
         renderBadge(docLabel, docColor, docBg, null);
+        // Risk Grade badge — async fetch latest risk_view run, format "Risk 5BD · MODERATE"
+      // Verdict colors. Click → scroll to Risk View section.
+      if (deal.submission_id) {
+        statusBar.insertAdjacentHTML('beforeend',
+          '<span id="snap-risk-badge" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;background:rgba(148,163,184,0.1);color:#94A3B8;">Risk loading…</span>'
+        );
+        fetchWithAuth(API_BASE + '/api/admin/risk-view/' + deal.submission_id + '/runs', { method: 'GET' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            const el = document.getElementById('snap-risk-badge');
+            if (!el) return;
+            if (!data || !data.runs || data.runs.length === 0) {
+              el.textContent = 'Risk not run';
+              return;
+            }
+            const latest = data.runs[0];
+            const v = (latest.verdict || '').toUpperCase();
+            const gm = latest.grade_matrix && latest.grade_matrix.final;
+            const grade = (gm && gm.pd != null && gm.lgd && gm.ia)
+              ? gm.pd + String(gm.lgd).toUpperCase() + String(gm.ia).toUpperCase()
+              : null;
+            const styles = {
+              LOW:      ['#34D399', 'rgba(52,211,153,0.15)'],
+              MODERATE: ['#60A5FA', 'rgba(96,165,250,0.15)'],
+              ELEVATED: ['#FBBF24', 'rgba(251,191,36,0.15)'],
+              HIGH:     ['#F87171', 'rgba(248,113,113,0.15)'],
+              CRITICAL: ['#FCA5A5', 'rgba(220,38,38,0.18)']
+            };
+            const sty = styles[v] || ['#94A3B8', 'rgba(148,163,184,0.1)'];
+            el.style.color = sty[0];
+            el.style.background = sty[1];
+            el.style.cursor = 'pointer';
+            el.textContent = grade ? ('Risk ' + grade + (v ? ' · ' + v : '')) : (v ? 'Risk ' + v : 'Risk pending');
+            el.onclick = function () {
+              const t = document.querySelector('[data-section=risk-view]') ||
+                        document.getElementById('detail-risk-view') ||
+                        document.getElementById('risk-view-section');
+              if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            };
+          })
+          .catch(function (err) {
+            console.warn('[snapshot] risk badge fetch failed:', err);
+            const el = document.getElementById('snap-risk-badge');
+            if (el) el.textContent = 'Risk error';
+          });
+      }
     }
   } else {
     const sb = document.getElementById('snap-status-bar');
