@@ -4235,7 +4235,7 @@ export async function renderDealMatrix(deal) {
         <!-- Credit Approval — NOT at DIP stage, belongs in Formal Offer.
              Fees block moved to s4 (Loan Terms & Economics) on 2026-04-20. -->
         ${renderFieldRow('credit-approval', 'Credit Approval', 'Internal credit committee sign-off',
-          ['not-required', 'not-started', isDIPStage ? 'not-started' : 'under-review', 'not-started'])}
+          ['not-required', 'not-started', isDIPStage ? 'not-started' : 'pending', 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-credit-approval">
           <div style="padding:8px 26px 14px 50px">
@@ -4267,7 +4267,7 @@ export async function renderDealMatrix(deal) {
       <div id="content-s8" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
         <!-- DIP -->
         ${renderFieldRow('dip-document', 'Decision in Principle (DIP)', 'Initial deal summary and requirements',
-          [deal.dip_signed ? 'signed' : 'submitted', 'not-started', 'not-started', 'not-started'])}
+          [deal.dip_signed ? 'signed' : 'submitted', deal.dip_signed ? 'signed' : 'not-started', deal.dip_signed ? 'signed' : 'not-started', deal.dip_signed ? 'signed' : 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-dip-document">
           <div style="padding:8px 26px 14px 50px">
@@ -4280,7 +4280,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Indicative TS -->
         ${renderFieldRow('indicative-ts', 'Indicative Term Sheet', 'Initial lending terms and conditions',
-          [(deal.dip_signed && deal.dip_fee_confirmed) ? 'not-started' : 'locked', deal.ts_signed ? 'signed' : 'not-started', 'not-started', 'not-started'])}
+          [(deal.dip_signed && deal.dip_fee_confirmed) ? 'not-started' : 'locked', deal.ts_signed ? 'signed' : 'not-started', deal.ts_signed ? 'signed' : 'not-started', deal.ts_signed ? 'signed' : 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-indicative-ts">
           <div style="padding:8px 26px 14px 50px">
@@ -4293,7 +4293,7 @@ export async function renderDealMatrix(deal) {
 
         <!-- Formal Offer -->
         ${renderFieldRow('formal-offer', 'Formal Offer Letter', 'Final binding lending terms',
-          ['locked', 'locked', deal.fl_signed ? 'signed' : 'not-started', 'not-started'])}
+          ['locked', 'locked', deal.fl_signed ? 'signed' : 'not-started', deal.fl_signed ? 'signed' : 'not-started'])}
 
         <div style="max-height:0;overflow:hidden;transition:max-height .3s ease;background:#1a2332" id="detail-formal-offer">
           <div style="padding:8px 26px 14px 50px">
