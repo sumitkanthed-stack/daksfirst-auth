@@ -100,6 +100,11 @@ export function requiresRefurbDetail(loanPurpose) {
 export function deriveDisplayStage(deal) {
   const rawStage = (deal && deal.deal_stage) || 'draft';
   if (rawStage === 'info_gathering' && deal && deal.assigned_rm) return 'under_review';
+  // 2026-05-03 — synthesize dip_issued from dip_issued_at if deal_stage hasn't caught up.
+  // Defensive against DB drift; the proper backend path at routes/deals.js:1281 sets both.
+  if (deal && deal.dip_issued_at && ['draft', 'received', 'info_gathering', 'under_review'].includes(rawStage)) {
+    return 'dip_issued';
+  }
   return rawStage;
 }
 
