@@ -10789,3 +10789,23 @@ if (typeof document !== 'undefined') {
     window.matrixAutoWirePhase1();
   }
 }
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 1 closing (2026-05-03) — beforeunload guard. Browser confirms
+// before close/navigate when matrix has unsaved changes in any tracked
+// section. Q1=B (hard-block on DIP-section approval) deferred to Phase 1.5
+// alongside the planned "Deal Status Bar" quick-nav at top of deal page.
+// See memory project_save_buttons_design_2026_05_03.md.
+// ════════════════════════════════════════════════════════════════════════════
+
+window.matrixCheckDirty = function () {
+  if (!window._matrixDirtyFields) return false;
+  return Object.values(window._matrixDirtyFields).some(function (s) { return s && s.size > 0; });
+};
+
+window.addEventListener('beforeunload', function (e) {
+  if (window.matrixCheckDirty()) {
+    e.preventDefault();
+    e.returnValue = 'You have unsaved matrix changes.';
+    return e.returnValue;
+  }
+});
