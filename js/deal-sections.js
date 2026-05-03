@@ -182,23 +182,51 @@ export function renderSnapshot(deal, role) {
     dLtv = Math.round((dLoan / dVal) * 100 * 10) / 10;
   }
 
-  // Snapshot grid cells
+// ── Snapshot grid cells (Phase 1.5 2026-05-03 — pairs for internal users) ──
+  // Internal users see "main value" + "broker asked X" subtitle when requested ≠ approved.
+  // Brokers see the authoritative current value (approved if set, else requested).
+  // Rate cell is now stage-aware (mirrors loan/ltv pattern).
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const setHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  const isInternal = ['admin', 'rm', 'credit', 'compliance'].includes(role);
+  const renderPair = (mainHtml, reqHtml, showDiff) =>
+    showDiff ? mainHtml + '<div style="font-size:10px;color:#94A3B8;font-weight:400;margin-top:2px;">broker asked ' + reqHtml + '</div>' : mainHtml;
+
   // Stage-aware loan label (id added to HTML 2026-04-21)
   const loanLabelEl = document.getElementById('snap-loan-label');
   if (loanLabelEl) loanLabelEl.textContent = loanLabel;
-  set('snap-loan', dLoan ? fmtMoney(dLoan) : '-');
-  set('snap-ltv', dLtv ? fmtPctVal(dLtv) : '-');
 
-  // Color LTV based on threshold
+  const loanReq = num(deal.loan_amount_requested) || num(deal.loan_amount);
+  const loanApr = num(deal.loan_amount_approved);
+  const showLoanDiff = isInternal && loanReq && loanApr && loanReq !== loanApr;
+  setHTML('snap-loan', dLoan ? renderPair(fmtMoney(dLoan), fmtMoney(loanReq), showLoanDiff) : '-');
+
+  const ltvReq = num(deal.ltv_requested);
+  const ltvApr = num(deal.ltv_approved);
+  const showLtvDiff = isInternal && ltvReq && ltvApr && ltvReq !== ltvApr;
+  setHTML('snap-ltv', dLtv ? renderPair(fmtPctVal(dLtv), fmtPctVal(ltvReq), showLtvDiff) : '-');
+
+  // Color LTV based on threshold (style on outer element survives innerHTML)
   const ltvEl = document.getElementById('snap-ltv');
   if (ltvEl && dLtv) {
     ltvEl.style.color = dLtv > 75 ? '#dc2626' : dLtv > 70 ? '#f59e0b' : '#059669';
   }
 
   set('snap-value', dVal ? fmtMoney(dVal) : '-');
-  set('snap-term', deal.term_months ? deal.term_months + ' months' : '-');
-  set('snap-rate', num(deal.rate_requested) ? num(deal.rate_requested).toFixed(2) + '% /mo' : '-');
+
+  // Term — requested → approved pair
+  const termReq = num(deal.term_months);
+  const termApr = num(deal.term_months_approved);
+  const dTerm = termApr || termReq;
+  const showTermDiff = isInternal && termReq && termApr && termReq !== termApr;
+  setHTML('snap-term', dTerm ? renderPair(dTerm + ' months', termReq + ' months', showTermDiff) : '-');
+
+  // Rate — stage-aware (uses rate_approved when set, mirrors loan/ltv); pair for internals
+  const rateReq = num(deal.rate_requested);
+  const rateApr = num(deal.rate_approved);
+  const dRate = isPreDip ? rateReq : (rateApr || rateReq);
+  const showRateDiff = isInternal && rateReq && rateApr && rateReq !== rateApr;
+  setHTML('snap-rate', dRate ? renderPair(dRate.toFixed(2) + '% /mo', rateReq.toFixed(2) + '% /mo', showRateDiff) : '-');
 
   // Borrower display via helper (reads canonical deal.borrowers[] with flat fallback)
   const bName = getPrimaryBorrowerName(deal);
