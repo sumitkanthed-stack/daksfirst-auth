@@ -10659,7 +10659,7 @@ window.matrixSaveSection = async function (sectionId) {
   }
 
   try {
-    const res = await fetchWithAuth(API_BASE + '/api/admin/deals/' + dealId + '/matrix-fields', {
+    const res = await fetchWithAuth(API_BASE + '/api/deals/' + dealId + '/matrix-fields', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
