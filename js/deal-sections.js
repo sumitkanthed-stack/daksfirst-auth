@@ -281,7 +281,7 @@ export function renderSnapshot(deal, role) {
     // For pipeline: if rawStage is info_gathering without RM, show 'received'
     // position active (deal has been submitted but no RM assigned yet).
     let displayStage = stage;
-    if (rawStage === 'info_gathering' && !deal.assigned_rm) displayStage = 'received';
+    if (rawStage === 'info_gathering' && !deal.assigned_rm && !deal.dip_issued_at) displayStage = 'received';
     const currentIdx = stageOrder.indexOf(displayStage);
     let phtml = '<span style="font-size:10px;color:#94A3B8;font-weight:600;margin-right:4px;">STAGE</span>';
     stageOrder.forEach((s, i) => {
