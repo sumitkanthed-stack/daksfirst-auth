@@ -370,17 +370,27 @@ export function renderSnapshot(deal, role) {
         fetchWithAuth(API_BASE + '/api/admin/risk-view/' + deal.id + '/runs', { method: 'GET' })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (data) {
-            const el = document.getElementById('snap-risk-badge');
-            if (!el) return;
             if (!data || !data.runs || data.runs.length === 0) {
-              el.textContent = 'Risk not run';
-              return;
+              const el = document.getElementById('snap-risk-badge');
+              if (el) el.textContent = 'Risk not run';
+              return null;
             }
             const latest = data.runs[0];
-            const v = (latest.verdict || '').toUpperCase();
-            const gm = latest.grade_matrix && latest.grade_matrix.final;
-            const grade = (gm && gm.pd != null && gm.lgd && gm.ia)
-              ? gm.pd + String(gm.lgd).toUpperCase() + String(gm.ia).toUpperCase()
+            
+            // Per-run fetch for parsed_grades (full PD/LGD/IA matrix)
+            return fetchWithAuth(API_BASE + '/api/admin/risk-view/' + deal.id + '/runs/' + latest.id, { method: 'GET' })
+              .then(function (r2) { return r2.ok ? r2.json() : null; })
+              .then(function (d2) { return { latest: latest, full: d2 && d2.run }; });
+          })
+          .then(function (combined) {
+            if (!combined) return;
+            const el = document.getElementById('snap-risk-badge');
+            if (!el) return;
+            const v = (combined.latest.verdict || (combined.full && combined.full.verdict) || '').toUpperCase();
+            const gm = combined.full && (combined.full.grade_matrix || combined.full.parsed_grades);
+            const gmFinal = gm && gm.final;
+            const grade = (gmFinal && gmFinal.pd != null && gmFinal.lgd && gmFinal.ia)
+              ? gmFinal.pd + String(gmFinal.lgd).toUpperCase() + String(gmFinal.ia).toUpperCase()
               : null;
             const styles = {
               LOW:      ['#34D399', 'rgba(52,211,153,0.15)'],
