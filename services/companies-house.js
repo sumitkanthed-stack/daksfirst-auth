@@ -17,7 +17,7 @@ const BASE_URL = 'https://api.company-information.service.gov.uk';
 
 // ─── Internal fetch helper ───────────────────────────────────────────────────
 
-async function chFetch(path) {
+async function chFetch(path, _retried = false) {
   const apiKey = config.COMPANIES_HOUSE_API_KEY;
   if (!apiKey) {
     throw new Error('COMPANIES_HOUSE_API_KEY not configured');
@@ -27,16 +27,38 @@ async function chFetch(path) {
   const auth = Buffer.from(`${apiKey}:`).toString('base64');
 
   const url = `${BASE_URL}${path}`;
-  console.log(`[companies-house] GET ${path}`);
+  console.log(`[companies-house] GET ${path}${_retried ? ' (retry)' : ''}`);
 
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Accept': 'application/json'
+  // 2026-05-03 — single defensive retry on transient transport errors.
+  // CONTINUITY backlog #3: search 1st-call sometimes fails (cold-start TLS
+  // handshake / DNS blip / Render container scale-from-zero). Retry once
+  // at 250ms covers this without masking real failures (4xx still throw,
+  // 429 still throws to surface rate-limit, 404 still returns null).
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/json'
+      }
+    });
+  } catch (netErr) {
+    if (!_retried) {
+      console.warn(`[companies-house] Network error on ${path}: ${netErr.message}. Retrying once.`);
+      await new Promise(r => setTimeout(r, 250));
+      return chFetch(path, true);
     }
-  });
+    throw netErr;
+  }
 
-  // Rate limited — log and throw
+  // 5xx — Companies House server-side transient. Single retry.
+  if (res.status >= 500 && res.status < 600 && !_retried) {
+    console.warn(`[companies-house] ${res.status} on ${path}. Retrying once.`);
+    await new Promise(r => setTimeout(r, 250));
+    return chFetch(path, true);
+  }
+
+  // Rate limited — log and throw (no retry; respect retry-after window)
   if (res.status === 429) {
     const retryAfter = res.headers.get('retry-after') || '5';
     console.warn(`[companies-house] Rate limited. Retry after ${retryAfter}s`);
