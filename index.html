@@ -7,32 +7,6 @@
   <title>Daksfirst Limited — Portal</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
-<!-- PWA + Mobile (Phase A.1 2026-05-03) -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Daksfirst">
-  <link rel="apple-touch-icon" href="/logo.PNG">
-
-  <!-- Mobile responsive overrides for Quick Quote form -->
-  <style>
-    @media (max-width: 768px) {
-      div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; gap: 10px !important; }
-      #qq-loan-amount { width: 100% !important; max-width: 100% !important; }
-      #qq-submit, #qq-cancel, #qq-add-property { padding: 14px 22px !important; font-size: 15px !important; min-height: 44px !important; }
-    }
-  </style>
-
-  <!-- PWA service worker registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js').catch(function (err) {
-          console.warn('[PWA] SW registration failed:', err);
-        });
-      });
-    }
-  </script>
 </head>
 <body>
     <div id="screen-landing" class="screen active">
@@ -535,31 +509,31 @@
 
             <div id="sidebar-admin-section" style="margin-top:24px;display:none;">
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#64748B;padding:0 12px;margin-bottom:8px;">Admin</div>
-              <a onclick="window.showAdmin && window.showAdmin()" class="sidebar-nav-item" id="nav-users" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a onclick="window.showAdmin && window.showAdmin()" class="sidebar-nav-item" id="nav-users" data-roles="admin" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9679;</span> User Management
               </a>
-              <a class="sidebar-nav-item" id="nav-settings" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a class="sidebar-nav-item" id="nav-settings" data-roles="admin" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9881;</span> Settings
               </a>
-              <a class="sidebar-nav-item" id="nav-analytics" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a class="sidebar-nav-item" id="nav-analytics" data-roles="admin" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9650;</span> Analytics
               </a>
 
               <!-- 2026-04-29: Pricing & config admin tools (separate static pages) -->
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#64748B;padding:0 12px;margin:14px 0 8px;">Engine & Config</div>
-              <a href="/admin/pricing.html" class="sidebar-nav-item" id="nav-pricing" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a href="/admin/pricing.html" class="sidebar-nav-item" id="nav-pricing" data-roles="admin,rm,credit" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&pound;</span> Pricing Assumptions
               </a>
-              <a href="/admin/pricing-grid.html" class="sidebar-nav-item" id="nav-pricing-grid" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a href="/admin/pricing-grid.html" class="sidebar-nav-item" id="nav-pricing-grid" data-roles="admin,rm,credit" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9783;</span> Pricing Grid
               </a>
-              <a href="/admin/rate-card.html" class="sidebar-nav-item" id="nav-rate-card" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a href="/admin/rate-card.html" class="sidebar-nav-item" id="nav-rate-card" data-roles="admin,rm,credit" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#128196;</span> RM Rate Card
               </a>
-              <a href="/admin/models.html" class="sidebar-nav-item" id="nav-models" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a href="/admin/models.html" class="sidebar-nav-item" id="nav-models" data-roles="admin" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9728;</span> LLM Config
               </a>
-              <a href="/admin/panels.html" class="sidebar-nav-item" id="nav-panels" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
+              <a href="/admin/panels.html" class="sidebar-nav-item" id="nav-panels" data-roles="admin" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#94A3B8;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;text-decoration:none;transition:all .15s;">
                 <span style="width:18px;text-align:center;font-size:14px;opacity:0.7;">&#9733;</span> Approved Panels
               </a>
             </div>

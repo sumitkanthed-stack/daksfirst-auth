@@ -317,6 +317,9 @@ export async function showDashboard() {
   if (sidebarRole) sidebarRole.textContent = currentRole.toUpperCase();
   if (sidebarAdmin) sidebarAdmin.style.display = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole) ? 'block' : 'none';
 
+  // RBAC: hide individual tiles this role can't see (e.g. RM sees Pricing but not Models/Panels/Users).
+  try { RBAC.applyDataRoles(); } catch (e) { console.warn('[deals] RBAC walk failed:', e); }
+
   showScreen('screen-dashboard');
   await loadUserDeals();
 

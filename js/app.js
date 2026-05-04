@@ -2,6 +2,9 @@
  * Main app entry point - imports all modules and initializes the application
  */
 
+// RBAC: load first so window.RBAC is defined before any other module renders.
+import './rbac.js';
+
 import { showScreen } from './utils.js';
 import { initAuthAndRouting, logoutUser, loginUser, registerUser, handleEmailVerification } from './auth.js';
 import { showDealForm, submitDeal, switchDealTab, dealTabNext, dealTabBack, showDashboard } from './deals.js';

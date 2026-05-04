@@ -42,6 +42,10 @@ export async function showAdminPanel() {
   if (sidebarRole) sidebarRole.textContent = currentRole.toUpperCase();
   if (sidebarAdmin) sidebarAdmin.style.display = ['rm', 'admin', 'credit', 'compliance'].includes(currentRole) ? 'block' : 'none';
 
+  // RBAC: hide individual tiles that this role isn't allowed to see (e.g. RM
+  // doesn't see Models/Panels/Users; Compliance sees almost nothing).
+  try { RBAC.applyDataRoles(); } catch (e) { console.warn('[admin] RBAC walk failed:', e); }
+
   showScreen('screen-admin');
 
   // Load initial admin data
