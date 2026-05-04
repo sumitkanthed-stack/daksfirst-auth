@@ -31,19 +31,10 @@ const express = require('express');
 const router = express.Router();
 
 const pool = require('../db/pool');
-const config = require('../config');
 const { authenticateToken } = require('../middleware/auth');
+const { requireRoles, requireAssignedRM, ROLE_SETS } = require('../middleware/rbac');
 const pricingEngine = require('../services/pricing-engine');
 const soniaFetcher = require('../services/sonia-fetcher');
-
-// ─── Auth gate: internal staff only ──────────────────────────────────────
-function authenticateInternal(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-  if (!config.INTERNAL_ROLES.includes(req.user.role)) {
-    return res.status(403).json({ error: 'Internal staff access required' });
-  }
-  next();
-}
 
 // ─── Sector inference from deal_submissions.asset_type ────────────────────
 // Falls back to 'commercial' if asset_type missing — admin can override via
@@ -66,7 +57,8 @@ function inferSectorFromAssetType(assetType) {
 router.post(
   '/admin/pricing/preview/:dealId',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
+  requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
     if (!Number.isInteger(dealId) || dealId <= 0) {
@@ -97,7 +89,7 @@ router.post(
 router.get(
   '/admin/pricing/active-config',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
   async (req, res) => {
     try {
       const config = await pricingEngine.loadActivePricingConfig();
@@ -188,7 +180,8 @@ async function buildEnvelopeForDeal(dealId, body) {
 router.post(
   '/admin/pricing/save/:dealId',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
+  requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
     if (!Number.isInteger(dealId) || dealId <= 0) {
@@ -274,7 +267,8 @@ router.post(
 router.get(
   '/admin/pricing/history/:dealId',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
+  requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
     if (!Number.isInteger(dealId) || dealId <= 0) {
@@ -320,7 +314,7 @@ router.get(
 router.get(
   '/admin/pricing/assumptions/list',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
   async (req, res) => {
     try {
       let version = req.query.version;
@@ -388,7 +382,7 @@ router.get(
 router.post(
   '/admin/pricing/assumptions/activate-new',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_WRITE),
   async (req, res) => {
     const body = req.body || {};
     const changes = Array.isArray(body.changes) ? body.changes : [];
@@ -521,7 +515,7 @@ router.post(
 router.get(
   '/admin/pricing/grid/list',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_READ),
   async (req, res) => {
     try {
       let version = req.query.version;
@@ -595,7 +589,7 @@ router.get(
 router.post(
   '/admin/pricing/grid/activate-new',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_WRITE),
   async (req, res) => {
     const body = req.body || {};
     const changes = Array.isArray(body.changes) ? body.changes : [];
@@ -727,7 +721,7 @@ router.post(
 router.post(
   '/admin/pricing/preview-cell',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_WRITE),
   async (req, res) => {
     try {
       const result = await pricingEngine.previewCellImpact(req.body || {});
@@ -756,7 +750,7 @@ router.post(
 router.post(
   '/admin/pricing/sonia-pull',
   authenticateToken,
-  authenticateInternal,
+  requireRoles(ROLE_SETS.PRICING_WRITE),
   async (req, res) => {
     try {
       const result = await soniaFetcher.fetchAndStore();
