@@ -7,6 +7,32 @@
   <title>Daksfirst Limited — Portal</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
+<!-- PWA + Mobile (Phase A.1 2026-05-03) -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Daksfirst">
+  <link rel="apple-touch-icon" href="/logo.PNG">
+
+  <!-- Mobile responsive overrides for Quick Quote form -->
+  <style>
+    @media (max-width: 768px) {
+      div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; gap: 10px !important; }
+      #qq-loan-amount { width: 100% !important; max-width: 100% !important; }
+      #qq-submit, #qq-cancel, #qq-add-property { padding: 14px 22px !important; font-size: 15px !important; min-height: 44px !important; }
+    }
+  </style>
+
+  <!-- PWA service worker registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function (err) {
+          console.warn('[PWA] SW registration failed:', err);
+        });
+      });
+    }
+  </script>
 </head>
 <body>
     <div id="screen-landing" class="screen active">
