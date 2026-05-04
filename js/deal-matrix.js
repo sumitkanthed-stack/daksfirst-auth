@@ -2857,8 +2857,8 @@ export async function renderDealMatrix(deal) {
                     '<div style="display:flex;gap:6px;align-items:center;">' +
                       (pulled ? '<span style="font-size:9px;color:#64748B;">Pulled ' + new Date(pulled).toLocaleDateString('en-GB') + ' · ' + (window._freshAge ? window._freshAge(pulled, null) : '') + '</span>' : '') +
                       (titleNum
-                        ? '<button onclick="event.stopPropagation();window._hmlrPull(' + p.id + ', \'' + subId + '\', \'' + sanitizeHtml(titleNum).replace(/\'/g, '') + '\')" style="padding:3px 10px;background:' + (pulled ? 'rgba(167,139,250,0.12)' : '#A78BFA') + ';color:' + (pulled ? '#A78BFA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (pulled ? 'Re-pull' : 'Pull OC1') + '</button>'
-                        : '<button onclick="event.stopPropagation();window._hmlrSearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:#A78BFA;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Search title</button>') +
+                        ? ((typeof window.RBAC !== 'undefined' && !window.RBAC.canPullPaidAPIs()) ? '' : '<button onclick="event.stopPropagation();window._hmlrPull(' + p.id + ', \'' + subId + '\', \'' + sanitizeHtml(titleNum).replace(/\'/g, '') + '\')" style="padding:3px 10px;background:' + (pulled ? 'rgba(167,139,250,0.12)' : '#A78BFA') + ';color:' + (pulled ? '#A78BFA' : '#111') + ';border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">' + (pulled ? 'Re-pull' : 'Pull OC1') + '</button>')
+                        : ((typeof window.RBAC !== 'undefined' && !window.RBAC.canPullPaidAPIs()) ? '' : '<button onclick="event.stopPropagation();window._hmlrSearch(' + p.id + ', \'' + subId + '\')" style="padding:3px 10px;background:#A78BFA;color:#111;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">Search title</button>')) +
                     '</div>' +
                   '</div>';
 

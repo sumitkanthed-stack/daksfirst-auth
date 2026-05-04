@@ -363,7 +363,7 @@ export function renderSnapshot(deal, role) {
         renderBadge(docLabel, docColor, docBg, null);
         // Risk Grade badge — async fetch latest risk_view run, format "Risk 5BD · MODERATE"
       // Verdict colors. Click → scroll to Risk View section.
-      if (deal.id) {
+      if (deal.id && (typeof window.RBAC === 'undefined' || window.RBAC.canSeeRiskGradePill())) {
         statusBar.insertAdjacentHTML('beforeend',
           '<span id="snap-risk-badge" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;background:rgba(148,163,184,0.1);color:#94A3B8;">Risk loading…</span>'
         );
