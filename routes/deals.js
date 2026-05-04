@@ -340,6 +340,26 @@ router.get('/', authenticateToken, async (req, res) => {
       );
     }
 
+    // RBAC: RM sees all deals in queue, but unassigned ones return as thin "snap" rows.
+    // Admin / credit / compliance see full data unrestricted. Brokers already filtered by user_id.
+    if (role === 'rm') {
+      result.rows = result.rows.map(d => {
+        if (d.assigned_rm === userId) return d;
+        const primary = (d.borrowers || []).find(b => b.role === 'primary') || {};
+        return {
+          id: d.id,
+          submission_id: d.submission_id,
+          stage: d.stage,
+          assigned_rm: d.assigned_rm,
+          loan_amount: d.loan_amount,
+          created_at: d.created_at,
+          updated_at: d.updated_at,
+          borrower_name: primary.full_name || primary.company_name || 'Unassigned',
+          _snap: true
+        };
+      });
+    }
+
     res.json({ deals: result.rows });
   } catch (err) {
     console.error('[deals] List error:', err);
@@ -367,6 +387,14 @@ router.get('/:submissionId', authenticateToken, async (req, res) => {
     }
 
     const deal = result.rows[0];
+
+    // RBAC: RM can only enter deals assigned to them. Admin / credit / compliance pass through.
+    if (role === 'rm' && deal.assigned_rm !== userId) {
+      return res.status(403).json({
+        error: 'Deal not assigned to you',
+        hint: 'Ask admin to reassign or check your queue for assigned deals'
+      });
+    }
 
     // Include properties from deal_properties table (source of truth for per-property data)
     const propsResult = await pool.query(
