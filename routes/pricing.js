@@ -57,7 +57,7 @@ function inferSectorFromAssetType(assetType) {
 router.post(
   '/admin/pricing/preview/:dealId',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_OUTPUT_READ),
   requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
@@ -89,7 +89,7 @@ router.post(
 router.get(
   '/admin/pricing/active-config',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_CONFIG_READ),
   async (req, res) => {
     try {
       const config = await pricingEngine.loadActivePricingConfig();
@@ -180,7 +180,7 @@ async function buildEnvelopeForDeal(dealId, body) {
 router.post(
   '/admin/pricing/save/:dealId',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_OUTPUT_READ),
   requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
@@ -267,7 +267,7 @@ router.post(
 router.get(
   '/admin/pricing/history/:dealId',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_OUTPUT_READ),
   requireAssignedRM(),
   async (req, res) => {
     const dealId = Number(req.params.dealId);
@@ -314,7 +314,7 @@ router.get(
 router.get(
   '/admin/pricing/assumptions/list',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_CONFIG_READ),
   async (req, res) => {
     try {
       let version = req.query.version;
@@ -515,7 +515,7 @@ router.post(
 router.get(
   '/admin/pricing/grid/list',
   authenticateToken,
-  requireRoles(ROLE_SETS.PRICING_READ),
+  requireRoles(ROLE_SETS.PRICING_CONFIG_READ),
   async (req, res) => {
     try {
       let version = req.query.version;

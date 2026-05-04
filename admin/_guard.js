@@ -14,9 +14,9 @@
 
   // Per-page role allowlist. Defaults to admin-only if page not listed.
   var PAGE_ROLES = {
-    'pricing.html':         ['admin', 'rm', 'credit'],
-    'pricing-grid.html':    ['admin', 'rm', 'credit'],
-    'rate-card.html':       ['admin', 'rm', 'credit'],
+    'pricing.html':         ['admin', 'credit'],
+    'pricing-grid.html':    ['admin', 'credit'],
+    'rate-card.html':       ['admin', 'credit'],
     'models.html':          ['admin'],
     'panels.html':          ['admin'],
     'broker-activity.html': ['admin']

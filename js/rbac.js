@@ -21,7 +21,8 @@ import { getCurrentRole } from './state.js';
 
 const ROLE_SETS = {
   ALL_INTERNAL:        ['admin', 'rm', 'credit', 'compliance'],
-  PRICING_READ:        ['admin', 'rm', 'credit'],
+  PRICING_OUTPUT_READ:  ['admin', 'rm', 'credit'],
+  PRICING_CONFIG_READ:  ['admin', 'credit'],
   PRICING_WRITE:       ['admin'],
   LLM_CONFIG:          ['admin'],
   RISK_TAXONOMY:       ['admin'],
@@ -54,7 +55,8 @@ export const RBAC = {
   isBorrower:     () => role() === 'borrower',
   isInternal:     () => inSet(ROLE_SETS.ALL_INTERNAL),
 
-  canReadPricingConfig:  () => inSet(ROLE_SETS.PRICING_READ),
+  canReadPricingConfig:    () => inSet(ROLE_SETS.PRICING_CONFIG_READ),
+  canSeePricingOutput:     () => inSet(ROLE_SETS.PRICING_OUTPUT_READ),
   canEditPricingConfig:  () => inSet(ROLE_SETS.PRICING_WRITE),
   canReadLLMConfig:      () => inSet(ROLE_SETS.LLM_CONFIG),
   canSeeRiskGradePill:   () => inSet(ROLE_SETS.ALL_INTERNAL),

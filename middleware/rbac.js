@@ -20,7 +20,8 @@ const pool = require('../db/pool');
 // ─────────────────────────────────────────────────────────────────────────
 const ROLE_SETS = {
   ALL_INTERNAL:        ['admin', 'rm', 'credit', 'compliance'],
-  PRICING_READ:        ['admin', 'rm', 'credit'],
+  PRICING_OUTPUT_READ:  ['admin', 'rm', 'credit'],   // per-deal rate calculation
+  PRICING_CONFIG_READ:  ['admin', 'credit'],         // global assumptions/grid/rate card — methodology
   PRICING_WRITE:       ['admin'],
   LLM_CONFIG:          ['admin'],
   RISK_TAXONOMY:       ['admin'],
