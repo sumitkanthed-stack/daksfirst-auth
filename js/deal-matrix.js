@@ -857,7 +857,7 @@ export async function renderDealMatrix(deal) {
         <div style="flex:1;min-width:240px;">
           <div style="font-size:14px;font-weight:700;color:#34D399;">Ready to submit?</div>
           <div style="font-size:11px;color:#34D399;margin-top:2px;margin-bottom:10px;">Complete the required fields below, then submit for RM review to proceed to DIP.</div>
-          <div id="dip-readiness-checklist" style="display:flex;flex-direction:column;gap:3px;"></div>
+          
         </div>
         <button onclick="window.matrixSubmitForReview && window.matrixSubmitForReview()" style="padding:10px 28px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#64748B;color:#F1F5F9;box-shadow:0 2px 8px rgba(212,168,83,.3);transition:all .15s;white-space:nowrap;opacity:0.5;" disabled onmouseover="if(!this.disabled)this.style.background='#94A3B8'" onmouseout="if(!this.disabled)this.style.background='#34D399'">
           Submit for RM Review &#8594;
@@ -871,6 +871,15 @@ export async function renderDealMatrix(deal) {
     </div>
     ` : ''}
 
+    <!-- Outstanding Items panel — Phase 1.6 2026-05-03. Visible to all users when matrix has missing fields.
+         Auto-hides when 100% complete (logic in calculateCompleteness). Each item click → scrolls to section. -->
+    <div id="matrix-outstanding-panel" style="padding:12px 26px;background:rgba(212,168,83,0.05);border-bottom:1px solid rgba(212,168,83,0.2);border-left:3px solid rgba(212,168,83,0.5);display:none;">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+        <span style="font-size:11px;font-weight:700;color:#D4A853;text-transform:uppercase;letter-spacing:.5px;">Outstanding Items</span>
+        <span id="matrix-outstanding-tier" style="font-size:10px;color:#94A3B8;font-weight:400;">— Indicative Termsheet</span>
+      </div>
+      <div id="dip-readiness-checklist" style="display:flex;flex-direction:column;gap:3px;"></div>
+    </div>
     <!-- Column Headers -->
     <div style="display:grid;grid-template-columns:1fr repeat(4,minmax(125px,155px));border-bottom:2px solid rgba(255,255,255,0.06);position:sticky;top:0;background:#0B1120;z-index:20">
       <div style="padding:11px 8px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding-left:26px;color:#94A3B8">Information</div>
@@ -9516,6 +9525,17 @@ export async function renderDealMatrix(deal) {
         statusEl.textContent = `More Info Needed — ${tierName}`;
         statusEl.style.color = '#F87171';
       }
+    }
+    // Phase 1.6 (2026-05-03) — Outstanding Items panel: show when missing fields exist, hide when 100% complete.
+    const outstandingPanel = document.getElementById('matrix-outstanding-panel');
+    const outstandingTier = document.getElementById('matrix-outstanding-tier');
+    if (outstandingPanel) {
+      const totalMissing = Object.values(readiness.sections).reduce((sum, s) => sum + s.missing.length, 0);
+      outstandingPanel.style.display = totalMissing > 0 ? 'block' : 'none';
+    }
+    if (outstandingTier) {
+      const tierName = tierLabels[readiness.tier] || 'Submission';
+      outstandingTier.textContent = '— ' + tierName;
     }
 
     // Update the CTA section readiness checklist if it exists
